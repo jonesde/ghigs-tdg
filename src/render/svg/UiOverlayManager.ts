@@ -4,15 +4,23 @@ import {
   WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW,
 } from "@/sim/Constants.js";
 import type { Grid } from "../../sim/grid/Grid.js";
-import type { EnemySnapshot, SpawnStateSnapshot, TowerSnapshot } from "../../sim/SimulationSnapshot.js";
+import type {
+  EnemySnapshot,
+  SpawnStateSnapshot,
+  TowerSnapshot,
+  WaveTopTowerSnapshot,
+} from "../../sim/SimulationSnapshot.js";
 import {
   BOSS_TEXT_POOL_SIZE,
-  GRID_TILE_SIZE,
   HP_BAR_POOL_SIZE,
   SHIELD_BAR_POOL_SIZE,
   SVG_NS,
   TOWER_HP_BAR_POOL_SIZE,
+  TOWER_SCALED_SIZE,
 } from "./types.js";
+
+const WAVE_TOP_DISPLAY_SECONDS = 3;
+const WAVE_TOP_MEDALS = ["🥇", "🥈", "🥉"];
 
 export class UiOverlayManager {
   private hpBarPool: SVGRectElement[] = [];
@@ -39,6 +47,7 @@ export class UiOverlayManager {
   private towerHpLastTransform: string[] = [];
   private towerHpLastWidth: string[] = [];
   private towerHpLastFill: string[] = [];
+  private waveTopMedalPool: SVGTextElement[] = [];
 
   init(layer: SVGGElement): void {
     for (let i = 0; i < HP_BAR_POOL_SIZE; i++) {
@@ -161,16 +170,16 @@ export class UiOverlayManager {
     for (let i = 0; i < TOWER_HP_BAR_POOL_SIZE; i++) {
       const bg = document.createElementNS(SVG_NS, "rect");
       bg.style.visibility = "hidden";
-      bg.setAttribute("width", "24");
-      bg.setAttribute("height", "3");
+      bg.setAttribute("width", "28");
+      bg.setAttribute("height", "4");
       bg.setAttribute("fill", "#000000");
       bg.setAttribute("opacity", "0.6");
       layer.appendChild(bg);
 
       const border = document.createElementNS(SVG_NS, "rect");
       border.style.visibility = "hidden";
-      border.setAttribute("width", "24");
-      border.setAttribute("height", "3");
+      border.setAttribute("width", "28");
+      border.setAttribute("height", "4");
       border.setAttribute("fill", "none");
       border.setAttribute("stroke", "#000000");
       border.setAttribute("stroke-width", "0.5");
@@ -178,8 +187,8 @@ export class UiOverlayManager {
 
       const fg = document.createElementNS(SVG_NS, "rect");
       fg.style.visibility = "hidden";
-      fg.setAttribute("width", "24");
-      fg.setAttribute("height", "3");
+      fg.setAttribute("width", "28");
+      fg.setAttribute("height", "4");
       fg.setAttribute("fill", "#00ff00");
       layer.appendChild(fg);
 
@@ -187,6 +196,18 @@ export class UiOverlayManager {
       this.towerHpLastTransform.push("");
       this.towerHpLastWidth.push("");
       this.towerHpLastFill.push("");
+    }
+
+    for (let i = 0; i < WAVE_TOP_MEDALS.length; i++) {
+      const text = document.createElementNS(SVG_NS, "text");
+      text.style.visibility = "hidden";
+      text.setAttribute("fill", "#ffd700");
+      text.setAttribute("font-size", "12");
+      text.setAttribute("font-family", "sans-serif");
+      text.setAttribute("text-anchor", "middle");
+      text.setAttribute("dominant-baseline", "central");
+      layer.appendChild(text);
+      this.waveTopMedalPool.push(text);
     }
   }
 
@@ -221,6 +242,7 @@ export class UiOverlayManager {
         fg.setAttribute("transform", barTransform);
         this.hpLastTransform[hpGroupIdx] = barTransform;
       }
+      bg.style.visibility = "visible";
       border.style.visibility = "visible";
       fg.style.visibility = "visible";
 
@@ -311,8 +333,9 @@ export class UiOverlayManager {
       const towerFg = this.towerHpBarPool[towerHpBarGroup * 3 + 2]!;
       towerHpBarGroup++;
 
-      const barX = tower.x - 12;
-      const barY = tower.y - GRID_TILE_SIZE / 2 + 2;
+      const towerBarWidth = 28;
+      const barX = tower.x - towerBarWidth / 2;
+      const barY = tower.y - TOWER_SCALED_SIZE / 2 - 6;
       const towerBarTransform = `translate(${barX}, ${barY})`;
       if (this.towerHpLastTransform[towerHpBarGroup - 1] !== towerBarTransform) {
         towerBg.setAttribute("transform", towerBarTransform);
@@ -325,7 +348,7 @@ export class UiOverlayManager {
       towerFg.style.visibility = "visible";
 
       const towerHpPercent = Math.max(0, tower.health / tower.maxHealth);
-      const towerHpWidth = `${24 * towerHpPercent}`;
+      const towerHpWidth = `${28 * towerHpPercent}`;
       const towerHpFill = towerHpPercent > 0.5 ? "#00ff00" : towerHpPercent > 0.25 ? "#ffff00" : "#ff0000";
       if (this.towerHpLastWidth[towerHpBarGroup - 1] !== towerHpWidth) {
         towerFg.setAttribute("width", towerHpWidth);
@@ -342,6 +365,34 @@ export class UiOverlayManager {
       this.towerHpBarPool[g * 3]!.style.visibility = "hidden";
       this.towerHpBarPool[g * 3 + 1]!.style.visibility = "hidden";
       this.towerHpBarPool[g * 3 + 2]!.style.visibility = "hidden";
+    }
+  }
+
+  syncWaveTopTowers(
+    towers: TowerSnapshot[],
+    waveTopTowers: WaveTopTowerSnapshot[] | null | undefined,
+    simSeconds: number,
+  ): void {
+    const towerById = new Map<string, TowerSnapshot>();
+    for (const tower of towers) towerById.set(tower.id, tower);
+
+    let medalIndex = 0;
+    if (waveTopTowers) {
+      for (const entry of waveTopTowers) {
+        if (medalIndex >= this.waveTopMedalPool.length) break;
+        if (simSeconds - entry.simSeconds > WAVE_TOP_DISPLAY_SECONDS) continue;
+        const tower = towerById.get(entry.towerId);
+        if (!tower) continue;
+        const medal = this.waveTopMedalPool[medalIndex]!;
+        const medalText = WAVE_TOP_MEDALS[entry.rank - 1] ?? String(entry.rank);
+        medal.style.visibility = "visible";
+        medal.textContent = medalText;
+        medal.setAttribute("transform", `translate(${tower.x}, ${tower.y - TOWER_SCALED_SIZE / 2 - 12})`);
+        medalIndex++;
+      }
+    }
+    for (let i = medalIndex; i < this.waveTopMedalPool.length; i++) {
+      this.waveTopMedalPool[i]!.style.visibility = "hidden";
     }
   }
 
@@ -479,5 +530,9 @@ export class UiOverlayManager {
     this.towerHpLastWidth = [];
     this.towerHpLastFill = [];
     this.towerHpBarPool = [];
+    for (const el of this.waveTopMedalPool) {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }
+    this.waveTopMedalPool = [];
   }
 }

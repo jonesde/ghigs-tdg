@@ -345,11 +345,9 @@ type TowerLite = { id: string; tileX: number; tileY: number };
 // Tower navigation (Tab / arrow keys) reads the snapshot projection in the
 // worker build (the live manager is null on the main thread). Fall back to the
 // live manager when no snapshot is available (legacy / test path). Fix #5.
-function getNavigableTowers(gameStore: GameStoreLike): TowerLite[] {
+function getNavigableTowers(_gameStore: GameStoreLike): TowerLite[] {
   const snapshot = getLatestSnapshot();
   if (snapshot && snapshot.towers.length > 0) return snapshot.towers;
-  const manager = gameStore.towerManager;
-  if (manager && manager.towers.length > 0) return manager.towers;
   return [];
 }
 

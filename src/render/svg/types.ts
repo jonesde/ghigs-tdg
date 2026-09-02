@@ -1,5 +1,4 @@
 export const SVG_NS = "http://www.w3.org/2000/svg";
-export const XLINK_NS = "http://www.w3.org/1999/xlink";
 
 export const GRID_TILE_SIZE = 36;
 export const TOWER_SCALED_SIZE = GRID_TILE_SIZE * 0.75;
@@ -30,93 +29,6 @@ export const HP_BAR_POOL_SIZE = 100;
 export const SHIELD_BAR_POOL_SIZE = 100;
 export const BOSS_TEXT_POOL_SIZE = 10;
 export const TOWER_HP_BAR_POOL_SIZE = 100;
-
-export interface SpriteData {
-  id: string;
-  spriteId: string;
-  x: number;
-  y: number;
-  active: boolean;
-}
-
-export interface ProjectileData {
-  id: string;
-  x: number;
-  y: number;
-  spriteId: string;
-  active: boolean;
-}
-
-export interface ParticleData {
-  id: string;
-  x: number;
-  y: number;
-  color: string;
-  size: number;
-  opacity: number;
-  active: boolean;
-}
-
-export interface LightningData {
-  id: string;
-  startX: number;
-  startY: number;
-  endX: number;
-  endY: number;
-  opacity: number;
-  active: boolean;
-}
-
-export interface StunData {
-  id: string;
-  x: number;
-  y: number;
-  opacity: number;
-  angle: number;
-  active: boolean;
-}
-
-export interface BuildPreviewData {
-  x: number;
-  y: number;
-  spriteId: string;
-  range: number;
-  valid: boolean;
-  active: boolean;
-}
-
-export interface UpgradeButtonData {
-  towerId: string;
-  x: number;
-  y: number;
-  cost: number;
-  visible: boolean;
-  active: boolean;
-}
-
-export interface HpBarData {
-  id: string;
-  x: number;
-  y: number;
-  hpRatio: number;
-  active: boolean;
-}
-
-export interface ShieldBarData {
-  id: string;
-  x: number;
-  y: number;
-  shieldRatio: number;
-  active: boolean;
-}
-
-export interface BossTextData {
-  id: string;
-  x: number;
-  y: number;
-  hpText: string;
-  active: boolean;
-}
 
 export interface Projectile {
   id: number;

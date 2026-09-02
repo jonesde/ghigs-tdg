@@ -17,19 +17,16 @@ const snapshot = computed(() => {
   void gameStore.frameId;
   return getLatestSnapshot();
 });
-// Wave composition / starting base health / healing / gold are worker-internal
-// aggregates not surfaced in the snapshot yet (Phase 8). The stats panel reads
-// what the snapshot provides; the rest degrades gracefully.
-const waveManager = computed(() => null);
-const enemyManager = computed(() => null);
 const towers = computed(() => snapshot.value?.towers ?? []);
 
 const waveComposition = computed(() => {
-  const comp = waveManager.value?.waveComposition || {};
-  const entries = Object.entries(comp).sort((entryA, entryB) => {
-    const order = ["minion", "runner", "tank", "shielded", "healer", "boss"];
-    return order.indexOf(entryA[0]) - order.indexOf(entryB[0]);
-  });
+  const comp = snapshot.value?.meta.waveComposition || {};
+  const entries = Object.entries(comp)
+    .filter(([, count]) => count > 0)
+    .sort((entryA, entryB) => {
+      const order = ["minion", "runner", "tank", "shielded", "healer", "boss"];
+      return order.indexOf(entryA[0]) - order.indexOf(entryB[0]);
+    });
   return entries;
 });
 
@@ -55,8 +52,8 @@ const activeEnemies = computed<EnemyStat[]>(() => {
       level: enemy.level,
       hp: enemy.hp,
       maxHp: enemy.maxHp,
-      color: "",
-      shape: "",
+      color: themeStore.getEnemyVisual(enemy.type)?.color || "",
+      shape: themeStore.getEnemyVisual(enemy.type)?.shape || "",
     }));
 });
 
@@ -70,8 +67,8 @@ const totalDamageDealt = computed(() => {
 
 const startingBaseHealth = computed(() => gameStore.maxBaseHealth);
 const baseHealthLost = computed(() => Math.max(0, startingBaseHealth.value - gameStore.baseHealth));
-const healingReceived = computed(() => 0);
-const goldEarned = computed(() => 0);
+const healingReceived = computed(() => snapshot.value?.meta.totalHealingReceived ?? 0);
+const goldEarned = computed(() => snapshot.value?.meta.totalGoldEarned ?? 0);
 const gemsEarned = computed(() => gameStore.runGemsEarned);
 const deadBosses = computed(() => gameStore.bossesKilledThisRun);
 const basedBosses = computed(() => gameStore.bossesReachedBaseThisRun);

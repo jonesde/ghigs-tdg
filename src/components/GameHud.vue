@@ -90,7 +90,7 @@ watch(
         <span class="hud-label map-title">{{ getMapDisplayName(gameStore.map, themeStore.activeTheme) }}</span>
       </div>
       <div class="hud-center">
-        <span class="hud-stat lives" :class="{ warning: baseHealthRatio <= 0.5 && baseHealthRatio > 0.25, critical: baseHealthRatio <= 0.25 }">
+        <span class="hud-stat base-health" :class="{ warning: baseHealthRatio <= 0.5 && baseHealthRatio > 0.25, critical: baseHealthRatio <= 0.25 }">
           <span class="hud-icon">♥</span>
           <span class="hud-value">{{ gameStore.baseHealth }}</span>
         </span>
@@ -207,7 +207,7 @@ watch(
   font-weight: 600;
 }
 
-.hud-stat.lives {
+.hud-stat.base-health {
   color: #5fff8a;
 }
 

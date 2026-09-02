@@ -16,9 +16,7 @@ describe("UiStore", () => {
   describe("initial state", () => {
     it("starts with all dialogs hidden", () => {
       expect(store.showPauseMenu).toBe(false);
-      expect(store.showMapSelect).toBe(false);
       expect(store.showSkillTree).toBe(false);
-      expect(store.showEndScreen).toBe(false);
       expect(store.showStatsPanel).toBe(false);
     });
 
@@ -291,14 +289,14 @@ describe("UiStore", () => {
     });
 
     it("overrides defaults with savedState fields", () => {
-      store.initForRun({ showMapSelect: true, debugPanelVisible: true });
-      expect(store.showMapSelect).toBe(true);
+      store.initForRun({ showMinimap: true, debugPanelVisible: true });
+      expect(store.showMinimap).toBe(true);
       expect(store.debugPanelVisible).toBe(true);
     });
 
     it("preserves saved fields while resetting unsaved ones", () => {
-      store.initForRun({ showMapSelect: true });
-      expect(store.showMapSelect).toBe(true);
+      store.initForRun({ showMinimap: true });
+      expect(store.showMinimap).toBe(true);
       expect(store.showPauseMenu).toBe(false);
     });
   });

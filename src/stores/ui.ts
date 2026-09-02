@@ -52,9 +52,7 @@ interface NotificationState {
 
 interface UiStateShape {
   showPauseMenu: boolean;
-  showMapSelect: boolean;
   showSkillTree: boolean;
-  showEndScreen: boolean;
   showStatsPanel: boolean;
   showHelpDialog: boolean;
   showMinimap: boolean;
@@ -72,9 +70,7 @@ interface UiStateShape {
 function defaultUiState(): UiStateShape {
   return {
     showPauseMenu: false,
-    showMapSelect: false,
     showSkillTree: false,
-    showEndScreen: false,
     showStatsPanel: false,
     showHelpDialog: false,
     showMinimap: false,
@@ -238,10 +234,12 @@ export const useUiStore = defineStore("ui", {
 
     openDebugPanel() {
       this.debugPanelVisible = true;
+      dispatchCommand({ commandId: 0, type: "action:debug", kind: "setDebugPhysics", amount: 1 });
     },
 
     closeDebugPanel() {
       this.debugPanelVisible = false;
+      dispatchCommand({ commandId: 0, type: "action:debug", kind: "setDebugPhysics", amount: 0 });
     },
 
     initForRun(savedState: Partial<UiStateShape> | null) {

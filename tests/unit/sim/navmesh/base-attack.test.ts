@@ -62,6 +62,32 @@ describe("postPhysics base attack", () => {
     expect(fakeBase.damage).toBeGreaterThan(0);
   });
 
+  it("keeps attacking after the body is teleported off the base collider", () => {
+    const fakeBase = makeBaseTarget();
+    enemyManager.baseTarget = fakeBase;
+
+    const enemy = enemyManager.spawn("runner", 1, 0, 1);
+    expect(enemy).not.toBeNull();
+    physicsWorld.addEnemy(enemy!);
+
+    const baseCenter = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
+    enemy!.body!.setTranslation({ x: baseCenter.x, y: baseCenter.y }, true);
+    drive(enemyManager, physicsWorld, 4);
+    expect(enemy!.attackingBase).toBe(true);
+    const damageAtContact = fakeBase.damage;
+    expect(damageAtContact).toBeGreaterThan(0);
+
+    const spawn = grid.tileToWorld(grid.spawns[0]!.x, grid.spawns[0]!.y);
+    enemy!.body!.setTranslation({ x: spawn.x, y: spawn.y }, true);
+    enemy!.attackTimer = 0;
+    drive(enemyManager, physicsWorld, 4);
+
+    expect(enemy!.attackingBase).toBe(true);
+    expect(enemy!.removed).toBe(false);
+    expect(enemyManager.enemies).toContain(enemy);
+    expect(fakeBase.damage).toBeGreaterThan(damageAtContact);
+  });
+
   it("attacks a live tower while overlapping its collider and not the base", () => {
     enemyManager.baseTarget = makeBaseTarget();
 

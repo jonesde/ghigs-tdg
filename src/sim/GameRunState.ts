@@ -23,7 +23,6 @@ export interface GameRunState {
   selectedTowerType: TowerId | null;
   hoverTile: { tileX: number; tileY: number } | null;
   hoverUpgradeBtn: boolean;
-  upgradeBtnClickAnim: number;
   runGemsEarned: number;
   bossesKilledThisRun: number;
   bossesReachedBaseThisRun: number;
@@ -150,7 +149,6 @@ export function initRunState(state: GameRunState, mapIndex: number, mapData: Gen
   state.selectedTowerType = null;
   state.hoverTile = null;
   state.hoverUpgradeBtn = false;
-  state.upgradeBtnClickAnim = 0;
   state.endScreenData = null;
   state.randomMapParams = null;
 }
@@ -159,7 +157,6 @@ export function triggerEnd(state: GameRunState, victoryFlag: boolean, data: Omit
   state.selectedTowerId = null;
   state.selectedTowerType = null;
   state.hoverTile = null;
-  state.upgradeBtnClickAnim = 0;
   state.endScreenData = { victory: victoryFlag, ...data };
   state.state = victoryFlag ? "victory" : "game_over";
 }

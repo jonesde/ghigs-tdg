@@ -10,8 +10,13 @@ const PROJECTILE_RADIUS = 1.5;
 // UiOverlayManager + EffectManager but with dots/lines only — no sprites,
 // particles, range circles, or build preview.
 export class TextOverlayRenderer {
-  render(ctx: CanvasRenderingContext2D, snapshot: SimulationSnapshot, scale: TextRenderScale): void {
-    this.renderPhysicsDebug(ctx, snapshot, scale);
+  render(
+    ctx: CanvasRenderingContext2D,
+    snapshot: SimulationSnapshot,
+    scale: TextRenderScale,
+    showPhysicsDebug = false,
+  ): void {
+    if (showPhysicsDebug) this.renderPhysicsDebug(ctx, snapshot, scale);
     this.renderNextCorners(ctx, snapshot, scale);
     this.renderProjectiles(ctx, snapshot, scale);
     this.renderHealthBars(ctx, snapshot, scale);
@@ -26,8 +31,8 @@ export class TextOverlayRenderer {
   ): void {
     const vertices = snapshot.debugPhysics?.vertices;
     if (!vertices || vertices.length < 4) return;
-    ctx.strokeStyle = "rgba(80, 200, 255, 0.35)";
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(80, 200, 255, 0.85)";
+    ctx.lineWidth = 1.5;
     for (let index = 0; index + 3 < vertices.length; index += 4) {
       ctx.beginPath();
       ctx.moveTo(vertices[index]! * scale.scaleX, vertices[index + 1]! * scale.scaleY);

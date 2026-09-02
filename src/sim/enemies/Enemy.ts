@@ -248,6 +248,7 @@ export class Enemy {
     this.lastProgressY = this.y;
 
     this.removed = false;
+    this.onPathBlocked = false;
   }
 
   applySlow(amount: number, duration: number) {
@@ -358,13 +359,13 @@ export class Enemy {
 
   // Routes the enemy to a waypoint chain in the given mode. Null/empty → default.
   applyRoute(routePath: { x: number; y: number }[] | null, mode: "hold" | "route"): void {
+    if (this.attackingBase) return;
     if (!routePath || routePath.length === 0) {
       this.releaseToDefault();
       return;
     }
     this.routingMode = mode;
     this.arrived = false;
-    this.attackingBase = false;
     this.siegeTower = null;
     this.motionLock = "none";
     this.clearMoveTargetCache();
@@ -378,6 +379,7 @@ export class Enemy {
 
   // Siege a live tower: path to it, park on contact, attack until ghosted.
   applySiege(tower: Tower): void {
+    if (this.attackingBase) return;
     if (tower.isGhost) {
       this.releaseToDefault();
       return;
@@ -385,7 +387,6 @@ export class Enemy {
     this.routingMode = "siege";
     this.siegeTower = tower;
     this.arrived = false;
-    this.attackingBase = false;
     this.motionLock = "none";
     this.clearMoveTargetCache();
     const targetWorld = this.grid.tileToWorld(tower.tileX, tower.tileY);
@@ -393,9 +394,9 @@ export class Enemy {
   }
 
   releaseToDefault(): void {
+    if (this.attackingBase) return;
     this.routingMode = "default";
     this.arrived = false;
-    this.attackingBase = false;
     this.holdWorld = null;
     this.routeWorld = null;
     this.siegeTower = null;

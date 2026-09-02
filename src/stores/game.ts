@@ -1,11 +1,8 @@
 import { defineStore } from "pinia";
 import { GameState, STARTING_BASE_HEALTH, StartingGold } from "@/sim/Constants.js";
-import type { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
-import type { ProjectileManager } from "@/sim/ProjectileManager.js";
 import type { Tower } from "@/sim/towers/Tower.js";
-import type { TowerManager } from "@/sim/towers/TowerManager.js";
 
 type GameStateValue = (typeof GameState)[keyof typeof GameState];
 type TowerId = typeof import("@/sim/ConstantsTower").TowerIds[keyof typeof import("@/sim/ConstantsTower").TowerIds];
@@ -51,11 +48,6 @@ interface MilestoneRewardsClaimed {
   [wave: number]: boolean;
 }
 
-interface TowerManagerLike {
-  towers: Tower[];
-  towerAt(tileX: number, tileY: number): Tower | undefined;
-}
-
 export interface GameStoreLike {
   state: GameStateValue;
   timeScale: number;
@@ -63,7 +55,6 @@ export interface GameStoreLike {
   selectedTowerType: TowerId | null;
   hoverTile: HoverTile | null;
   camera: CameraState;
-  towerManager: TowerManagerLike | null;
   cycleSpeed(): number;
   cycleSpeedReverse(): number;
   selectBuildType(type: TowerId | null): void;
@@ -89,7 +80,6 @@ interface GameStateShape {
   minimapPanelPos: TowerPanelPos;
   hoverTile: HoverTile | null;
   hoverUpgradeBtn: boolean;
-  upgradeBtnClickAnim: number;
   frameId: number;
   runGemsEarned: number;
   bossesKilledThisRun: number;
@@ -98,9 +88,6 @@ interface GameStateShape {
   gemBreakdown: GemBreakdown;
   endScreenData: EndScreenPayload | null;
   camera: CameraState;
-  towerManager: TowerManager | null;
-  enemyManager: EnemyManager | null;
-  projectileManager: ProjectileManager | null;
   randomMapParams: Record<string, unknown> | null;
   worker: Worker | null;
 }
@@ -111,7 +98,7 @@ export const useGameStore = defineStore("game", {
     mapIndex: -1,
     map: null,
     grid: null,
-    baseHealth: 20,
+    baseHealth: STARTING_BASE_HEALTH,
     maxBaseHealth: STARTING_BASE_HEALTH,
     gold: 0,
     currentWave: 0,
@@ -124,7 +111,6 @@ export const useGameStore = defineStore("game", {
     minimapPanelPos: { x: 40, y: 80 },
     hoverTile: null,
     hoverUpgradeBtn: false,
-    upgradeBtnClickAnim: 0,
     frameId: 0,
     runGemsEarned: 0,
     bossesKilledThisRun: 0,
@@ -138,9 +124,6 @@ export const useGameStore = defineStore("game", {
     },
     endScreenData: null,
     camera: { x: 0, y: 0, zoom: 1 },
-    towerManager: null,
-    enemyManager: null,
-    projectileManager: null,
     randomMapParams: null,
     worker: null,
   }),
@@ -233,18 +216,8 @@ export const useGameStore = defineStore("game", {
       this.gameShopPos = { x: 0, y: 0 };
       this.minimapPanelPos = { x: 40, y: 80 };
       this.hoverTile = null;
-      this.upgradeBtnClickAnim = 0;
       this.endScreenData = null;
       this.camera = { x: 0, y: 0, zoom: 1 };
-      this.towerManager = null;
-      this.enemyManager = null;
-      this.projectileManager = null;
-    },
-
-    setManagers(towerManager: TowerManager, enemyManager: EnemyManager, projectileManager: ProjectileManager) {
-      this.towerManager = towerManager;
-      this.enemyManager = enemyManager;
-      this.projectileManager = projectileManager;
     },
 
     setCamera(x: number, y: number, zoom: number) {
@@ -271,13 +244,8 @@ export const useGameStore = defineStore("game", {
       this.selectedTower = null;
       this.selectedTowerType = null;
       this.hoverTile = null;
-      this.upgradeBtnClickAnim = 0;
       this.endScreenData = { victory: victoryFlag, ...data };
       this.state = victoryFlag ? GameState.VICTORY : GameState.GAME_OVER;
-    },
-
-    triggerUpgradeClickAnim() {
-      this.upgradeBtnClickAnim = 0.4;
     },
 
     setGemBreakdown(breakdown: GemBreakdown) {
@@ -301,7 +269,6 @@ export const useGameStore = defineStore("game", {
       this.minimapPanelPos = { x: 40, y: 80 };
       this.hoverTile = null;
       this.hoverUpgradeBtn = false;
-      this.upgradeBtnClickAnim = 0;
       this.runGemsEarned = 0;
       this.bossesKilledThisRun = 0;
       this.bossesReachedBaseThisRun = 0;

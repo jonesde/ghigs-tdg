@@ -73,6 +73,23 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
     expect(enemy.routingMode).toBe("default");
   });
 
+  it("llm:routeGroup does not unlatch an enemy that is already attacking the base", () => {
+    const enemyId = firstEnemyId();
+    const enemy = engine.getEnemiesByIds([enemyId])[0]!;
+    enemy.attackingBase = true;
+    enemy.motionLock = "park";
+    const result = applyCommand(engine, {
+      commandId: 0,
+      type: "llm:routeGroup",
+      enemyIds: [enemyId],
+      hold: false,
+      waypoints: [],
+    });
+    expect(result).toBe(true);
+    expect(enemy.attackingBase).toBe(true);
+    expect(enemy.motionLock).toBe("park");
+  });
+
   it("llm:routeGroup with a waypoint sets routingMode to 'route' with a non-null path", () => {
     const enemyId = firstEnemyId();
     const enemy = engine.getEnemiesByIds([enemyId])[0]!;

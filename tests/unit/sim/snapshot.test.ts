@@ -36,8 +36,30 @@ function buildTowerOnValidTile(engine: GameEngine) {
 }
 
 describe("SnapshotSerializer (Phase 5)", () => {
+  it("omits physics debug lines unless debugPhysicsEnabled is set", () => {
+    const engine = makeEngine();
+    const snap = buildSnapshot(engine, 0);
+    expect(snap.debugPhysics).toBeNull();
+  });
+
+  it("ships wave-top towers ranked by previous-wave damage", () => {
+    const engine = makeEngine();
+    const first = buildTowerOnValidTile(engine);
+    first.waveDamage = 50;
+    const second = buildTowerOnValidTile(engine);
+    second.waveDamage = 20;
+    engine.simSeconds = 12;
+    engine.onWaveStart(2);
+    const snap = buildSnapshot(engine, 0);
+    expect(snap.meta.waveTopTowers).toEqual([
+      { towerId: first.id, rank: 1, damage: 50, simSeconds: 12 },
+      { towerId: second.id, rank: 2, damage: 20, simSeconds: 12 },
+    ]);
+  });
+
   it("ships navMeshCorridor and physics debug lines on the first snapshot", () => {
     const engine = makeEngine();
+    engine.debugPhysicsEnabled = true;
     const snap = buildSnapshot(engine, 0);
     expect(snap.navMeshCorridor).not.toBeNull();
     expect(snap.navMeshCorridor!.positions.length).toBeGreaterThan(0);

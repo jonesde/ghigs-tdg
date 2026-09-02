@@ -650,12 +650,10 @@ describe("GameEngine", () => {
       engine.runState.selectedTowerId = "1";
       engine.runState.selectedTowerType = "basic";
       engine.runState.hoverTile = { tileX: 0, tileY: 0 };
-      engine.runState.upgradeBtnClickAnim = 0.5;
 
       engine.runState.selectedTowerId = null;
       engine.runState.selectedTowerType = null;
       engine.runState.hoverTile = null;
-      engine.runState.upgradeBtnClickAnim = 0;
       engine.runState.endScreenData = {
         victory: true,
         wave: 100,
@@ -678,7 +676,6 @@ describe("GameEngine", () => {
       engine.runState.selectedTowerId = null;
       engine.runState.selectedTowerType = null;
       engine.runState.hoverTile = null;
-      engine.runState.upgradeBtnClickAnim = 0;
       engine.runState.endScreenData = {
         victory: false,
         wave: 50,
@@ -725,7 +722,6 @@ describe("GameEngine", () => {
       engine.runState.selectedTowerId = null;
       engine.runState.selectedTowerType = null;
       engine.runState.hoverTile = null;
-      engine.runState.upgradeBtnClickAnim = 0;
       engine.runState.endScreenData = {
         victory: true,
         wave: 1,

@@ -25,9 +25,11 @@ import type { Grid } from "@/sim/grid/Grid.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
+import { useUiStore } from "@/stores/ui.js";
 
 const gameStore = useGameStore();
 const themeStore = useMapThemeStore();
+const uiStore = useUiStore();
 
 const FONT_SIZE = 10;
 const FONT_FAMILY = "monospace";
@@ -123,7 +125,7 @@ function renderFrame(): void {
     pathRenderer.render(ctx, snapshot, scale.value);
     towerManager.render(ctx, snapshot.towers, themeStore, scale.value);
     enemyManager.render(ctx, snapshot.enemies, themeStore, scale.value);
-    overlayRenderer.render(ctx, snapshot, scale.value);
+    overlayRenderer.render(ctx, snapshot, scale.value, uiStore.debugPanelVisible);
   }
   renderFrameHandle = requestAnimationFrame(renderFrame);
 }

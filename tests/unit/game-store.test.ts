@@ -35,8 +35,8 @@ describe("GameStore", () => {
       expect(store.state).toBe(GameState.MENU);
     });
 
-    it("starts with lives = 20", () => {
-      expect(store.baseHealth).toBe(20);
+    it("starts with base health at STARTING_BASE_HEALTH", () => {
+      expect(store.baseHealth).toBe(STARTING_BASE_HEALTH);
     });
 
     it("starts with gold = 0", () => {
@@ -173,11 +173,11 @@ describe("GameStore", () => {
   describe("damageBase", () => {
     it("reduces lives by the given amount", () => {
       store.damageBase(3);
-      expect(store.baseHealth).toBe(17);
+      expect(store.baseHealth).toBe(STARTING_BASE_HEALTH - 3);
     });
 
     it("can reduce lives below zero", () => {
-      store.damageBase(25);
+      store.damageBase(STARTING_BASE_HEALTH + 5);
       expect(store.baseHealth).toBe(-5);
     });
   });
@@ -292,12 +292,10 @@ describe("GameStore", () => {
       store.selectedTower = {} as never;
       store.selectedTowerType = "basic";
       store.hoverTile = { tileX: 0, tileY: 0 };
-      store.triggerUpgradeClickAnim();
       store.initMap(0, { regionId: 0 } as unknown as GeneratedMap, null);
       expect(store.selectedTower).toBeNull();
       expect(store.selectedTowerType).toBeNull();
       expect(store.hoverTile).toBeNull();
-      expect(store.upgradeBtnClickAnim).toBe(0);
     });
 
     it("resets endScreenData", () => {
@@ -349,12 +347,10 @@ describe("GameStore", () => {
       store.selectedTower = {} as never;
       store.selectedTowerType = "basic";
       store.hoverTile = { tileX: 0, tileY: 0 };
-      store.triggerUpgradeClickAnim();
       store.triggerEnd(true, { wave: 0, gems: 0, gemBreakdown: {} as unknown as GemBreakdown });
       expect(store.selectedTower).toBeNull();
       expect(store.selectedTowerType).toBeNull();
       expect(store.hoverTile).toBeNull();
-      expect(store.upgradeBtnClickAnim).toBe(0);
     });
   });
 
@@ -379,12 +375,10 @@ describe("GameStore", () => {
       store.selectedTower = {} as unknown as Tower;
       store.selectedTowerType = "basic";
       store.hoverTile = { tileX: 0, tileY: 0 };
-      store.triggerUpgradeClickAnim();
       store.resetToMenu();
       expect(store.selectedTower).toBeNull();
       expect(store.selectedTowerType).toBeNull();
       expect(store.hoverTile).toBeNull();
-      expect(store.upgradeBtnClickAnim).toBe(0);
     });
 
     it("clears endScreenData and randomMapParams", () => {

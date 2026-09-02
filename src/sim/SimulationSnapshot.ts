@@ -66,6 +66,13 @@ export interface WaveGraphDot {
   waveStart: boolean;
 }
 
+export interface WaveTopTowerSnapshot {
+  towerId: string;
+  rank: number;
+  damage: number;
+  simSeconds: number;
+}
+
 export interface SnapshotMeta {
   // Scalar state from GameRunState. Subset that the renderer/UI need.
   state: GameRunState["state"];
@@ -78,14 +85,16 @@ export interface SnapshotMeta {
   timeScale: number;
   selectedTowerId: string | null;
   selectedTowerType: string | null;
-  hoverTile: { tileX: number; tileY: number } | null;
-  hoverUpgradeBtn: boolean;
-  upgradeBtnClickAnim: number;
   runGemsEarned: number;
   bossesKilledThisRun: number;
   bossesReachedBaseThisRun: number;
   // camera is excluded — main-thread-only UI state, read from gameStore.camera directly
   lastScaledDt: number; // renderer uses this for animation interpolation
+  simSeconds?: number;
+  waveTopTowers?: WaveTopTowerSnapshot[] | null;
+  totalGoldEarned?: number;
+  totalHealingReceived?: number;
+  waveComposition?: Record<string, number>;
   endScreenData: GameRunState["endScreenData"];
   // Commander data-feed scalars (Phase 1 enemy commander). Always populated by the
   // serializer; optional here so existing test literals that construct SnapshotMeta
@@ -134,16 +143,13 @@ export interface EnemySnapshot {
   maxShield: number;
   angle: number; // moveAngle
   level: number;
-  onPathBlocked: boolean;
   removed: boolean;
   slowFactor: number; // 1.0 = not slowed
   slowTimer: number;
   burnTimer: number;
-  hitFlash: number; // 0..1 visual hit-reaction intensity
   gameSeconds: number;
   hitAnimTime: number;
   attackAnimTime: number;
-  walkingFrameIndex: number;
   isBoss: boolean;
   statusEffects: StatusEffectSnapshot[];
   // Theme-derived visual config needed by the render proxy to compute frames.

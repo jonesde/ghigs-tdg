@@ -51,7 +51,6 @@ import { WaveGraphTracker } from "@/sim/WaveGraphTracker.js";
 import { WaveManager } from "@/sim/waves/WaveManager.js";
 import {
   BONUS_GEM_BASE,
-  BOUNTY_BLOCKED_RATIO,
   DIFFICULTY_MULT_GEM_BASE,
   GameState,
   MAP_GEM_MULTIPLIERS,
@@ -75,6 +74,7 @@ interface WaveManagerRef {
   countdownActive: boolean;
   countdownTimer: number;
   baseReached: boolean;
+  waveComposition: Record<string, number>;
   active: boolean;
   _waveGameTime: number;
   spawnStates: SpawnState[];
@@ -109,7 +109,9 @@ export class GameEngine {
   totalGoldEarned: number;
   totalHealingReceived: number;
   maxBaseHealth: number;
-  waveTopTowers: { tower: Tower; rank: number; dmg: number; startTime: number }[] | null;
+  simSeconds: number;
+  waveTopTowers: Array<{ towerId: string; rank: number; damage: number; simSeconds: number }> | null;
+  debugPhysicsEnabled: boolean;
   lastScaledDt: number = 0;
   // Path-version gate for snapshot serialization: the last grid.pathVersion we
   // included in a posted snapshot. Resets per run so each engine starts clean
@@ -167,7 +169,9 @@ export class GameEngine {
     this.totalGoldEarned = 0;
     this.totalHealingReceived = 0;
     this.maxBaseHealth = STARTING_BASE_HEALTH;
+    this.simSeconds = 0;
     this.waveTopTowers = null;
+    this.debugPhysicsEnabled = false;
     this.gameEnded = false;
   }
 
@@ -212,7 +216,6 @@ export class GameEngine {
       selectedTowerType: null,
       hoverTile: null,
       hoverUpgradeBtn: false,
-      upgradeBtnClickAnim: 0,
       runGemsEarned: 0,
       bossesKilledThisRun: 0,
       bossesReachedBaseThisRun: 0,
@@ -304,6 +307,9 @@ export class GameEngine {
     setWave(this.runState, this.waveManager.currentWave);
     this.totalGoldEarned = 0;
     this.totalHealingReceived = 0;
+    this.simSeconds = 0;
+    this.waveTopTowers = null;
+    this.debugPhysicsEnabled = false;
   }
 
   _applyStartingBonuses(): void {
@@ -354,6 +360,8 @@ export class GameEngine {
     if (!this.waveManager || !this.enemyManager || !this.towerManager) return;
     if (this.runState.state === GameState.VICTORY || this.runState.state === GameState.GAME_OVER) return;
 
+    this.simSeconds += dt;
+
     this.waveManager.update(
       dt,
       (wave) => this.onWaveCleared(wave),
@@ -382,13 +390,7 @@ export class GameEngine {
         if (enemy.type === "boss") {
           this.onBossKilled();
         }
-        if (enemy.onPathBlocked) {
-          const bounty = Math.ceil((enemy.bounty || 1) * BOUNTY_BLOCKED_RATIO);
-          this.waveGraphTracker?.onGoldBounty(bounty);
-          this.earnGold(bounty);
-        } else {
-          this.onEnemyKill(enemy);
-        }
+        this.onEnemyKill(enemy);
       }
     };
     const onEnemyBeginAttackBase = (enemy: Enemy): void => {
@@ -547,14 +549,15 @@ export class GameEngine {
         (entryA, entryB) => entryB.dmg - entryA.dmg || entryB.tower.totalDamageDealt - entryA.tower.totalDamageDealt,
       )
       .slice(0, 3);
-    if (sorted.length > 0) {
-      this.waveTopTowers = sorted.map((entry, i) => ({
-        tower: entry.tower,
-        rank: i + 1,
-        dmg: entry.dmg,
-        startTime: performance.now(),
-      }));
-    }
+    this.waveTopTowers =
+      sorted.length > 0
+        ? sorted.map((entry, i) => ({
+            towerId: entry.tower.id,
+            rank: i + 1,
+            damage: entry.dmg,
+            simSeconds: this.simSeconds,
+          }))
+        : null;
 
     this.towerManager!.towers.forEach((tower) => {
       tower.waveDamage = 0;
@@ -875,6 +878,9 @@ export class GameEngine {
         break;
       case "killAll":
         this.enemyManager?.clear();
+        break;
+      case "setDebugPhysics":
+        this.debugPhysicsEnabled = (amount ?? 0) > 0;
         break;
     }
   }

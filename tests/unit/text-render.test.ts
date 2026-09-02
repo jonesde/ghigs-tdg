@@ -111,6 +111,28 @@ describe("TextOverlayRenderer", () => {
     expect(mockCtx.fillText).toHaveBeenCalledWith("*", 5, 5);
   });
 
+  it("strokes Rapier debug segments when showPhysicsDebug is true", () => {
+    const ctx = makeCtx();
+    (mockCtx.moveTo as ReturnType<typeof vi.fn>).mockClear();
+    (mockCtx.lineTo as ReturnType<typeof vi.fn>).mockClear();
+    const manager = new TextOverlayRenderer();
+    const snapshot = {
+      enemies: [],
+      projectiles: [],
+      lightningEffects: [],
+      stunEffects: [],
+      debugPhysics: { vertices: [0, 0, 10, 20, 4, 4, 8, 8] },
+    } as never;
+    manager.render(ctx, snapshot, scale, true);
+    expect(mockCtx.moveTo).toHaveBeenCalledWith(0, 0);
+    expect(mockCtx.lineTo).toHaveBeenCalledWith(10, 20);
+    expect(mockCtx.moveTo).toHaveBeenCalledWith(4, 4);
+    expect(mockCtx.lineTo).toHaveBeenCalledWith(8, 8);
+    (mockCtx.moveTo as ReturnType<typeof vi.fn>).mockClear();
+    manager.render(ctx, snapshot, scale, false);
+    expect(mockCtx.moveTo).not.toHaveBeenCalled();
+  });
+
   it("draws HP bars for damaged towers but skips full-health towers", () => {
     const ctx = makeCtx();
     (mockCtx.moveTo as ReturnType<typeof vi.fn>).mockClear();

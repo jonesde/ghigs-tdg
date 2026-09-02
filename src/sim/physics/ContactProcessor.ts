@@ -100,23 +100,17 @@ export class ContactProcessor {
       if (enemy.removed) continue;
 
       const touchingBase = this.enemyBaseContact.has(enemy.id);
-      if (touchingBase) {
+      // attackingBase latches for the life of the enemy: first overlap parks them
+      // at the base and they keep attacking even if bounce/contact flicker drops
+      // the overlap set. Only death (removed) or game-over clear ends it.
+      if (touchingBase || enemy.attackingBase) {
         if (!enemy.attackingBase) {
           enemy.attackingBase = true;
-          enemy.motionLock = "park";
           enemy.lastMoveTargetWorld = null;
           enemy.lastMoveTargetMode = null;
           enemy.agent?.resetMoveTarget();
-        } else {
-          enemy.motionLock = "park";
         }
-      } else if (enemy.attackingBase) {
-        enemy.attackingBase = false;
-        if (enemy.stunTimer <= 0 && enemy.routingMode !== "hold" && enemy.routingMode !== "siege") {
-          enemy.motionLock = "none";
-        }
-        enemy.lastMoveTargetWorld = null;
-        enemy.lastMoveTargetMode = null;
+        enemy.motionLock = "park";
       }
 
       const tower = this.pickContactTower(enemy, this.enemyTowerContact.get(enemy.id));

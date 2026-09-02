@@ -32,7 +32,7 @@ describe("Rapier contact attack flags", () => {
     physicsWorld.dispose();
   });
 
-  it("clears attackingBase when the body leaves the base collider", () => {
+  it("latches attackingBase when the body leaves the base collider", () => {
     const enemy = new Enemy("runner", 1, 0, grid, 1, 0, null, null, makeBaseTarget());
     physicsWorld.addEnemy(enemy);
     const baseCenter = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
@@ -44,7 +44,8 @@ describe("Rapier contact attack flags", () => {
     const spawn = grid.tileToWorld(grid.spawns[0]!.x, grid.spawns[0]!.y);
     enemy.body!.setTranslation({ x: spawn.x, y: spawn.y }, true);
     physicsWorld.step();
-    expect(enemy.attackingBase).toBe(false);
+    expect(enemy.attackingBase).toBe(true);
+    expect(enemy.motionLock).toBe("park");
   });
 
   it("prefers the lowest-HP overlapping tower when two colliders contact the enemy", () => {

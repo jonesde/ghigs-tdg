@@ -6,7 +6,15 @@ import type { PersistState } from "./PersistState.js";
 // architecture that store is a per-frame mirror of the simulation snapshot, so
 // those writes were clobbered. Routing them through the command seam makes them
 // actually reach the engine.
-export type DebugKind = "addGold" | "addBaseHealth" | "addGems" | "setWave" | "skipWave" | "killAll" | "setTimeScale";
+export type DebugKind =
+  | "addGold"
+  | "addBaseHealth"
+  | "addGems"
+  | "setWave"
+  | "skipWave"
+  | "killAll"
+  | "setTimeScale"
+  | "setDebugPhysics";
 
 // Discriminated union. Every intent flowing into the simulation is one of
 // these. The worker drains a queue of these at the start of each tick.

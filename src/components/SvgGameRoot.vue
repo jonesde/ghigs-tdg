@@ -398,6 +398,7 @@ function renderLoop(): void {
     gameStore.grid,
   );
   uiOverlayManager.syncFromGameEngine(snapshot.enemies, selectedTower, snapshot.towers);
+  uiOverlayManager.syncWaveTopTowers(snapshot.towers, snapshot.meta.waveTopTowers, snapshot.meta.simSeconds ?? 0);
   if (gameStore.grid) {
     uiOverlayManager.syncPendingQueueOverlays(gameStore.grid, snapshot.spawnStates);
     uiOverlayManager.syncBaseHealthBar(gameStore.grid, snapshot.meta.baseHealth, snapshot.meta.maxBaseHealth);

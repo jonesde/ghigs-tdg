@@ -211,9 +211,9 @@ export class SnapshotStore {
     // when the worker has nulled it, null the preview; never overwrite a
     // non-null local value from the snapshot.
     if (meta.selectedTowerType === null) gs.selectedTowerType = null;
-    // hoverTile / upgradeBtnClickAnim are host-authoritative (updated directly on
-    // gameStore by Input.ts / SvgGameRoot.vue) — do NOT mirror them or they would
-    // clobber the main-thread values. camera is main-thread-only — NOT mirrored.
+    // hoverTile is host-authoritative (updated directly on gameStore by Input.ts /
+    // SvgGameRoot.vue) — do NOT mirror it or it would clobber the main-thread
+    // value. camera is main-thread-only — NOT mirrored.
     //
     // selectedTower IS mirrored: it is the projection of the worker-authorized
     // meta.selectedTowerId. TowerPanel keys its interval setup on the selected
