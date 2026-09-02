@@ -77,8 +77,7 @@ src/
 │   ├── WaveGraphTracker.ts      # Per-wave graph data tracking: damage, gold, gems, peak enemy HP
 │   ├── grid/
 │   │   ├── Grid.ts              # Grid data structure: path, base, spawn queries, build validation
-│   │   ├── Map.ts               # Procedural map generation: 36 maps, 3 regions, 6 layout styles
-│   │   └── Pathfinding.ts       # BFS pathfinding with dynamic obstacle avoidance
+│   │   └── Map.ts               # Procedural map generation: 36 maps, 3 regions, 6 layout styles
 │   ├── towers/
 │   │   ├── Tower.ts             # Tower stats, behavior, targeting, upgrades, variants, sell value
 │   │   ├── TowerManager.ts      # Tower placement, upgrade, sell, sell-value refund/discount
@@ -623,7 +622,7 @@ All component styles use `<style scoped>` to prevent leakage.
 | System | Test File(s) | Key Behaviors |
 |---|---|---|
 | Game Engine | `game-engine.test.ts` | Loop, buy/upgrade/sell, pause, timeScale, gem economy, difficulty scaling; WaveGraphTracker covered indirectly |
-| Grid & Pathfinding | `grid.test.ts`, `pathfinding.test.ts` | Tile queries, build validation, BFS paths, dynamic obstacle avoidance |
+| Grid & Navmesh | `grid.test.ts`, `tests/unit/sim/navmesh/*` | Tile queries, Recast corridor, DetourCrowd motion, tower obstacles |
 | Maps | `map.test.ts` | All 36 maps have valid spawn-to-base paths, region metadata, gem rewards |
 | Towers | `towers.test.ts` | Stats with caching, level/variant/addon/terrain/milestone bonuses, sell value |
 | Enemies | `enemies.test.ts` | HP/speed formulas, wave scaling, status effects (slow/stun/burn/shield/heal) |

@@ -50,4 +50,20 @@ describe("NavDistanceField", () => {
     expect(metrics[0]!.pathLengthWorld).toBeGreaterThan(0);
     builder.destroy();
   });
+
+  it("spawn reachability follows Recast findPath, not the tile BFS fallback", () => {
+    const grid = new Grid(makeBastionMap());
+    const spawn = grid.spawns[0]!;
+    const base = grid.getBase();
+    const midX = Math.floor((spawn.x + base.x) / 2);
+    const midY = spawn.y;
+    grid.registerTower(midX, midY);
+    const builder = new NavMeshBuilder(grid);
+    builder.addTowerObstacle(midX, midY);
+    const field = new NavDistanceField(grid, builder);
+    field.rebuild();
+    expect(field.isSpawnReachable(0)).toBe(false);
+    expect(field.getPathMetrics()[0]!.pathLengthWorld).toBe(0);
+    builder.destroy();
+  });
 });

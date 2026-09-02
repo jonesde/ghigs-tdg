@@ -27,12 +27,6 @@ export interface AttackTarget {
   readonly isGhost: boolean;
 }
 
-// Shared contact epsilon for the attack gate: an enemy damages a blocked tower or
-// the base once its centerline is within `radius + ATTACK_CONTACT_EPSILON` of the
-// objective square. Identical for towers and the base so the two attack paths cannot
-// drift apart.
-const ATTACK_CONTACT_EPSILON = 1e-6;
-
 interface SlowEntry {
   eff: number;
   remaining: number;
@@ -71,12 +65,6 @@ interface GridRef {
   isSpawn(x: number, y: number): boolean;
   isTerrain(x: number, y: number): boolean;
   inBounds(x: number, y: number): boolean;
-  getBaseEdgeSegments(): Array<{ x1: number; y1: number; x2: number; y2: number }>;
-  getTowerEdgeSegments(
-    tileX: number,
-    tileY: number,
-    radius: number,
-  ): Array<{ x1: number; y1: number; x2: number; y2: number }>;
   blocked: Set<string>;
   pathVersion: number;
 }
@@ -85,7 +73,6 @@ interface EnemyManagerRef {
   enemies: Enemy[];
   getEnemiesInRange(x: number, y: number, range: number): Enemy[];
   forEachEnemyInRange(x: number, y: number, range: number, cb: (enemy: Enemy) => void): void;
-  towerAt(x: number, y: number): Tower | null;
 }
 
 export class Enemy {
@@ -384,7 +371,6 @@ export class Enemy {
     }
     this.routingMode = "siege";
     this.siegeTower = tower;
-    this.blockedByTower = tower;
     this.arrived = false;
     this.attackingBase = false;
     this.motionLock = "none";
@@ -560,6 +546,7 @@ export class Enemy {
 
   // Reads stepped body, sparse agent resync, contact-driven attacks, bounds.
   postPhysics(dt: number, enemyManager: EnemyManagerRef | null): void {
+    void enemyManager;
     if (this.removed) return;
     const pos = this.body!.translation();
     this.centerX = pos.x;
@@ -588,23 +575,7 @@ export class Enemy {
       }
     }
 
-    // Geometric fallback for base contact (contacts also set attackingBase).
-    if (!this.attackingBase) {
-      const baseCenter = this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y);
-      const distanceToBase = distanceToBaseSquare(
-        this.centerX,
-        this.centerY,
-        baseCenter.x,
-        baseCenter.y,
-        1.5 * this.grid.tileSize,
-      );
-      if (distanceToBase <= this.radius + ATTACK_CONTACT_EPSILON) {
-        this.attackingBase = true;
-        this.motionLock = "park";
-        this.agent?.resetMoveTarget();
-      }
-    }
-
+    // Attack ticks run only while Rapier contact flags are live (ContactProcessor).
     if (this.attackingBase && this.baseTarget && this.stunTimer <= 0) {
       this.attackTimer -= dt;
       if (this.attackTimer <= 0) {
@@ -614,41 +585,15 @@ export class Enemy {
       }
     }
 
-    // Tower siege / choke attack: contact or geometric adjacency.
-    if (!this.attackingBase && enemyManager) {
-      if (this.routingMode === "siege" && this.siegeTower && !this.siegeTower.isGhost) {
-        this.blockedByTower = this.siegeTower;
-      } else if (this.blockedByTower === null || this.blockedByTower.isGhost) {
-        const candidate = this.findAdjacentLiveTowerInContact(enemyManager);
-        if (candidate && !candidate.isGhost) this.blockedByTower = candidate;
+    if (!this.attackingBase && this.blockedByTower && !this.blockedByTower.isGhost && this.stunTimer <= 0) {
+      this.attackTimer -= dt;
+      if (this.attackTimer <= 0) {
+        this.blockedByTower.takeDamage(this.attackDamage, this);
+        this.attackAnimTime = this._gameSeconds;
+        this.attackTimer = 1 / (this.attackSpeed * this.slowFactor);
       }
-      if (this.blockedByTower) {
-        const towerKey = `${this.blockedByTower.tileX},${this.blockedByTower.tileY}`;
-        const towerGone = this.blockedByTower.isGhost || !this.grid.blocked.has(towerKey);
-        if (towerGone) {
-          this.blockedByTower = null;
-          if (this.routingMode === "siege") this.releaseToDefault();
-        }
-      }
-      if (this.blockedByTower && !this.blockedByTower.isGhost && this.stunTimer <= 0) {
-        const towerCenter = this.grid.tileToWorld(this.blockedByTower.tileX, this.blockedByTower.tileY);
-        const towerContact = distanceToBaseSquare(
-          this.centerX,
-          this.centerY,
-          towerCenter.x,
-          towerCenter.y,
-          this.grid.tileSize / 2,
-        );
-        if (towerContact <= this.radius + ATTACK_CONTACT_EPSILON) {
-          if (this.routingMode === "siege") this.motionLock = "park";
-          this.attackTimer -= dt;
-          if (this.attackTimer <= 0) {
-            this.blockedByTower.takeDamage(this.attackDamage, this);
-            this.attackAnimTime = this._gameSeconds;
-            this.attackTimer = 1 / (this.attackSpeed * this.slowFactor);
-          }
-        }
-      }
+    } else if (this.routingMode === "siege" && (!this.siegeTower || this.siegeTower.isGhost)) {
+      this.releaseToDefault();
     }
 
     const worldWidth = this.grid.width * this.grid.tileSize;
@@ -671,48 +616,4 @@ export class Enemy {
       this.moveAngle = Math.atan2(linvel.y, linvel.x);
     }
   }
-
-  private findAdjacentLiveTowerInContact(enemyManager: EnemyManagerRef | null): Tower | null {
-    if (!enemyManager) return null;
-    const currentTile = this.currentTile();
-    const candidateTiles = [
-      { x: currentTile.x + 1, y: currentTile.y },
-      { x: currentTile.x - 1, y: currentTile.y },
-      { x: currentTile.x, y: currentTile.y + 1 },
-      { x: currentTile.x, y: currentTile.y - 1 },
-      { x: currentTile.x, y: currentTile.y },
-    ];
-    let lowestTower: Tower | null = null;
-    for (const tile of candidateTiles) {
-      const tower = enemyManager.towerAt(tile.x, tile.y);
-      if (!tower || tower.isGhost) continue;
-      const towerCenter = this.grid.tileToWorld(tile.x, tile.y);
-      const squareContact = distanceToBaseSquare(
-        this.centerX,
-        this.centerY,
-        towerCenter.x,
-        towerCenter.y,
-        this.grid.tileSize / 2,
-      );
-      if (squareContact > this.radius + ATTACK_CONTACT_EPSILON) continue;
-      if (!lowestTower || tower.health < lowestTower.health) lowestTower = tower;
-    }
-    return lowestTower;
-  }
-}
-
-// Distance from (pointX, pointY) to the nearest point on the 3x3 base square
-// (centered at baseCenter, half-extent `half`). Zero when inside the square.
-function distanceToBaseSquare(
-  pointX: number,
-  pointY: number,
-  baseCenterX: number,
-  baseCenterY: number,
-  half: number,
-): number {
-  const deltaX = pointX - baseCenterX;
-  const deltaY = pointY - baseCenterY;
-  const closestX = baseCenterX + Math.max(-half, Math.min(half, deltaX));
-  const closestY = baseCenterY + Math.max(-half, Math.min(half, deltaY));
-  return Math.hypot(pointX - closestX, pointY - closestY);
 }

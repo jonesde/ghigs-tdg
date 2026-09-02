@@ -50,6 +50,7 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
         spawnReachable: fieldSnapshot.spawnReachable,
         pathMetrics: fieldSnapshot.pathMetrics,
       };
+      if (fieldSnapshot.spawnPaths) navField.spawnPaths = fieldSnapshot.spawnPaths;
     }
   }
 

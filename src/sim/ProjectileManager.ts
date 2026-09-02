@@ -499,10 +499,13 @@ export class ProjectileManager {
         this.projectiles.splice(i, 1);
         continue;
       }
-      // castShape path also advances position when no body (tests) and catches
-      // hits contacts missed. Body positions were already synced above.
-      if (!hitByContact.has(projectile.id) || projectile.active) {
-        this.updateCircleProjectile(projectile, dt, this.bodyIds.has(projectile.id));
+      const hasBody = this.bodyIds.has(projectile.id);
+      const pierceRemaining = projectile.maxHitCount > 1 && projectile.hitCount < projectile.maxHitCount;
+      // Traveling bodies that already resolved a hit this step skip the swept
+      // cast unless they still have pierce remaining (same-tick multi-hit).
+      const contactOwnedThisTick = hasBody && hitByContact.has(projectile.id) && !pierceRemaining;
+      if (!contactOwnedThisTick) {
+        this.updateCircleProjectile(projectile, dt, hasBody);
       }
       if (!projectile.active) {
         this.destroyProjectileBody(projectile.id);

@@ -4,9 +4,10 @@ import { FIXED_DT } from "@/sim/Constants.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import { corridorWallInsetWorld } from "@/sim/navmesh/navmeshConfig.js";
+import type { Tower } from "@/sim/towers/Tower.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
 import type { ColliderTag } from "./ColliderUserData.js";
-import type { ContactProcessor } from "./ContactProcessor.js";
+import { ContactProcessor } from "./ContactProcessor.js";
 import { getRapier } from "./rapierContext.js";
 
 // Collision groups: membership << 16 | filter.
@@ -40,8 +41,9 @@ export class PhysicsWorld {
   private towerBodies: RAPIER.RigidBody[] = [];
   private corridorBodies: RAPIER.RigidBody[] = [];
   private enemyByHandle: Map<number, Enemy> = new Map();
+  private towerById: Map<string, Tower> = new Map();
   private projectileBodies: Map<number, RAPIER.RigidBody> = new Map();
-  private contactProcessor: ContactProcessor | null = null;
+  private contactProcessor: ContactProcessor;
   // When false, DetourCrowd owns enemy-enemy avoidance (GameEngine sets this).
   enemyEnemyCollisions = true;
 
@@ -50,13 +52,36 @@ export class PhysicsWorld {
     this.grid = grid;
     this.world = new RAPIER.World({ x: 0, y: 0 });
     this.world.timestep = FIXED_DT;
+    // Pixel-space world: typical enemy diameter is a fraction of a tile. Rapier
+    // scales solver slop / CCD / sleep thresholds by lengthUnit.
+    this.world.lengthUnit = grid.tileSize * 0.25;
     this.eventQueue = new EventQueue(true);
+    this.contactProcessor = new ContactProcessor({
+      getEnemyById: (enemyId) => this.findEnemyById(enemyId),
+      getTowerById: (towerId) => this.towerById.get(towerId) ?? null,
+    });
     this.buildBase();
     this.rebuildCorridor();
   }
 
   setContactProcessor(contactProcessor: ContactProcessor | null): void {
-    this.contactProcessor = contactProcessor;
+    this.contactProcessor =
+      contactProcessor ??
+      new ContactProcessor({
+        getEnemyById: (enemyId) => this.findEnemyById(enemyId),
+        getTowerById: (towerId) => this.towerById.get(towerId) ?? null,
+      });
+  }
+
+  getContactProcessor(): ContactProcessor {
+    return this.contactProcessor;
+  }
+
+  private findEnemyById(enemyId: number): Enemy | null {
+    for (const enemy of this.enemyByHandle.values()) {
+      if (enemy.id === enemyId && !enemy.removed) return enemy;
+    }
+    return null;
   }
 
   private isWalkable(x: number, y: number): boolean {
@@ -79,8 +104,10 @@ export class PhysicsWorld {
   rebuildTowers(towerManager: TowerManager): void {
     const RAPIER = getRapier();
     this.dropBodies(this.towerBodies);
+    this.towerById.clear();
     for (const tower of towerManager.towers) {
       if (tower.isGhost) continue;
+      this.towerById.set(tower.id, tower);
       const centerX = tower.x ?? this.grid.tileToWorld(tower.tileX, tower.tileY).x;
       const centerY = tower.y ?? this.grid.tileToWorld(tower.tileX, tower.tileY).y;
       const half = this.grid.tileSize / 2;
@@ -468,15 +495,14 @@ export class PhysicsWorld {
 
   step(): void {
     this.world.step(this.eventQueue);
-    if (this.contactProcessor) {
-      this.eventQueue.drainCollisionEvents((handle1, handle2, started) => {
-        const collider1 = this.world.getCollider(handle1);
-        const collider2 = this.world.getCollider(handle2);
-        const body1 = collider1?.parent() ?? null;
-        const body2 = collider2?.parent() ?? null;
-        this.contactProcessor!.handleCollision(body1, body2, started);
-      });
-    }
+    this.eventQueue.drainCollisionEvents((handle1, handle2, started) => {
+      const collider1 = this.world.getCollider(handle1);
+      const collider2 = this.world.getCollider(handle2);
+      const body1 = collider1?.parent() ?? null;
+      const body2 = collider2?.parent() ?? null;
+      this.contactProcessor.handleCollision(body1, body2, started);
+    });
+    this.contactProcessor.applyContactFlags(Array.from(this.enemyByHandle.values()));
   }
 
   private dropBodies(bodies: RAPIER.RigidBody[]): void {
@@ -499,7 +525,8 @@ export class PhysicsWorld {
     this.corridorBodies = [];
     this.projectileBodies.clear();
     this.enemyByHandle.clear();
-    this.contactProcessor = null;
+    this.towerById.clear();
+    this.contactProcessor.clear();
     if (this.eventQueue) {
       this.eventQueue.free();
       this.eventQueue = null as unknown as EventQueue;

@@ -371,7 +371,6 @@ export class GameEngine {
 
     if (this.grid!.pathVersion !== this.lastPathVersion) {
       this.physicsWorld!.rebuildTowers(this.towerManager!);
-      this.physicsWorld!.rebuildCorridor();
       this.navMeshBuilder?.syncTowers(this.towerManager!.towers);
       this.navDistanceField?.ensureUpToDate(true);
       this.lastPathVersion = this.grid!.pathVersion;
@@ -403,11 +402,13 @@ export class GameEngine {
     // Homing projectiles set kinematic velocities before the physics step.
     this.projectileManager?.prePhysics(dt);
     this.physicsWorld!.step();
-    // Contact drain → base/tower attack flags + projectile hit queue.
-    const projectileHits = this.contactProcessor?.applyToEnemies(this.enemyManager.enemies) ?? [];
+    // PhysicsWorld.step already projected contact flags onto enemies; drain the
+    // projectile hit queue for postPhysics resolution.
+    const projectileHits = this.contactProcessor?.drainProjectileHits() ?? [];
     this.enemyManager.postStep(dt, onEnemyKill, onEnemyBeginAttackBase);
     // Projectiles read body positions and resolve hits (contacts + cast fallback).
     this.projectileManager?.postPhysics(dt, projectileHits);
+    this.clampBallisticEnemiesToNavMesh();
 
     this.towerManager.update(dt, this.enemyManager);
 
@@ -440,6 +441,26 @@ export class GameEngine {
       !this.enemyManager.hasPendingEnemies()
     ) {
       this.endGame(true);
+    }
+  }
+
+  // Knockback impulses can shove a body off the navmesh; snap back to the nearest
+  // walkable point so Detour and Rapier stay aligned after the ballistic window.
+  private clampBallisticEnemiesToNavMesh(): void {
+    const builder = this.navMeshBuilder;
+    if (!builder || !this.enemyManager) return;
+    for (const enemy of this.enemyManager.enemies) {
+      if (enemy.removed || enemy.ballisticTimer <= 0) continue;
+      const nearest = builder.nearestWalkableWorld({ x: enemy.x, y: enemy.y });
+      if (!nearest) continue;
+      const drift = Math.hypot(nearest.x - enemy.x, nearest.y - enemy.y);
+      if (drift < enemy.radius * 0.25) continue;
+      enemy.body?.setTranslation({ x: nearest.x, y: nearest.y }, true);
+      enemy.x = nearest.x;
+      enemy.y = nearest.y;
+      enemy.centerX = nearest.x;
+      enemy.centerY = nearest.y;
+      this.crowdManager?.teleportAgent(enemy, nearest);
     }
   }
 

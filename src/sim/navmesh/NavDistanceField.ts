@@ -74,16 +74,11 @@ export class NavDistanceField {
         reachable = tileDistance >= 0;
         pathLengthWorld = reachable ? tileDistance * this.grid.tileSize : 0;
       }
-      // Fallback: tile field says reachable even if nav findPath failed (tuning edge).
-      if (!reachable) {
-        const tileDistance = this.distanceToBase[spawn.y]?.[spawn.x] ?? -1;
-        if (tileDistance >= 0) {
-          reachable = true;
-          pathLengthWorld = tileDistance * this.grid.tileSize;
-        }
-      }
       this.spawnReachable.push(reachable);
-      this.pathMetrics.push({ spawnIndex, pathLengthWorld, reachable });
+      const chokeTile = findChokeTile(tilePath, this.grid);
+      const metric: PathMetric = { spawnIndex, pathLengthWorld, reachable };
+      if (chokeTile) metric.chokeTile = chokeTile;
+      this.pathMetrics.push(metric);
       this.spawnPaths.push(tilePath);
     }
   }
@@ -170,4 +165,21 @@ function polylineLength(points: WorldPoint[]): number {
     length += Math.hypot(current.x - previous.x, current.y - previous.y);
   }
   return length;
+}
+
+function findChokeTile(tilePath: Array<{ x: number; y: number }>, grid: Grid): { x: number; y: number } | undefined {
+  const neighborOffsets = [
+    { x: 0, y: -1 },
+    { x: 0, y: 1 },
+    { x: -1, y: 0 },
+    { x: 1, y: 0 },
+  ];
+  for (const tile of tilePath) {
+    for (const offset of neighborOffsets) {
+      const neighborX = tile.x + offset.x;
+      const neighborY = tile.y + offset.y;
+      if (grid.blocked.has(`${neighborX},${neighborY}`)) return tile;
+    }
+  }
+  return undefined;
 }

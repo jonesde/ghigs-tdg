@@ -116,6 +116,7 @@ export interface NavFieldSnapshotData {
     reachable: boolean;
     chokeTile?: { x: number; y: number };
   }>;
+  spawnPaths?: Array<Array<{ x: number; y: number }>>;
 }
 
 export interface EnemySnapshot {

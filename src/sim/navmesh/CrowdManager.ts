@@ -92,7 +92,9 @@ export class CrowdManager {
       if (!enemy.agent || !enemy.body) continue;
       const profile = getCrowdAgentProfile(enemy.type);
       const maxSpeed = enemy.speed * enemy.slowFactor * this.tileSize;
-      enemy.agent.updateParameters({ maxSpeed, maxAcceleration: maxSpeed * profile.maxAccelFactor });
+      if (Math.abs(enemy.agent.maxSpeed - maxSpeed) > 1e-6) {
+        enemy.agent.updateParameters({ maxSpeed, maxAcceleration: maxSpeed * profile.maxAccelFactor });
+      }
 
       // Tick ballistic window.
       if (enemy.ballisticTimer > 0) {
