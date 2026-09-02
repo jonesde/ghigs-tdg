@@ -3,7 +3,7 @@ import { FIXED_DT } from "@/sim/Constants.js";
 import type { AttackTarget } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
-import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
+import { CrowdManager, restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdManager.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { NoopParticleSpawner } from "@/sim/ParticleSystem.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
@@ -147,14 +147,14 @@ describe("CrowdManager motion", () => {
     const startDistA = distanceToBase(enemyA!, baseWorld);
     const startDistB = distanceToBase(enemyB!, baseWorld);
 
-    // Drive the crowd + physics loop (mirrors GameEngine.update under RECAST_NAV).
+    // Drive the crowd + physics loop (mirrors GameEngine.update).
     // postPhysics reads the stepped body back and re-syncs the crowd agent to
     // it so the two stay aligned, exactly as the engine does on the ON path.
     for (let step = 0; step < 200; step++) {
       crowdManager.update(FIXED_DT, enemyManager.enemies);
       physicsWorld.step();
       for (const enemy of enemyManager.enemies) {
-        enemy.postPhysics(FIXED_DT, enemyManager);
+        enemy.postPhysics(FIXED_DT);
       }
     }
 
@@ -267,5 +267,20 @@ describe("CrowdManager motion", () => {
     // (d) Once the runner pulls alongside to pass, the crowd keeps a real gap
     //     (the runner ends well clear of the tank, not stacked on it).
     expect(minCenterDistance).toBeGreaterThan(tank.radius);
+  });
+
+  it("restoreCrowdAgentVelocity writes the pre-teleport velocity back onto the agent", () => {
+    setupScenario(makeBastionMap);
+    const enemy = enemyManager.spawn("runner", 1, 0, 1)!;
+    crowdManager.addAgent(enemy);
+    crowdManager.setBaseTarget(enemy, grid.tileToWorld(grid.getBase().x, grid.getBase().y));
+    crowdManager.update(FIXED_DT, [enemy]);
+    const before = enemy.agent!.velocity();
+    expect(Math.hypot(before.x, before.z)).toBeGreaterThan(0);
+    enemy.agent!.teleport(enemy.agent!.position());
+    restoreCrowdAgentVelocity(enemy.agent!, before);
+    const after = enemy.agent!.velocity();
+    expect(after.x).toBeCloseTo(before.x, 5);
+    expect(after.z).toBeCloseTo(before.z, 5);
   });
 });

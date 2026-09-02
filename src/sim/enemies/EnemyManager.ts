@@ -25,8 +25,6 @@ export class EnemyManager {
   towerManager: TowerManager | null = null;
   baseTarget: AttackTarget | null = null;
   physicsWorld: PhysicsWorld | null = null;
-  // DetourCrowd wrapper (RECAST_NAV). Null when the flag is off, so spawn/remove
-  // stay byte-identical on the OFF path.
   crowdManager: CrowdManager | null = null;
   private idToEnemy: Map<number, Enemy>;
   private pendingQueues: Map<number, PendingEnemyEntry[]>;
@@ -60,8 +58,7 @@ export class EnemyManager {
     this.physicsWorld = physicsWorld;
   }
 
-  // Wires the DetourCrowd wrapper (RECAST_NAV only). Enemies spawned after this
-  // point get a crowd agent; null clears the link (OFF path).
+  // Wires the DetourCrowd wrapper. Enemies spawned after this get a crowd agent.
   setCrowdManager(crowdManager: CrowdManager | null): void {
     this.crowdManager = crowdManager;
   }
@@ -153,45 +150,8 @@ export class EnemyManager {
     return count;
   }
 
-  update(
-    dt: number,
-    onEnemyKill: ((enemy: Enemy) => void) | null,
-    onEnemyBeginAttackBase?: ((enemy: Enemy) => void) | null,
-  ): void {
-    // Guards against the kill callback firing more than once for a single enemy
-    // (e.g. if an enemy is already terminal at loop entry and the loop is later
-    // refactored to not `continue`). The callback must run at most once per enemy.
-    const handledEnemyIds = new Set<number>();
-    for (let i = this.enemies.length - 1; i >= 0; i--) {
-      const enemy = this.enemies[i];
-      if (!enemy) continue;
-      if (enemy.removed) {
-        if (onEnemyKill && !handledEnemyIds.has(enemy.id)) {
-          onEnemyKill(enemy);
-          handledEnemyIds.add(enemy.id);
-        }
-        this.removeDeadEnemy(i);
-        continue;
-      }
-      const wasAttackingBase = enemy.attackingBase;
-      enemy.update(dt, this);
-      if (enemy.removed) {
-        if (onEnemyKill && !handledEnemyIds.has(enemy.id)) {
-          onEnemyKill(enemy);
-          handledEnemyIds.add(enemy.id);
-        }
-        this.removeDeadEnemy(i);
-        continue;
-      }
-      if (!wasAttackingBase && enemy.attackingBase) {
-        onEnemyBeginAttackBase?.(enemy);
-      }
-    }
-  }
-
-  // Pre-step intent pass (RECAST_NAV): runs computeIntent per enemy, capturing
-  // preStepAttackingBase so postStep can detect the attackingBase transition.
-  // Iterates the same reverse order as `update`.
+  // Pre-step intent pass: computeIntent per enemy, capturing preStepAttackingBase
+  // so postStep can detect the attackingBase transition.
   preStep(dt: number): void {
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
@@ -201,9 +161,8 @@ export class EnemyManager {
     }
   }
 
-  // Post-step pass (RECAST_NAV): reads back the crowd-driven body position via
-  // postPhysics, handles removal (kill callback + cull), and the attackingBase
-  // transition. Iterates the same reverse order as `update`.
+  // Post-step pass: reads back the crowd-driven body position via postPhysics,
+  // handles removal (kill callback + cull), and the attackingBase transition.
   postStep(
     dt: number,
     onEnemyKill: ((enemy: Enemy) => void) | null,
@@ -222,7 +181,7 @@ export class EnemyManager {
         continue;
       }
       const wasAttackingBase = enemy.preStepAttackingBase;
-      enemy.postPhysics(dt, this);
+      enemy.postPhysics(dt);
       if (enemy.removed) {
         if (onEnemyKill && !handledEnemyIds.has(enemy.id)) {
           onEnemyKill(enemy);

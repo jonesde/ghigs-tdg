@@ -76,27 +76,29 @@ describe("EnemyManager", () => {
     });
   });
 
-  describe("update", () => {
+  describe("postStep", () => {
     it("calls onEnemyKill when an enemy is removed", () => {
       const enemy = manager.spawn("minion", 1, 0, 1);
       enemy.hp = 1;
       const killed: unknown[] = [];
-      manager.update(0.016, (enemy) => killed.push(enemy));
+      manager.postStep(0.016, (enemy) => killed.push(enemy));
       expect(killed).toHaveLength(0);
     });
 
     it("culled dead enemies from the list", () => {
       const enemy = manager.spawn("minion", 1, 0, 1);
       enemy.removed = true;
-      manager.update(0.016, () => {});
+      manager.postStep(0.016, () => {});
       expect(manager.enemies).toHaveLength(0);
     });
 
-    it("removes enemies that die during update from spatial hash", () => {
+    it("removes enemies that die during preStep burn from the list", () => {
       const enemy = manager.spawn("runner", 1, 0, 1);
       enemy.hp = 10;
       enemy.applyBurn(1000, 1.0);
-      manager.update(0.016, () => {});
+      manager.preStep(0.016);
+      physicsWorld.step();
+      manager.postStep(0.016, () => {});
       expect(manager.enemies).toHaveLength(0);
       const inRange = manager.getEnemiesInRange(enemy.x, enemy.y, 10);
       expect(inRange).not.toContain(enemy);
@@ -106,7 +108,7 @@ describe("EnemyManager", () => {
       const enemy = manager.spawn("minion", 1, 0, 1);
       enemy.removed = true;
       const countBefore = particles.spawns.length;
-      manager.update(0.016, () => {});
+      manager.postStep(0.016, () => {});
       expect(particles.spawns.length).toBeGreaterThan(countBefore);
     });
 
@@ -171,7 +173,7 @@ describe("EnemyManager", () => {
     it("removes enemy from spatial hash on cull", () => {
       const enemy = manager.spawn("minion", 1, 0, 1);
       enemy.removed = true;
-      manager.update(0.016, () => {});
+      manager.postStep(0.016, () => {});
       const inRange = manager.getEnemiesInRange(enemy.x, enemy.y, 10);
       expect(inRange).not.toContain(enemy);
     });
@@ -181,7 +183,7 @@ describe("EnemyManager", () => {
       const e2 = manager.spawn("runner", 1, 0, 1);
       stepPhysics(manager, physicsWorld, 1 / 60);
       e1.removed = true;
-      manager.update(0.016, () => {});
+      manager.postStep(0.016, () => {});
       expect(manager.enemies).toHaveLength(1);
       expect(manager.enemies[0]).toBe(e2);
       const inRange = manager.getEnemiesInRange(e2.x, e2.y, 10);

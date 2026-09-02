@@ -5,12 +5,11 @@ const PATH_COLOR = "rgba(255,255,255,0.4)";
 const PATH_LINE_WIDTH = 1.5;
 
 // Draws the worker-authoritative walkable navmesh corridor as a faint line on
-// the minimap canvas overlay when RECAST_NAV is on. The worker ships
-// `snapshot.navMeshCorridor` (a walkable triangle mesh in game (x,y) vertex
-// pairs + indices); we stroke each triangle's edges as the faint overlay so
-// the walkable area is shown. The corridor is `null` on ticks where the route
-// has not changed (the worker omits it), so we cache the last non-null copy
-// and keep drawing it across omitted frames.
+// the minimap canvas overlay. The worker ships `snapshot.navMeshCorridor` (a
+// walkable triangle mesh in game (x,y) vertex pairs + indices); we stroke each
+// triangle's edges as the faint overlay so the walkable area is shown. The
+// corridor is `null` on ticks where the route has not changed (the worker omits
+// it), so we cache the last non-null copy and keep drawing it across omitted frames.
 export class TextPathRenderer {
   private lastCorridor: { positions: number[]; indices: number[] } | null = null;
 

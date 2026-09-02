@@ -267,36 +267,49 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
       // Cached async init of the recast-navigation WASM module (plans/recast.md
       // Phase 0). Required before any getRecast() / NavMeshBuilder / CrowdManager.
       await initNavMesh();
-      // Construct the engine with plain state and the worker host bindings.
-      // The engine no longer takes Pinia stores — Phase 1 made runState/persistState
-      // authoritative. We pass them in directly.
-      engine = new GameEngine(
-        msg.persistState,
-        msg.themeBundle,
-        host,
-        msg.mapIndex,
-        msg.randomMapParams,
-        new WorkerParticleSpawner(),
-      );
-      // Reset persist-flush tracking for the new run.
-      lastFlushWave = 0;
-      lastFlushMilestoneKeys = 0;
-      lastFlushBossesKilled = 0;
-      lastFlushTime = performance.now();
-      // For random maps, loadMap uses mapIndex -1; branch to loadRandomMap so
-      // getMap(-1) is never hit. Normal maps use loadMap(mapIndex).
-      if (msg.mapIndex === -1 && msg.randomMapParams) {
-        const params = msg.randomMapParams as {
-          width: number;
-          height: number;
-          level: number;
-          style: string;
-          regionId: number;
-          seed: number;
-        };
-        engine.loadRandomMap(params.width, params.height, params.level, params.style, params.regionId, params.seed);
-      } else {
-        engine.loadMap(msg.mapIndex);
+      try {
+        // Construct the engine with plain state and the worker host bindings.
+        // The engine no longer takes Pinia stores — Phase 1 made runState/persistState
+        // authoritative. We pass them in directly.
+        engine = new GameEngine(
+          msg.persistState,
+          msg.themeBundle,
+          host,
+          msg.mapIndex,
+          msg.randomMapParams,
+          new WorkerParticleSpawner(),
+        );
+        // Reset persist-flush tracking for the new run.
+        lastFlushWave = 0;
+        lastFlushMilestoneKeys = 0;
+        lastFlushBossesKilled = 0;
+        lastFlushTime = performance.now();
+        // For random maps, loadMap uses mapIndex -1; branch to loadRandomMap so
+        // getMap(-1) is never hit. Normal maps use loadMap(mapIndex).
+        if (msg.mapIndex === -1 && msg.randomMapParams) {
+          const params = msg.randomMapParams as {
+            width: number;
+            height: number;
+            level: number;
+            style: string;
+            regionId: number;
+            seed: number;
+          };
+          engine.loadRandomMap(params.width, params.height, params.level, params.style, params.regionId, params.seed);
+        } else {
+          engine.loadMap(msg.mapIndex);
+        }
+      } catch (err) {
+        engine?.dispose();
+        engine = null;
+        const errorMessage = `lifecycle:init failed: ${(err as Error).message}`;
+        const errorStack = (err as Error).stack;
+        postMessage(
+          errorStack
+            ? { type: "workerError", message: errorMessage, stack: errorStack }
+            : { type: "workerError", message: errorMessage },
+        );
+        break;
       }
       postMessage({ type: "workerReady" });
       startLoop();

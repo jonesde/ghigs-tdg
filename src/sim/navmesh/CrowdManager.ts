@@ -1,4 +1,4 @@
-import { Crowd, type NavMesh } from "recast-navigation";
+import { Crowd, type CrowdAgent, type NavMesh, type Vector3 } from "recast-navigation";
 import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { ForceFieldSystem } from "@/sim/physics/ForceFieldSystem.js";
@@ -152,6 +152,15 @@ export class CrowdManager {
   destroy(): void {
     this.crowd.destroy();
   }
+}
+
+// Detour's JS wrapper has no setVelocity; after teleport the agent vel is zeroed.
+// This writes the raw dtCrowdAgent vel so steering resumes in the same direction.
+// Cross-module: callers in Enemy.postPhysics after a Rapier wall shove.
+export function restoreCrowdAgentVelocity(agent: CrowdAgent, velocity: Vector3): void {
+  agent.raw.set_vel(0, velocity.x);
+  agent.raw.set_vel(1, velocity.y);
+  agent.raw.set_vel(2, velocity.z);
 }
 
 // Silence unused import when ENEMY_TYPES only used for documentation alignment.

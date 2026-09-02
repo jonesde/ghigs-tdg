@@ -53,7 +53,7 @@ describe("Enemy", () => {
       enemy.computeIntent(dt, null);
       crowd.update(dt, [enemy]);
       physicsWorld.step();
-      enemy.postPhysics(dt, null);
+      enemy.postPhysics(dt);
     };
   });
 

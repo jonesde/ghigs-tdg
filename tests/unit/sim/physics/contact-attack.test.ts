@@ -130,7 +130,7 @@ describe("Rapier contact attack flags", () => {
     physicsWorld.rebuildTowers({ towers: [tower] } as unknown as TowerManager);
     enemy.body!.setTranslation({ x: towerCenter.x, y: towerCenter.y }, true);
     physicsWorld.step();
-    enemy.postPhysics(FIXED_DT, null);
+    enemy.postPhysics(FIXED_DT);
     expect(damage.value).toBeGreaterThan(0);
   });
 });

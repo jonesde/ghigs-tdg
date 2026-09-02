@@ -48,7 +48,7 @@ describe("Enemy ON branches (body set) driven manually", () => {
       enemy.computeIntent(FIXED_DT, null);
       crowdManager.update(FIXED_DT, [enemy]);
       physicsWorld.step();
-      enemy.postPhysics(FIXED_DT, null);
+      enemy.postPhysics(FIXED_DT);
     }
   }
 
@@ -71,7 +71,7 @@ describe("Enemy ON branches (body set) driven manually", () => {
       enemy.computeIntent(FIXED_DT, null);
       crowdManager.update(FIXED_DT, [enemy]);
       physicsWorld.step();
-      enemy.postPhysics(FIXED_DT, null);
+      enemy.postPhysics(FIXED_DT);
       reached = enemy.attackingBase;
     }
     expect(reached).toBe(true);
@@ -91,7 +91,7 @@ describe("Enemy ON branches (body set) driven manually", () => {
     // During ballistic, crowd must not overwrite linvel.
     crowdManager.update(FIXED_DT, [enemy]);
     physicsWorld.step();
-    enemy.postPhysics(FIXED_DT, null);
+    enemy.postPhysics(FIXED_DT);
 
     const after = Math.hypot(enemy.centerX - baseCenter.x, enemy.centerY - baseCenter.y);
     expect(after).toBeGreaterThan(before);
@@ -104,7 +104,7 @@ describe("Enemy ON branches (body set) driven manually", () => {
       enemy.computeIntent(FIXED_DT, null);
       crowdManager.update(FIXED_DT, [enemy]);
       physicsWorld.step();
-      enemy.postPhysics(FIXED_DT, null);
+      enemy.postPhysics(FIXED_DT);
       reached = enemy.attackingBase;
     }
     expect(reached).toBe(true);
@@ -113,7 +113,7 @@ describe("Enemy ON branches (body set) driven manually", () => {
     enemy.computeIntent(FIXED_DT, null);
     crowdManager.update(FIXED_DT, [enemy]);
     physicsWorld.step();
-    enemy.postPhysics(FIXED_DT, null);
+    enemy.postPhysics(FIXED_DT);
 
     expect(Number.isFinite(enemy.moveAngle)).toBe(true);
     expect(Math.abs(enemy.moveAngle - beforeAngle)).toBeLessThan(0.05);
@@ -137,7 +137,7 @@ describe("Enemy ON branches (body set) driven manually", () => {
       enemy.computeIntent(FIXED_DT, null);
       crowdManager.update(FIXED_DT, [enemy]);
       physicsWorld.step();
-      enemy.postPhysics(FIXED_DT, null);
+      enemy.postPhysics(FIXED_DT);
       reached = enemy.attackingBase;
     }
     expect(reached).toBe(true);
@@ -147,7 +147,7 @@ describe("Enemy ON branches (body set) driven manually", () => {
       enemy.computeIntent(FIXED_DT, null);
       crowdManager.update(FIXED_DT, [enemy]);
       physicsWorld.step();
-      enemy.postPhysics(FIXED_DT, null);
+      enemy.postPhysics(FIXED_DT);
     }
 
     expect(hits).toBeGreaterThan(0);
@@ -175,7 +175,7 @@ describe("Enemy ON branches (body set) driven manually", () => {
     enemy.computeIntent(FIXED_DT, null);
     crowdManager.update(FIXED_DT, [enemy]);
     physicsWorld.step();
-    enemy.postPhysics(FIXED_DT, null);
+    enemy.postPhysics(FIXED_DT);
 
     const linvel = enemy.body.linvel();
     expect(Math.hypot(linvel.x, linvel.y)).toBeLessThan(1e-3);

@@ -1,9 +1,3 @@
-// Minimal structural view of a tower needed by the weakest-path routing fallback.
-// `TowerManager.towerAt` is adapted to this shape when it is wired into the grid.
-export interface TowerLookup {
-  towerAt(x: number, y: number): { health: number; isGhost: boolean } | null;
-}
-
 interface Tile {
   type: "terrain" | "path" | "base" | "spawn";
   height: number;
@@ -36,22 +30,10 @@ export class Grid {
   terrainTowers: Set<string>;
   ghostTowers: Set<string>;
   regionId: number = 0;
-  // Bumped on every tower build/sell/ghost/restore so the physics tower colliders,
-  // navmesh obstacles, and corridor refresh re-run. No longer drives BFS (the
-  // navmesh/routing owns movement under RECAST_NAV).
+  // Bumped on every tower build/sell/ghost/restore so Rapier tower colliders and
+  // navmesh TileCache obstacles rebuild. Corridor walls are static per map.
   pathVersion: number = 0;
-  // Optional lookup used by the weakest-path Dijkstra fallback to weight edges by
-  // live tower health. Wired by the GameEngine after both managers are constructed.
-  towerLookup: TowerLookup | null = null;
   private _blockCount: number = 0;
-
-  towerHealthAt(x: number, y: number): number | undefined {
-    return this.towerLookup?.towerAt(x, y)?.health;
-  }
-
-  isGhostAt(x: number, y: number): boolean {
-    return this.towerLookup?.towerAt(x, y)?.isGhost ?? false;
-  }
 
   constructor(map: MapData) {
     this.width = map.width;
@@ -211,52 +193,12 @@ export class Grid {
     return goalTiles;
   }
 
-  // Exposed base-edge segments in world coordinates: one 1-tile-wide axis-aligned
-  // segment per base perimeter tile whose outward-adjacent tile is traversable (in
-  // bounds and not terrain). Enemies can only reach the base across path/spawn tiles,
-  // so the targetable edge is exactly this subset. This is the single source of truth
-  // for both the red target-edge overlay and enemy attack-targeting (see Enemy.ts).
+  // Base perimeter segments in world coordinates: one 1-tile-wide axis-aligned
+  // segment per base tile whose outward-adjacent tile is traversable. Used by the
+  // SVG red target-edge overlay (not by enemy attack acquisition — that is Rapier
+  // contacts).
   getBaseEdgeSegments(): Array<{ x1: number; y1: number; x2: number; y2: number }> {
     return this.getSquareEdgeSegments(this.base, 1.5 * this.tileSize);
-  }
-
-  // Exposed edge segments for a single tower tile, offset by the enemy radius (the
-  // contact line enemies press toward when attacking a tower in the path). Only sides
-  // whose outward-adjacent tile is traversable are included, mirroring
-  // getBaseEdgeSegments so enemies never aim at a terrain-backed face.
-  getTowerEdgeSegments(
-    tileX: number,
-    tileY: number,
-    radius: number,
-  ): Array<{ x1: number; y1: number; x2: number; y2: number }> {
-    const half = this.tileSize / 2;
-    const tileCenter = this.tileToWorld(tileX, tileY);
-    const sides = [
-      { dx: 0, dy: -1 },
-      { dx: 0, dy: 1 },
-      { dx: 1, dy: 0 },
-      { dx: -1, dy: 0 },
-    ];
-    const segments: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
-    for (const side of sides) {
-      const outwardX = tileX + side.dx;
-      const outwardY = tileY + side.dy;
-      if (!this.inBounds(outwardX, outwardY)) continue;
-      if (this.isTerrain(outwardX, outwardY)) continue;
-      const offset = half + radius;
-      if (side.dx !== 0) {
-        const edgeX = tileCenter.x + side.dx * offset;
-        const y1 = tileY * this.tileSize;
-        const y2 = (tileY + 1) * this.tileSize;
-        segments.push({ x1: edgeX, y1, x2: edgeX, y2 });
-      } else {
-        const edgeY = tileCenter.y + side.dy * offset;
-        const x1 = tileX * this.tileSize;
-        const x2 = (tileX + 1) * this.tileSize;
-        segments.push({ x1, y1: edgeY, x2, y2: edgeY });
-      }
-    }
-    return segments;
   }
 
   // Shared implementation for getBaseEdgeSegments: computes axis-aligned 1-tile edge

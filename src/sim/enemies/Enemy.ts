@@ -13,6 +13,7 @@ import {
   MIN_SLOW_FACTOR,
   SIEGE_STUCK_SECONDS,
 } from "@/sim/ConstantsEnemy.js";
+import { restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdManager.js";
 import { fromRecast, toRecast } from "@/sim/navmesh/coords.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 
@@ -89,9 +90,8 @@ export class Enemy {
   // Rapier rigid body backing this enemy; assigned by PhysicsWorld.addEnemy /
   // cleared by removeEnemy.
   body: RAPIER.RigidBody | null = null;
-  // DetourCrowd agent backing this enemy under RECAST_NAV; null otherwise. Stored
-  // here so CrowdManager/enemy move code can drive/poke it; always null when the
-  // flag is off, so the OFF path is byte-identical.
+  // DetourCrowd agent backing this enemy. Stored here so CrowdManager / resync
+  // can drive it; assigned at spawn, cleared on remove.
   agent: CrowdAgent | null = null;
   shape: unknown;
   walking: MapThemeAnimation | null;
@@ -236,7 +236,7 @@ export class Enemy {
     this.markTargetTimer = 0;
     this.antiHealTimer = 0;
     // Spawn at the spawn tile center; the crowd agent (added in EnemyManager.spawn)
-    // drives motion toward the base. Under RECAST_NAV there is no grid path.
+    // drives motion toward the base.
     const spawnPoint = grid.spawns[spawnIndex]!;
     const spawn = grid.tileToWorld(spawnPoint.x, spawnPoint.y);
     this.x = spawn.x;
@@ -413,18 +413,8 @@ export class Enemy {
     this.lastMoveTargetMode = mode;
   }
 
-  // Per-frame update: run the intent pass (decision + steering, seeding the rigid
-  // body velocity) then the post-physics pass (read back the stepped position,
-  // acquire/run attacks, cull). Rapier owns integration, separation, and containment.
-  update(dt: number, enemyManager: EnemyManagerRef | null): void {
-    if (this.removed) return;
-    this.computeIntent(dt, enemyManager);
-    this.postPhysics(dt, enemyManager);
-  }
-
-  // Status timers shared by both OFF and ON modes: slow/burn/mark/anti-heal
-  // bookkeeping plus the heal aura. Runs unconditionally at the very start of
-  // computeIntent so both branches share one timer source.
+  // Status timers: slow/burn/mark/anti-heal bookkeeping plus the heal aura.
+  // Runs at the start of computeIntent so every intent pass shares one timer source.
   private updateStatusTimers(dt: number, enemyManager: EnemyManagerRef | null): void {
     this._gameSeconds += dt;
 
@@ -545,8 +535,7 @@ export class Enemy {
   }
 
   // Reads stepped body, sparse agent resync, contact-driven attacks, bounds.
-  postPhysics(dt: number, enemyManager: EnemyManagerRef | null): void {
-    void enemyManager;
+  postPhysics(dt: number): void {
     if (this.removed) return;
     const pos = this.body!.translation();
     this.centerX = pos.x;
@@ -565,9 +554,7 @@ export class Enemy {
       if (drift > resyncThreshold) {
         const previousVelocity = crowdAgent.velocity();
         crowdAgent.teleport(toRecast({ x: this.x, y: this.y }));
-        crowdAgent.raw.set_vel(0, previousVelocity.x);
-        crowdAgent.raw.set_vel(1, previousVelocity.y);
-        crowdAgent.raw.set_vel(2, previousVelocity.z);
+        restoreCrowdAgentVelocity(crowdAgent, previousVelocity);
         // Re-assert move target after teleport so Detour rebuilds the corridor.
         if (this.lastMoveTargetWorld) {
           crowdAgent.requestMoveTarget(toRecast(this.lastMoveTargetWorld));
@@ -599,6 +586,9 @@ export class Enemy {
     const worldWidth = this.grid.width * this.grid.tileSize;
     const worldHeight = this.grid.height * this.grid.tileSize;
     if (this.x < 0 || this.y < 0 || this.x > worldWidth || this.y > worldHeight) {
+      // Corridor walls + navmesh should keep bodies inside; this firing means a
+      // containment hole. Still clamp so the sim does not NaN, but report it.
+      console.warn("Enemy escaped world bounds; clamping", this.id, this.x, this.y);
       this.x = Math.max(0, Math.min(worldWidth, this.x));
       this.y = Math.max(0, Math.min(worldHeight, this.y));
       this.centerX = this.x;

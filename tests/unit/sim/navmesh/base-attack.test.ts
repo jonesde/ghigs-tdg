@@ -24,7 +24,7 @@ function drive(enemyManager: EnemyManager, physicsWorld: PhysicsWorld, steps: nu
   for (let step = 0; step < steps; step++) {
     physicsWorld.step();
     for (const enemy of enemyManager.enemies) {
-      enemy.postPhysics(FIXED_DT, enemyManager);
+      enemy.postPhysics(FIXED_DT);
     }
   }
 }

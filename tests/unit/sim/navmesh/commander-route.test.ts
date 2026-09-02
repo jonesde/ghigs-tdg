@@ -24,7 +24,7 @@ function approxTarget(
   expect(Math.abs(t.z - world.y)).toBeLessThan(epsilon);
 }
 
-describe("Commander routing drives the DetourCrowd agent (RECAST_NAV)", () => {
+describe("Commander routing drives the DetourCrowd agent", () => {
   let grid: Grid;
   let physicsWorld: PhysicsWorld;
   let crowdManager: CrowdManager;

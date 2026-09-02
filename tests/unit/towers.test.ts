@@ -754,6 +754,14 @@ describe("Tower", () => {
       expect(target).not.toBeNull();
       expect(target?.id).toBe(2);
     });
+
+    it('uses nav distance-to-base for "first" when it disagrees with Euclidean', () => {
+      const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
+      tower.navDistanceToBase = (tileX: number, _tileY: number) => (tileX >= 3 ? 1 : 20);
+      const enemies = [makeEnemy({ x: 18, y: 18, hp: 10, id: 1 }), makeEnemy({ x: 18 + 4 * 36, y: 18, hp: 10, id: 2 })];
+      const target = tower.selectTarget(enemies);
+      expect(target?.id).toBe(2);
+    });
   });
 
   describe("currentMilestoneBonus", () => {

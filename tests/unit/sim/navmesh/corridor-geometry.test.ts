@@ -4,7 +4,7 @@ import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { makeBastionMap } from "../../../helpers/mock-grid.js";
 
 // Flag-independent: getCorridorGeometry reads straight off the built navmesh, so
-// it exercises the RECAST_NAV shipping shape without flipping the flag.
+// it exercises the navmesh corridor shipping shape.
 describe("NavMeshBuilder.getCorridorGeometry", () => {
   it("returns a walkable triangle mesh in game coordinates within map bounds", () => {
     const grid = new Grid(makeBastionMap());

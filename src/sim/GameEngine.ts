@@ -268,22 +268,23 @@ export class GameEngine {
     this.physicsWorld.setContactProcessor(this.contactProcessor);
     const navBuilder = new NavMeshBuilder(this.grid);
     this.navMeshBuilder = navBuilder;
-    if (navBuilder.isSuccess() && navBuilder.getNavMesh()) {
-      this.crowdManager = new CrowdManager(navBuilder.getNavMesh()!, this.grid.tileSize, ENEMY_POOL_SIZE);
-      this.crowdManager.setForceFieldSystem(this.forceFieldSystem);
-      this.enemyManager.setCrowdManager(this.crowdManager);
-      this.physicsWorld.setEnemyEnemyCollisions(false);
-    } else {
-      console.error("navmesh build failed:", navBuilder.getError());
-      this.crowdManager = null;
+    if (!navBuilder.isSuccess() || !navBuilder.getNavMesh()) {
+      const buildError = navBuilder.getError() ?? "unknown navmesh error";
+      navBuilder.destroy();
+      this.navMeshBuilder = null;
+      throw new Error(`Navmesh build failed: ${buildError}`);
     }
+    this.crowdManager = new CrowdManager(navBuilder.getNavMesh()!, this.grid.tileSize, ENEMY_POOL_SIZE);
+    this.crowdManager.setForceFieldSystem(this.forceFieldSystem);
+    this.enemyManager.setCrowdManager(this.crowdManager);
+    this.physicsWorld.setEnemyEnemyCollisions(false);
     this.navDistanceField = new NavDistanceField(this.grid, this.navMeshBuilder);
     this.navDistanceField.rebuild();
+    this.towerManager.setNavDistanceToBase(
+      (tileX, tileY) => this.navDistanceField?.getDistanceToBase(tileX, tileY) ?? -1,
+    );
     this.physicsWorld.rebuildTowers(this.towerManager);
     this.enemyManager.baseTarget = new BaseTarget(this);
-    this.grid.towerLookup = {
-      towerAt: (tileX: number, tileY: number) => this.towerManager?.towerAt(tileX, tileY) ?? null,
-    };
     this.projectileManager.setOnGoldReward((amount) => {
       this.waveGraphTracker?.onGoldBounty(amount);
       this.earnGold(amount);

@@ -238,7 +238,7 @@ describe("GameEngine", () => {
       initEngine(0, persistState);
       const enemy = new Enemy("boss", 1, 0, engine.grid, 1);
       enemy.baseTarget = engine.enemyManager.baseTarget;
-      // Under RECAST_NAV there is no grid path; park the boss just outside the base
+      // Park the boss just outside the base
       // square (within one radius) so postPhysics immediately detects base contact
       // and flips it into the attackingBase state. The boss needs a rigid body so
       // postPhysics can read its translation back.

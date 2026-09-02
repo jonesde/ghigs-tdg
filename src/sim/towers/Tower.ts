@@ -278,6 +278,8 @@ export class Tower {
   isGhost: boolean;
   ghostTimer: number;
   pendingGhostEffect: boolean;
+  // Tile nav-distance to base (−1 unreachable). Null → Euclidean fallback.
+  navDistanceToBase: ((tileX: number, tileY: number) => number) | null = null;
 
   private applyFrostAura?: (enemy: AuraTarget) => void = (enemy: AuraTarget): void => {
     enemy.applySlow(this.stats.slowAmt * ICE_AURA_SLOW_MULT, ICE_AURA_DURATION);
@@ -754,13 +756,18 @@ export class Tower {
     if (enemies.length === 0) return null;
     let target: { x: number; y: number; hp: number; maxHp?: number; id: number } | null = null;
 
-    // Under RECAST_NAV there is no grid path, so "first"/"last" targeting is
-    // approximated by the enemy's straight-line distance to the base: the enemy
-    // nearest the base is "first" (furthest along), the farthest is "last".
+    // "first"/"last" use nav distance-to-base (maze-aware). Euclidean to the base
+    // center is the fallback when the field is missing or the tile is unreachable.
     const base = this.grid.getBase();
     const baseWorld = this.grid.tileToWorld(base.x, base.y);
-    const distToBase = (enemy: { x: number; y: number }): number =>
-      Math.hypot(enemy.x - baseWorld.x, enemy.y - baseWorld.y);
+    const tileSize = this.grid.tileSize;
+    const distToBase = (enemy: { x: number; y: number }): number => {
+      const tileX = Math.floor(enemy.x / tileSize);
+      const tileY = Math.floor(enemy.y / tileSize);
+      const navDistance = this.navDistanceToBase?.(tileX, tileY);
+      if (navDistance !== undefined && navDistance >= 0) return navDistance;
+      return Math.hypot(enemy.x - baseWorld.x, enemy.y - baseWorld.y);
+    };
 
     switch (this.targeting) {
       case "first":
