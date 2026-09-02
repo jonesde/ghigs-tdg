@@ -10,22 +10,30 @@ export interface CrowdAgentProfile {
   maxAccelFactor: number;
   separationWeight: number;
   collisionQueryRangeFactor: number;
+  // Multiplier of tileSize for Detour string-pull. 0 disables (tight corridors).
+  pathOptimizationRangeFactor: number;
 }
 
 const DEFAULT_PROFILE: CrowdAgentProfile = {
   maxAccelFactor: CROWD_MAX_ACCEL_FACTOR_DEFAULT,
   separationWeight: 1,
   collisionQueryRangeFactor: 2.5,
+  pathOptimizationRangeFactor: 0,
 };
 
 // Per-type crowd steering profiles (data-driven; new types add a row).
 export const CROWD_AGENT_PROFILES: Record<string, CrowdAgentProfile> = {
-  runner: { maxAccelFactor: 12, separationWeight: 0.4, collisionQueryRangeFactor: 1.5 },
-  tank: { maxAccelFactor: 5, separationWeight: 1.8, collisionQueryRangeFactor: 3.5 },
-  boss: { maxAccelFactor: 4, separationWeight: 2.0, collisionQueryRangeFactor: 4.0 },
-  minion: { maxAccelFactor: 8, separationWeight: 1.0, collisionQueryRangeFactor: 2.5 },
-  shielded: { maxAccelFactor: 7, separationWeight: 1.2, collisionQueryRangeFactor: 2.8 },
-  healer: { maxAccelFactor: 7, separationWeight: 1.1, collisionQueryRangeFactor: 2.5 },
+  runner: { maxAccelFactor: 12, separationWeight: 0.4, collisionQueryRangeFactor: 1.5, pathOptimizationRangeFactor: 2 },
+  tank: { maxAccelFactor: 5, separationWeight: 1.8, collisionQueryRangeFactor: 3.5, pathOptimizationRangeFactor: 0 },
+  boss: { maxAccelFactor: 4, separationWeight: 2.0, collisionQueryRangeFactor: 4.0, pathOptimizationRangeFactor: 0 },
+  minion: { maxAccelFactor: 8, separationWeight: 1.0, collisionQueryRangeFactor: 2.5, pathOptimizationRangeFactor: 2 },
+  shielded: {
+    maxAccelFactor: 7,
+    separationWeight: 1.2,
+    collisionQueryRangeFactor: 2.8,
+    pathOptimizationRangeFactor: 0,
+  },
+  healer: { maxAccelFactor: 7, separationWeight: 1.1, collisionQueryRangeFactor: 2.5, pathOptimizationRangeFactor: 2 },
 };
 
 export function getCrowdAgentProfile(enemyType: string): CrowdAgentProfile {
@@ -57,6 +65,7 @@ export class CrowdManager {
       maxAcceleration: maxSpeed * profile.maxAccelFactor,
       separationWeight: profile.separationWeight,
       collisionQueryRange: enemy.radius * profile.collisionQueryRangeFactor + this.tileSize * 0.5,
+      pathOptimizationRange: profile.pathOptimizationRangeFactor * this.tileSize,
     });
     enemy.agent = agent;
   }

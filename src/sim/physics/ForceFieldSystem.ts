@@ -1,4 +1,5 @@
 import type { Enemy } from "@/sim/enemies/Enemy.js";
+import type { PhysicsWorld } from "./PhysicsWorld.js";
 
 export type ForceFieldMode = "radial" | "directional";
 
@@ -58,8 +59,21 @@ export class ForceFieldSystem {
 
   // Applies continuous forces to live enemy bodies. Re-applied each tick so Rapier
   // integrates them during step even when crowd resets linvel next frame.
-  apply(_deltaSeconds: number, enemies: Enemy[]): void {
+  apply(_deltaSeconds: number, enemies: Enemy[], physicsWorld?: PhysicsWorld | null): void {
     if (this.fields.size === 0) return;
+    if (physicsWorld) {
+      for (const field of this.fields.values()) {
+        physicsWorld.forEachEnemyInRange(field.origin.x, field.origin.y, field.radius, (enemy) => {
+          if (enemy.removed || !enemy.body) return;
+          if (enemy.ballisticTimer > 0) return;
+          if (enemy.motionLock === "park") return;
+          const sample = this.sampleFieldAt(field, enemy.x, enemy.y);
+          if (!sample) return;
+          enemy.body.addForce({ x: sample.forceX, y: sample.forceY }, true);
+        });
+      }
+      return;
+    }
     for (const enemy of enemies) {
       if (enemy.removed || !enemy.body) continue;
       if (enemy.ballisticTimer > 0) continue;

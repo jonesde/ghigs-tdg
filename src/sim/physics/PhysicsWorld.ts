@@ -3,11 +3,11 @@ import { ActiveEvents, EventQueue } from "@dimforge/rapier2d-compat";
 import { FIXED_DT } from "@/sim/Constants.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { Grid } from "@/sim/grid/Grid.js";
-import { corridorWallInsetWorld } from "@/sim/navmesh/navmeshConfig.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
 import type { ColliderTag } from "./ColliderUserData.js";
 import { ContactProcessor } from "./ContactProcessor.js";
+import { buildCorridorSegments } from "./corridorWalls.js";
 import { getRapier } from "./rapierContext.js";
 
 // Collision groups: membership << 16 | filter.
@@ -43,6 +43,7 @@ export class PhysicsWorld {
   private enemyByHandle: Map<number, Enemy> = new Map();
   private towerById: Map<string, Tower> = new Map();
   private projectileBodies: Map<number, RAPIER.RigidBody> = new Map();
+  private auraSensors: Map<string, { body: RAPIER.RigidBody; radius: number }> = new Map();
   private contactProcessor: ContactProcessor;
   // When false, DetourCrowd owns enemy-enemy avoidance (GameEngine sets this).
   enemyEnemyCollisions = true;
@@ -84,10 +85,6 @@ export class PhysicsWorld {
     return null;
   }
 
-  private isWalkable(x: number, y: number): boolean {
-    return this.grid.isPath(x, y) || this.grid.isBase(x, y) || this.grid.isSpawn(x, y);
-  }
-
   buildBase(): void {
     const RAPIER = getRapier();
     this.dropBase();
@@ -124,150 +121,64 @@ export class PhysicsWorld {
   rebuildCorridor(): void {
     const RAPIER = getRapier();
     this.dropBodies(this.corridorBodies);
-    const tileSize = this.grid.tileSize;
-    const halfThickness = tileSize * 0.05;
-
-    const walkableTiles: { x: number; y: number }[] = [];
-    const seenWalkable = new Set<string>();
-    const addWalkable = (x: number, y: number): void => {
-      const key = `${x},${y}`;
-      if (seenWalkable.has(key)) return;
-      seenWalkable.add(key);
-      walkableTiles.push({ x, y });
-    };
-    for (let tileY = 0; tileY < this.grid.height; tileY++) {
-      for (let tileX = 0; tileX < this.grid.width; tileX++) {
-        if (this.isWalkable(tileX, tileY)) addWalkable(tileX, tileY);
-      }
-    }
-
-    const convexCorners = new Set<string>();
-    const convexDirs = new Map<string, { sx: number; sy: number }>();
-    const cornerKey = (i: number, j: number): string => `${i},${j}`;
-    for (let j = 1; j < this.grid.height; j++) {
-      for (let i = 1; i < this.grid.width; i++) {
-        const nw = this.isWalkable(i - 1, j - 1);
-        const ne = this.isWalkable(i, j - 1);
-        const sw = this.isWalkable(i - 1, j);
-        const se = this.isWalkable(i, j);
-        let sx = 0;
-        let sy = 0;
-        if (!nw && ne && sw) {
-          sx = 1;
-          sy = 1;
-        } else if (!ne && nw && se) {
-          sx = -1;
-          sy = 1;
-        } else if (!sw && nw && se) {
-          sx = 1;
-          sy = -1;
-        } else if (!se && ne && sw) {
-          sx = -1;
-          sy = -1;
-        }
-        if (sx !== 0) {
-          const key = cornerKey(i, j);
-          convexCorners.add(key);
-          convexDirs.set(key, { sx, sy });
-        }
-      }
-    }
-
-    const inset = corridorWallInsetWorld(tileSize);
-    const chamferHalfThickness = halfThickness;
-    const neighbors = [
-      { dx: 1, dy: 0 },
-      { dx: -1, dy: 0 },
-      { dx: 0, dy: 1 },
-      { dx: 0, dy: -1 },
-    ];
+    const segments = buildCorridorSegments(this.grid);
+    const halfThickness = this.grid.tileSize * 0.05;
     const corridorTag: ColliderTag = { kind: "corridor" };
-
-    const addWallSegment = (x1: number, y1: number, x2: number, y2: number): void => {
-      const centerX = (x1 + x2) / 2;
-      const centerY = (y1 + y2) / 2;
-      const horizontal = y1 === y2;
-      const halfX = horizontal ? Math.abs(x2 - x1) / 2 : chamferHalfThickness;
-      const halfY = horizontal ? chamferHalfThickness : Math.abs(y2 - y1) / 2;
-      const body = this.world.createRigidBody(
-        RAPIER.RigidBodyDesc.fixed().setTranslation(centerX, centerY).setUserData(corridorTag),
-      );
-      this.world.createCollider(RAPIER.ColliderDesc.cuboid(halfX, halfY), body);
-      this.corridorBodies.push(body);
-    };
-
-    for (const tile of walkableTiles) {
-      for (const neighbor of neighbors) {
-        const nx = tile.x + neighbor.dx;
-        const ny = tile.y + neighbor.dy;
-        if (this.isWalkable(nx, ny)) continue;
-
-        let x1: number;
-        let y1: number;
-        let x2: number;
-        let y2: number;
-        let c1i: number;
-        let c1j: number;
-        let c2i: number;
-        let c2j: number;
-        if (neighbor.dy !== 0) {
-          const y = neighbor.dy < 0 ? tile.y * tileSize : (tile.y + 1) * tileSize;
-          x1 = tile.x * tileSize;
-          y1 = y;
-          c1i = tile.x;
-          c1j = neighbor.dy < 0 ? tile.y : tile.y + 1;
-          x2 = (tile.x + 1) * tileSize;
-          y2 = y;
-          c2i = tile.x + 1;
-          c2j = c1j;
-        } else {
-          const x = neighbor.dx < 0 ? tile.x * tileSize : (tile.x + 1) * tileSize;
-          x1 = x;
-          y1 = tile.y * tileSize;
-          c1i = neighbor.dx < 0 ? tile.x : tile.x + 1;
-          c1j = tile.y;
-          x2 = x;
-          y2 = (tile.y + 1) * tileSize;
-          c2i = c1i;
-          c2j = tile.y + 1;
-        }
-
-        const length = tileSize;
-        if (convexCorners.has(cornerKey(c1i, c1j))) {
-          const t = inset / length;
-          x1 += (x2 - x1) * t;
-          y1 += (y2 - y1) * t;
-        }
-        if (convexCorners.has(cornerKey(c2i, c2j))) {
-          const t = inset / length;
-          x2 += (x1 - x2) * t;
-          y2 += (y1 - y2) * t;
-        }
-
-        addWallSegment(x1, y1, x2, y2);
-      }
-    }
-
-    for (const [key, dir] of convexDirs) {
-      const parts = key.split(",");
-      const i = Number(parts[0]);
-      const j = Number(parts[1]);
-      const vertexX = i * tileSize;
-      const vertexY = j * tileSize;
-      const axX = vertexX - dir.sx * inset;
-      const axY = vertexY;
-      const bxX = vertexX;
-      const bxY = vertexY - dir.sy * inset;
-      const centerX = (axX + bxX) / 2;
-      const centerY = (axY + bxY) / 2;
-      const length = Math.hypot(bxX - axX, bxY - axY);
-      const angle = Math.atan2(bxY - axY, bxX - axX);
+    for (const segment of segments) {
+      const centerX = (segment.x1 + segment.x2) / 2;
+      const centerY = (segment.y1 + segment.y2) / 2;
+      const length = Math.hypot(segment.x2 - segment.x1, segment.y2 - segment.y1);
+      const angle = Math.atan2(segment.y2 - segment.y1, segment.x2 - segment.x1);
       const body = this.world.createRigidBody(
         RAPIER.RigidBodyDesc.fixed().setTranslation(centerX, centerY).setRotation(angle).setUserData(corridorTag),
       );
-      this.world.createCollider(RAPIER.ColliderDesc.cuboid(length / 2, chamferHalfThickness), body);
+      this.world.createCollider(RAPIER.ColliderDesc.cuboid(length / 2, halfThickness), body);
       this.corridorBodies.push(body);
     }
+  }
+
+  debugRenderVertices(): number[] {
+    const buffers = this.world.debugRender();
+    return Array.from(buffers.vertices);
+  }
+
+  syncAuraSensors(specs: { sensorId: string; x: number; y: number; radius: number }[]): void {
+    const RAPIER = getRapier();
+    const liveIds = new Set(specs.map((spec) => spec.sensorId));
+    for (const [sensorId, entry] of this.auraSensors) {
+      if (liveIds.has(sensorId)) continue;
+      this.world.removeRigidBody(entry.body);
+      this.auraSensors.delete(sensorId);
+    }
+    for (const spec of specs) {
+      const existing = this.auraSensors.get(spec.sensorId);
+      if (existing && Math.abs(existing.radius - spec.radius) < 1e-6) {
+        existing.body.setTranslation({ x: spec.x, y: spec.y }, true);
+        continue;
+      }
+      if (existing) {
+        this.world.removeRigidBody(existing.body);
+        this.auraSensors.delete(spec.sensorId);
+      }
+      const tag: ColliderTag = { kind: "sensor", sensorId: spec.sensorId };
+      const body = this.world.createRigidBody(
+        RAPIER.RigidBodyDesc.fixed().setTranslation(spec.x, spec.y).setUserData(tag),
+      );
+      const colliderDesc = RAPIER.ColliderDesc.ball(spec.radius).setSensor(true);
+      this.world.createCollider(colliderDesc, body);
+      this.auraSensors.set(spec.sensorId, { body, radius: spec.radius });
+    }
+  }
+
+  forEachSensorHits(sensorId: string, callback: (enemy: Enemy) => void): void {
+    const entry = this.auraSensors.get(sensorId);
+    if (!entry) return;
+    const collider = entry.body.collider(0);
+    if (!collider) return;
+    this.world.intersectionPairsWith(collider, (other) => {
+      const enemy = this.enemyFromCollider(other);
+      if (enemy) callback(enemy);
+    });
   }
 
   // Density scales with radius so tanks resist push more than runners.
@@ -524,6 +435,7 @@ export class PhysicsWorld {
     this.towerBodies = [];
     this.corridorBodies = [];
     this.projectileBodies.clear();
+    this.auraSensors.clear();
     this.enemyByHandle.clear();
     this.towerById.clear();
     this.contactProcessor.clear();

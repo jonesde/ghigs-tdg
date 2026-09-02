@@ -36,6 +36,16 @@ function buildTowerOnValidTile(engine: GameEngine) {
 }
 
 describe("SnapshotSerializer (Phase 5)", () => {
+  it("ships navMeshCorridor and physics debug lines on the first snapshot", () => {
+    const engine = makeEngine();
+    const snap = buildSnapshot(engine, 0);
+    expect(snap.navMeshCorridor).not.toBeNull();
+    expect(snap.navMeshCorridor!.positions.length).toBeGreaterThan(0);
+    expect(snap.navMeshCorridor!.indices.length).toBeGreaterThan(0);
+    expect(snap.debugPhysics).not.toBeNull();
+    expect(snap.debugPhysics!.vertices.length).toBeGreaterThan(0);
+  });
+
   it("builds a complete snapshot from a live engine", () => {
     const engine = makeEngine();
     const grid = engine.runState.grid;

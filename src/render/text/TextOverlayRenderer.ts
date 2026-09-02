@@ -11,10 +11,42 @@ const PROJECTILE_RADIUS = 1.5;
 // particles, range circles, or build preview.
 export class TextOverlayRenderer {
   render(ctx: CanvasRenderingContext2D, snapshot: SimulationSnapshot, scale: TextRenderScale): void {
+    this.renderPhysicsDebug(ctx, snapshot, scale);
+    this.renderNextCorners(ctx, snapshot, scale);
     this.renderProjectiles(ctx, snapshot, scale);
     this.renderHealthBars(ctx, snapshot, scale);
     this.renderLightning(ctx, snapshot, scale);
     this.renderStuns(ctx, snapshot, scale);
+  }
+
+  private renderPhysicsDebug(
+    ctx: CanvasRenderingContext2D,
+    snapshot: SimulationSnapshot,
+    scale: TextRenderScale,
+  ): void {
+    const vertices = snapshot.debugPhysics?.vertices;
+    if (!vertices || vertices.length < 4) return;
+    ctx.strokeStyle = "rgba(80, 200, 255, 0.35)";
+    ctx.lineWidth = 1;
+    for (let index = 0; index + 3 < vertices.length; index += 4) {
+      ctx.beginPath();
+      ctx.moveTo(vertices[index]! * scale.scaleX, vertices[index + 1]! * scale.scaleY);
+      ctx.lineTo(vertices[index + 2]! * scale.scaleX, vertices[index + 3]! * scale.scaleY);
+      ctx.stroke();
+    }
+  }
+
+  private renderNextCorners(ctx: CanvasRenderingContext2D, snapshot: SimulationSnapshot, scale: TextRenderScale): void {
+    ctx.strokeStyle = "rgba(255, 220, 80, 0.7)";
+    ctx.lineWidth = 1;
+    for (const enemy of snapshot.enemies) {
+      const corner = enemy.nextCorner;
+      if (!corner) continue;
+      ctx.beginPath();
+      ctx.moveTo(enemy.x * scale.scaleX, enemy.y * scale.scaleY);
+      ctx.lineTo(corner.x * scale.scaleX, corner.y * scale.scaleY);
+      ctx.stroke();
+    }
   }
 
   private renderProjectiles(ctx: CanvasRenderingContext2D, snapshot: SimulationSnapshot, scale: TextRenderScale): void {

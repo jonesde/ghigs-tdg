@@ -196,6 +196,12 @@ export class EnemyManager {
     }
   }
 
+  forEachSensorHits(sensorId: string, callback: (enemy: Enemy) => void): boolean {
+    if (!this.physicsWorld) return false;
+    this.physicsWorld.forEachSensorHits(sensorId, callback);
+    return true;
+  }
+
   forEachEnemyInRange(x: number, y: number, range: number, cb: (enemy: Enemy) => void): void {
     if (this.physicsWorld) {
       this.physicsWorld.forEachEnemyInRange(x, y, range, cb);

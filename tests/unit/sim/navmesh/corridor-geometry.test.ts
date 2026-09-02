@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Grid } from "@/sim/grid/Grid.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
+import { buildCorridorSegments, corridorSegmentsToPolyline } from "@/sim/physics/corridorWalls.js";
 import { makeBastionMap } from "../../../helpers/mock-grid.js";
 
 // Flag-independent: getCorridorGeometry reads straight off the built navmesh, so
@@ -33,5 +34,16 @@ describe("NavMeshBuilder.getCorridorGeometry", () => {
       expect(y).toBeGreaterThanOrEqual(0);
       expect(y).toBeLessThanOrEqual(maxY);
     }
+  });
+});
+
+describe("walkable-tile corridor wall outline", () => {
+  it("emits chamfered boundary segments packed as a polyline", () => {
+    const grid = new Grid(makeBastionMap());
+    const segments = buildCorridorSegments(grid);
+    expect(segments.length).toBeGreaterThan(0);
+    const polyline = corridorSegmentsToPolyline(segments);
+    expect(polyline.vertices.length).toBe(segments.length * 4);
+    expect(polyline.indices.length).toBe(segments.length * 2);
   });
 });

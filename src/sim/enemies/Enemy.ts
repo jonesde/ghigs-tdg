@@ -74,6 +74,7 @@ interface EnemyManagerRef {
   enemies: Enemy[];
   getEnemiesInRange(x: number, y: number, range: number): Enemy[];
   forEachEnemyInRange(x: number, y: number, range: number, cb: (enemy: Enemy) => void): void;
+  forEachSensorHits?(sensorId: string, callback: (enemy: Enemy) => void): boolean;
 }
 
 export class Enemy {
@@ -343,6 +344,18 @@ export class Enemy {
     return { x: Math.floor(this.centerX / this.grid.tileSize), y: Math.floor(this.centerY / this.grid.tileSize) };
   }
 
+  nextCornerWorld(): { x: number; y: number } | null {
+    if (!this.agent) return null;
+    const corners = this.agent.corners();
+    if (corners.length === 0) return null;
+    const first = fromRecast(corners[0]!);
+    if (Math.hypot(first.x - this.x, first.y - this.y) < 1e-3) {
+      if (corners.length < 2) return null;
+      return fromRecast(corners[1]!);
+    }
+    return first;
+  }
+
   // Routes the enemy to a waypoint chain in the given mode. Null/empty → default.
   applyRoute(routePath: { x: number; y: number }[] | null, mode: "hold" | "route"): void {
     if (!routePath || routePath.length === 0) {
@@ -457,7 +470,10 @@ export class Enemy {
 
     if (this.heal > 0 && this.antiHealTimer <= 0 && enemyManager) {
       this.healTickDt = dt;
-      enemyManager.forEachEnemyInRange(this.x, this.y, this.healRange, this.applyHealAura);
+      const usedSensor = enemyManager.forEachSensorHits?.(`heal-${this.id}`, this.applyHealAura);
+      if (!usedSensor) {
+        enemyManager.forEachEnemyInRange(this.x, this.y, this.healRange, this.applyHealAura);
+      }
     }
   }
 
@@ -494,7 +510,8 @@ export class Enemy {
       !this.blockedByTower.isGhost
     ) {
       const progress = Math.hypot(this.x - this.lastProgressX, this.y - this.lastProgressY);
-      if (progress < this.grid.tileSize * 0.05) {
+      const agentInvalid = this.agent?.state() === 0;
+      if (progress < this.grid.tileSize * 0.05 || agentInvalid) {
         this.stuckTimer += dt;
         if (this.stuckTimer >= SIEGE_STUCK_SECONDS) {
           this.applySiege(this.blockedByTower);

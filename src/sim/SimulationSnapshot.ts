@@ -46,6 +46,9 @@ export interface SimulationSnapshot {
   // each effect exactly once; effects from a paused/empty tick are blank.
   lightningEffects: Array<{ x1: number; y1: number; x2: number; y2: number }>;
   stunEffects: Array<{ x: number; y: number }>;
+  // Rapier debug-render line soup (flat 2D vertices: [x1,y1,x2,y2,...]). Always
+  // shipped so the ASCII minimap can stroke collider outlines.
+  debugPhysics: { vertices: number[] } | null;
 }
 
 // Per-interval wave-graph data point (damage/gold/gems/peak enemy HP for a
@@ -152,6 +155,7 @@ export interface EnemySnapshot {
   attackingBase?: boolean;
   blockedByTowerTile?: { x: number; y: number } | null;
   distanceToBase?: number;
+  nextCorner?: { x: number; y: number } | null;
 }
 
 export interface StatusEffectSnapshot {

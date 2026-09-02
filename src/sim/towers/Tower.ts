@@ -117,6 +117,14 @@ interface EnemyManagerRef {
   ): void;
   getEnemyById(id: number): { id: number; removed: boolean; x: number; y: number; hp: number } | null;
   towerAt(x: number, y: number): Tower | null;
+  forEachSensorHits?(
+    sensorId: string,
+    callback: (enemy: {
+      applySlow(amount: number, duration: number): void;
+      applyStun?(duration: number): void;
+      takeDamage(amount: number, armorPiercing?: boolean): number | undefined;
+    }) => void,
+  ): boolean;
 }
 
 interface ProjectileManagerRef {
@@ -828,14 +836,20 @@ export class Tower {
     if (stats.frostAura) {
       const tileSize = this.grid?.tileSize || 36;
       const frostRangePx = ICE_AURA_RANGE * tileSize;
-      enemyManager.forEachEnemyInRange(this.x, this.y, frostRangePx, this.applyFrostAura!);
+      const usedSensor = enemyManager.forEachSensorHits?.(`${this.id}:frost`, this.applyFrostAura!);
+      if (!usedSensor) {
+        enemyManager.forEachEnemyInRange(this.x, this.y, frostRangePx, this.applyFrostAura!);
+      }
     }
 
     // Data-driven static field (lightning addon 0)
     if (stats.staticField) {
       const tileSize = this.grid?.tileSize || 36;
       const staticFieldRangePx = STATIC_FIELD_RANGE * tileSize;
-      enemyManager.forEachEnemyInRange(this.x, this.y, staticFieldRangePx, this.applyStaticField!);
+      const usedSensor = enemyManager.forEachSensorHits?.(`${this.id}:static`, this.applyStaticField!);
+      if (!usedSensor) {
+        enemyManager.forEachEnemyInRange(this.x, this.y, staticFieldRangePx, this.applyStaticField!);
+      }
     }
 
     // Data-driven ice burst (ice addon 2)

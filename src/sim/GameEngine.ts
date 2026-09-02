@@ -1,6 +1,7 @@
 import { ENEMY_POOL_SIZE } from "@/render/svg/types.js";
 import type { MapThemeData, SpawnState } from "@/render/themes/index.js";
 import type { DebugKind } from "@/sim/Command.js";
+import { ICE_AURA_RANGE, STATIC_FIELD_RANGE } from "@/sim/ConstantsTower.js";
 import type { AttackTarget, Enemy } from "@/sim/enemies/Enemy.js";
 import { resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
@@ -114,7 +115,7 @@ export class GameEngine {
   // included in a posted snapshot. Resets per run so each engine starts clean
   // (see _initMap). Engine-scoped (not module-scoped) so direct buildSnapshot
   // callers in tests behave deterministically.
-  lastPostedPathVersion: number = 0;
+  lastPostedPathVersion: number = -1;
   // Data-feed toggle for the `gridLayout` commander snapshot field (see §1.4). When
   // true, the serializer includes the constant grid layout; the commander worker
   // flips it off after caching the map to keep per-tick cost at zero. Reset per run
@@ -189,7 +190,7 @@ export class GameEngine {
     // Reset the path-version gate so the first snapshot after a (re)load always
     // includes the authoritative paths (the main thread needs them to draw the
     // initial highlights, and to notice reroutes on the first build/sell).
-    this.lastPostedPathVersion = 0;
+    this.lastPostedPathVersion = -1;
     this.lastPostedWaveGraphGeneration = 0;
     this.gridLayoutEnabled = true;
     this.runId += 1;
@@ -397,9 +398,10 @@ export class GameEngine {
       }
     };
 
+    this.syncAuraSensors();
     this.enemyManager.preStep(dt);
     this.crowdManager?.update(dt, this.enemyManager.enemies);
-    this.forceFieldSystem.apply(dt, this.enemyManager.enemies);
+    this.forceFieldSystem.apply(dt, this.enemyManager.enemies, this.physicsWorld);
     // Homing projectiles set kinematic velocities before the physics step.
     this.projectileManager?.prePhysics(dt);
     this.physicsWorld!.step();
@@ -443,6 +445,26 @@ export class GameEngine {
     ) {
       this.endGame(true);
     }
+  }
+
+  private syncAuraSensors(): void {
+    if (!this.physicsWorld || !this.towerManager || !this.enemyManager || !this.grid) return;
+    const tileSize = this.grid.tileSize;
+    const specs: { sensorId: string; x: number; y: number; radius: number }[] = [];
+    for (const tower of this.towerManager.towers) {
+      if (tower.isGhost) continue;
+      if (tower.stats.frostAura) {
+        specs.push({ sensorId: `${tower.id}:frost`, x: tower.x, y: tower.y, radius: ICE_AURA_RANGE * tileSize });
+      }
+      if (tower.stats.staticField) {
+        specs.push({ sensorId: `${tower.id}:static`, x: tower.x, y: tower.y, radius: STATIC_FIELD_RANGE * tileSize });
+      }
+    }
+    for (const enemy of this.enemyManager.enemies) {
+      if (enemy.removed || enemy.heal <= 0) continue;
+      specs.push({ sensorId: `heal-${enemy.id}`, x: enemy.x, y: enemy.y, radius: enemy.healRange });
+    }
+    this.physicsWorld.syncAuraSensors(specs);
   }
 
   // Knockback impulses can shove a body off the navmesh; snap back to the nearest

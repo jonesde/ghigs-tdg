@@ -104,6 +104,7 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
     navField,
     lightningEffects: visualEffects.lightning,
     stunEffects: visualEffects.stuns,
+    debugPhysics: engine.physicsWorld ? { vertices: engine.physicsWorld.debugRenderVertices() } : null,
     waveGraphDots,
     waveGraphDotsGeneration,
     gridLayout,
@@ -175,6 +176,7 @@ function snapshotEnemy(e: Enemy, engine?: GameEngine): EnemySnapshot {
     attackingBase: e.attackingBase,
     blockedByTowerTile: e.blockedByTower ? { x: e.blockedByTower.tileX, y: e.blockedByTower.tileY } : null,
     distanceToBase,
+    nextCorner: e.nextCornerWorld(),
   };
 }
 
