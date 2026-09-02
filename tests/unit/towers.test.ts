@@ -799,7 +799,9 @@ describe("Tower", () => {
       const tower = new Tower("shotgunTank", 0, 0, makeSave(), makeMockGrid());
       expect(tower.maxHealth).toBe(TOWER_BASE.shotgunTank.health);
       expect(tower.stats.damage).toBe(TOWER_BASE.shotgunTank.damage);
+      expect(tower.stats.fireRate).toBe(TOWER_BASE.shotgunTank.fireRate);
       expect(tower.stats.range).toBe(TOWER_BASE.shotgunTank.range);
+      expect(tower.stats.knockbackBase).toBe(0);
       expect(TOWER_META.shotgunTank.cost).toBe(35);
     });
 
@@ -856,8 +858,8 @@ describe("Tower", () => {
       const tower = new Tower("shotgunTank", 0, 0, makeSave(), makeMockGrid());
       tower.level = 5;
       tower.variant = "B";
-      expect(tower.stats.knockbackBase).toBeGreaterThan(0);
-      expect(tower.stats.knockbackScale).toBeGreaterThan(0);
+      expect(tower.stats.knockbackBase).toBeCloseTo(0.35, 4);
+      expect(tower.stats.knockbackScale).toBeCloseTo(0.15, 4);
     });
   });
 

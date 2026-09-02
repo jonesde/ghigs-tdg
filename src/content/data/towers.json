@@ -18,7 +18,7 @@
     "lightning": { "range": 3.5, "damage": 4, "fireRate": 0.8, "projSpeed": 99, "chain": 2, "stun": 0.1, "health": 35 },
     "railgun": { "range": 8, "damage": 14, "fireRate": 0.28, "projSpeed": 60, "fixedAim": true, "pierceFalloff": 0.5, "health": 45 },
     "sturdyWall": { "range": 0, "damage": 0, "fireRate": 0, "projSpeed": 0, "health": 100 },
-    "shotgunTank": { "range": 1, "damage": 8, "fireRate": 1.2, "projSpeed": 14, "health": 75 }
+    "shotgunTank": { "range": 1, "damage": 4, "fireRate": 0.5, "projSpeed": 14, "health": 75 }
   },
   "tuning": {
     "projectileSpeedMultiplier": 0.25,
@@ -106,7 +106,7 @@
     },
     "shotgunTank": {
       "A": { "name": "Reinforced", "statOps": [{ "op": "setTier", "field": "healthMult", "tiers": [1.5, 2, 3] }] },
-      "B": { "name": "Repulsor", "settings": { "knockbackBase": 0.7, "knockbackScale": 0.3 } }
+      "B": { "name": "Repulsor", "settings": { "knockbackBase": 0.35, "knockbackScale": 0.15 } }
     }
   },
   "addonEffects": {
