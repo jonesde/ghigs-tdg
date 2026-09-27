@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Generate intricate enemy SVG sprites for the-aftermath.json theme - v2."""
+"""Superseded by gen_aftermath_theme.py. Do not apply this output to the-aftermath.json.
+
+Generate intricate enemy SVG sprites for the-aftermath.json theme - v2.
+"""
 
 import json
 

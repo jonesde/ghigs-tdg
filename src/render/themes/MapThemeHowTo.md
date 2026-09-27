@@ -15,11 +15,18 @@ A map theme swaps the visual identity of towers, enemies, and map tiles on the `
 {
   "id": "your-theme-id",
   "label": "Display Name",
-  "towers": { /* 6 tower types */ },
-  "enemies": { /* 6 enemy types */ },
-  "regions": [ /* 3 region objects */ ]
+  "towers": { /* one entry per tower id */ },
+  "enemies": { /* one entry per enemy id */ },
+  "regions": [ /* 3 region objects */ ],
+  "spawns": { "closed": "", "open": "", "transition": "" }
 }
 ```
+
+`spawns` is optional. If it is omitted, spawn tiles fall back to a translucent red rectangle.
+
+Current tower ids: `basic`, `ice`, `sniper`, `cannon`, `lightning`, `railgun`, `sturdyWall`, `shotgunTank`.
+
+Current enemy ids: `minion`, `runner`, `tank`, `shielded`, `healer`, `boss`.
 
 Each `image` value is either an inline `<svg>...</svg>` string or a relative path/URL to an external SVG file. External references are fetched and inlined automatically by `normalizeThemeImages`.
 
@@ -29,11 +36,11 @@ Each `image` value is either an inline `<svg>...</svg>` string or a relative pat
 
 Every image set is an animation with a `duration` (seconds per full cycle) and an array of `frames`, each containing one `image` (SVG string or path). The renderers cycle through frames based on elapsed time.
 
-### Tower Image Sets (12 total)
+### Tower Image Sets
 
-Each tower type has two image sets:
+Each tower type has a firing `animation` and an optional `walking` record:
 
-| Tower Type Key | animation (firing) | walking (idle) |
+| Tower Type Key | animation (firing) | walking (stored, not drawn) |
 |---|---|---|
 | `basic` | `towers.basic.animation` | `towers.basic.walking` |
 | `ice` | `towers.ice.animation` | `towers.ice.walking` |
@@ -41,21 +48,25 @@ Each tower type has two image sets:
 | `cannon` | `towers.cannon.animation` | `towers.cannon.walking` |
 | `lightning` | `towers.lightning.animation` | `towers.lightning.walking` |
 | `railgun` | `towers.railgun.animation` | `towers.railgun.walking` |
+| `sturdyWall` | `towers.sturdyWall.animation` | `towers.sturdyWall.walking` |
+| `shotgunTank` | `towers.shotgunTank.animation` | `towers.shotgunTank.walking` |
 
-Each tower entry also requires `name` (string), `color` (CSS color), and `icon` (single-character display glyph).
+`useSvgStaticContent.ts` builds tower `<symbol>` elements from `animation.frames` only. Frame 0 is what `TowerManager` shows whenever the tower is not inside a fire cycle. `walking` is parsed and kept on the theme object, and nothing instantiates it. A one-frame `walking` copy of frame 0 matches the shipped themes.
 
-### Enemy Image Sets (12 total)
+Each tower entry also requires `name` (string), `color` (CSS color), and `icon` (single-character display glyph). The shop and the minimap draw `icon`. Projectiles and the tower panel use `color`.
 
-Each enemy type has two image sets:
+### Enemy Image Sets
 
-| Enemy Type Key | walking | hitReaction |
-|---|---|---|
-| `minion` | `enemies.minion.walking` | `enemies.minion.hitReaction` |
-| `runner` | `enemies.runner.walking` | `enemies.runner.hitReaction` |
-| `tank` | `enemies.tank.walking` | `enemies.tank.hitReaction` |
-| `shielded` | `enemies.shielded.walking` | `enemies.shielded.hitReaction` |
-| `healer` | `enemies.healer.walking` | `enemies.healer.hitReaction` |
-| `boss` | `enemies.boss.walking` | `enemies.boss.hitReaction` |
+Each enemy type has a walking cycle, an optional hit reaction, and an optional attack:
+
+| Enemy Type Key | walking | hitReaction | attack |
+|---|---|---|---|
+| `minion` | `enemies.minion.walking` | `enemies.minion.hitReaction` | `enemies.minion.attack` |
+| `runner` | `enemies.runner.walking` | `enemies.runner.hitReaction` | `enemies.runner.attack` |
+| `tank` | `enemies.tank.walking` | `enemies.tank.hitReaction` | `enemies.tank.attack` |
+| `shielded` | `enemies.shielded.walking` | `enemies.shielded.hitReaction` | `enemies.shielded.attack` |
+| `healer` | `enemies.healer.walking` | `enemies.healer.hitReaction` | `enemies.healer.attack` |
+| `boss` | `enemies.boss.walking` | `enemies.boss.hitReaction` | `enemies.boss.attack` |
 
 Each enemy entry also requires `name` (string), `color` (CSS color), and `shape` (string — used for stats panel display).
 
@@ -82,39 +93,49 @@ Each region has 5 tile images:
 
 An empty string (`""`) falls back to the default procedurally-generated base structure.
 
+### Spawn Image Set (optional)
+
+| Field | Symbol id | Shown when |
+|---|---|---|
+| `spawns.closed` | `spawn-closed` | The spawn is shut |
+| `spawns.transition` | `spawn-transition` | The hatch is between shut and open |
+| `spawns.open` | `spawn-open` | The spawn is open |
+
+Spawn art is a 36×36 symbol drawn on top of the path tile. The symbol itself is not rotated. The path tile under it is.
+
 ---
 
 ## Image Sizing Guidelines
 
-The map tile size is **36px**. All images are rendered at specific sizes but may be scaled arbitrarily during rendering (camera zoom, hit-reaction scaling, etc.). Plan your level of detail for the base sizes below, and be aware the final rendered size will vary.
+The map tile size is **36px**. Camera zoom scales every sprite. Draw for the base sizes below. The outer `<svg viewBox>` on an image string is stripped; the `<symbol>` viewBox below is the coordinate system that actually clips the drawing. Ink outside that box is not visible.
+
+`url(#...)` gradients and filters inside a sprite are unreliable once the drawing is cloned with `<use>`, and duplicate ids collide. Paint with flat fills.
 
 ### Tower Sprites
 
 | Property | Value |
 |---|---|
-| **viewBox** | `-16 -16 32 32` |
-| **Base Size** | 27 x 27 px (`36 * 0.75`) |
+| **Authoring viewBox** | `-16 -16 32 32` |
 | **Symbol viewBox** | `-16 -16 32 32` (hardcoded in `useSvgStaticContent.ts`) |
+| **Element size** | 27 × 27 px (`36 * 0.75`, `TOWER_SCALED_SIZE`) |
 
-Towers are centered on their tile center, rendered at 27px, and rotated to face their target. The barrel/cannon should extend toward positive-X (right side) at 0 degrees rotation. Use `currentColor` in SVG strokes/fills to pick up the tower's theme color.
+Towers are centered on their tile and the whole sprite rotates to `tower.angle`. Put the barrel on +X (to the right at 0°). A new tower starts at `-π/4`. `sturdyWall` has no range, so it stays at that angle; a square footprint still reads after that rotation. Projectile origin is `tileSize * 0.45` (16.2px) from the tower center, past the 13.5px sprite edge, so the muzzle should sit on +X at the right edge of the clip.
+
+`TowerManager` sets `style.color` from the theme color. `currentColor` in the sprite picks that up. Hard-coded fills do not. Ghost towers are drawn by lowering the element's opacity.
+
+Level pips are 2px circles along the bottom of the sprite (`tower.y + 12`).
 
 ### Enemy Sprites
 
-| Enemy Type | Radius (constant) | Base Size | Actual Rendered Size |
-|---|---|---|---|
-| `minion` | 0.4 | 0.4 tile units | 28.8 px (`0.4 * 36 * 0.5 * 4`) |
-| `runner` | 0.4 | 0.4 tile units | 28.8 px |
-| `tank` | 0.4 | 0.4 tile units | 28.8 px |
-| `shielded` | 0.4 | 0.4 tile units | 28.8 px |
-| `healer` | 0.36 | 0.36 tile units | 25.9 px (`0.36 * 36 * 0.5 * 4`) |
-| `boss` | 0.6 | 0.6 tile units | 43.2 px (`0.6 * 36 * 0.5 * 4`) |
+Every enemy `<use>` is the same 27 × 27 px (`ENEMY_SCALED_SIZE`). The boss is not a larger element. A bigger creature is one whose drawing fills more of the viewBox.
 
-- **viewBox**: `-1 -1 2 2` (hardcoded in `useSvgStaticContent.ts`).
-- **Symbol viewBox**: `-1 -1 2 2` (hardcoded).
-- **Render formula**: `radius * tileSize * 0.5 * 4`, where `radius` is the constant from `ENEMY_TYPES` and `tileSize` is 36.
-- Enemies are scaled by camera zoom. During hit reaction, they scale down to 70% (`scale(0.7)`).
-- The boss at 43.2px is roughly 1.6x the tower size, visually appropriate for a larger threat.
-- Plan detail for these base sizes, but expect arbitrary scaling from camera zoom and effects.
+| Property | Value |
+|---|---|
+| **Authoring viewBox** | `-1 -1 2 2` |
+| **Symbol viewBox** | `-1 -1 2 2` (hardcoded) |
+| **Element size** | 27 × 27 px |
+
+Enemies face +X. When `cos(angle) < 0`, `EnemyManager` mirrors the sprite with `scale(-1, 1)` so it does not turn upside down. Do not put text in the drawing. Hit reaction does not scale the element; a flinch has to be in the frames. Slow is a saturate filter on the `<use>`.
 
 ### Tile Images
 
@@ -124,7 +145,9 @@ Towers are centered on their tile center, rendered at 27px, and rotated to face 
 | **Base Size** | 36 x 36 px |
 | **Symbol viewBox** | `0 0 36 36` (hardcoded) |
 
-Tiles fill each grid cell exactly. Scaled by camera zoom. The default theme uses a subtle cross-hatch overlay (`<path d="M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8">`) — optional for your theme.
+Tiles fill each grid cell exactly. Each tile, including path and the tile under a spawn, is rotated by a random multiple of 90° from the map seed (`useSvgStaticContent.ts`). A lane stripe will not follow the path. The edge pixels of a tile must be one flat color so neighbors meet after rotation. Keep motifs about 3px in from the edge: a 0.7px grid stroke is drawn over the tile boundary.
+
+`terrain1` is the lowest ground and `terrain4` is the highest. Height is a gameplay input, so the four steps need a clear light-to-dark ramp.
 
 ### Region Base Art
 
@@ -142,15 +165,17 @@ The base art replaces the default procedural base. If left as `""`, the default 
 
 The renderers generate `<symbol>` elements with specific IDs. Your theme's frame index determines which symbol is referenced. Do not change these IDs:
 
-| Entity | Walking Symbol ID | Animation Symbol ID |
-|---|---|---|
-| Tower type `basic`, frame 0 | `tower-basic-f0` | `tower-basic-f0` (same pool) |
-| Enemy type `minion`, frame 0 | `enemy-minion-f0` | — |
-| Enemy type `minion`, hit frame 0 | `enemy-minion-hit-f0` | — |
+| Entity | Symbol id |
+|---|---|
+| Tower type `basic`, animation frame 0 | `tower-basic-f0` |
+| Enemy type `minion`, walking frame 0 | `enemy-minion-f0` |
+| Enemy type `minion`, hit frame 0 | `enemy-minion-hit-f0` |
+| Enemy type `minion`, attack frame 0 | `enemy-minion-attack-f0` |
+| Spawn hatch | `spawn-closed`, `spawn-open`, `spawn-transition` |
 
-Pattern: `tower-{type}-f{index}`, `enemy-{type}-f{index}`, `enemy-{type}-hit-f{index}`.
+Pattern: `tower-{type}-f{index}`, `enemy-{type}-f{index}`, `enemy-{type}-hit-f{index}`, `enemy-{type}-attack-f{index}`.
 
-Frame 0 is always the "idle" or "default" frame. Animation frames (tower firing, enemy hit reaction) play their sequence then return to frame 0 of the walking animation.
+Tower frame 0 is the resting picture. Later animation frames play across `animation.duration`, then the renderer returns to frame 0. Enemy hit and attack replace the walking frame while their timers are running, then walking resumes. There is no separate tower walking symbol.
 
 ---
 
@@ -161,11 +186,12 @@ Frame 0 is always the "idle" or "default" frame. Animation frames (tower firing,
 - **Enemy walking duration**: Full cycle time for the walking bob/wobble. Typical range: 0.5–1.5 seconds.
 - **Enemy hit reaction duration**: How long the hit flash/stutter plays. Default: 0.12 seconds (fast, snappy feedback).
 
-Frame count per cycle:
-- Tower animation (firing): 2 frames (idle + fire flash)
-- Tower walking (idle): 1 frame (static) or more for subtle animation
-- Enemy walking: 8 frames (smooth bob/wobble cycle)
-- Enemy hit reaction: 3 frames (hit flash + recoil + hold)
+Frame count per cycle (what the shipped themes use; the renderer accepts any positive count):
+- Tower animation: frame 0 at rest, then one or more firing frames. Polymath uses 2. Aftermath uses 3 (rest, discharge, leftover smoke).
+- Tower walking: 1 frame, unused by the renderer.
+- Enemy walking: 8 frames.
+- Enemy hit reaction: 3 frames.
+- Enemy attack: 3 frames (windup, strike toward +X, recover). Omit `attack` and the enemy has no attack sprite.
 
 ---
 
@@ -184,13 +210,15 @@ The normalizer strips XML prologues, HTML comments, and whitespace. For inline S
 
 | Category | Count |
 |---|---|
-| Tower animation sets | 6 |
-| Tower walking sets | 6 |
+| Tower animation sets | 8 |
+| Tower walking sets | 8 (stored; not drawn) |
 | Enemy walking sets | 6 |
 | Enemy hit reaction sets | 6 |
+| Enemy attack sets | 6 (optional per enemy) |
 | Region tile sets | 15 (3 regions × 5 tile types) |
 | Region base sets | 3 |
-| **Total image sets** | **42** |
+| Spawn images | 3 (optional) |
+| **Total image sets, both shipped themes** | **55** |
 
 ---
 

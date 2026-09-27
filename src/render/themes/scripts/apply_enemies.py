@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Replace enemies section in the-aftermath.json with generated sprites."""
+"""Superseded by gen_aftermath_theme.py. Do not run this against the-aftermath.json.
+
+Replace enemies section in the-aftermath.json with generated sprites.
+"""
 import json
 
 # Load generated enemies

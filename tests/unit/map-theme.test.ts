@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { RawMapThemeSchema } from "@/content/schemas/theme.js";
 import { useSvgStaticContent } from "@/render/svg/useSvgStaticContent.js";
+import aftermathTheme from "@/render/themes/data/the-aftermath.json";
 import { DEFAULT_THEME_ID, MAP_THEME_MANIFEST, type MapThemeData } from "@/render/themes/index.js";
 import { normalizeThemeImages } from "@/render/themes/normalize.js";
 import { createTestMapThemeStore } from "../helpers/mock-stores";
@@ -175,6 +177,96 @@ describe("Map Theme System", () => {
       expect(store.preloadDefault).toBeInstanceOf(Function);
       expect(store.reset).toBeInstanceOf(Function);
     });
+  });
+});
+
+describe("Aftermath theme", () => {
+  const theme = RawMapThemeSchema.parse(aftermathTheme);
+
+  const towerContract: Record<string, { name: string; color: string; icon: string; duration: number }> = {
+    basic: { name: "Ten-Miss Blaster", color: "#b87333", icon: "▪", duration: 0.3 },
+    ice: { name: "Cryo-ME A-River", color: "#55ccff", icon: "◆", duration: 0.4 },
+    sniper: { name: "Longshot Silver", color: "#888", icon: "◎", duration: 0.35 },
+    cannon: { name: "Junk Cannon", color: "#5a4a3a", icon: "◉", duration: 0.5 },
+    lightning: { name: "Tesla-Foil Hat", color: "#ff0", icon: "⚡", duration: 0.25 },
+    railgun: { name: "Railroad Line-Driver", color: "#44ddaa", icon: "▲", duration: 0.45 },
+    sturdyWall: { name: "Bastion Wall", color: "#b08968", icon: "◧", duration: 0.3 },
+    shotgunTank: { name: "Shotgun Tank", color: "#c08552", icon: "◳", duration: 0.3 },
+  };
+
+  const enemyContract: Record<string, { name: string; color: string; shape: string; walk: number; hit: number }> = {
+    minion: { name: "Bad Bug", color: "#88aa44", shape: "●", walk: 0.8, hit: 0.3 },
+    runner: { name: "Manic Mantis", color: "#44aa44", shape: "◆", walk: 0.6, hit: 0.3 },
+    tank: { name: "Yow Guy", color: "#886644", shape: "■", walk: 1.0, hit: 0.3 },
+    shielded: { name: "Shell Shocked", color: "#99aabb", shape: "◇", walk: 0.7, hit: 0.3 },
+    healer: { name: "Mole Mender", color: "#bb77aa", shape: "▲", walk: 0.9, hit: 0.3 },
+    boss: { name: "Death Draw", color: "#cc6600", shape: "★", walk: 1.2, hit: 0.4 },
+  };
+
+  it("keeps the Aftermath identity and the frame contract", () => {
+    expect(theme.id).toBe("the-aftermath");
+    expect(theme.label).toBe("Aftermath");
+    expect(Object.keys(theme.towers)).toEqual(Object.keys(towerContract));
+    expect(Object.keys(theme.enemies)).toEqual(Object.keys(enemyContract));
+
+    for (const [towerId, expected] of Object.entries(towerContract)) {
+      const tower = theme.towers[towerId];
+      expect(tower).toBeDefined();
+      expect(tower?.name).toBe(expected.name);
+      expect(tower?.color).toBe(expected.color);
+      expect(tower?.icon).toBe(expected.icon);
+      expect(tower?.animation?.duration).toBe(expected.duration);
+      expect(tower?.animation?.frames).toHaveLength(3);
+      expect(tower?.walking?.frames).toHaveLength(1);
+      expect(tower?.walking?.frames[0]?.image).toBe(tower?.animation?.frames[0]?.image);
+    }
+
+    for (const [enemyId, expected] of Object.entries(enemyContract)) {
+      const enemy = theme.enemies[enemyId];
+      expect(enemy).toBeDefined();
+      expect(enemy?.name).toBe(expected.name);
+      expect(enemy?.color).toBe(expected.color);
+      expect(enemy?.shape).toBe(expected.shape);
+      expect(enemy?.walking.duration).toBe(expected.walk);
+      expect(enemy?.walking.frames).toHaveLength(8);
+      expect(enemy?.hitReaction?.duration).toBe(expected.hit);
+      expect(enemy?.hitReaction?.frames).toHaveLength(3);
+      expect(enemy?.attack?.duration).toBe(0.2);
+      expect(enemy?.attack?.frames).toHaveLength(3);
+    }
+
+    expect(theme.regions.map((region) => region.name)).toEqual(["Rustbloom Wastes", "Sand and Regret", "Ashen Highs"]);
+    expect(theme.spawns?.closed.startsWith("<svg")).toBe(true);
+    expect(theme.spawns?.open.startsWith("<svg")).toBe(true);
+    expect(theme.spawns?.transition.startsWith("<svg")).toBe(true);
+  });
+
+  it("paints sprites without document-scoped paint servers", () => {
+    const images: string[] = [];
+    for (const tower of Object.values(theme.towers)) {
+      for (const frame of tower.animation?.frames ?? []) images.push(frame.image);
+      for (const frame of tower.walking?.frames ?? []) images.push(frame.image);
+    }
+    for (const enemy of Object.values(theme.enemies)) {
+      for (const frame of enemy.walking.frames) images.push(frame.image);
+      for (const frame of enemy.hitReaction?.frames ?? []) images.push(frame.image);
+      for (const frame of enemy.attack?.frames ?? []) images.push(frame.image);
+    }
+    for (const region of theme.regions) {
+      images.push(
+        region.tiles.path,
+        region.tiles.terrain1,
+        region.tiles.terrain2,
+        region.tiles.terrain3,
+        region.tiles.terrain4,
+      );
+      images.push(region.base);
+    }
+    images.push(theme.spawns?.closed ?? "", theme.spawns?.open ?? "", theme.spawns?.transition ?? "");
+    for (const image of images) {
+      expect(image.includes("url(#")).toBe(false);
+      expect(image.includes("<filter")).toBe(false);
+    }
   });
 });
 
