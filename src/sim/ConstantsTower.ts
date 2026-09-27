@@ -52,6 +52,7 @@ export interface TowerAddonEffect {
   bounceShot?: boolean;
   splashStun?: number;
   antiAir?: boolean;
+  armorPiercing?: boolean;
   doubleDischarge?: number;
   burnCircuit?: boolean;
   trueShot?: number;
@@ -61,6 +62,8 @@ export interface TowerAddonEffect {
   frostAura?: boolean;
   staticField?: boolean;
   iceBurst?: boolean;
+  healthMult?: number;
+  fireRateMult?: number;
 }
 
 export type { TowerVariantStats };

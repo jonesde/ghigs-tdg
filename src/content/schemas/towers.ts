@@ -33,6 +33,7 @@ export const TowerAddonEffectSchema = z.object({
   bounceShot: z.boolean().optional(),
   splashStun: z.number().optional(),
   antiAir: z.boolean().optional(),
+  armorPiercing: z.boolean().optional(),
   doubleDischarge: z.number().optional(),
   burnCircuit: z.boolean().optional(),
   trueShot: z.number().optional(),
@@ -42,6 +43,8 @@ export const TowerAddonEffectSchema = z.object({
   frostAura: z.boolean().optional(),
   staticField: z.boolean().optional(),
   iceBurst: z.boolean().optional(),
+  healthMult: z.number().optional(),
+  fireRateMult: z.number().optional(),
 });
 
 export const TowerVariantDefSchema = z.object({

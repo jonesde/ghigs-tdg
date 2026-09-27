@@ -61,6 +61,7 @@ export interface ProjectileGame {
   bounceCount: number;
   splashStun: number;
   antiAir: boolean;
+  armorPiercing: boolean;
   trueShot: number;
   markTarget: number;
   antiHeal: boolean;
@@ -276,6 +277,7 @@ export class ProjectileManager {
     bounceShot?: boolean;
     splashStun?: number;
     antiAir?: boolean;
+    armorPiercing?: boolean;
     trueShot?: number;
     markTarget?: number;
     antiHeal?: boolean;
@@ -320,6 +322,7 @@ export class ProjectileManager {
       bounceCount: 0,
       splashStun: opts.splashStun ?? 0,
       antiAir: opts.antiAir ?? false,
+      armorPiercing: opts.armorPiercing ?? opts.antiAir ?? false,
       trueShot: opts.trueShot ?? 0,
       markTarget: opts.markTarget ?? 0,
       antiHeal: opts.antiHeal ?? false,
@@ -777,7 +780,7 @@ export class ProjectileManager {
     }
 
     // Damage first so a marking shot does not multiply its own hit; mark after.
-    const dealtDamage = enemy.takeDamage(scaledDamage, projectile.antiAir) ?? 0;
+    const dealtDamage = enemy.takeDamage(scaledDamage, projectile.armorPiercing || projectile.antiAir) ?? 0;
     this.recordDamage(projectile.towerId, dealtDamage);
 
     if (projectile.markTarget > 0 && enemy.applyMarkTarget) {
@@ -850,7 +853,7 @@ export class ProjectileManager {
       for (const splashEnemy of splashEnemies) {
         if (splashEnemy.id === enemy.id) continue;
         const splashDamage = scaledDamage * SPLASH_DAMAGE_RATIO;
-        const dealtSplash = splashEnemy.takeDamage(splashDamage, projectile.antiAir) ?? 0;
+        const dealtSplash = splashEnemy.takeDamage(splashDamage, projectile.armorPiercing || projectile.antiAir) ?? 0;
         this.recordDamage(projectile.towerId, dealtSplash);
 
         if (projectile.markTarget > 0 && splashEnemy.applyMarkTarget) {

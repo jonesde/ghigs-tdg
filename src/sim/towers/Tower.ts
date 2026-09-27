@@ -154,6 +154,7 @@ interface ProjectileManagerRef {
     bounceShot?: boolean;
     splashStun?: number;
     antiAir?: boolean;
+    armorPiercing?: boolean;
     trueShot?: number;
     markTarget?: number;
     antiHeal?: boolean;
@@ -202,6 +203,7 @@ interface TowerStats {
   fenceDamage: number;
   fenceStun: number;
   healthMult: number;
+  armorPiercing: boolean;
   // Addon-driven stat modifiers
   critChance: number;
   goldOnCrit: number;
@@ -430,6 +432,7 @@ export class Tower {
     let fenceDamage = 0;
     let fenceStun = 0;
     let healthMult = 1;
+    let armorPiercing = false;
 
     if (this.level >= 5 && this.variant === "A") {
       const variantA = TOWER_VARIANTS[this.type as TowerId]?.A;
@@ -454,6 +457,7 @@ export class Tower {
           fenceDamage,
           fenceStun,
           healthMult,
+          armorPiercing,
         } = applyVariantOps(
           {
             range,
@@ -475,6 +479,7 @@ export class Tower {
             fenceDamage,
             fenceStun,
             healthMult,
+            armorPiercing,
           },
           variantA.statOps,
           level - 5,
@@ -504,6 +509,7 @@ export class Tower {
           fenceDamage,
           fenceStun,
           healthMult,
+          armorPiercing,
         } = applyVariantOps(
           {
             range,
@@ -525,6 +531,7 @@ export class Tower {
             fenceDamage,
             fenceStun,
             healthMult,
+            armorPiercing,
           },
           variantB.statOps,
           level - 5,
@@ -545,6 +552,10 @@ export class Tower {
         if (effect.chainAdd != null) chain += effect.chainAdd;
         if (effect.stunAdd != null) stun += effect.stunAdd;
         if (effect.pierceAdd != null) pierce += effect.pierceAdd;
+        if (effect.healthMult != null) healthMult *= effect.healthMult;
+        if (effect.fireRateMult != null) fireRate *= effect.fireRateMult;
+        if (effect.armorPiercing) armorPiercing = true;
+        if (effect.antiAir) armorPiercing = true;
       }
     }
 
@@ -626,6 +637,7 @@ export class Tower {
       fenceDamage,
       fenceStun,
       healthMult,
+      armorPiercing,
       critChance,
       goldOnCrit,
       bounceShot,
@@ -1020,7 +1032,8 @@ export class Tower {
       goldOnCrit: stats.goldOnCrit,
       bounceShot: stats.bounceShot,
       splashStun: stats.splashStun,
-      antiAir: stats.antiAir,
+      antiAir: stats.armorPiercing || stats.antiAir,
+      armorPiercing: stats.armorPiercing || stats.antiAir,
       trueShot: stats.trueShot,
       markTarget: stats.markTarget,
       antiHeal: stats.antiHeal,

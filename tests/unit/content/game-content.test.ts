@@ -29,6 +29,7 @@ function blankStats() {
     fenceDamage: 0,
     fenceStun: 0,
     healthMult: 1,
+    armorPiercing: false,
   };
 }
 
@@ -78,8 +79,8 @@ describe("game content packs", () => {
       TOWER_VARIANTS.lightning.A.statOps,
       1,
     );
-    expect(lightningA1.chain).toBe(4);
-    expect(lightningA1.damage).toBeCloseTo(12);
+    expect(lightningA1.chain).toBe(6);
+    expect(lightningA1.damage).toBeCloseTo(14.4);
 
     const sniperA = applyVariantOps(blankStats(), TOWER_VARIANTS.sniper.A.statOps, 0);
     expect(sniperA.marksman).toBe(true);

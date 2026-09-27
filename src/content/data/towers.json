@@ -76,7 +76,10 @@
     },
     "ice": {
       "A": { "name": "Permafrost", "statOps": [{ "op": "mulTier", "field": "splash", "tiers": [1, 1.25, 1.5] }] },
-      "B": { "name": "Shatter", "statOps": [{ "op": "mul", "field": "damage", "factor": 2 }] }
+      "B": {
+        "name": "Shatter",
+        "statOps": [{ "op": "mul", "field": "damage", "factor": 2 }, { "op": "set", "field": "armorPiercing", "value": true }]
+      }
     },
     "sniper": {
       "A": { "name": "Marksman", "statOps": [{ "op": "set", "field": "marksman", "value": true }] },
@@ -116,7 +119,7 @@
     "cannon": [{ "splashMult": 1.5 }, { "splashStun": 0.3 }, { "antiAir": true }],
     "lightning": [{ "staticField": true }, { "doubleDischarge": 0.1 }, { "burnCircuit": true }],
     "railgun": [{ "chargeShot": true }, { "antiHeal": true }, { "pierceAdd": 2 }],
-    "sturdyWall": [{}, {}, {}],
-    "shotgunTank": [{}, {}, {}]
+    "sturdyWall": [{ "healthMult": 1.3 }, { "healthMult": 1.5 }, { "healthMult": 1.4 }],
+    "shotgunTank": [{ "healthMult": 1.3 }, { "fireRateMult": 1.35 }, { "rangeAdd": 1 }]
   }
 }

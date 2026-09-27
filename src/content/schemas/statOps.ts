@@ -20,6 +20,7 @@ export const STAT_FIELDS = [
   "fenceDamage",
   "fenceStun",
   "healthMult",
+  "armorPiercing",
 ] as const;
 
 export const StatFieldSchema = z.enum(STAT_FIELDS);

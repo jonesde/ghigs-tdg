@@ -54,7 +54,7 @@
     "cannon": [
       { "name": "Wide Blast", "desc": "Increases splash radius by 50%." },
       { "name": "Stun Shell", "desc": "Splash damage applies a 0.3s stun effect." },
-      { "name": "Anti-Air", "desc": "Shots hit air units and ignore enemy shields." }
+      { "name": "Anti-Air", "desc": "Shots ignore enemy shields." }
     ],
     "lightning": [
       { "name": "Static Field", "desc": "Tower emits a field that slows nearby enemies by 15%." },
@@ -67,14 +67,14 @@
       { "name": "Multi-Pierce", "desc": "Beams pierce 2 additional enemies." }
     ],
     "sturdyWall": [
-      { "name": "Plating", "desc": "Reinforced exterior plating." },
-      { "name": "Bastion", "desc": "Holds the line against the swarm." },
-      { "name": "Rubble", "desc": "Scrap metal patchwork for extra grit." }
+      { "name": "Plating", "desc": "Reinforced exterior plating — +30% max health." },
+      { "name": "Bastion", "desc": "Holds the line — +50% max health." },
+      { "name": "Rubble", "desc": "Scrap patchwork — +40% max health." }
     ],
     "shotgunTank": [
-      { "name": "Hull", "desc": "Extra armor plating on the tank chassis." },
-      { "name": "Loader", "desc": "Faster shell loading mechanism." },
-      { "name": "Spread", "desc": "Wider shotgun spread pattern." }
+      { "name": "Hull", "desc": "Extra armor plating — +30% max health." },
+      { "name": "Loader", "desc": "Faster shell loading — +35% fire rate." },
+      { "name": "Spread", "desc": "Wider shotgun spread — +1 range." }
     ]
   },
   "generalAddonCategories": {

@@ -20,6 +20,7 @@ export type TowerVariantStats = {
   fenceDamage: number;
   fenceStun: number;
   healthMult: number;
+  armorPiercing: boolean;
 };
 
 function readNumber(stats: TowerVariantStats, field: StatField): number {
@@ -59,10 +60,10 @@ export function applyVariantOps(
         writeValue(result, op.field, readNumber(result, op.field) + op.amount);
         break;
       case "addPerTier":
-        writeValue(result, op.field, readNumber(result, op.field) + op.perTier * tierIdx);
+        writeValue(result, op.field, readNumber(result, op.field) + op.perTier * (tierIdx + 1));
         break;
       case "mulPowTier":
-        writeValue(result, op.field, readNumber(result, op.field) * op.base ** tierIdx);
+        writeValue(result, op.field, readNumber(result, op.field) * op.base ** (tierIdx + 1));
         break;
     }
   }

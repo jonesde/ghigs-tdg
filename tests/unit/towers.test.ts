@@ -285,8 +285,8 @@ describe("Tower", () => {
       const tierIndex = tower.level - 5;
       const baseChain = TOWER_BASE.lightning.chain;
       const baseDamage = TOWER_BASE.lightning.damage * TOWER_LEVEL_DMG_MULT ** (tower.level - 1);
-      expect(tower.stats.chain).toBe((baseChain ?? 0) + 2 * tierIndex);
-      expect(tower.stats.damage).toBeCloseTo(baseDamage * 1.2 ** tierIndex, 4);
+      expect(tower.stats.chain).toBe((baseChain ?? 0) + 2 * (tierIndex + 1));
+      expect(tower.stats.damage).toBeCloseTo(baseDamage * 1.2 ** (tierIndex + 1), 4);
     });
 
     it("does not apply variant at level < 5", () => {
