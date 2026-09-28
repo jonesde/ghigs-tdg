@@ -93,7 +93,8 @@ export {
 // ===== Engine loop (not content) =====
 
 export const FIXED_DT = 1 / 60;
-export const PROJECTILE_HIT_THRESHOLD = 8;
+// Numerical slack on the projectile glyph when testing a hit. Not an enemy radius.
+export const PROJECTILE_HIT_SLOP = 1;
 export const MAX_PROJECTILE_AGE = 12;
 // Half-width floor for path retarget cast, as a fraction of tile size ("roughly on path").
 export const PROJECTILE_RETARGET_CORRIDOR_TILE_FRACTION = 0.35;

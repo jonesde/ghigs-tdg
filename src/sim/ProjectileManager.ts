@@ -3,11 +3,7 @@ import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
 import type { ProjectileHitEvent } from "@/sim/physics/ContactProcessor.js";
 import type { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import type { Tower } from "@/sim/towers/Tower.js";
-import {
-  MAX_PROJECTILE_AGE,
-  PROJECTILE_HIT_THRESHOLD,
-  PROJECTILE_RETARGET_CORRIDOR_TILE_FRACTION,
-} from "./Constants.js";
+import { MAX_PROJECTILE_AGE, PROJECTILE_HIT_SLOP, PROJECTILE_RETARGET_CORRIDOR_TILE_FRACTION } from "./Constants.js";
 import {
   ANTI_HEAL_DURATION,
   BOUNCE_DAMAGE_FALLOFF,
@@ -74,6 +70,9 @@ export interface ProjectileGame {
   // Last homing flight direction (unit); used to retarget along path when target dies.
   lastDirX: number;
   lastDirY: number;
+  // Pre-step position. The body-path hit cast sweeps from here through the post-step point.
+  sweepOriginX: number;
+  sweepOriginY: number;
 }
 
 interface LightningTarget {
@@ -331,6 +330,8 @@ export class ProjectileManager {
       fixedAim: opts.targetId === 0,
       lastDirX: 0,
       lastDirY: 0,
+      sweepOriginX: opts.x,
+      sweepOriginY: opts.y,
     };
 
     // Roll crit only if tower has crit ability
@@ -368,7 +369,7 @@ export class ProjectileManager {
       projectileId: projectile.id,
       x: projectile.x,
       y: projectile.y,
-      radius: projectile.radius + PROJECTILE_HIT_THRESHOLD * 0.5,
+      radius: projectile.radius + PROJECTILE_HIT_SLOP,
       velocityX: 0,
       velocityY: 0,
       isSensor: true,
@@ -474,14 +475,18 @@ export class ProjectileManager {
 
   // After physics step: read body positions, process contact hits, castShape fallback.
   postPhysics(dt: number, contactHits: ProjectileHitEvent[]): void {
-    // Sync body translations before contact resolution so impact FX use post-step
-    // positions rather than the pre-physics frame.
+    // x/y is still the pre-step point: prePhysics sets velocity and does not integrate.
+    // The hit cast sweeps that segment. Starting at the post-step point looks one step
+    // ahead and removes the glyph short of the enemy. Impact FX then use the post-step
+    // point, or the snapped surface if this step hit.
     for (const projectile of this.projectiles) {
       if (!projectile.active) continue;
-      const bodyPos = this.physicsWorld?.getProjectilePosition(projectile.id);
-      if (bodyPos) {
-        projectile.x = bodyPos.x;
-        projectile.y = bodyPos.y;
+      projectile.sweepOriginX = projectile.x;
+      projectile.sweepOriginY = projectile.y;
+      const bodyPosition = this.physicsWorld?.getProjectilePosition(projectile.id);
+      if (bodyPosition) {
+        projectile.x = bodyPosition.x;
+        projectile.y = bodyPosition.y;
       }
     }
 
@@ -501,8 +506,9 @@ export class ProjectileManager {
       const projectile = this.projectiles[i];
       if (!projectile) continue;
       if (!projectile.active) {
+        // Stay in the list so the snapshot after this tick still draws the snapped glyph.
+        // prePhysics splices inactive projectiles on the next tick, before another cast.
         this.destroyProjectileBody(projectile.id);
-        this.projectiles.splice(i, 1);
         continue;
       }
       const hasBody = this.bodyIds.has(projectile.id);
@@ -515,7 +521,6 @@ export class ProjectileManager {
       }
       if (!projectile.active) {
         this.destroyProjectileBody(projectile.id);
-        this.projectiles.splice(i, 1);
       }
     }
   }
@@ -563,12 +568,75 @@ export class ProjectileManager {
     this.bodyIds.delete(projectileId);
   }
 
+  private glyphHitRadius(projectile: ProjectileGame): number {
+    return projectile.radius + PROJECTILE_HIT_SLOP;
+  }
+
+  // Center travel for this step only. The cast ball is the glyph, so this length must
+  // not also include that radius: the old threshold did, and every enemy was struck
+  // about a boss-width before the glyph arrived. A body has already moved, so the
+  // segment starts at the pre-step point saved in postPhysics. The manual path has
+  // not integrated yet, so the segment is the step about to be taken.
+  private stepCast(
+    projectile: ProjectileGame,
+    dt: number,
+    positionFromBody: boolean,
+    aimX: number,
+    aimY: number,
+    clampToAim: boolean,
+  ): {
+    originX: number;
+    originY: number;
+    directionX: number;
+    directionY: number;
+    castLength: number;
+    moveDist: number;
+  } {
+    if (positionFromBody) {
+      const originX = projectile.sweepOriginX;
+      const originY = projectile.sweepOriginY;
+      const traveledX = projectile.x - originX;
+      const traveledY = projectile.y - originY;
+      const traveled = Math.hypot(traveledX, traveledY);
+      if (traveled > 1e-6) {
+        return {
+          originX,
+          originY,
+          directionX: traveledX / traveled,
+          directionY: traveledY / traveled,
+          castLength: traveled,
+          moveDist: traveled,
+        };
+      }
+      const aimDeltaX = aimX - originX;
+      const aimDeltaY = aimY - originY;
+      const aimDistance = Math.hypot(aimDeltaX, aimDeltaY) || 1;
+      return {
+        originX,
+        originY,
+        directionX: aimDeltaX / aimDistance,
+        directionY: aimDeltaY / aimDistance,
+        castLength: 0,
+        moveDist: 0,
+      };
+    }
+    const originX = projectile.x;
+    const originY = projectile.y;
+    const aimDeltaX = aimX - originX;
+    const aimDeltaY = aimY - originY;
+    const aimDistance = Math.hypot(aimDeltaX, aimDeltaY);
+    const stepDistance = projectile.speed * dt;
+    const moveDist = clampToAim ? Math.min(stepDistance, aimDistance) : stepDistance;
+    const directionX = aimDistance > 0 ? aimDeltaX / aimDistance : 1;
+    const directionY = aimDistance > 0 ? aimDeltaY / aimDistance : 0;
+    return { originX, originY, directionX, directionY, castLength: moveDist, moveDist };
+  }
+
   // `positionFromBody`: when true, body already advanced position this step — only
   // run hit casts and range checks, do not double-integrate translation.
   private updateCircleProjectile(projectile: ProjectileGame, dt: number, positionFromBody = false): void {
-    // Fixed-aim: targetId === 0, travel straight toward aimed world position
     if (projectile.targetId === 0) {
-      const hitThreshold = projectile.radius + PROJECTILE_HIT_THRESHOLD;
+      const ballRadius = this.glyphHitRadius(projectile);
       if (projectile.hitEnemyIds === undefined) {
         projectile.hitEnemyIds = new Set<number>();
       }
@@ -577,24 +645,16 @@ export class ProjectileManager {
         projectile.fixedAimHits = 0;
       }
 
-      const targetDx = projectile.targetX - projectile.x;
-      const targetDy = projectile.targetY - projectile.y;
-      const targetDist = Math.sqrt(targetDx * targetDx + targetDy * targetDy);
-      const moveAmount = projectile.speed * dt;
-      const moveDist = Math.min(moveAmount, targetDist);
-      const dirX = targetDist > 0 ? targetDx / targetDist : 0;
-      const dirY = targetDist > 0 ? targetDy / targetDist : 0;
-      const ballRadius = hitThreshold;
-      const castLen = moveDist + ballRadius;
+      const segment = this.stepCast(projectile, dt, positionFromBody, projectile.targetX, projectile.targetY, true);
       const maxHits = projectile.maxHitCount > 0 ? projectile.maxHitCount : 1;
 
       this.enemyManager.castShapePierce(
-        projectile.x,
-        projectile.y,
-        dirX,
-        dirY,
+        segment.originX,
+        segment.originY,
+        segment.directionX,
+        segment.directionY,
         ballRadius,
-        castLen,
+        segment.castLength,
         maxHits,
         (enemy) => {
           if (hitSet.has(enemy.id)) return true;
@@ -606,14 +666,14 @@ export class ProjectileManager {
       );
       if (!projectile.active) return;
 
-      if (!positionFromBody && targetDist > 0) {
-        projectile.x += (targetDx / targetDist) * moveDist;
-        projectile.y += (targetDy / targetDist) * moveDist;
+      if (!positionFromBody && segment.moveDist > 0) {
+        projectile.x += segment.directionX * segment.moveDist;
+        projectile.y += segment.directionY * segment.moveDist;
       }
-      const finalDx = projectile.targetX - projectile.x;
-      const finalDy = projectile.targetY - projectile.y;
-      const finalDist = Math.sqrt(finalDx * finalDx + finalDy * finalDy);
-      if (finalDist <= ballRadius) {
+      const finalDeltaX = projectile.targetX - projectile.x;
+      const finalDeltaY = projectile.targetY - projectile.y;
+      const finalDistance = Math.hypot(finalDeltaX, finalDeltaY);
+      if (finalDistance <= ballRadius) {
         this.removeProjectile(projectile, "reached-target");
       }
       return;
@@ -632,36 +692,34 @@ export class ProjectileManager {
       }
     }
 
-    const dx = enemy.x - projectile.x;
-    const dy = enemy.y - projectile.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+    const deltaX = enemy.x - projectile.x;
+    const deltaY = enemy.y - projectile.y;
+    const distance = Math.hypot(deltaX, deltaY);
 
     const maxRange = projectile.range * (this.grid?.tileSize ?? GRID_TILE_SIZE);
-    if (dist > maxRange) {
+    if (distance > maxRange) {
       this.removeProjectile(projectile, "out-of-range");
       return;
     }
 
-    const ballRadius = projectile.radius + PROJECTILE_HIT_THRESHOLD;
-    const moveDist = projectile.speed * dt;
-    const dirX = dist > 0 ? dx / dist : 1;
-    const dirY = dist > 0 ? dy / dist : 0;
+    const ballRadius = this.glyphHitRadius(projectile);
     projectile.targetX = enemy.x;
     projectile.targetY = enemy.y;
-    projectile.lastDirX = dirX;
-    projectile.lastDirY = dirY;
+    projectile.lastDirX = distance > 0 ? deltaX / distance : 1;
+    projectile.lastDirY = distance > 0 ? deltaY / distance : 0;
+    const segment = this.stepCast(projectile, dt, positionFromBody, enemy.x, enemy.y, false);
     if (projectile.hitEnemyIds === undefined) {
       projectile.hitEnemyIds = new Set<number>();
     }
     const homingHitSet = projectile.hitEnemyIds as Set<number>;
     const homingHits: CastEnemy[] = [];
     this.enemyManager.castShapePierce(
-      projectile.x,
-      projectile.y,
-      dirX,
-      dirY,
+      segment.originX,
+      segment.originY,
+      segment.directionX,
+      segment.directionY,
       ballRadius,
-      moveDist + ballRadius,
+      segment.castLength,
       1,
       (candidate) => {
         if (homingHitSet.has(candidate.id)) return true;
@@ -676,9 +734,9 @@ export class ProjectileManager {
       return;
     }
 
-    if (!positionFromBody && dist > 0) {
-      projectile.x += (dx / dist) * moveDist;
-      projectile.y += (dy / dist) * moveDist;
+    if (!positionFromBody && segment.moveDist > 0) {
+      projectile.x += segment.directionX * segment.moveDist;
+      projectile.y += segment.directionY * segment.moveDist;
     }
   }
 
@@ -698,8 +756,7 @@ export class ProjectileManager {
     dirY /= dirLength;
 
     const tileSize = this.grid?.tileSize ?? GRID_TILE_SIZE;
-    const hitBallRadius = projectile.radius + PROJECTILE_HIT_THRESHOLD;
-    const corridorRadius = Math.max(hitBallRadius, PROJECTILE_RETARGET_CORRIDOR_TILE_FRACTION * tileSize);
+    const corridorRadius = PROJECTILE_RETARGET_CORRIDOR_TILE_FRACTION * tileSize;
     const maxDistance = projectile.range * tileSize;
     const hitSet = projectile.hitEnemyIds;
     const foundTargets: CastEnemy[] = [];
@@ -1094,10 +1151,17 @@ export class ProjectileManager {
   getRenderData(): Array<{ id: number; x: number; y: number; radius: number; color: string; icon: string }> {
     const result = this.renderDataBuffer;
     result.length = 0;
-    for (const p of this.projectiles) {
-      if (p.active) {
-        result.push({ id: p.id, x: p.x, y: p.y, radius: p.radius, color: p.color, icon: p.icon });
-      }
+    // Inactive entries are the impact frame postPhysics left for this snapshot.
+    // prePhysics and update() splice them before the next cast.
+    for (const projectile of this.projectiles) {
+      result.push({
+        id: projectile.id,
+        x: projectile.x,
+        y: projectile.y,
+        radius: projectile.radius,
+        color: projectile.color,
+        icon: projectile.icon,
+      });
     }
     return result;
   }

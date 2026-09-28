@@ -3,6 +3,8 @@
 
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PROJECTILE_HIT_SLOP } from "@/sim/Constants.js";
+import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
 import {
   CHAIN_DAMAGE_FALLOFF,
   NAPALM_BURN_DPS_RATIO,
@@ -24,6 +26,7 @@ interface MockEnemy {
   y: number;
   hp: number;
   maxHp: number;
+  radius?: number;
   removed: boolean;
   takeDamage: (dmg: number) => void;
   applyBurn?: (dps: number, duration: number) => void;
@@ -63,6 +66,7 @@ function createMockEnemy(
     y: opts.y,
     hp: opts.hp,
     maxHp: opts.maxHp,
+    radius: opts.radius,
     removed: opts.removed ?? false,
     takeDamage: opts.takeDamage ?? vi.fn(),
     applyBurn: opts.applyBurn,
@@ -106,7 +110,7 @@ function createMockEnemyManager(enemies: MockEnemy[]): MockEnemyManager {
         const closestX = originX + unitX * projection;
         const closestY = originY + unitY * projection;
         const dist = Math.hypot(enemy.x - closestX, enemy.y - closestY);
-        if (dist <= ballRadius) candidates.push({ enemy, projection });
+        if (dist <= ballRadius + (enemy.radius ?? 0)) candidates.push({ enemy, projection });
       }
       candidates.sort((a, b) => a.projection - b.projection);
       let hits = 0;
@@ -701,7 +705,7 @@ describe("ProjectileManager", () => {
   });
 
   describe("getRenderData()", () => {
-    it("returns only active projectiles", () => {
+    it("returns an inactive projectile still in the list as the impact frame", () => {
       const enemy = createMockEnemy({ id: 1, x: 200, y: 200, hp: 100, maxHp: 100 });
       enemyManager = createMockEnemyManager([enemy]);
       manager = new ProjectileManager(enemyManager, particles);
@@ -721,6 +725,10 @@ describe("ProjectileManager", () => {
       const proj = (manager as any).projectiles[0]!;
       proj.active = false;
 
+      expect(manager.getRenderData()).toHaveLength(1);
+      expect(manager.getRenderData()[0]!.x).toBe(100);
+
+      manager.update(0.016);
       expect(manager.getRenderData()).toHaveLength(0);
     });
 
@@ -1501,5 +1509,92 @@ describe("ProjectileManager", () => {
       expect(left.takeDamage).toHaveBeenCalledWith(16);
       expect(right.takeDamage).not.toHaveBeenCalled();
     });
+  });
+});
+
+const HIT_STEP_DT = 0.02;
+const HIT_STEP_SPEED = 100;
+const HIT_MOVE_DIST = HIT_STEP_SPEED * HIT_STEP_DT;
+const GLYPH_RADIUS = 3;
+
+function configuredColliderRadius(enemyType: string): number {
+  return ENEMY_TYPES[enemyType].radius * 36 * 0.5;
+}
+
+function hitReach(enemyRadius: number): number {
+  return GLYPH_RADIUS + PROJECTILE_HIT_SLOP + enemyRadius + HIT_MOVE_DIST;
+}
+
+function shotDamagedEnemy(enemyRadius: number, gap: number, fixedAim: boolean): boolean {
+  const enemy = createMockEnemy({ id: 1, x: gap, y: 0, hp: 100, maxHp: 100, radius: enemyRadius });
+  const takeDamage = vi.fn();
+  enemy.takeDamage = takeDamage;
+  const shotManager = new ProjectileManager(createMockEnemyManager([enemy]), makeParticleSystem());
+  shotManager.spawn({
+    x: 0,
+    y: 0,
+    damage: 10,
+    speed: HIT_STEP_SPEED,
+    range: 30,
+    towerType: "basic",
+    towerLevel: 1,
+    targetId: fixedAim ? 0 : 1,
+    targetX: 1000,
+    targetY: 0,
+    critChance: 0,
+  });
+  shotManager.update(HIT_STEP_DT);
+  return takeDamage.mock.calls.length > 0;
+}
+
+describe("projectile hit reach uses the enemy radius", () => {
+  const runnerRadius = configuredColliderRadius("runner");
+  const bossRadius = configuredColliderRadius("boss");
+
+  for (const fixedAim of [false, true]) {
+    const aimLabel = fixedAim ? "fixed-aim" : "homing";
+
+    it(`${aimLabel} misses a runner outside glyph + radius + slop + step`, () => {
+      expect(shotDamagedEnemy(runnerRadius, hitReach(runnerRadius) + 0.25, fixedAim)).toBe(false);
+    });
+
+    it(`${aimLabel} hits a runner once the step meets that reach`, () => {
+      expect(shotDamagedEnemy(runnerRadius, hitReach(runnerRadius) - 0.05, fixedAim)).toBe(true);
+    });
+
+    it(`${aimLabel} hit gap grows with the boss radius instead of a shared pad`, () => {
+      const between = (hitReach(runnerRadius) + hitReach(bossRadius)) / 2;
+      expect(between - hitReach(runnerRadius)).toBeCloseTo((bossRadius - runnerRadius) / 2, 5);
+      expect(shotDamagedEnemy(runnerRadius, between, fixedAim)).toBe(false);
+      expect(shotDamagedEnemy(bossRadius, between, fixedAim)).toBe(true);
+    });
+  }
+
+  it("postPhysics keeps the snapped glyph until the next prePhysics", () => {
+    const enemyRadius = runnerRadius;
+    const gap = hitReach(enemyRadius) - 0.05;
+    const enemy = createMockEnemy({ id: 1, x: gap, y: 0, hp: 100, maxHp: 100, radius: enemyRadius });
+    const shotManager = new ProjectileManager(createMockEnemyManager([enemy]), makeParticleSystem());
+    shotManager.spawn({
+      x: 0,
+      y: 0,
+      damage: 10,
+      speed: HIT_STEP_SPEED,
+      range: 30,
+      towerType: "basic",
+      towerLevel: 1,
+      targetId: 1,
+      targetX: gap,
+      targetY: 0,
+      critChance: 0,
+    });
+
+    shotManager.postPhysics(HIT_STEP_DT, []);
+    const renderData = shotManager.getRenderData();
+    expect(renderData).toHaveLength(1);
+    expect(renderData[0]!.x).toBeCloseTo(gap - enemyRadius, 5);
+
+    shotManager.prePhysics(HIT_STEP_DT);
+    expect(shotManager.getRenderData()).toHaveLength(0);
   });
 });

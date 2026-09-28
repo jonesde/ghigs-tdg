@@ -3,19 +3,20 @@
 
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { PROJECTILE_HIT_THRESHOLD } from "@/sim/Constants.js";
+import { FIXED_DT, PROJECTILE_HIT_SLOP } from "@/sim/Constants.js";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
+import { ProjectileManager } from "@/sim/ProjectileManager.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../../../helpers/mock-grid.js";
 import { makeParticleSystem } from "../../../helpers/mock-managers.js";
 import { mockDefaultTheme } from "../../../helpers/mock-stores.js";
 
-// projectile.radius (3 for non-cannon) + the existing graze slack.
-const BALL = 3 + PROJECTILE_HIT_THRESHOLD;
+// Explicit sweep ball for these query tests. Gameplay hits use the glyph radius plus slop.
+const BALL = 11;
 
 describe("PhysicsWorld swept casts", () => {
   let grid: Grid;
@@ -115,5 +116,87 @@ describe("EnemyManager cast delegate", () => {
       return true;
     });
     expect(hits).toHaveLength(2);
+  });
+});
+
+describe("projectile hit radius", () => {
+  let grid: Grid;
+  let physicsWorld: PhysicsWorld;
+  let enemyManager: EnemyManager;
+  let projectileManager: ProjectileManager;
+
+  beforeEach(() => {
+    grid = new Grid(getMap(0));
+    physicsWorld = new PhysicsWorld(grid);
+    enemyManager = new EnemyManager(grid, makeParticleSystem(), 0);
+    enemyManager.setPhysicsWorld(physicsWorld);
+    projectileManager = new ProjectileManager(enemyManager, makeParticleSystem(), null, grid);
+    projectileManager.setPhysicsWorld(physicsWorld);
+  });
+
+  afterEach(() => {
+    enemyManager.clear();
+    physicsWorld.dispose();
+  });
+
+  function placeMinion(x: number, y: number) {
+    const enemy = enemyManager.spawn("minion", 1, 0, 1);
+    enemy.x = x;
+    enemy.y = y;
+    enemy.centerX = x;
+    enemy.centerY = y;
+    enemy.body?.setTranslation({ x, y }, true);
+    physicsWorld.step();
+    physicsWorld.getContactProcessor().drainProjectileHits();
+    const settled = enemy.body.translation();
+    enemy.x = settled.x;
+    enemy.y = settled.y;
+    return enemy;
+  }
+
+  function tickToward(enemy, startX: number) {
+    const hpBefore = enemy.hp;
+    projectileManager.spawn({
+      x: startX,
+      y: enemy.y,
+      damage: 1,
+      speed: 60,
+      range: 30,
+      towerType: "basic",
+      towerLevel: 1,
+      targetId: enemy.id,
+      critChance: 0,
+    });
+    projectileManager.prePhysics(FIXED_DT);
+    const projectileId = projectileManager.getRenderData()[0].id;
+    const sensorRadius = physicsWorld.projectileSensorRadius(projectileId);
+    physicsWorld.step();
+    const contactHits = physicsWorld.getContactProcessor().drainProjectileHits();
+    projectileManager.postPhysics(FIXED_DT, contactHits);
+    return { hpBefore, sensorRadius, renderData: projectileManager.getRenderData() };
+  }
+
+  it("sensor is the glyph plus slop, and one step hits a minion on that reach", () => {
+    const enemy = placeMinion(200, 200);
+    const moveDist = 60 * FIXED_DT;
+    const reach = 3 + PROJECTILE_HIT_SLOP + enemy.radius + moveDist;
+    const result = tickToward(enemy, enemy.x - (reach - 0.5));
+    expect(result.sensorRadius).toBeCloseTo(3 + PROJECTILE_HIT_SLOP);
+    expect(enemy.hp).toBeLessThan(result.hpBefore);
+    expect(result.renderData).toHaveLength(1);
+    expect(result.renderData[0].x).toBeCloseTo(enemy.x - enemy.radius, 0);
+    projectileManager.prePhysics(FIXED_DT);
+    expect(projectileManager.getRenderData()).toHaveLength(0);
+  });
+
+  it("misses a minion a boss-radius farther than that step", () => {
+    const enemy = placeMinion(200, 200);
+    const moveDist = 60 * FIXED_DT;
+    const bossRadius = 0.33 * grid.tileSize * 0.5;
+    const reach = 3 + PROJECTILE_HIT_SLOP + enemy.radius + moveDist;
+    const result = tickToward(enemy, enemy.x - (reach + bossRadius));
+    expect(result.sensorRadius).toBeCloseTo(3 + PROJECTILE_HIT_SLOP);
+    expect(enemy.hp).toBe(result.hpBefore);
+    expect(result.renderData).toHaveLength(1);
   });
 });

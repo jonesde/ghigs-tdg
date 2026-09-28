@@ -270,6 +270,12 @@ export class PhysicsWorld {
     return { x: translation.x, y: translation.y };
   }
 
+  projectileSensorRadius(projectileId: number): number | null {
+    const collider = this.projectileBodies.get(projectileId)?.collider(0);
+    if (!collider) return null;
+    return collider.radius();
+  }
+
   removeProjectileBody(projectileId: number): void {
     const body = this.projectileBodies.get(projectileId);
     if (!body) return;
