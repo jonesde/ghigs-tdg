@@ -2,7 +2,7 @@
   "startingGoldByRegion": [80, 70, 60],
   "victoryWave": 100,
   "milestoneWaves": [15, 30, 50],
-  "milestoneGems": { "15": 1, "30": 2, "50": 4 },
+  "milestoneGems": { "15": 2, "30": 3, "50": 5 },
   "bonusGemBase": 1.12,
   "bountyBlockedRatio": 0.5,
   "betweenWavesTimer": 3,

@@ -39,9 +39,15 @@ export class NavMeshBuilder {
     return this.grid.isPath(x, y) || this.grid.isBase(x, y) || this.grid.isSpawn(x, y);
   }
 
+  // Voxel size passed to the tile-cache generator as `cs`. Obstacle rasterization
+  // in addTowerObstacleInternal is written against this same size.
+  private navmeshCellSize(): number {
+    return this.grid.tileSize / 4;
+  }
+
   private build(): void {
     const tileSize = this.grid.tileSize;
-    const cellSize = tileSize / 4;
+    const cellSize = this.navmeshCellSize();
     // Agent clearance (world units) the navmesh corridor is eroded from the tile
     // boundary. Computed from the largest *common* enemy radius (tank) plus a
     // margin so the eroded bend fillet is wider than the tank and even it can round
@@ -197,7 +203,7 @@ export class NavMeshBuilder {
     }
   }
 
-  // Registers a tower box obstacle matching the physics cuboid (full tile square).
+  // Registers a tower box obstacle covering the same tile square as the physics cuboid.
   // Returns the obstacle ref (for later removal) or null when the tilecache is
   // unavailable / the add failed.
   addTowerObstacle(tileX: number, tileY: number): ObstacleRef | null {
@@ -209,12 +215,19 @@ export class NavMeshBuilder {
   private addTowerObstacleInternal(tileX: number, tileY: number): ObstacleRef | null {
     if (!this.tileCache) return null;
     const tileSize = this.grid.tileSize;
-    const halfExtent = tileSize / 2;
+    const cellSize = this.navmeshCellSize();
+    const verticalHalfExtent = tileSize / 2;
     const center = toRecast(this.grid.tileToWorld(tileX, tileY));
-    // Match PhysicsWorld tower cuboid (half = tileSize/2 on X/Z). Box center is
-    // elevated by halfExtent so the volume covers [0, tileSize] in Recast Y.
-    const boxCenter: Vector3 = { x: center.x, y: halfExtent, z: center.z };
-    const halfExtents: Vector3 = { x: halfExtent, y: halfExtent, z: halfExtent };
+    // Oriented-box rasterizer (angle 0) keeps a cell when
+    // |cellIndex - centerVoxel| <= halfExtents/cellSize + 0.5. A tile-centered
+    // square of half tileSize/2 therefore also marks the next cell past +X and
+    // +Z. Enemies stop on that extra cell, one cell short of the east/south
+    // cuboid, and never generate the contact that starts an attack. Shift the
+    // center half a cell toward -X/-Z and use a 1.5-cell horizontal half-extent
+    // so the marked cells are exactly the tile. Recast Y only has to cover the layer.
+    const boxCenter: Vector3 = { x: center.x - cellSize / 2, y: verticalHalfExtent, z: center.z - cellSize / 2 };
+    const horizontalHalfExtent = cellSize * 1.5;
+    const halfExtents: Vector3 = { x: horizontalHalfExtent, y: verticalHalfExtent, z: horizontalHalfExtent };
     const result = this.tileCache.addBoxObstacle(boxCenter, halfExtents, 0);
     if (!result.success) {
       console.error(

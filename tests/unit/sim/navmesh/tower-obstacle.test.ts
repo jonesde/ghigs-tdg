@@ -159,4 +159,67 @@ describe("NavMeshBuilder tower obstacles", () => {
     // or selling a tower would permanently sever the maze at runtime.
     expect(isOverPoly(builder, obstacleCenter)).toBe(true);
   });
+
+  it("carves each face of the tile flush with the physics cuboid", () => {
+    const grid = new Grid(makeOpenPadMap());
+    const builder = new NavMeshBuilder(grid);
+    expect(builder.isSuccess()).toBe(true);
+
+    const tileX = 4;
+    const tileY = 4;
+    expect(builder.addTowerObstacle(tileX, tileY)).not.toBeNull();
+    expect(isOverPoly(builder, grid.tileToWorld(tileX, tileY))).toBe(false);
+
+    const center = grid.tileToWorld(tileX, tileY);
+    const half = grid.tileSize / 2;
+    const faceDirections = [
+      { x: -1, y: 0 },
+      { x: 1, y: 0 },
+      { x: 0, y: -1 },
+      { x: 0, y: 1 },
+    ];
+    for (const direction of faceDirections) {
+      const probe = { x: center.x + direction.x * (half + 1), y: center.y + direction.y * (half + 1) };
+      const nearest = builder.nearestWalkableWorld(probe);
+      expect(nearest).not.toBeNull();
+      // One cell of extra carve (the east/south failure) puts this about 9px
+      // outside the cuboid. Flush means the probe, 1px outside, is walkable.
+      expect(distanceToCuboid(nearest!, center, half)).toBeLessThan(2);
+    }
+
+    const cornerProbe = { x: center.x + half + 1, y: center.y + half + 1 };
+    const cornerNearest = builder.nearestWalkableWorld(cornerProbe);
+    expect(cornerNearest).not.toBeNull();
+    expect(distanceToCuboid(cornerNearest!, center, half)).toBeLessThan(grid.tileSize / 8);
+    builder.destroy();
+  });
 });
+
+function distanceToCuboid(point: { x: number; y: number }, center: { x: number; y: number }, half: number): number {
+  const deltaX = Math.abs(point.x - center.x) - half;
+  const deltaY = Math.abs(point.y - center.y) - half;
+  return Math.hypot(Math.max(deltaX, 0), Math.max(deltaY, 0));
+}
+
+// Solid walkable pad so a tower in the middle has a path neighbor on every side.
+// Spawn and the 3×3 base sit in opposite corners and do not touch the tower tile.
+function makeOpenPadMap() {
+  const width = 9;
+  const height = 9;
+  const tiles: { type: TileType; height: number }[][] = [];
+  for (let rowIndex = 0; rowIndex < height; rowIndex++) {
+    const row: { type: TileType; height: number }[] = [];
+    for (let colIndex = 0; colIndex < width; colIndex++) row.push({ type: "path", height: 1 });
+    tiles.push(row);
+  }
+  return makeMapData({
+    width,
+    height,
+    tiles,
+    spawns: [{ x: 0, y: 0 }],
+    base: { x: 8, y: 8 },
+    regionId: 0,
+    level: 1,
+    style: "bastion",
+  });
+}
