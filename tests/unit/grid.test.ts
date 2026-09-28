@@ -130,6 +130,48 @@ describe("Grid", () => {
     });
   });
 
+  describe("ghost path blocks", () => {
+    let grid: Grid;
+    beforeEach(() => {
+      grid = new Grid(makeBastionMap());
+    });
+
+    it("does not put a terrain tower into the path-block set", () => {
+      expect(grid.isTerrain(0, 0)).toBe(true);
+      grid.registerTower(0, 0);
+      const versionBeforeGhost = grid.pathVersion;
+      grid.setTowerGhost(0, 0);
+      expect(grid.blocked.size).toBe(0);
+      expect(grid.ghostTowers.size).toBe(0);
+      expect(grid.blockCount).toBe(0);
+      expect(grid.pathVersion).toBe(versionBeforeGhost + 1);
+
+      grid.clearTowerGhost(0, 0);
+      expect(grid.blocked.size).toBe(0);
+      expect(grid.ghostTowers.size).toBe(0);
+      expect(grid.blockCount).toBe(0);
+      expect(grid.pathVersion).toBe(versionBeforeGhost + 2);
+    });
+
+    it("moves a path tower from blocked to ghostTowers and back", () => {
+      const pathTile = { x: 3, y: 3 };
+      expect(grid.isPath(pathTile.x, pathTile.y)).toBe(true);
+      grid.registerTower(pathTile.x, pathTile.y);
+      expect(grid.blockCount).toBe(1);
+      expect(grid.blocked.has("3,3")).toBe(true);
+
+      grid.setTowerGhost(pathTile.x, pathTile.y);
+      expect(grid.blocked.has("3,3")).toBe(false);
+      expect(grid.ghostTowers.has("3,3")).toBe(true);
+      expect(grid.blockCount).toBe(0);
+
+      grid.clearTowerGhost(pathTile.x, pathTile.y);
+      expect(grid.blocked.has("3,3")).toBe(true);
+      expect(grid.ghostTowers.size).toBe(0);
+      expect(grid.blockCount).toBe(1);
+    });
+  });
+
   describe("world/tile conversions", () => {
     it("worldToTile converts world coords to grid coords", () => {
       const map = makeBastionMap();

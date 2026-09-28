@@ -79,6 +79,19 @@ describe("Integration: Single Wave Simulation", () => {
     expect(engine.waveManager?.currentWave).toBeGreaterThanOrEqual(1);
   });
 
+  it("a boss on map 0's first corner destroys a firing shotgun tank", () => {
+    const tower = engine.towerManager!.build("shotgunTank", 4, 5, engine.persistState, engine.grid!);
+    expect(tower).not.toBeNull();
+    engine.update(FIXED_DT);
+    const boss = engine.enemyManager!.spawn("boss", 1, 0, 1);
+    expect(boss).not.toBeNull();
+    // 25s. A solid pellet shoves the boss off the north face and tower health
+    // stalls well above 0 while the boss sits in the corner.
+    runTicks(engine, 25 * 60);
+    expect(tower!.isGhost).toBe(true);
+    expect(boss!.removed).toBe(false);
+  });
+
   it("player loses lives when enemies reach base", () => {
     engine.waveManager?.startNextWave();
 

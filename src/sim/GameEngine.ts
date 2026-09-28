@@ -45,6 +45,7 @@ import { ProjectileManager } from "@/sim/ProjectileManager.js";
 import { ContactProcessor } from "@/sim/physics/ContactProcessor.js";
 import { ForceFieldSystem } from "@/sim/physics/ForceFieldSystem.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { separateEnemiesFromTowers } from "@/sim/physics/separateEnemiesFromTowers.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import { TowerManager } from "@/sim/towers/TowerManager.js";
 import { WaveGraphTracker } from "@/sim/WaveGraphTracker.js";
@@ -384,6 +385,10 @@ export class GameEngine {
       this.navMeshBuilder?.syncTowers(this.towerManager!.towers);
       this.navDistanceField?.ensureUpToDate(true);
       this.lastPathVersion = this.grid!.pathVersion;
+      // Cuboids for this pathVersion now exist. A center inside a live tower
+      // tile is where a square just appeared (ghost restore or a build under
+      // them). Move them out before the physics step shoves them into a siege.
+      separateEnemiesFromTowers(this.enemyManager.enemies, this.towerManager!.towers, this.grid!, this.crowdManager);
     }
     const onEnemyKill = (enemy: Enemy): void => {
       if (enemy.removed) {
@@ -563,9 +568,9 @@ export class GameEngine {
       tower.waveDamage = 0;
     });
 
-    // Full-restore all towers at wave start, then clear any that were ghosted
-    // so their tiles re-block in a single path recompute. Reposition enemies
-    // that were standing on a tile that just became blocked again.
+    // Full-restore all towers at wave start so ghosted tiles block again in one
+    // pathVersion bump. Enemies still inside those tiles are moved out when
+    // update rebuilds the cuboids.
     const towersToClear: Tower[] = [];
     for (const tower of this.towerManager!.towers) {
       tower.health = tower.maxHealth;

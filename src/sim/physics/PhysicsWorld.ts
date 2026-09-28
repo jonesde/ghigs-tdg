@@ -25,7 +25,8 @@ export interface ProjectileBodyOptions {
   radius: number;
   velocityX: number;
   velocityY: number;
-  // Sensor projectiles fire contact events without solid resolve (pierce).
+  // Sensor: collision events still fire, but the kinematic ball does not shove
+  // the enemy. Solid resolve is what pushed melee targets off a blocking tower.
   isSensor?: boolean;
   restitution?: number;
   collidesWithWalls?: boolean;

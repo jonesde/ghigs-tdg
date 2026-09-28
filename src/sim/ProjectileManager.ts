@@ -360,7 +360,10 @@ export class ProjectileManager {
 
   private ensureProjectileBody(projectile: ProjectileGame): void {
     if (!this.physicsWorld || this.bodyIds.has(projectile.id)) return;
-    const isPierce = projectile.maxHitCount > 1;
+    // Sensor, including non-pierce shots. The ball is kinematic and its radius
+    // includes the hit threshold, so a solid body spawned at the barrel overlaps
+    // a melee target and Rapier shoves that enemy off the tower. Contact events
+    // still register the hit; the hit handler removes the body.
     this.physicsWorld.addProjectileBody({
       projectileId: projectile.id,
       x: projectile.x,
@@ -368,7 +371,7 @@ export class ProjectileManager {
       radius: projectile.radius + PROJECTILE_HIT_THRESHOLD * 0.5,
       velocityX: 0,
       velocityY: 0,
-      isSensor: isPierce,
+      isSensor: true,
       restitution: 0,
       collidesWithWalls: false,
     });

@@ -10,7 +10,6 @@ import {
 import { generateTileCache, type TileCacheGeneratorConfig } from "recast-navigation/generators";
 import type { Grid } from "@/sim/grid/Grid.js";
 import { fromRecast, toRecast } from "./coords.js";
-import { navmeshClearanceWorld } from "./navmeshConfig.js";
 
 export interface WorldPoint {
   x: number;
@@ -48,16 +47,11 @@ export class NavMeshBuilder {
   private build(): void {
     const tileSize = this.grid.tileSize;
     const cellSize = this.navmeshCellSize();
-    // Agent clearance (world units) the navmesh corridor is eroded from the tile
-    // boundary. Computed from the largest *common* enemy radius (tank) plus a
-    // margin so the eroded bend fillet is wider than the tank and even it can round
-    // a 1-wide corner without wedging. Because the erosion exceeds every common
-    // enemy's radius, each enemy's circle stays fully inside the walkable area and
-    // never reaches the physics corridor wall (which still sits at the tile edge),
-    // eliminating the inside-corner block-and-reroute. 1-wide corridors stay
-    // navigable (the erosion is well under half a tile); wider corridors unaffected.
-    const clearanceWorld = navmeshClearanceWorld(tileSize);
-    const walkableRadius = clearanceWorld / cellSize;
+    // Recast erodes by whole voxels. One voxel is `cellSize` (tileSize/4) and
+    // severs a 1-wide bend, so spawn can no longer reach the base. Any
+    // walkableRadius below 1 voxel builds the same mesh as 0. Inside-corner
+    // clearance is the corridor-wall chamfer, not this radius.
+    const walkableRadius = 0;
 
     const config: Partial<TileCacheGeneratorConfig> = {
       expectedLayersPerTile: 1,
@@ -212,22 +206,24 @@ export class NavMeshBuilder {
     return reference;
   }
 
-  private addTowerObstacleInternal(tileX: number, tileY: number): ObstacleRef | null {
-    if (!this.tileCache) return null;
+  // Angle-0 oriented box keeps cell i when |i - centerVoxel| <= halfExtents/cellSize + 0.5.
+  // i is the cell's minimum corner. Shift centerVoxel by -0.5 and set that threshold to
+  // cellsPerTile/2 so the included indices are [i0, i0 + cellsPerTile - 1].
+  private towerObstacleBox(tileX: number, tileY: number): { boxCenter: Vector3; halfExtents: Vector3 } {
     const tileSize = this.grid.tileSize;
     const cellSize = this.navmeshCellSize();
-    const verticalHalfExtent = tileSize / 2;
+    const cellsPerTile = tileSize / cellSize;
     const center = toRecast(this.grid.tileToWorld(tileX, tileY));
-    // Oriented-box rasterizer (angle 0) keeps a cell when
-    // |cellIndex - centerVoxel| <= halfExtents/cellSize + 0.5. A tile-centered
-    // square of half tileSize/2 therefore also marks the next cell past +X and
-    // +Z. Enemies stop on that extra cell, one cell short of the east/south
-    // cuboid, and never generate the contact that starts an attack. Shift the
-    // center half a cell toward -X/-Z and use a 1.5-cell horizontal half-extent
-    // so the marked cells are exactly the tile. Recast Y only has to cover the layer.
+    const horizontalHalfExtent = (cellsPerTile / 2 - 0.5) * cellSize;
+    const verticalHalfExtent = tileSize / 2;
     const boxCenter: Vector3 = { x: center.x - cellSize / 2, y: verticalHalfExtent, z: center.z - cellSize / 2 };
-    const horizontalHalfExtent = cellSize * 1.5;
     const halfExtents: Vector3 = { x: horizontalHalfExtent, y: verticalHalfExtent, z: horizontalHalfExtent };
+    return { boxCenter, halfExtents };
+  }
+
+  private addTowerObstacleInternal(tileX: number, tileY: number): ObstacleRef | null {
+    if (!this.tileCache) return null;
+    const { boxCenter, halfExtents } = this.towerObstacleBox(tileX, tileY);
     const result = this.tileCache.addBoxObstacle(boxCenter, halfExtents, 0);
     if (!result.success) {
       console.error(

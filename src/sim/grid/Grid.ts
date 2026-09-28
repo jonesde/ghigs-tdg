@@ -131,29 +131,41 @@ export class Grid {
   // A path-tile tower that has been destroyed becomes a ghost: it no longer
   // blocks routing, so the key moves from `blocked` to `ghostTowers` and the
   // navmesh obstacle for it is removed at update() time via pathVersion.
+  // Terrain towers are not path blocks. They still bump pathVersion so the
+  // cuboid and obstacle refresh, but they must not enter `blocked` —
+  // findChokeTile treats every blocked neighbor as a maze choke.
   setTowerGhost(x: number, y: number): void {
+    if (!this.isPath(x, y)) {
+      this.pathVersion++;
+      return;
+    }
     const towerKey = `${x},${y}`;
-    this.blocked.delete(towerKey);
+    if (this.blocked.delete(towerKey)) this._blockCount--;
     this.ghostTowers.add(towerKey);
-    this._blockCount--;
     this.pathVersion++;
   }
 
-  // A ghosted tower is restored to a live (blocking) state: the key moves back
-  // into `blocked` and the navmesh obstacle is re-added at update() time.
+  // A ghosted path tower is restored to a live blocking state: the key moves
+  // back into `blocked` and the navmesh obstacle is re-added at update() time.
+  // A restore that is not in `ghostTowers` (a terrain tower) only bumps
+  // pathVersion so the cuboid comes back without joining the path-block set.
   clearTowerGhost(x: number, y: number): void {
     const towerKey = `${x},${y}`;
-    this.ghostTowers.delete(towerKey);
+    if (!this.ghostTowers.delete(towerKey)) {
+      this.pathVersion++;
+      return;
+    }
     this.blocked.add(towerKey);
     this._blockCount++;
     this.pathVersion++;
   }
 
-  // Bulk restore of every ghosted tower. Bumping pathVersion once triggers the
-  // navmesh obstacle re-sync + corridor refresh at update() time so N ghost
-  // towers do not each re-sync.
+  // Bulk restore of every ghosted path tower. Bumping pathVersion once triggers
+  // the navmesh obstacle re-sync + collider refresh at update() time so N ghost
+  // towers do not each re-sync. The bump still happens when the set is empty:
+  // wave start clears isGhost on terrain towers before calling this, and those
+  // towers are not in the set.
   batchClearGhosts(): void {
-    if (this.ghostTowers.size === 0) return;
     for (const key of this.ghostTowers) {
       this.blocked.add(key);
     }

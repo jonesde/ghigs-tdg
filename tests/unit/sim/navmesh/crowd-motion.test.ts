@@ -168,16 +168,15 @@ describe("CrowdManager motion", () => {
     expect(centerDistance).toBeGreaterThan(enemyA!.radius * 0.5);
   });
 
-  it("rounds a 1-wide inside corner and reaches the base (tank clearance)", () => {
-    // The largest common enemy (tank) is wider than the old runner-only navmesh
-    // clearance. With the widened clearance its full circle stays off the
-    // inside-corner wall through the bend, so it threads the L and reaches base
-    // without stalling or reversing.
+  // The navmesh does not fillet the inside corner (one voxel of erosion severs
+  // this bend). The corridor-wall chamfer is what keeps the turn from reversing
+  // the enemy. Assert arrival and bounded backtrack, not zero wall contact.
+  function expectReachesBaseThroughCorner(enemyType: string): void {
     setupScenario(makeOneWideCornerMap);
     enemyManager.setCrowdManager(crowdManager);
 
     const baseWorld = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
-    const enemy = enemyManager.spawn("tank", 1, 0, 1)!;
+    const enemy = enemyManager.spawn(enemyType, 1, 0, 1)!;
     expect(enemy).not.toBeNull();
 
     const onEnemyKill = () => {};
@@ -199,13 +198,17 @@ describe("CrowdManager motion", () => {
       if (enemy.removed) break;
     }
 
-    // (a) The tank advanced a meaningful distance toward the base.
     expect(startDistance - distanceToBase(enemy, baseWorld)).toBeGreaterThan(grid.tileSize * 2);
-    // (b) It reached the base — i.e. it navigated the inside corner without stalling.
     expect(reached).toBe(true);
-    // (c) It never reversed by more than a small bobble: no wall-shove reroute at
-    // the inside corner.
     expect(maxBacktrack).toBeLessThan(enemy.radius);
+  }
+
+  it("reaches the base through a 1-wide inside corner (tank)", () => {
+    expectReachesBaseThroughCorner("tank");
+  });
+
+  it("reaches the base through a 1-wide inside corner (boss)", () => {
+    expectReachesBaseThroughCorner("boss");
   });
 
   it("lets a faster runner overtake a slower tank on a 2-wide lane", () => {

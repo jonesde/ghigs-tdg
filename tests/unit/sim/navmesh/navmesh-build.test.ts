@@ -93,9 +93,9 @@ describe("NavMeshBuilder", () => {
     expect(path.length).toBeGreaterThan(0);
   });
 
-  it("keeps the 1-wide L-corridor navigable under the tank corner clearance", () => {
-    // The navmesh is inset by the tank radius (largest common enemy). This guards
-    // against that erosion severing a 1-wide serpentine bend.
+  it("keeps the 1-wide L-corridor navigable with no voxel erosion", () => {
+    // walkableRadius is 0. One voxel of erosion severs this bend. This guards
+    // that the generator stays at 0 so spawn can still reach the base.
     const grid = new Grid(makeOneWideCorridorMap());
     const builder = new NavMeshBuilder(grid);
     expect(builder.isSuccess()).toBe(true);
