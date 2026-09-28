@@ -111,6 +111,67 @@ describe("Rapier contact attack flags", () => {
     expect(enemy.motionLock).toBe("none");
   });
 
+  it("does not attack an immune tower the body only overlaps", () => {
+    const damage = { value: 0 };
+    const enemy = new Enemy("runner", 1, 0, grid, 1);
+    physicsWorld.addEnemy(enemy);
+    const towerCenter = grid.tileToWorld(3, 4);
+    const tower = {
+      id: "terrain",
+      tileX: 3,
+      tileY: 4,
+      x: towerCenter.x,
+      y: towerCenter.y,
+      isGhost: false,
+      health: 10,
+      enemyAttackImmune: true,
+      takeDamage(amount: number): void {
+        damage.value += amount;
+      },
+    } as unknown as Tower;
+    physicsWorld.rebuildTowers({ towers: [tower] } as unknown as TowerManager);
+    enemy.applySiege(tower);
+    enemy.body!.setTranslation({ x: towerCenter.x, y: towerCenter.y }, true);
+    physicsWorld.step();
+    enemy.postPhysics(FIXED_DT);
+    expect(enemy.blockedByTower).toBeNull();
+    expect(enemy.motionLock).toBe("none");
+    expect(damage.value).toBe(0);
+  });
+
+  it("prefers a damageable tower when an immune tower also overlaps", () => {
+    const enemy = new Enemy("runner", 1, 0, grid, 1);
+    physicsWorld.addEnemy(enemy);
+    const immuneCenter = grid.tileToWorld(3, 4);
+    const pathCenter = grid.tileToWorld(4, 4);
+    const immune = {
+      id: "immune",
+      tileX: 3,
+      tileY: 4,
+      x: immuneCenter.x,
+      y: immuneCenter.y,
+      isGhost: false,
+      health: 1,
+      enemyAttackImmune: true,
+      takeDamage: (): void => {},
+    } as unknown as Tower;
+    const pathTower = {
+      id: "path",
+      tileX: 4,
+      tileY: 4,
+      x: pathCenter.x,
+      y: pathCenter.y,
+      isGhost: false,
+      health: 80,
+      enemyAttackImmune: false,
+      takeDamage: (): void => {},
+    } as unknown as Tower;
+    physicsWorld.rebuildTowers({ towers: [immune, pathTower] } as unknown as TowerManager);
+    enemy.body!.setTranslation({ x: (immuneCenter.x + pathCenter.x) / 2, y: immuneCenter.y }, true);
+    physicsWorld.step();
+    expect(enemy.blockedByTower).toBe(pathTower);
+  });
+
   it("ticks tower damage from postPhysics only while contact is live", () => {
     const damage = { value: 0 };
     const enemy = new Enemy("runner", 1, 0, grid, 1);

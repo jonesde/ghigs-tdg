@@ -821,7 +821,7 @@ describe("Tower", () => {
     });
 
     it("sturdyWall A reflects damage taken back at the attacker", () => {
-      const tower = new Tower("sturdyWall", 0, 0, makeSave(), makeMockGrid());
+      const tower = new Tower("sturdyWall", 2, 3, makeSave(), makeMockGrid());
       tower.level = 5;
       tower.variant = "A";
       const enemy = {
@@ -887,11 +887,32 @@ describe("Tower", () => {
     });
 
     it("takeDamage below zero triggers ghost state and pending effect", () => {
-      const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
+      const tower = new Tower("basic", 2, 3, makeSave(), makeMockGrid());
       tower.health = 5;
       tower.takeDamage(10);
       expect(tower.isGhost).toBe(true);
       expect(tower.pendingGhostEffect).toBe(true);
+    });
+
+    it("ignores enemy attacks when placed on a terrain tile", () => {
+      const terrainTower = new Tower("sturdyWall", 0, 0, makeSave(), makeMockGrid());
+      terrainTower.level = 5;
+      terrainTower.variant = "A";
+      expect(terrainTower.enemyAttackImmune).toBe(true);
+      const pathTower = new Tower("basic", 2, 3, makeSave(), makeMockGrid());
+      expect(pathTower.enemyAttackImmune).toBe(false);
+
+      const enemy = {
+        hp: 100,
+        takeDamage(damage: number) {
+          enemy.hp -= damage;
+        },
+      };
+      const healthBefore = terrainTower.health;
+      terrainTower.takeDamage(10, enemy);
+      expect(terrainTower.health).toBe(healthBefore);
+      expect(terrainTower.isGhost).toBe(false);
+      expect(enemy.hp).toBe(100);
     });
   });
 });

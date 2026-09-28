@@ -288,6 +288,9 @@ export class Tower {
   isGhost: boolean;
   ghostTimer: number;
   pendingGhostEffect: boolean;
+  // A corner body's radius overlaps the adjacent terrain cuboid. That tower is
+  // not a path block, so the overlap must not damage it or count as a siege.
+  enemyAttackImmune: boolean = false;
   // Tile nav-distance to base (−1 unreachable). Null → Euclidean fallback.
   navDistanceToBase: ((tileX: number, tileY: number) => number) | null = null;
 
@@ -366,10 +369,13 @@ export class Tower {
     this.isGhost = false;
     this.ghostTimer = 0;
     this.pendingGhostEffect = false;
-    if (grid?.tiles?.[tileY]?.[tileX]) {
-      this.terrainHeight = grid.tiles[tileY][tileX].height || 1;
+    const placedTile = grid?.tiles?.[tileY]?.[tileX];
+    if (placedTile) {
+      this.terrainHeight = placedTile.height || 1;
+      this.enemyAttackImmune = placedTile.type === "terrain";
     } else {
       this.terrainHeight = 1;
+      this.enemyAttackImmune = false;
     }
     this.maxHealth = this.computeMaxHealth();
     this.health = this.maxHealth;
@@ -722,6 +728,7 @@ export class Tower {
   }
 
   takeDamage(amount: number, attacker?: Enemy): void {
+    if (this.enemyAttackImmune) return;
     // Thorn reflect before ghosting so a lethal hit still reflects.
     const stats = this.stats;
     if (stats.thornReflectPct > 0 && attacker && !this.isGhost) {

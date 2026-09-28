@@ -146,13 +146,20 @@ export class ContactProcessor {
 
   private pickContactTower(enemy: Enemy, towerIds: Set<string> | undefined): Tower | null {
     if (!towerIds || towerIds.size === 0) return null;
-    if (enemy.routingMode === "siege" && enemy.siegeTower && !enemy.siegeTower.isGhost) {
+    // Immune towers are terrain placements. Skipping them keeps a corner brush
+    // from parking the enemy in a siege that can never destroy the tower.
+    if (
+      enemy.routingMode === "siege" &&
+      enemy.siegeTower &&
+      !enemy.siegeTower.isGhost &&
+      !enemy.siegeTower.enemyAttackImmune
+    ) {
       if (towerIds.has(enemy.siegeTower.id)) return enemy.siegeTower;
     }
     let lowestTower: Tower | null = null;
     for (const towerId of towerIds) {
       const tower = this.hooks.getTowerById(towerId);
-      if (!tower || tower.isGhost) continue;
+      if (!tower || tower.isGhost || tower.enemyAttackImmune) continue;
       if (!lowestTower || tower.health < lowestTower.health) lowestTower = tower;
     }
     return lowestTower;
