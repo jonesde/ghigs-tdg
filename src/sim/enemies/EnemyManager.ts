@@ -2,6 +2,7 @@ import { ENEMY_POOL_SIZE } from "@/render/svg/types.js";
 import type { EnemyVisualMeta, MapThemeData } from "@/render/themes/index.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
+import type { BlockedApproach } from "@/sim/navmesh/NavDistanceField.js";
 import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
 import type { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import type { Tower } from "@/sim/towers/Tower.js";
@@ -26,6 +27,7 @@ export class EnemyManager {
   baseTarget: AttackTarget | null = null;
   physicsWorld: PhysicsWorld | null = null;
   crowdManager: CrowdManager | null = null;
+  private blockedApproachLookup: ((tileX: number, tileY: number) => BlockedApproach | null) | null = null;
   private idToEnemy: Map<number, Enemy>;
   private pendingQueues: Map<number, PendingEnemyEntry[]>;
 
@@ -61,6 +63,16 @@ export class EnemyManager {
   // Wires the DetourCrowd wrapper. Enemies spawned after this get a crowd agent.
   setCrowdManager(crowdManager: CrowdManager | null): void {
     this.crowdManager = crowdManager;
+  }
+
+  // Tile-graph face of the wall between an unreachable tile and the base.
+  // GameEngine wires this from NavDistanceField; null leaves default routing on the base.
+  setBlockedApproachLookup(lookup: ((tileX: number, tileY: number) => BlockedApproach | null) | null): void {
+    this.blockedApproachLookup = lookup;
+  }
+
+  blockedApproach(tileX: number, tileY: number): BlockedApproach | null {
+    return this.blockedApproachLookup?.(tileX, tileY) ?? null;
   }
 
   towerAt(tileX: number, tileY: number): Tower | null {

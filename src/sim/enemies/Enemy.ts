@@ -75,6 +75,7 @@ interface EnemyManagerRef {
   getEnemiesInRange(x: number, y: number, range: number): Enemy[];
   forEachEnemyInRange(x: number, y: number, range: number, cb: (enemy: Enemy) => void): void;
   forEachSensorHits?(sensorId: string, callback: (enemy: Enemy) => void): boolean;
+  blockedApproach?(tileX: number, tileY: number): { approachWorld: { x: number; y: number } } | null;
 }
 
 export class Enemy {
@@ -546,9 +547,15 @@ export class Enemy {
         }
         break;
       }
-      default:
-        this.requestMoveTargetCached(baseWorld, "default");
+      default: {
+        const tile = this.currentTile();
+        // An unreachable base makes the crowd corridor end on the polygon closest to the
+        // base in a straight line. On a bend that polygon is across terrain, so the enemy
+        // never reaches a tower face. Aim at the blocking tower's near face instead.
+        const approach = enemyManager?.blockedApproach?.(tile.x, tile.y) ?? null;
+        this.requestMoveTargetCached(approach?.approachWorld ?? baseWorld, "default");
         break;
+      }
     }
   }
 

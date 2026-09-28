@@ -324,6 +324,14 @@ function startRandomMap() {
   border-radius: 6px;
   font-size: var(--font-md);
   cursor: pointer;
+  /* Chrome paints the opened list from color-scheme, not from the page background.
+     Dark scheme keeps that popup dark so the light option text stays readable. */
+  color-scheme: dark;
+}
+
+.theme-select option {
+  background-color: #141721;
+  color: var(--color-text);
 }
 
 .theme-select:hover {
@@ -495,6 +503,12 @@ function startRandomMap() {
   color: var(--color-text);
   font-size: var(--font-md);
   cursor: pointer;
+  color-scheme: dark;
+}
+
+.form-field select option {
+  background-color: #141721;
+  color: var(--color-text);
 }
 
 .form-field input:focus,

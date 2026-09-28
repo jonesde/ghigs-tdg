@@ -41,6 +41,10 @@ export class TowerManager {
       while (pips.length < pipCount) {
         const pip = document.createElementNS(SVG_NS, "circle");
         pip.setAttribute("r", "2");
+        // Dark ring so the light silver/gold fill stays readable on pale tiles.
+        // Width stays under the 5-unit pip spacing so neighboring rings do not merge.
+        pip.setAttribute("stroke", "#1a140c");
+        pip.setAttribute("stroke-width", "0.75");
         pip.style.visibility = "hidden";
         this.layer.appendChild(pip);
         pips.push(pip);

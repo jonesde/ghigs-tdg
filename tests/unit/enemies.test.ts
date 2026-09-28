@@ -14,6 +14,7 @@ import {
 import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
+import { NavDistanceField } from "@/sim/navmesh/NavDistanceField.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
@@ -419,6 +420,80 @@ describe("Enemy", () => {
       expect(enemy.removed).toBe(true);
       expect(enemy.x).toBe(startX);
       expect(enemy.y).toBe(startY);
+    });
+  });
+
+  describe("sealed return lane", () => {
+    const fixedDt = 1 / 60;
+    const sealedRows = ["S######.", "......#.", "WWWWWW#.", "#.......", "##B.....", "........"];
+
+    function makeSealedGrid() {
+      const height = sealedRows.length;
+      const width = sealedRows[0].length;
+      const tiles = sealedRows.map((row) =>
+        [...row].map((symbol) => {
+          const type = symbol === "B" ? "base" : symbol === "S" ? "spawn" : symbol === "." ? "terrain" : "path";
+          return { type, height: 1 };
+        }),
+      );
+      const grid = new Grid({ width, height, tiles, spawns: [{ x: 3, y: 0 }], base: { x: 2, y: 4 } });
+      for (let tileX = 0; tileX <= 5; tileX++) grid.registerTower(tileX, 2);
+      return grid;
+    }
+
+    it("walks toward the wall face instead of the tile nearest the base", () => {
+      const grid = makeSealedGrid();
+      const navBuilder = new NavMeshBuilder(grid);
+      for (let tileX = 0; tileX <= 5; tileX++) navBuilder.addTowerObstacle(tileX, 2);
+      const physicsWorld = new PhysicsWorld(grid);
+      const crowd = new CrowdManager(navBuilder.getNavMesh(), grid.tileSize, 4);
+      const field = new NavDistanceField(grid, navBuilder);
+      field.rebuild();
+      try {
+        const enemy = new Enemy("minion", 1, 0, grid, 1);
+        physicsWorld.addEnemy(enemy);
+        crowd.addAgent(enemy);
+        const manager = { blockedApproach: (tileX, tileY) => field.getBlockedApproach(tileX, tileY) };
+        enemy.computeIntent(fixedDt, manager);
+        const approach = field.getBlockedApproach(3, 0);
+        expect(approach).not.toBeNull();
+        expect(enemy.lastMoveTargetWorld.x).toBeCloseTo(approach.approachWorld.x, 4);
+        expect(enemy.lastMoveTargetWorld.y).toBeCloseTo(approach.approachWorld.y, 4);
+
+        const startX = enemy.x;
+        for (let step = 0; step < 180; step++) {
+          enemy.computeIntent(fixedDt, manager);
+          crowd.update(fixedDt, [enemy]);
+          physicsWorld.step();
+          enemy.postPhysics(fixedDt);
+        }
+        expect(enemy.x).toBeGreaterThan(startX + grid.tileSize);
+      } finally {
+        crowd.destroy();
+        navBuilder.destroy();
+        physicsWorld.dispose();
+      }
+    });
+
+    it("with the seal removed, computeIntent without a lookup still targets the base", () => {
+      const grid = makeSealedGrid();
+      for (let tileX = 0; tileX <= 5; tileX++) grid.unregisterTower(tileX, 2);
+      const navBuilder = new NavMeshBuilder(grid);
+      const physicsWorld = new PhysicsWorld(grid);
+      const crowd = new CrowdManager(navBuilder.getNavMesh(), grid.tileSize, 4);
+      try {
+        const enemy = new Enemy("minion", 1, 0, grid, 1);
+        physicsWorld.addEnemy(enemy);
+        crowd.addAgent(enemy);
+        enemy.computeIntent(fixedDt, null);
+        const baseWorld = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
+        expect(enemy.lastMoveTargetWorld.x).toBeCloseTo(baseWorld.x, 4);
+        expect(enemy.lastMoveTargetWorld.y).toBeCloseTo(baseWorld.y, 4);
+      } finally {
+        crowd.destroy();
+        navBuilder.destroy();
+        physicsWorld.dispose();
+      }
     });
   });
 });
