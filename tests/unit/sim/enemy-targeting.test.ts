@@ -105,6 +105,22 @@ describe("Enemy computeIntent engagement policy", () => {
     expect(enemy.siegeTower).toBeNull();
   });
 
+  it("snaps a terrain tower onto a closer path tile for strongestAhead", () => {
+    const ahead = tower(5, 1, 40);
+    enemy.targetingMode = "strongestAhead";
+    enemy.computeIntent(0.016, policyManager([ahead]));
+    expect(enemy.routingMode).toBe("siege");
+    expect(enemy.siegeTower).toBe(ahead);
+  });
+
+  it("rejects a terrain tower whose snapped distance is not closer", () => {
+    const notAhead = tower(1, 1, 80);
+    enemy.targetingMode = "strongestAhead";
+    enemy.computeIntent(0.016, policyManager([notAhead]));
+    expect(enemy.routingMode).toBe("default");
+    expect(enemy.siegeTower).toBeNull();
+  });
+
   it("keeps an explicit hold while a tower-pick policy is stored", () => {
     const stronger = tower(5, 3, 40);
     enemy.routingMode = "hold";

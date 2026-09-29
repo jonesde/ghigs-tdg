@@ -35,6 +35,7 @@ const memory: CommanderMemory = {
   commanderInstructions: "",
   pendingPlayerMessages: [],
   isCompressing: false,
+  rejectionNote: null,
 };
 let gridLayoutToggleSent = false;
 // The run the cached layout belongs to (GameEngine.runId). On a run restart the
@@ -48,6 +49,7 @@ let deciding = false;
 let lastDecisionTimeMs = 0;
 const LLM_DECISION_INTERVAL_MS = 1000;
 let pausedForBrain = false;
+let pauseForCommander = false;
 let latestObservation: CommanderObservation | null = null;
 
 function postToMain(message: CommanderToMainMessage): void {
@@ -66,6 +68,7 @@ function resetMemory(): void {
   memory.commanderInstructions = "";
   memory.pendingPlayerMessages = [];
   memory.isCompressing = false;
+  memory.rejectionNote = null;
   gridLayoutToggleSent = false;
   lastRunId = null;
   deciding = false;
@@ -83,6 +86,10 @@ async function decideLlm(): Promise<void> {
   if (now - lastDecisionTimeMs < LLM_DECISION_INTERVAL_MS) return;
   deciding = true;
   lastDecisionTimeMs = now;
+  // Hold stops the sim clock without GameState.PAUSED. PAUSED makes this worker
+  // skip decide, which would drop the request the hold is waiting on.
+  const holding = pauseForCommander;
+  if (holding) postToMain({ type: "hold", hold: true });
   try {
     if (brain.awaitReady) await brain.awaitReady();
     if (pausedForBrain || !latestObservation) return;
@@ -92,6 +99,7 @@ async function decideLlm(): Promise<void> {
     const errorMessage = error instanceof Error ? error.message : String(error);
     postToMain({ type: "notify", message: `Commander error: ${errorMessage}` });
   } finally {
+    if (holding) postToMain({ type: "hold", hold: false });
     deciding = false;
   }
 }
@@ -126,6 +134,8 @@ async function dispatchCommanderMessage(message: MainToCommanderMessage): Promis
         brain = createBrain(message.kind);
       }
       resetMemory();
+      // Config, not run memory. resetMemory runs on every start and must not clear this.
+      pauseForCommander = brainKind === "llm" && message.config?.pauseForCommander === true;
       break;
     }
     case "stop": {
@@ -164,8 +174,10 @@ async function dispatchCommanderMessage(message: MainToCommanderMessage): Promis
         memory.tokenCount = 0;
         memory.lastObservation = null;
         memory.isCompressing = false;
+        memory.rejectionNote = null;
         // Player instructions and queued chat are not map state. The transcript is:
-        // it names the previous run's enemies, so a sim runId bump drops it.
+        // it names the previous run's enemies, so a sim runId bump drops it. The
+        // rejection note describes that transcript, so it is dropped with it.
       }
       if (slice.gridLayout) {
         memory.gridLayout = slice.gridLayout;

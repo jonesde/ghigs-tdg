@@ -75,6 +75,7 @@ function freshMemory(): CommanderMemory {
     commanderInstructions: "",
     pendingPlayerMessages: [],
     isCompressing: false,
+    rejectionNote: null,
   };
 }
 
@@ -102,6 +103,9 @@ function observation(opts: {
       spawnStates: [],
       remainingScheduledSpawns: 0,
       active: true,
+      baseHealth: 20,
+      maxBaseHealth: 20,
+      countdownRemaining: null,
     },
     nav: opts.nav === undefined ? openNav : opts.nav,
   };
@@ -151,7 +155,16 @@ describe("StubbsBrain", () => {
       map: gridLayout,
       enemies: [enemy(1, 1, 3)],
       towers: [tower(5, 3, 100)],
-      wave: { currentWave: 1, pendingEnemyCount: 0, spawnStates: [], remainingScheduledSpawns: 0, active: true },
+      wave: {
+        currentWave: 1,
+        pendingEnemyCount: 0,
+        spawnStates: [],
+        remainingScheduledSpawns: 0,
+        active: true,
+        baseHealth: 20,
+        maxBaseHealth: 20,
+        countdownRemaining: null,
+      },
     };
     expect(brain.decide(bare, memory)).toHaveLength(0);
   });

@@ -16,7 +16,7 @@ export interface ApiClient {
 const BASE_BACKOFF_MS = 3000;
 const MAX_BACKOFF_MS = 30000;
 const REQUEST_TIMEOUT_MS = 30000;
-const REQUEST_TEMPERATURE = 0.7;
+const REQUEST_TEMPERATURE = 0.2;
 
 export function normalizeEndpointUrl(raw: string): string {
   const trimmed = raw.trim();
@@ -68,7 +68,8 @@ export function createApiClient(fetchFn: typeof fetch = globalThis.fetch): ApiCl
 
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+        const timeoutMs = config.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         let response: Response;
         try {
           response = await fetchFn(url, {

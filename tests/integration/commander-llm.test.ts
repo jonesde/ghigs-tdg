@@ -26,6 +26,8 @@ function makeConfig(): LlmCommanderConfig {
     contextLimit: 32768,
     commanderInstructions: "",
     systemPrompt: DEFAULT_LLM_SYSTEM_PROMPT,
+    requestTimeoutMs: 30000,
+    pauseForCommander: false,
   };
 }
 
@@ -37,7 +39,16 @@ function makeObservation(): CommanderObservation {
     ],
     enemies: [{ id: 1, tileX: 0, tileY: 0, level: 1, hp: 10, maxHp: 10 }],
     towers: [{ tileX: 1, tileY: 1, level: 1, hp: 20, maxHp: 20 }],
-    wave: { currentWave: 1, pendingEnemyCount: 0, spawnStates: [], remainingScheduledSpawns: 0, active: false },
+    wave: {
+      currentWave: 1,
+      pendingEnemyCount: 0,
+      spawnStates: [],
+      remainingScheduledSpawns: 0,
+      active: false,
+      baseHealth: 40,
+      maxBaseHealth: 100,
+      countdownRemaining: 12.34,
+    },
   };
 }
 
@@ -54,6 +65,7 @@ function makeMemory(): CommanderMemory {
     commanderInstructions: "",
     pendingPlayerMessages: [],
     isCompressing: false,
+    rejectionNote: null,
   };
 }
 
@@ -159,6 +171,47 @@ describe("Integration: LLM commander worker pause + relay", () => {
     mockSelf.onmessage!({ data: { type: "observation", slice: snapshotWithState(GameState.PLAYING) } });
     await vi.advanceTimersByTimeAsync(0);
     expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(posted.some((message) => message.type === "hold")).toBe(false);
+  });
+
+  it("holds the sim clock around an in-flight decide when pauseForCommander is set", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    let resolveFetch: (value: unknown) => void = () => {};
+    const fetchFn = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+    ) as unknown as typeof fetch;
+    gw.fetch = fetchFn;
+    gw.self = mockSelf;
+    await import("@/commanders/CommanderWorker.js");
+    await deliver({ type: "start", kind: "llm", config: { ...makeConfig(), pauseForCommander: true } });
+    setup();
+    posted.length = 0;
+
+    vi.advanceTimersByTime(1000);
+    await deliver({ type: "observation", slice: snapshotWithState(GameState.PAUSED) });
+    expect(fetchFn).toHaveBeenCalledTimes(0);
+    expect(posted.some((message) => message.type === "hold")).toBe(false);
+
+    const playing = deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(posted.filter((message) => message.type === "hold")).toEqual([{ type: "hold", hold: true }]);
+
+    resolveFetch({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ choices: [{ message: { content: "[]" } }] }),
+    });
+    await playing;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(posted.filter((message) => message.type === "hold")).toEqual([
+      { type: "hold", hold: true },
+      { type: "hold", hold: false },
+    ]);
   });
 
   it("rebuilds the prompt only when commander instructions change", async () => {
@@ -344,6 +397,7 @@ describe("Unit: LLM brain round-trip + malformed", () => {
     const messages = messagesFromCall(fetchFn, 1);
     expect(messages.map((message) => message.role)).toEqual(["system", "user"]);
     expect(messages[1]?.content).toContain('"kind":"snapshot"');
+    expect(messages[1]?.content).not.toContain("Previous reply was rejected");
   });
 
   it("applies valid sibling commands when one entry is rejected", async () => {
@@ -360,5 +414,94 @@ describe("Unit: LLM brain round-trip + malformed", () => {
     expect(commands[0]?.type).toBe("llm:routeGroup");
     expect(notify).toHaveBeenCalled();
     expect(memory.conversation.some((message) => message.role === "assistant")).toBe(true);
+  });
+
+  it("sends snapped tower distance, base health, and the inter-wave countdown", async () => {
+    const fetchFn = vi.fn(async () => responseWithContent("[]"));
+    const brain = createLlmBrain(makeConfig(), { fetchFn: fetchFn as unknown as typeof fetch });
+    const observation = makeObservation();
+    observation.map = [
+      [0, 1],
+      [0, 1],
+    ];
+    observation.nav = {
+      pathVersion: 1,
+      distanceToBase: [
+        [-1, 4],
+        [-1, 2],
+      ],
+      spawnReachable: [true],
+    };
+    observation.towers = [{ tileX: 0, tileY: 0, level: 1, hp: 20, maxHp: 20, type: "basic" }];
+    await brain.decide(observation, makeMemory());
+    const snapshot = JSON.parse(messagesFromCall(fetchFn, 0)[1]?.content ?? "") as {
+      towers: { distanceToBase: number }[];
+      wave: { baseHp: number; maxBaseHp: number; countdownSeconds: number | null };
+    };
+    expect(snapshot.towers[0]?.distanceToBase).toBe(4);
+    expect(snapshot.wave).toMatchObject({ baseHp: 40, maxBaseHp: 100, countdownSeconds: 12.3 });
+  });
+
+  it("lists a zero-hp tower as removed and reports a distance-only enemy change", async () => {
+    const fetchFn = vi.fn(async () => responseWithContent("[]"));
+    const brain = createLlmBrain(makeConfig(), { fetchFn: fetchFn as unknown as typeof fetch });
+    const memory = makeMemory();
+    const first = makeObservation();
+    first.enemies = [
+      { id: 1, tileX: 0, tileY: 0, level: 1, hp: 10, maxHp: 10, distanceToBase: 5, routingMode: "hold" },
+    ];
+    first.towers = [{ tileX: 1, tileY: 1, level: 1, hp: 20, maxHp: 20 }];
+    await brain.decide(first, memory);
+    const second = makeObservation();
+    second.enemies = [
+      { id: 1, tileX: 0, tileY: 0, level: 1, hp: 10, maxHp: 10, distanceToBase: 3, routingMode: "hold" },
+    ];
+    second.towers = [{ tileX: 1, tileY: 1, level: 1, hp: 0, maxHp: 20 }];
+    await brain.decide(second, memory);
+    const secondMessages = messagesFromCall(fetchFn, 1);
+    const delta = JSON.parse(secondMessages[secondMessages.length - 1]?.content ?? "") as {
+      changedEnemies: { id: number; distanceToBase: number }[];
+      changedTowers: unknown[];
+      removedTowers: { x: number; y: number }[];
+    };
+    expect(delta.changedEnemies).toEqual([expect.objectContaining({ id: 1, distanceToBase: 3 })]);
+    expect(delta.changedTowers).toEqual([]);
+    expect(delta.removedTowers).toEqual([{ x: 1, y: 1 }]);
+  });
+
+  it("parses a fenced json body into commands", async () => {
+    const fenced = '```json\n[{"type":"llm:routeGroup","enemyIds":[1],"waypoints":[]}]\n```';
+    const fetchFn = vi.fn(async () => responseWithContent(fenced));
+    const brain = createLlmBrain(makeConfig(), { fetchFn: fetchFn as unknown as typeof fetch });
+    const commands = await brain.decide(makeObservation(), makeMemory());
+    expect(commands).toHaveLength(1);
+    expect(commands[0]?.type).toBe("llm:routeGroup");
+  });
+
+  it("tells the model about a rejected reply and suppresses a repeated toast until one is accepted", async () => {
+    const fetchFn = vi.fn();
+    fetchFn.mockResolvedValueOnce(responseWithContent("not json at all"));
+    fetchFn.mockResolvedValueOnce(responseWithContent("still not json"));
+    fetchFn.mockResolvedValueOnce(responseWithContent("[]"));
+    fetchFn.mockResolvedValueOnce(responseWithContent("nope"));
+    const notify = vi.fn();
+    const brain = createLlmBrain(makeConfig(), { fetchFn: fetchFn as unknown as typeof fetch, onNotify: notify });
+    const memory = makeMemory();
+    await brain.decide(makeObservation(), memory);
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith("LLM response was not valid JSON");
+    expect(memory.conversation).toEqual([]);
+
+    await brain.decide(makeObservation(), memory);
+    expect(notify).toHaveBeenCalledTimes(1);
+    const secondMessages = messagesFromCall(fetchFn, 1);
+    const userMessage = secondMessages[secondMessages.length - 1]?.content ?? "";
+    expect(userMessage).toContain("Previous reply was rejected: LLM response was not valid JSON");
+
+    await brain.decide(makeObservation(), memory);
+    expect(memory.rejectionNote).toBeNull();
+
+    await brain.decide(makeObservation(), memory);
+    expect(notify).toHaveBeenCalledTimes(2);
   });
 });

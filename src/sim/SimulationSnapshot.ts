@@ -83,6 +83,8 @@ export interface SnapshotMeta {
   currentWave: number;
   waveCountdown: { remaining: number; nextWave: number } | null;
   timeScale: number;
+  // Present when the serializer ran. Optional so hand-built test metas can omit it.
+  commanderHold?: boolean;
   selectedTowerId: string | null;
   selectedTowerType: string | null;
   runGemsEarned: number;

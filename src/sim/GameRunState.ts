@@ -19,6 +19,8 @@ export interface GameRunState {
   currentWave: number;
   waveCountdown: { remaining: number; nextWave: number } | null;
   timeScale: number;
+  // Clock stop requested by an LLM commander. Distinct from state === "paused".
+  commanderHold: boolean;
   selectedTowerId: string | null;
   selectedTowerType: TowerId | null;
   hoverTile: { tileX: number; tileY: number } | null;
@@ -140,6 +142,7 @@ export function initRunState(state: GameRunState, mapIndex: number, mapData: Gen
   state.currentWave = 0;
   state.waveCountdown = null;
   state.timeScale = 1;
+  state.commanderHold = false;
   state.runGemsEarned = 0;
   state.bossesKilledThisRun = 0;
   state.bossesReachedBaseThisRun = 0;

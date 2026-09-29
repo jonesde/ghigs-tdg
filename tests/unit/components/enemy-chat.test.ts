@@ -33,6 +33,8 @@ describe("EnemyChat", () => {
       contextLimit: 32768,
       commanderInstructions: "hold the line",
       systemPrompt: "sys",
+      requestTimeoutMs: 30000,
+      pauseForCommander: false,
     });
     uiStore.enemyCommander = "l_1";
   }
@@ -115,6 +117,8 @@ describe("EnemyChat", () => {
       contextLimit: 32768,
       commanderInstructions: "second orders",
       systemPrompt: "sys",
+      requestTimeoutMs: 30000,
+      pauseForCommander: false,
     });
     const wrapper = mount(EnemyChat, { global: { plugins: [pinia] } });
     uiStore.enemyCommander = "l_2";

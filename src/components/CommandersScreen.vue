@@ -1,9 +1,15 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { BUILTIN_STUBBS, BUILTIN_STUBBY } from "@/commanders/index.js";
-import { normalizeEndpointUrl } from "@/commanders/llm/apiClient.js";
-import { DEFAULT_LLM_SYSTEM_PROMPT, type LlmCommanderConfig } from "@/commanders/llm/types.js";
+import { createApiClient, normalizeEndpointUrl } from "@/commanders/llm/apiClient.js";
+import {
+  DEFAULT_LLM_SYSTEM_PROMPT,
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  type LlmCommanderConfig,
+  MAX_REQUEST_TIMEOUT_MS,
+  MIN_REQUEST_TIMEOUT_MS,
+} from "@/commanders/llm/types.js";
 import { postUpdateInstructions } from "@/commanders/relay.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -13,6 +19,35 @@ const persistStore = usePersistStore();
 const uiStore = useUiStore();
 
 const showForm = ref(false);
+const notificationVisible = ref(false);
+let notificationCheckId: ReturnType<typeof setInterval> | null = null;
+
+function shouldShowNotification(): boolean {
+  const notification = uiStore.notification;
+  if (!notification) return false;
+  if (Date.now() > notification.expires) {
+    uiStore.hideNotification();
+    return false;
+  }
+  return true;
+}
+
+watch(
+  () => uiStore.notification,
+  () => {
+    notificationVisible.value = shouldShowNotification();
+  },
+);
+
+onMounted(() => {
+  notificationCheckId = setInterval(() => {
+    notificationVisible.value = shouldShowNotification();
+  }, 200);
+});
+
+onUnmounted(() => {
+  if (notificationCheckId !== null) clearInterval(notificationCheckId);
+});
 const editingId = ref<string | null>(null);
 const formError = ref("");
 
@@ -23,6 +58,14 @@ const formModelName = ref("");
 const formContextLimit = ref(32768);
 const formCommanderInstructions = ref("");
 const formSystemPrompt = ref(DEFAULT_LLM_SYSTEM_PROMPT);
+const formRequestTimeoutSeconds = ref(DEFAULT_REQUEST_TIMEOUT_MS / 1000);
+const formPauseForCommander = ref(false);
+
+function requestTimeoutMsFromSeconds(secondsValue: number): number {
+  const milliseconds = Math.round(Number(secondsValue) * 1000);
+  if (!Number.isFinite(milliseconds)) return DEFAULT_REQUEST_TIMEOUT_MS;
+  return Math.min(MAX_REQUEST_TIMEOUT_MS, Math.max(MIN_REQUEST_TIMEOUT_MS, milliseconds));
+}
 
 function openNewForm() {
   editingId.value = null;
@@ -33,6 +76,8 @@ function openNewForm() {
   formContextLimit.value = 32768;
   formCommanderInstructions.value = "";
   formSystemPrompt.value = DEFAULT_LLM_SYSTEM_PROMPT;
+  formRequestTimeoutSeconds.value = DEFAULT_REQUEST_TIMEOUT_MS / 1000;
+  formPauseForCommander.value = false;
   formError.value = "";
   showForm.value = true;
 }
@@ -46,6 +91,8 @@ function openEditForm(config: LlmCommanderConfig) {
   formContextLimit.value = config.contextLimit;
   formCommanderInstructions.value = config.commanderInstructions;
   formSystemPrompt.value = config.systemPrompt;
+  formRequestTimeoutSeconds.value = config.requestTimeoutMs / 1000;
+  formPauseForCommander.value = config.pauseForCommander === true;
   formError.value = "";
   showForm.value = true;
 }
@@ -73,6 +120,8 @@ function saveForm() {
     contextLimit: Number.isFinite(contextLimit) && contextLimit > 0 ? contextLimit : 32768,
     commanderInstructions: formCommanderInstructions.value,
     systemPrompt: formSystemPrompt.value.trim(),
+    requestTimeoutMs: requestTimeoutMsFromSeconds(formRequestTimeoutSeconds.value),
+    pauseForCommander: formPauseForCommander.value,
   };
   if (editingId.value) {
     persistStore.updateLlmCommander(config);
@@ -87,6 +136,30 @@ function saveForm() {
     persistStore.addLlmCommander(config);
   }
   closeForm();
+}
+
+async function testEndpoint(): Promise<void> {
+  const probeText = "Reply with [] and nothing else.";
+  const config: LlmCommanderConfig = {
+    id: "endpoint-test",
+    name: "endpoint-test",
+    endpointUrl: formEndpointUrl.value,
+    token: formToken.value.trim(),
+    modelName: formModelName.value.trim(),
+    contextLimit: 32768,
+    commanderInstructions: "",
+    systemPrompt: probeText,
+    requestTimeoutMs: requestTimeoutMsFromSeconds(formRequestTimeoutSeconds.value),
+    pauseForCommander: formPauseForCommander.value,
+  };
+  // Ornith/Qwen chat templates reject a system-only body. The probe needs a user turn.
+  const result = await createApiClient().complete(config.systemPrompt, [{ role: "user", content: probeText }], config);
+  if ("content" in result) {
+    uiStore.showNotification("Endpoint accepted a request.");
+    return;
+  }
+  const reason = "error" in result ? result.error : "empty response";
+  uiStore.showNotification(`LLM request failed: ${reason}`);
 }
 
 function deleteCommander(id: string) {
@@ -105,6 +178,9 @@ function goBack() {
 
 <template>
   <div class="commanders-screen">
+    <Teleport to="body">
+      <div v-if="notificationVisible" class="commander-toast">{{ uiStore.notification?.message }}</div>
+    </Teleport>
     <div class="commanders-content">
       <h1 class="screen-title">Enemy Commanders</h1>
 
@@ -158,8 +234,8 @@ function goBack() {
         <div class="form-dialog">
           <div class="form-title">{{ editingId ? "Edit LLM Commander" : "New LLM Commander" }}</div>
           <div v-if="editingId && isActive(editingId)" class="form-hint">
-            Endpoint, token, and model name apply the next time this commander is activated. Commander Instructions
-            apply immediately.
+            Endpoint, token, model name, request timeout, and Pause for Enemy Commander apply the next time this
+            commander is activated. Commander Instructions apply immediately.
           </div>
           <div v-if="formError" class="form-error">{{ formError }}</div>
 
@@ -182,6 +258,18 @@ function goBack() {
           <label class="form-label">Context limit (tokens)</label>
           <input class="form-input" v-model="formContextLimit" type="number" />
 
+          <label class="form-label">Request timeout (seconds)</label>
+          <input class="form-input" v-model.number="formRequestTimeoutSeconds" type="number" min="1" max="180" />
+
+          <label class="form-check">
+            <input class="commander-pause" type="checkbox" v-model="formPauseForCommander" />
+            Pause for Enemy Commander
+          </label>
+          <div class="form-hint">
+            Stops the sim clock while a request is in flight and resumes it when the reply is applied. A manual pause
+            stays paused.
+          </div>
+
           <label class="form-label">Commander Instructions</label>
           <textarea class="form-textarea" v-model="formCommanderInstructions" rows="3"></textarea>
 
@@ -190,6 +278,7 @@ function goBack() {
 
           <div class="form-actions">
             <button class="form-btn cancel" @click="closeForm()">Cancel</button>
+            <button class="form-btn" @click="testEndpoint()">Test</button>
             <button class="form-btn confirm" @click="saveForm()">Save</button>
           </div>
         </div>
@@ -368,6 +457,15 @@ function goBack() {
   margin-top: 6px;
 }
 
+.form-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: var(--font-sm);
+  color: var(--color-text);
+}
+
 .form-input,
 .form-textarea {
   width: 100%;
@@ -407,6 +505,20 @@ function goBack() {
 .form-btn.cancel {
   background: rgba(255, 255, 255, 0.08);
   color: var(--color-text);
+}
+
+.commander-toast {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 400;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 8px 16px;
+  color: var(--color-text);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .form-btn.confirm {

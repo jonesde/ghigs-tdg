@@ -109,6 +109,7 @@ watch(
           <span>Wave</span>
           <span class="hud-value">{{ gameStore.currentWave }}</span>
         </span>
+        <span v-if="gameStore.commanderHold" class="commander-hold">Paused for commander</span>
       </div>
       <div class="hud-right">
         <button class="hud-btn" :class="{ playing: !gameStore.isPaused }" id="pauseBtn" @click="dispatchCommand({ commandId: 0, type: 'action:togglePause' })">
@@ -248,6 +249,12 @@ watch(
 
 .hud-btn.wave-counter .hud-icon {
   font-size: var(--font-2xl);
+}
+
+.commander-hold {
+  color: #ffd84d;
+  font-size: var(--font-sm);
+  font-weight: 600;
 }
 
 .hud-icon {

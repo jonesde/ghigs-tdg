@@ -108,5 +108,18 @@ describe("buildObservation", () => {
     expect(observation.wave.currentWave).toBe(4);
     expect(observation.wave.remainingScheduledSpawns).toBe(7);
     expect(observation.wave.active).toBe(false);
+    expect(observation.wave.baseHealth).toBe(20);
+    expect(observation.wave.maxBaseHealth).toBe(100);
+    expect(observation.wave.countdownRemaining).toBeNull();
+  });
+
+  it("copies an inter-wave countdown onto the wave", () => {
+    const slice = makeSlice({
+      meta: fakeMeta({ baseHealth: 12, maxBaseHealth: 40, waveCountdown: { remaining: 8.26, nextWave: 3 } }),
+    });
+    const observation = buildObservation(slice);
+    expect(observation.wave.baseHealth).toBe(12);
+    expect(observation.wave.maxBaseHealth).toBe(40);
+    expect(observation.wave.countdownRemaining).toBe(8.26);
   });
 });

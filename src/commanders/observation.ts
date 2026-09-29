@@ -31,6 +31,9 @@ export interface ObservationWave {
   spawnStates: SpawnStateSnapshot[];
   remainingScheduledSpawns: number;
   active: boolean;
+  baseHealth: number;
+  maxBaseHealth: number;
+  countdownRemaining: number | null;
 }
 
 export interface ObservationNav {
@@ -97,6 +100,9 @@ export function buildObservation(slice: CommanderSnapshotSlice): CommanderObserv
     spawnStates: slice.spawnStates,
     remainingScheduledSpawns: slice.meta.remainingScheduledSpawns ?? 0,
     active: slice.meta.waveActive ?? false,
+    baseHealth: slice.meta.baseHealth,
+    maxBaseHealth: slice.meta.maxBaseHealth,
+    countdownRemaining: slice.meta.waveCountdown?.remaining ?? null,
   };
   const observation: CommanderObservation = { map: slice.gridLayout, enemies, towers, wave };
   if (navField) {

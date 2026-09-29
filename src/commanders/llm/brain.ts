@@ -1,5 +1,6 @@
 import type { Command } from "@/sim/Command.js";
 import type { CommanderBrain, CommanderMemory } from "../brain.js";
+import { nearestPathTileTo } from "../navTile.js";
 import type { CommanderObservation, ObservationEnemy, ObservationTower } from "../observation.js";
 import { type ApiClient, type ChatMessage, createApiClient } from "./apiClient.js";
 import { validateLlmResponse } from "./schema.js";
@@ -37,24 +38,48 @@ function serializeEnemy(enemy: ObservationEnemy): Record<string, unknown> {
   return record;
 }
 
-function serializeTower(tower: ObservationTower): Record<string, unknown> {
+function readNavDistance(distanceToBase: number[][] | undefined, tileX: number, tileY: number): number {
+  if (!distanceToBase) return -1;
+  return distanceToBase[tileY]?.[tileX] ?? -1;
+}
+
+function towerDistanceToBase(tower: ObservationTower, observation: CommanderObservation): number {
+  const gridLayout = observation.map;
+  const navDistances = observation.nav?.distanceToBase;
+  if (!gridLayout || !navDistances) return -1;
+  const snap = nearestPathTileTo(tower.tileX, tower.tileY, gridLayout);
+  if (!snap) return -1;
+  return readNavDistance(navDistances, snap.x, snap.y);
+}
+
+function serializeTower(tower: ObservationTower, observation: CommanderObservation): Record<string, unknown> {
   const record: Record<string, unknown> = {
     x: tower.tileX,
     y: tower.tileY,
     level: tower.level,
     hp: tower.hp,
     maxHp: tower.maxHp,
+    distanceToBase: towerDistanceToBase(tower, observation),
   };
   if (tower.type !== undefined) record.type = tower.type;
   return record;
 }
 
+function liveTowers(observation: CommanderObservation): ObservationTower[] {
+  return observation.towers.filter((tower) => tower.hp > 0);
+}
+
 function waveSummary(observation: CommanderObservation): unknown {
+  const countdownRemaining = observation.wave.countdownRemaining;
+  const countdownSeconds = countdownRemaining === null ? null : Math.round(countdownRemaining * 10) / 10;
   return {
     currentWave: observation.wave.currentWave,
     pendingEnemyCount: observation.wave.pendingEnemyCount,
     remainingScheduledSpawns: observation.wave.remainingScheduledSpawns,
     active: observation.wave.active,
+    baseHp: observation.wave.baseHealth,
+    maxBaseHp: observation.wave.maxBaseHealth,
+    countdownSeconds,
   };
 }
 
@@ -63,7 +88,7 @@ function buildFullSnapshotMessage(observation: CommanderObservation): string {
     kind: "snapshot",
     map: observation.map,
     enemies: observation.enemies.map(serializeEnemy),
-    towers: observation.towers.map(serializeTower),
+    towers: liveTowers(observation).map((tower) => serializeTower(tower, observation)),
     wave: waveSummary(observation),
   });
 }
@@ -81,7 +106,22 @@ function enemyChanged(previous: ObservationEnemy, enemy: ObservationEnemy): bool
     (previous.routingMode ?? "default") !== (enemy.routingMode ?? "default") ||
     previous.attackingBase !== enemy.attackingBase ||
     blockedTileKey(previous.blockedByTowerTile) !== blockedTileKey(enemy.blockedByTowerTile) ||
-    (previous.targetingMode ?? "") !== (enemy.targetingMode ?? "")
+    (previous.targetingMode ?? "") !== (enemy.targetingMode ?? "") ||
+    (previous.distanceToBase ?? -1) !== (enemy.distanceToBase ?? -1)
+  );
+}
+
+function towerChanged(
+  previous: ObservationTower,
+  tower: ObservationTower,
+  previousObservation: CommanderObservation,
+  observation: CommanderObservation,
+): boolean {
+  return (
+    previous.hp !== tower.hp ||
+    previous.maxHp !== tower.maxHp ||
+    previous.level !== tower.level ||
+    towerDistanceToBase(previous, previousObservation) !== towerDistanceToBase(tower, observation)
   );
 }
 
@@ -100,20 +140,20 @@ function buildDeltaMessage(observation: CommanderObservation, last: CommanderObs
     if (!currentEnemyIds.has(previous.id)) removedEnemyIds.push(previous.id);
   }
 
-  const lastTowerByKey = new Map(last.towers.map((tower) => [towerKey(tower), tower]));
-  const currentTowerKeys = new Set(observation.towers.map((tower) => towerKey(tower)));
+  const previousLiveTowers = liveTowers(last);
+  const currentLiveTowers = liveTowers(observation);
+  const lastTowerByKey = new Map(previousLiveTowers.map((tower) => [towerKey(tower), tower]));
+  const currentTowerKeys = new Set(currentLiveTowers.map((tower) => towerKey(tower)));
   const newTowers: unknown[] = [];
   const changedTowers: unknown[] = [];
-  for (const tower of observation.towers) {
+  for (const tower of currentLiveTowers) {
     const key = towerKey(tower);
     const previous = lastTowerByKey.get(key);
-    if (!previous) newTowers.push(serializeTower(tower));
-    else if (previous.hp !== tower.hp || previous.maxHp !== tower.maxHp || previous.level !== tower.level) {
-      changedTowers.push(serializeTower(tower));
-    }
+    if (!previous) newTowers.push(serializeTower(tower, observation));
+    else if (towerChanged(previous, tower, last, observation)) changedTowers.push(serializeTower(tower, observation));
   }
   const removedTowers: { x: number; y: number }[] = [];
-  for (const previous of last.towers) {
+  for (const previous of previousLiveTowers) {
     if (!currentTowerKeys.has(towerKey(previous))) {
       removedTowers.push({ x: previous.tileX, y: previous.tileY });
     }
@@ -150,12 +190,67 @@ function estimateTokens(systemPrompt: string, messages: ChatMessage[]): number {
   return Math.ceil(characters / 4);
 }
 
+function stripOneFence(text: string): string {
+  let body = text.trim();
+  if (!body.startsWith("```")) return body;
+  const newlineIndex = body.indexOf("\n");
+  if (newlineIndex >= 0) body = body.slice(newlineIndex + 1);
+  else body = body.replace(/^```(?:json)?\s*/i, "");
+  const closingIndex = body.lastIndexOf("```");
+  if (closingIndex >= 0) body = body.slice(0, closingIndex);
+  return body.trim();
+}
+
+function sliceJsonValue(text: string): string | null {
+  const objectStart = text.indexOf("{");
+  const arrayStart = text.indexOf("[");
+  let startIndex = -1;
+  let endCharacter = "";
+  if (arrayStart >= 0 && (objectStart < 0 || arrayStart < objectStart)) {
+    startIndex = arrayStart;
+    endCharacter = "]";
+  } else if (objectStart >= 0) {
+    startIndex = objectStart;
+    endCharacter = "}";
+  }
+  if (startIndex < 0) return null;
+  const endIndex = text.lastIndexOf(endCharacter);
+  if (endIndex <= startIndex) return null;
+  return text.slice(startIndex, endIndex + 1);
+}
+
+function parseModelContent(content: string): unknown {
+  const unfenced = stripOneFence(content);
+  try {
+    return JSON.parse(unfenced);
+  } catch {
+    const sliced = sliceJsonValue(unfenced);
+    if (sliced === null) throw new Error("not json");
+    return JSON.parse(sliced);
+  }
+}
+
+function appendRejectionNote(memory: CommanderMemory): void {
+  const note = memory.rejectionNote;
+  if (!note) return;
+  const lastMessage = memory.conversation[memory.conversation.length - 1];
+  if (lastMessage?.role !== "user") return;
+  lastMessage.content = `${lastMessage.content}\n\nPrevious reply was rejected: ${note}\nReturn only the JSON command block.`;
+}
+
 // Creates the LLM commander brain. `decide` is async (it awaits the API client)
 // and returns a Promise<Command[]>. The worker owns the in-flight guard + cadence,
 // so this function only concerns itself with prompt assembly, calling the API,
 // and translating the validated response into engine commands.
 export function createLlmBrain(config: LlmCommanderConfig, callbacks: LlmBrainCallbacks = {}): CommanderBrain {
   const apiClient: ApiClient = createApiClient(callbacks.fetchFn ?? globalThis.fetch);
+  let lastNotifiedFailure: string | null = null;
+
+  function notifyFailure(message: string): void {
+    if (message === lastNotifiedFailure) return;
+    lastNotifiedFailure = message;
+    callbacks.onNotify?.(message);
+  }
 
   function translateCommand(parsed: ReturnType<typeof validateLlmResponse>["commands"][number]): Command {
     if (parsed.type === "llm:routeGroup") {
@@ -197,6 +292,7 @@ export function createLlmBrain(config: LlmCommanderConfig, callbacks: LlmBrainCa
         const deltaText = buildDeltaMessage(observation, memory.lastObservation ?? observation);
         memory.conversation.push({ role: "user", content: deltaText });
       }
+      appendRejectionNote(memory);
 
       for (const pendingMessage of queuedPlayerMessages) {
         memory.conversation.push({ role: "user", content: `Player message:\n${pendingMessage}` });
@@ -216,28 +312,34 @@ export function createLlmBrain(config: LlmCommanderConfig, callbacks: LlmBrainCa
 
       if ("empty" in result || "error" in result) {
         restoreTurn();
-        if ("error" in result) callbacks.onNotify?.(`LLM request failed: ${result.error}`);
+        if ("error" in result) notifyFailure(`LLM request failed: ${result.error}`);
         return [];
       }
 
       let parsedRaw: unknown;
       try {
-        parsedRaw = JSON.parse(result.content);
+        parsedRaw = parseModelContent(result.content);
       } catch {
         restoreTurn();
-        callbacks.onNotify?.("LLM response was not valid JSON");
+        const rejectionReason = "LLM response was not valid JSON";
+        memory.rejectionNote = rejectionReason;
+        notifyFailure(rejectionReason);
         return [];
       }
 
       const parsed = validateLlmResponse(parsedRaw, config);
       if (parsed.error && parsed.commands.length === 0) {
         restoreTurn();
-        callbacks.onNotify?.(`LLM response rejected: ${parsed.error}`);
+        const rejectionReason = `LLM response rejected: ${parsed.error}`;
+        memory.rejectionNote = rejectionReason;
+        notifyFailure(rejectionReason);
         return [];
       }
 
       memory.conversation.push({ role: "assistant", content: result.content });
-      if (parsed.error) callbacks.onNotify?.(`LLM response rejected: ${parsed.error}`);
+      memory.rejectionNote = null;
+      lastNotifiedFailure = null;
+      if (parsed.error) notifyFailure(`LLM response rejected: ${parsed.error}`);
       if (parsed.chat) callbacks.onChat?.(parsed.chat);
 
       const tokenCount = result.promptTokens > 0 ? result.promptTokens : estimateTokens(systemPrompt, transcript);

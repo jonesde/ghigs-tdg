@@ -45,9 +45,9 @@ describe("PersistStore save migration v2 -> v3", () => {
     };
   }
 
-  it("bumps saveVersion to 3", () => {
+  it("bumps saveVersion to 4", () => {
     const result = migrateToCurrent(v2ShapedSave());
-    expect(result.saveVersion).toBe(3);
+    expect(result.saveVersion).toBe(4);
   });
 
   it("backfills llmCommanders as an empty array (no data loss of the new field)", () => {
@@ -74,5 +74,35 @@ describe("PersistStore save migration v2 -> v3", () => {
     expect(result.firstClears["7"]).toBe(true);
     expect(result.unlocked.basic.levels[0]).toBe(true);
     expect(result.unlocked.basic.levels[2]).toBe(false);
+  });
+});
+
+describe("PersistStore save migration pauseForCommander backfill", () => {
+  function commander(id: string, extra: Record<string, unknown> = {}) {
+    return {
+      id,
+      name: id,
+      endpointUrl: "http://localhost:1234/v1",
+      token: "",
+      modelName: "",
+      contextLimit: 32768,
+      commanderInstructions: "",
+      systemPrompt: "sys",
+      requestTimeoutMs: 30000,
+      ...extra,
+    };
+  }
+
+  it("fills a missing pauseForCommander as false and keeps an explicit true", () => {
+    const result = migrateToCurrent({
+      saveVersion: 4,
+      llmCommanders: [
+        commander("missing"),
+        commander("enabled", { pauseForCommander: true }),
+        commander("garbage", { pauseForCommander: "yes" }),
+      ],
+    });
+    expect(result.saveVersion).toBe(4);
+    expect(result.llmCommanders.map((entry) => entry.pauseForCommander)).toEqual([false, true, false]);
   });
 });

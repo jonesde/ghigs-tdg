@@ -213,6 +213,7 @@ export class GameEngine {
       currentWave: 0,
       waveCountdown: null,
       timeScale: 1,
+      commanderHold: false,
       selectedTowerId: null,
       selectedTowerType: null,
       hoverTile: null,

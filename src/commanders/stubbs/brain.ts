@@ -1,45 +1,9 @@
 import type { Command } from "@/sim/Command.js";
 import type { CommanderBrain, CommanderMemory } from "../brain.js";
+import { nearestPathTileTo } from "../navTile.js";
 import type { CommanderObservation, ObservationEnemy, ObservationTower } from "../observation.js";
 
-interface GridCoordinate {
-  x: number;
-  y: number;
-}
-
-const PATH_TILE_VALUES = [1, 2, 3];
-
-function isPathTile(tileValue: number): boolean {
-  return PATH_TILE_VALUES.includes(tileValue);
-}
-
-// Nearest path/spawn/base tile (Euclidean) to an arbitrary tile — towers may sit
-// on terrain, so the waypoint must snap to a tile the engine can route through.
-function nearestPathTileTo(tileX: number, tileY: number, gridLayout: number[][]): GridCoordinate | null {
-  const rowCount = gridLayout.length;
-  const columnCount = gridLayout[0]?.length ?? 0;
-  if (rowCount === 0 || columnCount === 0) return null;
-  let bestTile: GridCoordinate | null = null;
-  let bestSquaredDistance = Infinity;
-  for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
-    const gridRow = gridLayout[rowIndex];
-    if (!gridRow) continue;
-    for (let columnIndex = 0; columnIndex < columnCount; columnIndex++) {
-      const tileValue = gridRow[columnIndex];
-      if (tileValue === undefined || !isPathTile(tileValue)) continue;
-      const deltaX = columnIndex - tileX;
-      const deltaY = rowIndex - tileY;
-      const squaredDistance = deltaX * deltaX + deltaY * deltaY;
-      if (squaredDistance < bestSquaredDistance) {
-        bestSquaredDistance = squaredDistance;
-        bestTile = { x: columnIndex, y: rowIndex };
-      }
-    }
-  }
-  return bestTile;
-}
-
-function representativeEnemyTile(enemies: ObservationEnemy[], gridLayout: number[][]): GridCoordinate | null {
+function representativeEnemyTile(enemies: ObservationEnemy[], gridLayout: number[][]): { x: number; y: number } | null {
   if (enemies.length === 0) return null;
   let sumX = 0;
   let sumY = 0;

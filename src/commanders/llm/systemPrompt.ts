@@ -78,12 +78,14 @@ Enemies spawn from a QUEUE. Between waves there is a ${BETWEEN_WAVES_TIMER}s int
 Each request resends the transcript. The first user message (and the first message after a context rebuild) is a FULL snapshot. Later user messages are DELTAS against that transcript. The map is only in a full snapshot.
 
 - Enemy fields: id, type, x, y, level, hp, maxHp, routingMode (default | hold | route | siege), attackingBase, blockedByTowerTile, distanceToBase, targetingMode (null when unset, otherwise one of the setTargeting modes).
-- Tower fields: type, x, y, level, hp, maxHp. Towers are identified by tile.
-- A delta contains newEnemies (full entry), changedEnemies (same fields; emitted when tile, hp, maxHp, routingMode, attackingBase, blockedByTowerTile, or targetingMode changed), removedEnemyIds, newTowers, changedTowers (hp, maxHp, or level), removedTowers ({x, y}), and the wave summary.
-- Wave summary fields: currentWave, pendingEnemyCount, remainingScheduledSpawns, active.
+- Tower fields: type, x, y, level, hp, maxHp, distanceToBase. distanceToBase is the nav distance of the nearest path, spawn, or base tile; a terrain tower is snapped to that tile. -1 means no walkable tile. Towers with hp <= 0 are omitted. A tower that drops to 0 hp is listed in removedTowers.
+- A delta contains newEnemies (full entry), changedEnemies (same fields; emitted when tile, hp, maxHp, routingMode, attackingBase, blockedByTowerTile, targetingMode, or distanceToBase changed), removedEnemyIds, newTowers, changedTowers (hp, maxHp, level, or distanceToBase), removedTowers ({x, y}), and the wave summary.
+- Wave summary fields: currentWave, pendingEnemyCount, remainingScheduledSpawns, active, baseHp, maxBaseHp, countdownSeconds (inter-wave seconds remaining, or null while a wave is spawning).
 - Your own prior replies stay in the transcript as assistant messages until a context rebuild replaces the transcript with a new full snapshot.
 
 # Commands
+
+The command rules in this section override any shorter command list in the preface above.
 
 You may emit ONLY the following commands as a JSON array (or { "commands": [...], "chat": "..." }). Coordinates are TILE coordinates. Commands in one array apply in order. You MUST NOT emit llm:gridLayoutToggle or any other command type.
 
@@ -101,7 +103,7 @@ You may emit ONLY the following commands as a JSON array (or { "commands": [...]
    - nearest: siege the closest live tower (Euclidean tile distance; ties break by smaller y, then smaller x).
    - strongest: siege the live tower with the highest current health (ties use the nearest rule).
    - weakest: siege the live tower with the lowest current health (ties use the nearest rule).
-   - strongestAhead: siege the highest-health live tower that is strictly closer to the base on the nav field than the enemy. Towers off the walkable field are not ahead. If none qualify, behave as base.
+   - strongestAhead: siege the highest-health live tower whose snapped distanceToBase is strictly smaller than the enemy's. The snap is the nearest path, spawn, or base tile. -1 means no walkable tile, and that tower is not ahead. If none qualify, behave as base.
    - Any other mode string is stored and does not change engagement.
 
 Return ONLY the JSON command block (optionally with a "chat" field for a short message to the player).`;

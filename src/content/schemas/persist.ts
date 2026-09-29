@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_REQUEST_TIMEOUT_MS, MIN_REQUEST_TIMEOUT_MS } from "@/commanders/llm/types.js";
 
 const TowerUnlocksSchema = z.object({
   levels: z.array(z.boolean()),
@@ -31,6 +32,8 @@ const LlmCommanderConfigSchema = z.object({
   contextLimit: z.number(),
   commanderInstructions: z.string(),
   systemPrompt: z.string(),
+  requestTimeoutMs: z.number().int().min(MIN_REQUEST_TIMEOUT_MS).max(MAX_REQUEST_TIMEOUT_MS),
+  pauseForCommander: z.boolean(),
 });
 
 export const PersistStateSchema = z.object({

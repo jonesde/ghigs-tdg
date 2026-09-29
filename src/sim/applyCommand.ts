@@ -24,6 +24,9 @@ export function applyCommand(engine: GameEngine, command: Command): boolean {
     case "action:togglePause":
       engine.togglePause();
       return true;
+    case "action:commanderHold":
+      engine.runState.commanderHold = command.hold;
+      return true;
     case "action:cycleSpeed":
       if (command.direction === 1) {
         engine.cycleSpeed();

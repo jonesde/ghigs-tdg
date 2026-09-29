@@ -253,16 +253,16 @@ describe("PersistStore", () => {
 
   describe("schema migration on load", () => {
     it("includes saveVersion in default state", () => {
-      expect(store.saveVersion).toBe(3);
+      expect(store.saveVersion).toBe(4);
     });
 
-    it("migrates v1 data (no saveVersion) to current (v3)", () => {
+    it("migrates v1 data (no saveVersion) to current (v4)", () => {
       const oldData = { gems: 100, highestUnlockedMap: 5 };
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // OLD_STORAGE_KEY
         .mockReturnValueOnce(JSON.stringify(oldData)); // STORAGE_KEY
       store.load();
-      expect(store.saveVersion).toBe(3);
+      expect(store.saveVersion).toBe(4);
       expect(store.gems).toBe(100);
       expect(store.highestUnlockedMap).toBe(5);
       expect(store.difficulty.multiplierTick).toBe(0);
@@ -275,12 +275,12 @@ describe("PersistStore", () => {
         .mockReturnValueOnce(null) // OLD_STORAGE_KEY
         .mockReturnValueOnce(JSON.stringify(v1Data)); // STORAGE_KEY
       store.load();
-      expect(store.saveVersion).toBe(3);
+      expect(store.saveVersion).toBe(4);
       expect(store.gems).toBe(200);
       expect(store.bestWaves.best_3).toBe(45);
     });
 
-    it("loads v2 data and migrates forward to current (v3)", () => {
+    it("loads v2 data and migrates forward to current (v4)", () => {
       const v2Data = {
         saveVersion: 2,
         gems: 300,
@@ -301,10 +301,36 @@ describe("PersistStore", () => {
         .mockReturnValueOnce(null) // OLD_STORAGE_KEY
         .mockReturnValueOnce(JSON.stringify(v2Data)); // STORAGE_KEY
       store.load();
-      expect(store.saveVersion).toBe(3);
+      expect(store.saveVersion).toBe(4);
       expect(store.gems).toBe(300);
       expect(store.difficulty.multiplierTick).toBe(4);
       expect(store.generalAddons.extraHealth).toBe(10);
+    });
+
+    it("migrates a v3 commander without a timeout to 30000", () => {
+      const v3Data = {
+        saveVersion: 3,
+        gems: 1,
+        llmCommanders: [
+          {
+            id: "l_old",
+            name: "Old",
+            endpointUrl: "http://localhost/v1",
+            token: "",
+            modelName: "",
+            contextLimit: 32768,
+            commanderInstructions: "",
+            systemPrompt: "sys",
+          },
+        ],
+      };
+      (localStorage.getItem as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(null)
+        .mockReturnValueOnce(JSON.stringify(v3Data));
+      store.load();
+      expect(store.saveVersion).toBe(4);
+      expect(store.llmCommanders[0]?.requestTimeoutMs).toBe(30000);
+      expect(store.llmCommanders[0]?.name).toBe("Old");
     });
 
     it("best-effort migrates on unknown future version", () => {
@@ -631,6 +657,8 @@ describe("PersistStore", () => {
         contextLimit: 32768,
         commanderInstructions: "",
         systemPrompt: "sys",
+        requestTimeoutMs: 30000,
+        pauseForCommander: false,
         ...overrides,
       };
     }

@@ -73,6 +73,7 @@ interface GameStateShape {
   currentWave: number;
   waveCountdown: { remaining: number; nextWave: number } | null;
   timeScale: number;
+  commanderHold: boolean;
   selectedTower: Tower | null;
   selectedTowerType: TowerId | null;
   towerPanelPos: TowerPanelPos;
@@ -104,6 +105,7 @@ export const useGameStore = defineStore("game", {
     currentWave: 0,
     waveCountdown: null,
     timeScale: 1,
+    commanderHold: false,
     selectedTower: null,
     selectedTowerType: null,
     towerPanelPos: { x: 0, y: 48 },
@@ -200,6 +202,7 @@ export const useGameStore = defineStore("game", {
       this.maxBaseHealth = STARTING_BASE_HEALTH;
       this.gold = StartingGold[mapData.regionId]!;
       this.currentWave = 0;
+      this.commanderHold = false;
       this.runGemsEarned = 0;
       this.bossesKilledThisRun = 0;
       this.bossesReachedBaseThisRun = 0;
@@ -262,6 +265,7 @@ export const useGameStore = defineStore("game", {
       this.gold = 0;
       this.currentWave = 0;
       this.timeScale = 1;
+      this.commanderHold = false;
       this.selectedTower = null;
       this.selectedTowerType = null;
       this.towerPanelPos = { x: 0, y: 48 };

@@ -35,6 +35,9 @@ export type Command =
 
   // ---- High-level actions (wrapping GameEngine public methods) ----
   | { commandId: number; type: "action:togglePause" }
+  // Stops the sim clock without entering GameState.PAUSED. PAUSED makes the commander
+  // worker skip decide, so a think-hold has to stay in the playing state.
+  | { commandId: number; type: "action:commanderHold"; hold: boolean }
   | { commandId: number; type: "action:cycleSpeed"; direction: 1 | -1 }
   | { commandId: number; type: "action:upgradeSelected" }
   | { commandId: number; type: "action:sellSelected" } // triggers confirm via host

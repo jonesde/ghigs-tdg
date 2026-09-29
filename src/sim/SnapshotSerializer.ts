@@ -125,6 +125,7 @@ function buildMeta(engine: GameEngine): SnapshotMeta {
     currentWave: rs.currentWave,
     waveCountdown: rs.waveCountdown,
     timeScale: rs.timeScale,
+    commanderHold: rs.commanderHold,
     selectedTowerId: rs.selectedTowerId,
     selectedTowerType: rs.selectedTowerType,
     runGemsEarned: rs.runGemsEarned,

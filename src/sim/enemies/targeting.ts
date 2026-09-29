@@ -32,8 +32,8 @@ function isNearerTieBreak<T extends TargetingTower>(
 }
 
 // Picks the live tower an engagement policy sieges. "base", "default", and unknown modes return null
-// (the caller paths to the base). strongestAhead requires both nav distances >= 0 and a tower strictly
-// closer to the base; a terrain tile's distance of -1 is not ahead.
+// (the caller paths to the base). strongestAhead requires both distances >= 0 and a tower strictly
+// closer to the base. A distance of -1 is not ahead; the caller snaps terrain tiles before the call.
 export function selectTargetingTower<T extends TargetingTower>(
   mode: string | null,
   enemyTileX: number,

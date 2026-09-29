@@ -23,6 +23,8 @@ export interface CommanderMemory {
   commanderInstructions: string;
   pendingPlayerMessages: string[];
   isCompressing: boolean;
+  // Why the previous model reply was dropped. Cleared when a reply is accepted.
+  rejectionNote: string | null;
 }
 
 export interface CommanderBrain {

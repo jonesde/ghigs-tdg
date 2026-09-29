@@ -21,6 +21,13 @@ let cachedGridLayout: number[][] | undefined;
 let cachedNavField: NavFieldSnapshotData | undefined;
 let cachedRunId: number | null = null;
 
+// Pinia state is a proxy. Worker.postMessage structured-clones its argument and throws
+// DataCloneError on that proxy, which leaves the worker running with no start message
+// and no decisions. The sim worker init uses the same JSON copy for persist state.
+export function cloneCommanderConfig(config: LlmCommanderConfig): LlmCommanderConfig {
+  return JSON.parse(JSON.stringify(config)) as LlmCommanderConfig;
+}
+
 export function startRelay(kind: CommanderKind, config?: LlmCommanderConfig): void {
   if (commanderWorker) return;
   commanderWorker = new Worker(new URL("./CommanderWorker.ts", import.meta.url), { type: "module" });
@@ -34,6 +41,10 @@ export function startRelay(kind: CommanderKind, config?: LlmCommanderConfig): vo
       useUiStore().showNotification(message.message);
     } else if (message.type === "chat") {
       useUiStore().appendChatLog({ from: "commander", text: message.text });
+    } else if (message.type === "hold") {
+      // Clock stop for an in-flight request. Not action:togglePause: that enters
+      // GameState.PAUSED and the commander worker would skip the decide the hold waits on.
+      dispatchCommand({ commandId: 0, type: "action:commanderHold", hold: message.hold });
     }
   };
   commanderWorker.onerror = (event: ErrorEvent) => {
@@ -44,7 +55,7 @@ export function startRelay(kind: CommanderKind, config?: LlmCommanderConfig): vo
     failCommanderWorker("Commander worker rejected a message");
   };
   const startMessage: MainToCommanderMessage =
-    config === undefined ? { type: "start", kind } : { type: "start", kind, config };
+    config === undefined ? { type: "start", kind } : { type: "start", kind, config: cloneCommanderConfig(config) };
   commanderWorker.postMessage(startMessage);
   relayIntervalId = setInterval(postObservation, RELAY_INTERVAL_MS);
 }
@@ -104,14 +115,16 @@ export function stopRelay(): void {
     clearInterval(relayIntervalId);
     relayIntervalId = null;
   }
-  if (commanderWorker) {
-    const worker = commanderWorker;
-    commanderWorker = null;
+  const worker = commanderWorker;
+  commanderWorker = null;
+  if (worker) {
     worker.onmessage = null;
     worker.onerror = null;
     worker.onmessageerror = null;
     worker.postMessage({ type: "stop" } satisfies MainToCommanderMessage);
     worker.terminate();
+    // terminate() drops an in-flight decide's hold release and would leave the clock stopped.
+    dispatchCommand({ commandId: 0, type: "action:commanderHold", hold: false });
   }
   // NOTE: `cachedGridLayout` is intentionally NOT cleared here. The plan (§1.4)
   // requires the relay to own the gridLayout cache across worker restarts: once the

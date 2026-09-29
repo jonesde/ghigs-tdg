@@ -11,6 +11,8 @@ const config: LlmCommanderConfig = {
   contextLimit: 32768,
   commanderInstructions: "",
   systemPrompt: DEFAULT_LLM_SYSTEM_PROMPT,
+  requestTimeoutMs: 30000,
+  pauseForCommander: false,
 };
 
 describe("validateLlmResponse", () => {

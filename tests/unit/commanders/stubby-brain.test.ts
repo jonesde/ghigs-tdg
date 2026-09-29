@@ -18,6 +18,7 @@ function freshMemory(): CommanderMemory {
     commanderInstructions: "",
     pendingPlayerMessages: [],
     isCompressing: false,
+    rejectionNote: null,
   };
 }
 
@@ -42,6 +43,9 @@ function observation(opts: {
       spawnStates: [],
       remainingScheduledSpawns: opts.remainingScheduledSpawns,
       active: opts.remainingScheduledSpawns > 0,
+      baseHealth: 20,
+      maxBaseHealth: 20,
+      countdownRemaining: null,
     },
   };
 }

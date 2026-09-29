@@ -12,6 +12,8 @@ function makeConfig(overrides: Partial<LlmCommanderConfig> = {}): LlmCommanderCo
     contextLimit: 32768,
     commanderInstructions: "",
     systemPrompt: "system",
+    requestTimeoutMs: 30000,
+    pauseForCommander: false,
     ...overrides,
   };
 }
@@ -58,7 +60,7 @@ describe("createApiClient.complete", () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
     const body = JSON.parse(capturedInit!.body as string);
     expect(body.model).toBeUndefined();
-    expect(body.temperature).toBe(0.7);
+    expect(body.temperature).toBe(0.2);
   });
 
   it("omits model when empty and sends Bearer token when set", async () => {
@@ -90,6 +92,48 @@ describe("createApiClient.complete", () => {
     const fetchFn = vi.fn(async () => ({ ok: true, status: 200, text: async () => "not json" }) as unknown as Response);
     const client = createApiClient(fetchFn);
     expect(await client.complete("sys", [], makeConfig())).toEqual({ error: "invalid json" });
+  });
+
+  it("aborts a hanging fetch after requestTimeoutMs", async () => {
+    vi.useFakeTimers();
+    const fetchFn = vi.fn((_url: string, init?: RequestInit) => {
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("aborted", "AbortError"));
+        });
+      });
+    });
+    const client = createApiClient(fetchFn as unknown as typeof fetch);
+    let settled = false;
+    const pending = client.complete("sys", [], makeConfig({ requestTimeoutMs: 50 })).then((result) => {
+      settled = true;
+      return result;
+    });
+    await vi.advanceTimersByTimeAsync(49);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(pending).resolves.toEqual({ error: "timeout" });
+  });
+
+  it("aborts a hanging fetch at the default timeout", async () => {
+    vi.useFakeTimers();
+    const fetchFn = vi.fn((_url: string, init?: RequestInit) => {
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("aborted", "AbortError"));
+        });
+      });
+    });
+    const client = createApiClient(fetchFn as unknown as typeof fetch);
+    let settled = false;
+    const pending = client.complete("sys", [], makeConfig()).then((result) => {
+      settled = true;
+      return result;
+    });
+    await vi.advanceTimersByTimeAsync(29999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(pending).resolves.toEqual({ error: "timeout" });
   });
 
   it("returns {error: 'timeout'} on abort", async () => {

@@ -429,4 +429,58 @@ describe("worker round-trip", () => {
     expect(postsAfterStart).toBeLessThanOrEqual(acks + 2);
     sendDispose();
   });
+
+  it("commanderHold freezes simSeconds while the run stays playing", async () => {
+    gw.self = mockSelf;
+    posted.length = 0;
+    await import("@/sim/WorkerEntry.js");
+    sendInit();
+    await wait(40);
+
+    sendCommand({ commandId: 1, type: "action:togglePause" });
+    const driver = startAckDriver(16);
+    const started = await waitFor(() => {
+      const snapshots = snapshotMessages(posted);
+      const latest = snapshots[snapshots.length - 1];
+      const simSeconds = latest?.snapshot.meta.simSeconds ?? 0;
+      return latest !== undefined && latest.snapshot.meta.state === "playing" && simSeconds > 0;
+    });
+    expect(started).toBe(true);
+
+    sendCommand({ commandId: 2, type: "action:commanderHold", hold: true });
+    const held = await waitFor(() => {
+      const snapshots = snapshotMessages(posted);
+      const latest = snapshots[snapshots.length - 1];
+      return latest?.snapshot.meta.commanderHold === true;
+    });
+    expect(held).toBe(true);
+    const snapshotsAtHold = snapshotMessages(posted);
+    const heldSnapshot = snapshotsAtHold[snapshotsAtHold.length - 1]!;
+    const frozenSimSeconds = heldSnapshot.snapshot.meta.simSeconds ?? 0;
+    expect(heldSnapshot.snapshot.meta.state).toBe("playing");
+
+    await wait(200);
+    const snapshotsWhileHeld = snapshotMessages(posted);
+    const stillHeld = snapshotsWhileHeld[snapshotsWhileHeld.length - 1]!;
+    expect(stillHeld.snapshot.meta.commanderHold).toBe(true);
+    expect(stillHeld.snapshot.meta.state).toBe("playing");
+    expect(stillHeld.snapshot.meta.simSeconds ?? 0).toBe(frozenSimSeconds);
+
+    sendCommand({ commandId: 3, type: "action:commanderHold", hold: false });
+    const released = await waitFor(() => {
+      const snapshots = snapshotMessages(posted);
+      const latest = snapshots[snapshots.length - 1];
+      return (
+        latest !== undefined &&
+        latest.snapshot.meta.commanderHold !== true &&
+        (latest.snapshot.meta.simSeconds ?? 0) > frozenSimSeconds
+      );
+    });
+    expect(released).toBe(true);
+    const snapshotsAfterRelease = snapshotMessages(posted);
+    const releasedSnapshot = snapshotsAfterRelease[snapshotsAfterRelease.length - 1]!;
+    expect(releasedSnapshot.snapshot.meta.state).toBe("playing");
+    driver.stop();
+    sendDispose();
+  });
 });

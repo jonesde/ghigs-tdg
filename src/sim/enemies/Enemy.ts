@@ -71,6 +71,31 @@ interface GridRef {
   pathVersion: number;
 }
 
+function isWalkableTile(grid: GridRef, tileX: number, tileY: number): boolean {
+  return grid.isPath(tileX, tileY) || grid.isSpawn(tileX, tileY) || grid.isBase(tileX, tileY);
+}
+
+// Terrain nav distance is -1. Snap to the nearest path, spawn, or base tile so
+// strongestAhead sees the same distance the commander payload reports.
+function nearestWalkableTile(grid: GridRef, tileX: number, tileY: number): { x: number; y: number } | null {
+  if (isWalkableTile(grid, tileX, tileY)) return { x: tileX, y: tileY };
+  let bestTile: { x: number; y: number } | null = null;
+  let bestSquaredDistance = Infinity;
+  for (let rowIndex = 0; rowIndex < grid.height; rowIndex++) {
+    for (let columnIndex = 0; columnIndex < grid.width; columnIndex++) {
+      if (!isWalkableTile(grid, columnIndex, rowIndex)) continue;
+      const deltaX = columnIndex - tileX;
+      const deltaY = rowIndex - tileY;
+      const squaredDistance = deltaX * deltaX + deltaY * deltaY;
+      if (squaredDistance < bestSquaredDistance) {
+        bestSquaredDistance = squaredDistance;
+        bestTile = { x: columnIndex, y: rowIndex };
+      }
+    }
+  }
+  return bestTile;
+}
+
 interface EnemyManagerRef {
   enemies: Enemy[];
   getEnemiesInRange(x: number, y: number, range: number): Enemy[];
@@ -513,7 +538,11 @@ export class Enemy {
     const liveTowers = enemyManager?.liveTowers?.();
     const readDistance = enemyManager?.distanceToBase;
     if (policyActive && liveTowers && readDistance && enemyManager) {
-      const distanceAt = (tileX: number, tileY: number) => enemyManager.distanceToBase?.(tileX, tileY) ?? -1;
+      const distanceAt = (tileX: number, tileY: number) => {
+        const snap = nearestWalkableTile(this.grid, tileX, tileY);
+        if (!snap) return -1;
+        return enemyManager.distanceToBase?.(snap.x, snap.y) ?? -1;
+      };
       const tile = this.currentTile();
       const chosen = selectTargetingTower(
         this.targetingMode,

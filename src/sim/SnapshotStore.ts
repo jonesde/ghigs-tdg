@@ -188,6 +188,8 @@ export class SnapshotStore {
     if (gs.currentWave !== meta.currentWave) gs.currentWave = meta.currentWave;
     if (gs.waveCountdown !== meta.waveCountdown) gs.waveCountdown = meta.waveCountdown;
     if (gs.timeScale !== meta.timeScale) gs.timeScale = meta.timeScale;
+    const commanderHold = meta.commanderHold === true;
+    if (gs.commanderHold !== commanderHold) gs.commanderHold = commanderHold;
     if (gs.state !== meta.state) gs.setState(meta.state);
     if (gs.runGemsEarned !== meta.runGemsEarned) gs.runGemsEarned = meta.runGemsEarned;
     // frameId increments every tick, so the reactive mirror always advances.

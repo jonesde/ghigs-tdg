@@ -115,7 +115,10 @@ function tick(): void {
   // not permanently discard sim time under steady load; hard-capped to avoid
   // spiral-of-death freezes.
   try {
-    const timeScale = engine.runState.state === GameState.PAUSED ? 0 : engine.runState.timeScale;
+    // commanderHold is not GameState.PAUSED. PAUSED makes the commander worker skip
+    // decide, which would cancel the request this hold exists to wait for.
+    const timeScale =
+      engine.runState.state === GameState.PAUSED || engine.runState.commanderHold ? 0 : engine.runState.timeScale;
     const scaledDt = rawDt * timeScale;
     engine.lastScaledDt = scaledDt;
     accumulator += scaledDt;

@@ -68,8 +68,9 @@ during implementation are recorded in §17 and reflected inline below.
   (`messages`, `model` only when a model name is configured — omit `model` when
   empty so the server's default is used, `temperature`, `stream: false`).
   `Authorization: Bearer {token}` only when a token is configured.
-- **Timeout 30 s** (`AbortController` + `setTimeout`): on timeout, log + retry on
-  next iteration (escalating back-off, see below).
+- **Timeout** (`AbortController` + `setTimeout`): `config.requestTimeoutMs`, default
+  30 s, integer range 1000–180000. On timeout, log + retry on the next iteration
+  (escalating back-off, see below). Request temperature is `0.2`.
 - **Escalating back-off**: base 3 s, double each failure, cap **30 s**. Reset to
   base after any successful response. Back-off delays the *next* request; it does
   not stack on top of the relay interval (avoid double-penalizing cadence).
@@ -88,6 +89,8 @@ during implementation are recorded in §17 and reflected inline below.
   - `contextLimit: number` (tokens; default 32768)
   - `commanderInstructions: string` (optional, blank default)
   - `systemPrompt: string` (required; defaulted from a const at create time)
+  - `requestTimeoutMs: number` (default 30000; range 1000–180000)
+  - `pauseForCommander: boolean` (default false; backfilled on load, no save-version bump)
 - Persist slice: add `llmCommanders: LlmCommanderConfig[]` to the serialized
   shape in `persist.ts` (`PersistStateShape`, `src/stores/persist.ts`,
   `load` / `save` / `migrateToCurrent`) plus `defaultState()` default `[]`.
@@ -95,23 +98,31 @@ during implementation are recorded in §17 and reflected inline below.
   added to `src/sim/PersistState.ts`** — it is UI-only and the engine never reads
   it; the commander worker receives its config via the `start` message, so the sim
   `PersistState` field would be a dead pass-through (see §17, deviation D1).
-  **Schema migration:** bump `CURRENT_SAVE_VERSION` from `2` to `3` in
-  `persist.ts`, add a `migrateV2ToV3` that **deep-merges every field with defaults
-  (mirroring `migrateCurrentVersion`) and then** backfills `llmCommanders: []` and
-  sets `saveVersion = CURRENT_SAVE_VERSION` (see §17, deviation D2 — the deep-merge
-  is required so existing v2 saves do not lose data). Wire `migrateV2ToV3` into
-  `migrateToCurrent` (add a `version === 2` branch). Key remains `lol_ya_tdg_save_1`.
+  **Schema migration:** `CURRENT_SAVE_VERSION` is `4`. `migrateV2ToV3` deep-merges
+  and backfills `llmCommanders: []` (deviation D2). `migrateV3ToV4` deep-merges and
+  fills `requestTimeoutMs: 30000` on each commander before `PersistStateSchema`
+  requires the field. `pauseForCommander` is filled in the same pass (`true` only
+  when the saved value is boolean true) and the schema requires it; save version
+  stays 4. When the active config has it set, the commander worker posts
+  `{ type: "hold" }` around the in-flight decide (including backoff). The relay
+  dispatches `action:commanderHold`, which zeroes the sim clock while
+  `meta.state` stays `playing`. `GameState.PAUSED` would make the worker skip
+  decide. `stopRelay` releases the hold because `terminate()` drops the worker's
+  matching release. Key remains `lol_ya_tdg_save_1`.
 - Built-in id constants: `BUILTIN_STUBBY = "stubby"`, `BUILTIN_STUBBS = "stubbs"`
   in `src/commanders/index.ts`.
 
 ## 3. Selection / activation (`src/commanders/index.ts`, `src/stores/ui.ts`)
 - `uiStore.enemyCommander: string | "none"` (`src/stores/ui.ts:20,59,188`).
-- `setEnemyCommander(id: string | "none")`:
-  - `"none"` → `stopEnemyCommander()`.
-  - `"stubby"` / `"stubbs"` → resolve to built-in kind; `startRelay(kind)` with
-    no config (existing behavior).
-  - any other id → look up `LlmCommanderConfig` from `persistStore.llmCommanders`;
-    `startRelay("llm", config)`.
+- `setEnemyCommander(id: string | "none")` calls `stopEnemyCommander()` first for
+  every id, including built-ins. `"none"` returns after that call. A built-in id
+  then `startRelay(kind)`. Any other id looks up `LlmCommanderConfig` and
+  `startRelay("llm", config)`.
+- `stopEnemyCommander()` dispatches `llm:routeGroup(enemyIds, hold: false, [])`
+  and `llm:setTargeting(enemyIds, mode: "default")` for every live enemy, then
+  `stopRelay`. `releaseToDefault` keeps the engagement policy; the second command
+  clears it so the next intent does not re-siege under a commander that did not
+  set it.
 - `startRelay(kind, config?)` (`src/commanders/relay.ts:23`) receives the config
   for the `"llm"` kind; `MainToCommanderMessage.start` carries it.
 
@@ -144,12 +155,16 @@ during implementation are recorded in §17 and reflected inline below.
   - If `memory.isCompressing` or building the first prompt, assemble the full
     prompt (system + instructions + snapshot, §6) and clear delta history.
   - Otherwise append a delta block (§7) + any queued player chat messages.
-  - Call the API client (§1). On success, parse + validate the JSON command
-    response (§12), translate to `llm:routeGroup`, `llm:siegeTower`, and
+  - Call the API client (§1). On success, strip one markdown fence (or, if that
+    still fails, the slice from the first `{`/`[` through the last `}`/`]`), then
+    validate (§12) and translate to `llm:routeGroup`, `llm:siegeTower`, and
     `llm:setTargeting` commands. A soft-reject that still yields commands applies
     those commands and keeps the assistant turn. A transport failure, empty body,
     JSON parse failure, or a rejection that yields zero commands restores the
-    pre-turn transcript and `lastObservation`.
+    pre-turn transcript and `lastObservation`. A parse failure or a zero-command
+    rejection also sets `memory.rejectionNote`; the next user message appends
+    `Previous reply was rejected: …`. Transport failures do not set the note.
+    Identical failure toasts are skipped until an accepted reply clears that memory.
   - Update `memory` token count from `usage.prompt_tokens`; if
     `tokenCount + estimatedNext >= config.contextLimit`, set a compress flag so
     the next `decide` rebuilds the full prompt.
@@ -171,7 +186,7 @@ during implementation are recorded in §17 and reflected inline below.
 - `updateInstructions` updates `memory.commanderInstructions` and sets
   `isCompressing` only when the text differs, so the next `decide` rebuilds the
   system prompt. A runId change drops the transcript (it names the previous run's
-  enemies) and keeps instructions and queued player messages.
+  enemies) and the rejection note, and keeps instructions and queued player messages.
 - `chat` (player) message is enqueued in `memory.pendingPlayerMessages` and
   appended on the next `decide`.
 
@@ -200,8 +215,12 @@ during implementation are recorded in §17 and reflected inline below.
   - Data stream description: what each `decide` delta contains (§7).
   - Command syntax + allowlist (`routeGroup`, `siegeTower`, `setTargeting` — §12).
     `setTargeting` modes are `default`, `base`, `nearest`, `strongest`, `weakest`,
-    and `strongestAhead`. Any other mode string is stored and does not change
-    engagement. `llm:gridLayoutToggle` is banned.
+    and `strongestAhead`. `strongestAhead` uses the snapped tower `distanceToBase`
+    (nearest path, spawn, or base tile; -1 is not ahead). Any other mode string is
+    stored and does not change engagement. The generated command section overrides
+    any shorter command list in a saved preface. `llm:gridLayoutToggle` is banned.
+    The wave summary the model sees includes `baseHp`, `maxBaseHp`, and
+    `countdownSeconds`. Tower records include snapped `distanceToBase`.
   - Default `systemPrompt` const used to populate new configs' required field.
 - Commander Instructions: user-provided, appended after the system prompt;
   blank by default; editable live (§5 `updateInstructions`).
@@ -211,12 +230,15 @@ during implementation are recorded in §17 and reflected inline below.
   `decide` (after the initial snapshot), build a compact delta:
   - Enemies: new ids and changed ids ship a full record (type, level, tile,
     hp/maxHp, routingMode, attackingBase, blocked tile, targetingMode,
-    distanceToBase). A known enemy is omitted when none of those changed.
-    Removed ids ship in `removedEnemyIds`.
-  - Towers: new tiles and tiles whose hp, maxHp, or level changed ship type,
-    tile, level, hp/maxHp. Removed towers ship `{x, y}`.
+    distanceToBase). A known enemy is omitted only when every one of those fields
+    is unchanged, so a `distanceToBase` change is shipped. Removed ids ship in
+    `removedEnemyIds`.
+  - Towers: new live tiles and tiles whose hp, maxHp, level, or snapped
+    `distanceToBase` changed ship type, tile, level, hp/maxHp, and that distance.
+    A tower with `hp <= 0` is omitted; leaving the live set ships `{x, y}` in
+    `removedTowers`.
   - Wave summary: `currentWave`, `pendingEnemyCount`, `remainingScheduledSpawns`,
-    `active` (from `observation.ts:21`).
+    `active`, `baseHp`, `maxBaseHp`, `countdownSeconds`.
   - Timestamp (`meta` frame id / wall clock).
 - The delta scheme's benefit is **token reduction** (fewer tokens per request
   than re-sending the whole snapshot). The client still resends the transcript
@@ -265,6 +287,9 @@ during implementation are recorded in §17 and reflected inline below.
     - token/key (optional).
     - model name (optional; omitted from requests when blank).
     - context limit (tokens; default 32768).
+    - request timeout in seconds (stored as `requestTimeoutMs`; default 30).
+    - Test calls `complete` with the unsaved endpoint, token, model, and timeout
+      and does not save or start the relay.
     - Commander Instructions (large textarea, optional, blank default).
     - System Prompt (large textarea, required, defaulted from const).
    - Persist on save via `persistStore` (§2).
@@ -385,6 +410,15 @@ than the 10 linear steps above — functionally equivalent (deviation D9).
 - Multi-LLM / A-B comparison: out of scope.
 - Per-model token-limit auto-detect: rely on user-supplied `contextLimit` for now.
 - Connect-attempt / first-success `notify` toasts (see §11, deviation D10).
+- Done in the playable pass: release route and targeting on every commander
+  switch; per-tower snapped `distanceToBase` (the full nav grid is still not
+  sent); `requestTimeoutMs` at save version 4; identical failure toasts once per
+  streak; base hp and countdown in the wave summary; fence-tolerant JSON plus a
+  rejection note; temperature `0.2`; Test on the commander form. Saved
+  `systemPrompt` prefaces are not migrated. Endpoint, token, model, and timeout
+  edits on an already-running commander still apply on the next activation. A
+  late reply still applies to the observation captured when the request started.
+  Invalid waypoints are still dropped by the navmesh with no per-leg note.
 
 ## 17. Implementation Deviations (recorded post-build)
 These are the ways the shipped code differs from the plan text above. Most were

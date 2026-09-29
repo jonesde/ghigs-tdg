@@ -34,4 +34,5 @@ export type MainToCommanderMessage =
 export type CommanderToMainMessage =
   | { type: "commands"; commands: Command[] }
   | { type: "notify"; message: string }
-  | { type: "chat"; text: string; from: "commander" };
+  | { type: "chat"; text: string; from: "commander" }
+  | { type: "hold"; hold: boolean };

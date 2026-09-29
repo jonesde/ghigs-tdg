@@ -1,11 +1,16 @@
 import { defineStore } from "pinia";
-import type { LlmCommanderConfig } from "@/commanders/llm/types.js";
+import {
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  type LlmCommanderConfig,
+  MAX_REQUEST_TIMEOUT_MS,
+  MIN_REQUEST_TIMEOUT_MS,
+} from "@/commanders/llm/types.js";
 import { PersistStateSchema } from "@/content/schemas/persist.js";
 import { useUiStore } from "@/stores/ui.js";
 
 const OLD_STORAGE_KEY = "gempath_save_v1";
 export const STORAGE_KEY = "lol_ya_tdg_save_1";
-const CURRENT_SAVE_VERSION = 3;
+const CURRENT_SAVE_VERSION = 4;
 
 export interface TowerUnlocks {
   levels: boolean[];
@@ -139,6 +144,26 @@ function generateCommanderId(): string {
   return `l_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
+function fillCommanderTimeouts(commanders: unknown): LlmCommanderConfig[] {
+  if (!Array.isArray(commanders)) return [];
+  const filled: LlmCommanderConfig[] = [];
+  for (const entry of commanders) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const commander = entry as LlmCommanderConfig;
+    const timeout = commander.requestTimeoutMs;
+    const requestTimeoutMs =
+      typeof timeout === "number" &&
+      Number.isInteger(timeout) &&
+      timeout >= MIN_REQUEST_TIMEOUT_MS &&
+      timeout <= MAX_REQUEST_TIMEOUT_MS
+        ? timeout
+        : DEFAULT_REQUEST_TIMEOUT_MS;
+    const pauseForCommander = commander.pauseForCommander === true;
+    filled.push({ ...commander, requestTimeoutMs, pauseForCommander });
+  }
+  return filled;
+}
+
 function migrateV1ToV2(parsed: Record<string, unknown>): PersistStateShape {
   const defaults = defaultState();
   const result: PersistStateShape = { ...defaults, ...parsed, saveVersion: CURRENT_SAVE_VERSION };
@@ -154,6 +179,7 @@ function migrateV1ToV2(parsed: Record<string, unknown>): PersistStateShape {
       result.unlocked[towerId] = mergeTowerUnlocks(result.unlocked[towerId]);
     }
   }
+  result.llmCommanders = fillCommanderTimeouts(result.llmCommanders);
   return result;
 }
 
@@ -172,6 +198,7 @@ function migrateCurrentVersion(parsed: Record<string, unknown>): PersistStateSha
       result.unlocked[towerId] = mergeTowerUnlocks(result.unlocked[towerId]);
     }
   }
+  result.llmCommanders = fillCommanderTimeouts(result.llmCommanders);
   return result;
 }
 
@@ -195,6 +222,12 @@ function migrateV2ToV3(parsed: Record<string, unknown>): PersistStateShape {
   return result;
 }
 
+function migrateV3ToV4(parsed: Record<string, unknown>): PersistStateShape {
+  const result = migrateCurrentVersion(parsed);
+  result.saveVersion = CURRENT_SAVE_VERSION;
+  return result;
+}
+
 export function migrateToCurrent(parsed: Record<string, unknown>): PersistStateShape {
   const version = parsed.saveVersion;
   if (version === undefined || version === null) {
@@ -205,6 +238,9 @@ export function migrateToCurrent(parsed: Record<string, unknown>): PersistStateS
   }
   if (version === 2) {
     return migrateV2ToV3(parsed);
+  }
+  if (version === 3) {
+    return migrateV3ToV4(parsed);
   }
   if (version === CURRENT_SAVE_VERSION) {
     return migrateCurrentVersion(parsed);
