@@ -75,8 +75,8 @@ function resetMemory(): void {
 }
 
 // Issues an async decide for the LLM brain with an in-flight guard + ~1 Hz
-// cadence throttle + pause skip. Errors are swallowed so one bad tick can't kill
-// the worker; the apiClient's back-off handles retry pacing.
+// cadence throttle + pause skip. Backoff is awaited before the observation is
+// sampled. A thrown decide notifies and does not kill the worker.
 async function decideLlm(): Promise<void> {
   if (!brain || deciding || pausedForBrain) return;
   const now = Date.now();
@@ -84,19 +84,32 @@ async function decideLlm(): Promise<void> {
   deciding = true;
   lastDecisionTimeMs = now;
   try {
-    const observation = latestObservation;
-    if (!observation) return;
-    const commands = await brain.decide(observation, memory);
+    if (brain.awaitReady) await brain.awaitReady();
+    if (pausedForBrain || !latestObservation) return;
+    const commands = await brain.decide(latestObservation, memory);
     postToMain({ type: "commands", commands });
-  } catch {
-    // log + rely on apiClient back-off for retry; do not crash the worker
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    postToMain({ type: "notify", message: `Commander error: ${errorMessage}` });
   } finally {
     deciding = false;
   }
 }
 
-self.onmessage = async (event: MessageEvent<MainToCommanderMessage>) => {
-  const message = event.data;
+self.onmessage = (event: MessageEvent<MainToCommanderMessage>) => {
+  return handleCommanderMessage(event.data);
+};
+
+async function handleCommanderMessage(message: MainToCommanderMessage): Promise<void> {
+  try {
+    await dispatchCommanderMessage(message);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    postToMain({ type: "notify", message: `Commander error: ${errorMessage}` });
+  }
+}
+
+async function dispatchCommanderMessage(message: MainToCommanderMessage): Promise<void> {
   switch (message.type) {
     case "start": {
       brainKind = message.kind;
@@ -124,6 +137,7 @@ self.onmessage = async (event: MessageEvent<MainToCommanderMessage>) => {
       break;
     }
     case "updateInstructions": {
+      if (message.text === memory.commanderInstructions) break;
       memory.commanderInstructions = message.text;
       memory.isCompressing = true;
       break;
@@ -149,9 +163,9 @@ self.onmessage = async (event: MessageEvent<MainToCommanderMessage>) => {
         memory.conversation = [];
         memory.tokenCount = 0;
         memory.lastObservation = null;
-        memory.commanderInstructions = "";
-        memory.pendingPlayerMessages = [];
         memory.isCompressing = false;
+        // Player instructions and queued chat are not map state. The transcript is:
+        // it names the previous run's enemies, so a sim runId bump drops it.
       }
       if (slice.gridLayout) {
         memory.gridLayout = slice.gridLayout;
@@ -183,4 +197,4 @@ self.onmessage = async (event: MessageEvent<MainToCommanderMessage>) => {
       break;
     }
   }
-};
+}

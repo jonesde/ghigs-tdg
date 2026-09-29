@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { BUILTIN_STUBBS, BUILTIN_STUBBY } from "@/commanders/index.js";
 import { normalizeEndpointUrl } from "@/commanders/llm/apiClient.js";
 import { DEFAULT_LLM_SYSTEM_PROMPT, type LlmCommanderConfig } from "@/commanders/llm/types.js";
+import { postUpdateInstructions } from "@/commanders/relay.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
 
@@ -60,6 +61,9 @@ function saveForm() {
     return;
   }
   const contextLimit = Number.parseInt(String(formContextLimit.value), 10);
+  const previous = editingId.value
+    ? persistStore.llmCommanders.find((entry) => entry.id === editingId.value)
+    : undefined;
   const config: LlmCommanderConfig = {
     id: editingId.value ?? persistStore.generateCommanderId(),
     name: formName.value.trim(),
@@ -72,10 +76,22 @@ function saveForm() {
   };
   if (editingId.value) {
     persistStore.updateLlmCommander(config);
+    if (
+      previous &&
+      uiStore.enemyCommander === config.id &&
+      previous.commanderInstructions !== config.commanderInstructions
+    ) {
+      postUpdateInstructions(config.commanderInstructions);
+    }
   } else {
     persistStore.addLlmCommander(config);
   }
   closeForm();
+}
+
+function deleteCommander(id: string) {
+  if (uiStore.enemyCommander === id) uiStore.setEnemyCommander("none");
+  persistStore.deleteLlmCommander(id);
 }
 
 function isActive(id: string): boolean {
@@ -127,7 +143,7 @@ function goBack() {
               <span v-if="isActive(commander.id)" class="active-badge">Active</span>
               <button class="card-btn" @click="uiStore.setEnemyCommander(commander.id)">Activate</button>
               <button class="card-btn" @click="openEditForm(commander)">Edit</button>
-              <button class="card-btn danger" @click="persistStore.deleteLlmCommander(commander.id)">Delete</button>
+              <button class="card-btn danger" @click="deleteCommander(commander.id)">Delete</button>
             </div>
           </div>
         </div>
@@ -141,6 +157,10 @@ function goBack() {
       <div v-if="showForm" class="form-overlay" @click.self="closeForm()">
         <div class="form-dialog">
           <div class="form-title">{{ editingId ? "Edit LLM Commander" : "New LLM Commander" }}</div>
+          <div v-if="editingId && isActive(editingId)" class="form-hint">
+            Endpoint, token, and model name apply the next time this commander is activated. Commander Instructions
+            apply immediately.
+          </div>
           <div v-if="formError" class="form-error">{{ formError }}</div>
 
           <label class="form-label">Name *</label>
@@ -148,7 +168,10 @@ function goBack() {
 
           <label class="form-label">Endpoint URL *</label>
           <input class="form-input" v-model="formEndpointUrl" type="text" placeholder="host:port or https://..." />
-          <div class="form-hint">A bare host:port becomes http://host:port/v1</div>
+          <div class="form-hint">
+            A bare host:port becomes http://host:port/v1. A bare value that already ends in /v1 is kept once. An
+            http:// or https:// URL is stored as entered.
+          </div>
 
           <label class="form-label">Token / API Key</label>
           <input class="form-input" v-model="formToken" type="password" />

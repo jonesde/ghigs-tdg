@@ -113,15 +113,18 @@ export function applyCommand(engine: GameEngine, command: Command): boolean {
       const enemies = engine.getEnemiesByIds(command.enemyIds);
       const tower = engine.towerManager?.towerAt(command.towerTile.x, command.towerTile.y) ?? null;
       for (const enemy of enemies) {
-        if (tower && !tower.isGhost) enemy.applySiege(tower);
-        else enemy.releaseToDefault();
+        if (tower && !tower.isGhost) {
+          enemy.applySiege(tower);
+          // Explicit tower cancels the engagement policy so the next intent does not replace it.
+          enemy.targetingMode = null;
+        } else enemy.releaseToDefault();
       }
       return true;
     }
     case "llm:setTargeting": {
       const enemies = engine.getEnemiesByIds(command.enemyIds);
       for (const enemy of enemies) {
-        enemy.targetingMode = command.mode;
+        enemy.targetingMode = command.mode === "default" ? null : command.mode;
       }
       return true;
     }

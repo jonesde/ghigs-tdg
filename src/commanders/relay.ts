@@ -36,6 +36,13 @@ export function startRelay(kind: CommanderKind, config?: LlmCommanderConfig): vo
       useUiStore().appendChatLog({ from: "commander", text: message.text });
     }
   };
+  commanderWorker.onerror = (event: ErrorEvent) => {
+    const detail = event.message || "Commander worker failed";
+    failCommanderWorker(`Commander worker failed: ${detail}`);
+  };
+  commanderWorker.onmessageerror = () => {
+    failCommanderWorker("Commander worker rejected a message");
+  };
   const startMessage: MainToCommanderMessage =
     config === undefined ? { type: "start", kind } : { type: "start", kind, config };
   commanderWorker.postMessage(startMessage);
@@ -86,15 +93,25 @@ export function postUpdateInstructions(text: string): void {
   }
 }
 
+function failCommanderWorker(message: string): void {
+  if (!commanderWorker) return;
+  useUiStore().showNotification(message);
+  useUiStore().setEnemyCommander("none");
+}
+
 export function stopRelay(): void {
   if (relayIntervalId !== null) {
     clearInterval(relayIntervalId);
     relayIntervalId = null;
   }
   if (commanderWorker) {
-    commanderWorker.postMessage({ type: "stop" } satisfies MainToCommanderMessage);
-    commanderWorker.terminate();
+    const worker = commanderWorker;
     commanderWorker = null;
+    worker.onmessage = null;
+    worker.onerror = null;
+    worker.onmessageerror = null;
+    worker.postMessage({ type: "stop" } satisfies MainToCommanderMessage);
+    worker.terminate();
   }
   // NOTE: `cachedGridLayout` is intentionally NOT cleared here. The plan (§1.4)
   // requires the relay to own the gridLayout cache across worker restarts: once the

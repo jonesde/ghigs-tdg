@@ -92,6 +92,16 @@ describe("buildObservation", () => {
     expect(observation.wave.pendingEnemyCount).toBe(8);
   });
 
+  it("projects enemy type and targetingMode, and tower type, when the snapshot has them", () => {
+    const slice = makeSlice({
+      enemies: [{ ...fakeEnemy(1, 0, 0, 10, 10), type: "minion", targetingMode: "nearest" }] as EnemySnapshot[],
+      towers: [{ ...fakeTower(1, 1, 20, 20), type: "basic" }] as TowerSnapshot[],
+    });
+    const observation = buildObservation(slice);
+    expect(observation.enemies[0]).toMatchObject({ type: "minion", targetingMode: "nearest" });
+    expect(observation.towers[0]).toMatchObject({ type: "basic" });
+  });
+
   it("carries remainingScheduledSpawns and active into the wave block", () => {
     const slice = makeSlice({ meta: fakeMeta({ currentWave: 4, remainingScheduledSpawns: 7, waveActive: false }) });
     const observation = buildObservation(slice);

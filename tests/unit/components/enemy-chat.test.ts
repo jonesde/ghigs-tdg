@@ -81,6 +81,50 @@ describe("EnemyChat", () => {
     expect(postUpdateInstructions).toHaveBeenCalledWith("new instructions");
   });
 
+  it("does not post instructions when blur leaves the synced text unchanged", async () => {
+    activateLlm();
+    const wrapper = mount(EnemyChat, { global: { plugins: [pinia] } });
+    await wrapper.vm.$nextTick();
+    const textarea = wrapper.find("textarea.chat-instructions");
+    expect((textarea.element as HTMLTextAreaElement).value).toBe("hold the line");
+    await textarea.trigger("blur");
+    expect(postUpdateInstructions).not.toHaveBeenCalled();
+  });
+
+  it("persists an edited instruction once and ignores the following blur", async () => {
+    activateLlm();
+    const wrapper = mount(EnemyChat, { global: { plugins: [pinia] } });
+    const textarea = wrapper.find("textarea.chat-instructions");
+    await textarea.setValue("new orders");
+    await textarea.trigger("change");
+    expect(postUpdateInstructions).toHaveBeenCalledTimes(1);
+    expect(postUpdateInstructions).toHaveBeenCalledWith("new orders");
+    expect(persistStore.llmCommanders[0].commanderInstructions).toBe("new orders");
+    await textarea.trigger("blur");
+    expect(postUpdateInstructions).toHaveBeenCalledTimes(1);
+  });
+
+  it("resyncs the textarea when the active commander changes", async () => {
+    activateLlm();
+    persistStore.addLlmCommander({
+      id: "l_2",
+      name: "Second",
+      endpointUrl: "http://localhost:11434/v1",
+      token: "",
+      modelName: "",
+      contextLimit: 32768,
+      commanderInstructions: "second orders",
+      systemPrompt: "sys",
+    });
+    const wrapper = mount(EnemyChat, { global: { plugins: [pinia] } });
+    uiStore.enemyCommander = "l_2";
+    await wrapper.vm.$nextTick();
+    const textarea = wrapper.find("textarea.chat-instructions");
+    expect((textarea.element as HTMLTextAreaElement).value).toBe("second orders");
+    await textarea.trigger("blur");
+    expect(postUpdateInstructions).not.toHaveBeenCalled();
+  });
+
   it("renders commander chat entries from the relay", () => {
     activateLlm();
     uiStore.appendChatLog({ from: "commander", text: "hello" });

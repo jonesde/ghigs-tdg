@@ -330,18 +330,17 @@ cache supplied by the relay, not the whole thing.
   State keyed by wave number so
   spillover never dilutes a prior wave's rush.
 - **Commander Stubbs** (`src/commanders/stubbs/brain.ts`): Aggressive, never holds.
-  Computes BFS distances from every base tile over path/spawn/base tiles. For each
-  newly-seen enemy, picks the highest-HP live tower that is *ahead* (closer to base)
-  of the group's representative tile, snaps to the nearest path tile, and issues
-  `llm:routeGroup` with that waypoint. Re-routes whenever the tower set signature
-  changes.
+  Reads the live nav distance field. For each newly-seen enemy, picks the highest-HP
+  live tower that is *ahead* (strictly closer to the base on that field) of the group's
+  representative tile, snaps a terrain tower to the nearest path tile for the distance
+  read, and issues `llm:siegeTower`. Re-routes whenever the tower set signature changes.
 
 **Lifecycle** (`src/commanders/index.ts`): `setEnemyCommander(kind)` starts the relay
 (which spawns the worker and sends `start`); `"none"` stops it.
 `stopEnemyCommander()` dispatches `llm:routeGroup(enemyIds, hold: false, [])` for every
 live enemy (reverts held enemies to default path) before stopping the relay.
 
-**LLM Commanders:** For custom external LLM integration, `persistStore` maintains an array of `LlmCommanderConfig` entries (id, name, endpointUrl, token, modelName, contextLimit, commanderInstructions, systemPrompt). When an LLM commander is activated via `setEnemyCommander(id)`, the relay starts with `"llm"` mode and passes the config. The worker's LLM brain (`src/commanders/llm/brain.ts`) uses `apiClient.ts` to POST observations to the configured endpoint and receive commands. A draggable `EnemyChat.vue` panel lets players send messages and update commander instructions in real time; changes are posted via `postUpdateInstructions()` to the active worker.
+**LLM Commanders:** For custom external LLM integration, `persistStore` maintains an array of `LlmCommanderConfig` entries (id, name, endpointUrl, token, modelName, contextLimit, commanderInstructions, systemPrompt). When an LLM commander is activated via `setEnemyCommander(id)`, the relay starts with `"llm"` mode and passes the config. The worker's LLM brain (`src/commanders/llm/brain.ts`) resends the conversation transcript on each call: the system prompt, prior snapshots and deltas, and the model's own replies. Later turns send a delta of new and changed enemies (including removals, routing, and targeting), changed towers, and removed towers. A full snapshot replaces that transcript when the context budget is exceeded or the instructions change. `apiClient.ts` posts to the configured endpoint with a 30 second request timeout. A draggable `EnemyChat.vue` panel lets players send messages and edit commander instructions; an edit is posted with `postUpdateInstructions()` and saved on the active commander only when the text changed. Deleting the active commander deactivates it.
 
 ### Physics + Navmesh (Rapier2d + Recast/DetourCrowd)
 
@@ -638,7 +637,7 @@ All component styles use `<style scoped>` to prevent leakage.
 | Sound | `sound-manager.test.ts` | WebAudio synth, all sound names, dispose, enabled flag |
 | Stores | `game-store.test.ts`, `persist-store.test.ts`, `ui-store.test.ts`, `map-theme.test.ts` | State, getters, actions, save/load, schema migration; theme registry, loader, normalize, store preload/load/visual getters |
 | Snapshot Store | `snapshot-store.test.ts`, `sim/snapshot.test.ts` | Latest-snapshot holding, meta mirroring into gameStore, snapshot serialization/round-trip |
-| Enemy Commanders | `tests/unit/commanders/observation.test.ts`, `stubby-brain.test.ts`, `stubbs-brain.test.ts`, `integration/commander.test.ts`, `integration/commander-llm.test.ts` | Observation projection (world→tile, hp rename), Stubby hold-then-rush per wave, Stubbs ahead-tower routing + tower-set re-route, LLM worker message round-trip, chat/instructions updates |
+| Enemy Commanders | `tests/unit/commanders/observation.test.ts`, `stubby-brain.test.ts`, `stubbs-brain.test.ts`, `tests/unit/sim/enemy-targeting.test.ts`, `integration/commander.test.ts`, `integration/commander-llm.test.ts` | Observation projection (world→tile, hp rename, type, targetingMode), Stubby hold-then-rush per wave, Stubbs ahead-tower routing + tower-set re-route, engagement-policy tower selection, LLM transcript resend, delta removals, instruction-change rebuild, chat forwarding |
 | Physics | `tests/unit/sim/physics/enemy-physics.test.ts`, `tests/unit/sim/physics/physics-world.test.ts`, `integration/physics-motion.test.ts` | Rapier2d body/collider creation, static geometry (base/towers/corridor), dynamic enemy motion, velocity integration, collision with walls and towers |
 | Router | `router.test.ts` | Navigation guards, block without map, save on leave, redirects, activeTheme requirement |
 | Input | `input.test.ts` | Keyboard dispatch, timeScale, pause, upgrade/sell, escape handling |

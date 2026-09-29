@@ -27,6 +27,8 @@ export interface CommanderMemory {
 
 export interface CommanderBrain {
   decide(observation: CommanderObservation, memory: CommanderMemory): Command[] | Promise<Command[]>;
+  // LLM brain waits out API backoff before the worker samples the latest observation.
+  awaitReady?(): Promise<void>;
 }
 
 export function createBrain(kind: CommanderKind, config?: LlmCommanderConfig): CommanderBrain {

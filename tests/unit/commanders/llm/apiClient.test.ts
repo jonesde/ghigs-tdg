@@ -33,6 +33,14 @@ describe("normalizeEndpointUrl", () => {
     expect(normalizeEndpointUrl("localhost:1234")).toBe("http://localhost:1234/v1");
     expect(normalizeEndpointUrl("ollama")).toBe("http://ollama/v1");
   });
+  it("does not append a second /v1 when the bare path already ends in /v1", () => {
+    expect(normalizeEndpointUrl("localhost:1234/v1")).toBe("http://localhost:1234/v1");
+    expect(normalizeEndpointUrl("localhost:1234/v1/")).toBe("http://localhost:1234/v1");
+    expect(normalizeEndpointUrl(normalizeEndpointUrl("localhost:1234/v1"))).toBe("http://localhost:1234/v1");
+  });
+  it("keeps an http(s) URL verbatim", () => {
+    expect(normalizeEndpointUrl("http://localhost:1234/v1")).toBe("http://localhost:1234/v1");
+  });
 });
 
 describe("createApiClient.complete", () => {
@@ -104,14 +112,16 @@ describe("createApiClient.complete", () => {
     await client.complete("sys", [], makeConfig());
     expect(client.getBackoffMs()).toBe(3000);
 
-    const pending2 = client.complete("sys", [], makeConfig());
+    const pendingWait = client.waitForBackoff();
     await vi.advanceTimersByTimeAsync(3000);
-    await pending2;
+    await pendingWait;
+    await client.complete("sys", [], makeConfig());
     expect(client.getBackoffMs()).toBe(6000);
 
-    const pending3 = client.complete("sys", [], makeConfig());
+    const pendingWaitAgain = client.waitForBackoff();
     await vi.advanceTimersByTimeAsync(6000);
-    await pending3;
+    await pendingWaitAgain;
+    await client.complete("sys", [], makeConfig());
     expect(client.getBackoffMs()).toBe(0);
   });
 });

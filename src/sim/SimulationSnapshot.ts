@@ -162,6 +162,7 @@ export interface EnemySnapshot {
   blockedByTowerTile?: { x: number; y: number } | null;
   distanceToBase?: number;
   nextCorner?: { x: number; y: number } | null;
+  targetingMode?: string | null;
 }
 
 export interface StatusEffectSnapshot {

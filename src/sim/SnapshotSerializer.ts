@@ -179,6 +179,7 @@ function snapshotEnemy(e: Enemy, engine?: GameEngine): EnemySnapshot {
     blockedByTowerTile: e.blockedByTower ? { x: e.blockedByTower.tileX, y: e.blockedByTower.tileY } : null,
     distanceToBase,
     nextCorner: e.nextCornerWorld(),
+    targetingMode: e.targetingMode,
   };
 }
 

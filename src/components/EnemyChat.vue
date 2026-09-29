@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { postChatToCommander, postUpdateInstructions } from "@/commanders/relay.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -14,6 +14,7 @@ const activeCommander = computed(() =>
 );
 
 const instructionsText = ref("");
+const lastPostedInstructions = ref("");
 const messageText = ref("");
 const position = ref({ x: 24, y: 24 });
 const dragging = ref(false);
@@ -22,10 +23,17 @@ let dragOffsetY = 0;
 
 function syncInstructions() {
   instructionsText.value = activeCommander.value?.commanderInstructions ?? "";
+  lastPostedInstructions.value = instructionsText.value;
 }
 
 function onInstructionsChange() {
-  postUpdateInstructions(instructionsText.value);
+  if (instructionsText.value === lastPostedInstructions.value) return;
+  const nextText = instructionsText.value;
+  lastPostedInstructions.value = nextText;
+  postUpdateInstructions(nextText);
+  const active = activeCommander.value;
+  if (!active || active.commanderInstructions === nextText) return;
+  persistStore.updateLlmCommander({ ...active, commanderInstructions: nextText });
 }
 
 function sendMessage() {
@@ -63,6 +71,11 @@ function onWindowMouseUp() {
 onMounted(() => {
   syncInstructions();
 });
+
+watch(
+  () => activeCommander.value?.id,
+  () => syncInstructions(),
+);
 
 onBeforeUnmount(() => {
   if (typeof window !== "undefined") {

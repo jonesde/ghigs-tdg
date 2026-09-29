@@ -9,19 +9,23 @@ export type ApiResult = { content: string; promptTokens: number } | { empty: tru
 
 export interface ApiClient {
   complete(systemPrompt: string, messages: ChatMessage[], config: LlmCommanderConfig): Promise<ApiResult>;
+  waitForBackoff(): Promise<void>;
   getBackoffMs(): number;
 }
 
 const BASE_BACKOFF_MS = 3000;
 const MAX_BACKOFF_MS = 30000;
-const REQUEST_TIMEOUT_MS = 3000;
+const REQUEST_TIMEOUT_MS = 30000;
 const REQUEST_TEMPERATURE = 0.7;
 
 export function normalizeEndpointUrl(raw: string): string {
-  if (raw.startsWith("http://") || raw.startsWith("https://")) {
-    return raw;
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
   }
-  return `http://${raw}/v1`;
+  const stripped = trimmed.replace(/\/+$/, "");
+  if (/\/v1$/i.test(stripped)) return `http://${stripped}`;
+  return `http://${stripped}/v1`;
 }
 
 function delay(milliseconds: number): Promise<void> {
@@ -41,12 +45,14 @@ export function createApiClient(fetchFn: typeof fetch = globalThis.fetch): ApiCl
     getBackoffMs(): number {
       return nextBackoffMs;
     },
-    async complete(systemPrompt, messages, config): Promise<ApiResult> {
+    async waitForBackoff(): Promise<void> {
       if (lastAttemptTimeMs > 0) {
         const elapsedMs = Date.now() - lastAttemptTimeMs;
         const waitMs = nextBackoffMs - elapsedMs;
         if (waitMs > 0) await delay(waitMs);
       }
+    },
+    async complete(systemPrompt, messages, config): Promise<ApiResult> {
       lastAttemptTimeMs = Date.now();
 
       const baseUrl = normalizeEndpointUrl(config.endpointUrl);

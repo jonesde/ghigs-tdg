@@ -291,6 +291,9 @@ export class GameEngine {
     this.enemyManager.setBlockedApproachLookup(
       (tileX, tileY) => this.navDistanceField?.getBlockedApproach(tileX, tileY) ?? null,
     );
+    this.enemyManager.setDistanceToBaseLookup(
+      (tileX, tileY) => this.navDistanceField?.getDistanceToBase(tileX, tileY) ?? -1,
+    );
     this.physicsWorld.rebuildTowers(this.towerManager);
     this.enemyManager.baseTarget = new BaseTarget(this);
     this.projectileManager.setOnGoldReward((amount) => {

@@ -3,6 +3,7 @@ import type { CommanderSnapshotSlice } from "./protocol.js";
 
 export interface ObservationEnemy {
   id: number;
+  type?: string;
   tileX: number;
   tileY: number;
   level: number;
@@ -12,9 +13,11 @@ export interface ObservationEnemy {
   attackingBase?: boolean;
   blockedByTowerTile?: { x: number; y: number } | null;
   distanceToBase?: number;
+  targetingMode?: string | null;
 }
 
 export interface ObservationTower {
+  type?: string;
   tileX: number;
   tileY: number;
   level: number;
@@ -67,20 +70,26 @@ export function buildObservation(slice: CommanderSnapshotSlice): CommanderObserv
       maxHp: enemy.maxHp,
       distanceToBase,
     };
+    if (enemy.type !== undefined) observationEnemy.type = enemy.type;
     if (enemy.routingMode !== undefined) observationEnemy.routingMode = enemy.routingMode;
     if (enemy.attackingBase !== undefined) observationEnemy.attackingBase = enemy.attackingBase;
     if (enemy.blockedByTowerTile !== undefined) {
       observationEnemy.blockedByTowerTile = enemy.blockedByTowerTile;
     }
+    if (enemy.targetingMode !== undefined) observationEnemy.targetingMode = enemy.targetingMode;
     return observationEnemy;
   });
-  const towers: ObservationTower[] = slice.towers.map((tower) => ({
-    tileX: tower.tileX,
-    tileY: tower.tileY,
-    level: tower.level,
-    hp: tower.health,
-    maxHp: tower.maxHealth,
-  }));
+  const towers: ObservationTower[] = slice.towers.map((tower) => {
+    const observationTower: ObservationTower = {
+      tileX: tower.tileX,
+      tileY: tower.tileY,
+      level: tower.level,
+      hp: tower.health,
+      maxHp: tower.maxHealth,
+    };
+    if (tower.type !== undefined) observationTower.type = tower.type;
+    return observationTower;
+  });
   const pendingEnemyCount = slice.spawnStates.reduce((sum, spawnState) => sum + spawnState.pendingCount, 0);
   const wave: ObservationWave = {
     currentWave: slice.meta.currentWave,

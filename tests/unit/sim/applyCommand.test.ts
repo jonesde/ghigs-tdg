@@ -126,6 +126,64 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
     expect(enemy.targetingMode).toBe("strongest");
   });
 
+  it("llm:setTargeting default clears the stored mode", () => {
+    const enemyId = firstEnemyId();
+    const enemy = engine.getEnemiesByIds([enemyId])[0]!;
+    enemy.targetingMode = "nearest";
+    const result = applyCommand(engine, {
+      commandId: 0,
+      type: "llm:setTargeting",
+      enemyIds: [enemyId],
+      mode: "default",
+    });
+    expect(result).toBe(true);
+    expect(enemy.targetingMode).toBeNull();
+  });
+
+  function buildTowerOnValidTile() {
+    const grid = engine.grid!;
+    for (let tileX = 0; tileX < grid.width; tileX++) {
+      for (let tileY = 0; tileY < grid.height; tileY++) {
+        if (!grid.canBuild(tileX, tileY)) continue;
+        const tower = engine.towerManager!.build("basic", tileX, tileY, persistState, grid);
+        if (tower) return tower;
+      }
+    }
+    throw new Error("no buildable tile found");
+  }
+
+  it("llm:siegeTower on a live tower sieges it and clears the engagement policy", () => {
+    const enemyId = firstEnemyId();
+    const enemy = engine.getEnemiesByIds([enemyId])[0]!;
+    enemy.targetingMode = "strongest";
+    const tower = buildTowerOnValidTile();
+    const result = applyCommand(engine, {
+      commandId: 0,
+      type: "llm:siegeTower",
+      enemyIds: [enemyId],
+      towerTile: { x: tower.tileX, y: tower.tileY },
+    });
+    expect(result).toBe(true);
+    expect(enemy.routingMode).toBe("siege");
+    expect(enemy.siegeTower).toBe(tower);
+    expect(enemy.targetingMode).toBeNull();
+  });
+
+  it("llm:siegeTower keeps the policy when the tower is missing", () => {
+    const enemyId = firstEnemyId();
+    const enemy = engine.getEnemiesByIds([enemyId])[0]!;
+    enemy.targetingMode = "nearest";
+    const result = applyCommand(engine, {
+      commandId: 0,
+      type: "llm:siegeTower",
+      enemyIds: [enemyId],
+      towerTile: { x: 0, y: 0 },
+    });
+    expect(result).toBe(true);
+    expect(enemy.targetingMode).toBe("nearest");
+    expect(enemy.routingMode).toBe("default");
+  });
+
   it("llm:gridLayoutToggle flips engine.gridLayoutEnabled and returns false", () => {
     const before = engine.gridLayoutEnabled;
     const result = applyCommand(engine, { commandId: 0, type: "llm:gridLayoutToggle" });

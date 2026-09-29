@@ -36,8 +36,8 @@ during implementation are recorded in §17 and reflected inline below.
   two stub brains `stubby/brain.ts`, `stubbs/brain.ts`.
 - `llm:*` commands are already implemented in `src/sim/applyCommand.ts:91-137`:
   `llm:routeGroup` (hold / waypoint-to-base), `llm:setTargeting`, and the
-  worker-internal `llm:gridLayoutToggle`. The LLM brain only ever emits
-  `routeGroup` + `setTargeting`.
+  worker-internal `llm:gridLayoutToggle`. The LLM brain emits `routeGroup`,
+  `siegeTower`, and `setTargeting`.
 - Growl notifications: `uiStore.showNotification` (`src/stores/ui.ts:102`) →
   toast in `src/components/GameHud.vue:126`. **Important channel correction:**
   because the commander worker's relay runs on the **main thread**, the
@@ -61,12 +61,14 @@ during implementation are recorded in §17 and reflected inline below.
   tests use a fake and never hit the network.
 - Endpoint normalization (`normalizeEndpointUrl`):
   - Starts with `http://` or `https://` → used verbatim as the base.
-  - Otherwise treated as `host[:port]` → `http://{host}/v1`.
+  - Otherwise treated as `host[:port][/path]` → `http://{host}/v1`, unless the
+    path already ends in `/v1` (case insensitive), in which case it is stored as
+    `http://{stripped}` once.
 - Request body: OpenAI-compatible chat-completions shape
   (`messages`, `model` only when a model name is configured — omit `model` when
   empty so the server's default is used, `temperature`, `stream: false`).
   `Authorization: Bearer {token}` only when a token is configured.
-- **Timeout 3 s** (`AbortController` + `setTimeout`): on timeout, log + retry on
+- **Timeout 30 s** (`AbortController` + `setTimeout`): on timeout, log + retry on
   next iteration (escalating back-off, see below).
 - **Escalating back-off**: base 3 s, double each failure, cap **30 s**. Reset to
   base after any successful response. Back-off delays the *next* request; it does
@@ -143,18 +145,21 @@ during implementation are recorded in §17 and reflected inline below.
     prompt (system + instructions + snapshot, §6) and clear delta history.
   - Otherwise append a delta block (§7) + any queued player chat messages.
   - Call the API client (§1). On success, parse + validate the JSON command
-    response (§12), translate to `llm:routeGroup` / `llm:setTargeting` commands.
+    response (§12), translate to `llm:routeGroup`, `llm:siegeTower`, and
+    `llm:setTargeting` commands. A soft-reject that still yields commands applies
+    those commands and keeps the assistant turn. A transport failure, empty body,
+    JSON parse failure, or a rejection that yields zero commands restores the
+    pre-turn transcript and `lastObservation`.
   - Update `memory` token count from `usage.prompt_tokens`; if
     `tokenCount + estimatedNext >= config.contextLimit`, set a compress flag so
     the next `decide` rebuilds the full prompt.
   - Return the commands (may be empty on malformed/empty response; client already
     retried per §1).
-- **Stateless per-tick calls (deviation D6):** `memory.conversation` is
-  accumulated but never sent to the API. Each `decide` sends only `[system,
-  <current delta>, <queued player messages>]`; the model re-plans from the latest
-  delta rather than a growing history. This is a simplification of §7's
-  "append deltas / never mutate the initial snapshot" intent and yields the same
-  token-reduction benefit (see §17, D3/D6).
+- **Transcript is resent (D6 reversed):** `decide` sends `memory.conversation`.
+  The system entry stays in memory; `complete` prepends it, and adjacent messages
+  of the same role are coalesced into one before the request. Each successful turn
+  appends the assistant reply. The model sees the map from the last full snapshot,
+  later deltas, and its own prior commands. See §17.
 - **In-flight guard + cadence** (`src/commanders/CommanderWorker.ts`): an async
   `decideLlm()` tracks a `deciding` boolean; when a new `observation` arrives
   while `deciding`, it skips issuing a new `decide` (drops the tick). A timestamp
@@ -163,8 +168,10 @@ during implementation are recorded in §17 and reflected inline below.
   pause-skip applies to the LLM path only**; stub brains remain synchronous and
   decide on every observation (deviation D5 — keeps the existing ~1000 tests
   green).
-- `updateInstructions` message updates `memory.commanderInstructions` and forces
-  a prompt rewrite on the next `decide` (re-emit system + instructions prefix).
+- `updateInstructions` updates `memory.commanderInstructions` and sets
+  `isCompressing` only when the text differs, so the next `decide` rebuilds the
+  system prompt. A runId change drops the transcript (it names the previous run's
+  enemies) and keeps instructions and queued player messages.
 - `chat` (player) message is enqueued in `memory.pendingPlayerMessages` and
   appended on the next `decide`.
 
@@ -174,13 +181,15 @@ during implementation are recorded in §17 and reflected inline below.
   - Game objective: destroy the defender base by routing enemies to it.
   - Map/grid: grid is tile-based with `meta.tileSize` (default 36,
     `SimulationSnapshot.ts:95`); `gridLayout` semantics (`0=terrain,1=path,2=base,3=spawn`,
-    `protocol.ts:10`); spawn + base tiles; pathing/blocking via
-    `src/sim/grid/Pathfinding.ts` BFS with dynamic tower avoidance.
+    `protocol.ts:10`); spawn + base tiles. Pathing is the Recast navmesh with
+    DetourCrowd local avoidance. Newly built towers are obstacles; enemies route
+    around them while a corridor remains. A fully blocked corridor stops default
+    movement until that tower is sieged and ghosted.
   - Enemy types + stats from `ENEMY_TYPES` (`src/sim/ConstantsEnemy.ts:21`,
-    with `ENEMY_LEVEL_HP_MULT`/`ENEMY_WAVE_DAMAGE_MULT` formulas). Note: the
-    per-enemy `type` is described globally (above) but is **not** included in the
-    per-enemy data stream, because `observation.ts` only projects
-    `id/x/y/level/hp/maxHp` (deviation D8).
+    with `ENEMY_LEVEL_HP_MULT`/`ENEMY_WAVE_DAMAGE_MULT` formulas). Per-enemy
+    `type`, routing, and `targetingMode` are in the data stream (D8 reversed).
+  - Tower level scaling uses `TOWER_LEVEL_DMG_MULT`, `TOWER_LEVEL_RATE_MULT`, and
+    `TOWER_LEVEL_RANGE_MULT`. Victory uses `VICTORY_WAVE`.
   - Tower types + stats from `ConstantsTower.ts`.
   - Waves: inter-wave countdown (`BETWEEN_WAVES_TIMER`) and preemptive next-wave
     timer `PRE_EMPTIVE_WAVE_TIMER = 90` game-seconds
@@ -189,7 +198,10 @@ during implementation are recorded in §17 and reflected inline below.
     cap** — concurrency is implicitly bounded by spawn pacing, not a hard limit;
     describe it that way (see §13.1).
   - Data stream description: what each `decide` delta contains (§7).
-  - Command syntax + allowlist (`routeGroup`, `setTargeting` only — §12).
+  - Command syntax + allowlist (`routeGroup`, `siegeTower`, `setTargeting` — §12).
+    `setTargeting` modes are `default`, `base`, `nearest`, `strongest`, `weakest`,
+    and `strongestAhead`. Any other mode string is stored and does not change
+    engagement. `llm:gridLayoutToggle` is banned.
   - Default `systemPrompt` const used to populate new configs' required field.
 - Commander Instructions: user-provided, appended after the system prompt;
   blank by default; editable live (§5 `updateInstructions`).
@@ -197,21 +209,23 @@ during implementation are recorded in §17 and reflected inline below.
 ## 7. Deltas (worker-side diff)
 - Keep `memory.lastObservation` (previous `CommanderObservation`). On each
   `decide` (after the initial snapshot), build a compact delta:
-  - Enemies: new ids (full entry: type, level, tile, hp/maxHp, first position);
-    for known ids, only position (tile) + hp/maxHp **if changed** (most enemies
-    move every tick, so position usually ships — keep small by sending tile
-    coords, not world coords).
-  - Towers: new ids (full: type, tile, level, hp/maxHp); for known ids, only
-    hp/maxHp if changed.
+  - Enemies: new ids and changed ids ship a full record (type, level, tile,
+    hp/maxHp, routingMode, attackingBase, blocked tile, targetingMode,
+    distanceToBase). A known enemy is omitted when none of those changed.
+    Removed ids ship in `removedEnemyIds`.
+  - Towers: new tiles and tiles whose hp, maxHp, or level changed ship type,
+    tile, level, hp/maxHp. Removed towers ship `{x, y}`.
   - Wave summary: `currentWave`, `pendingEnemyCount`, `remainingScheduledSpawns`,
     `active` (from `observation.ts:21`).
   - Timestamp (`meta` frame id / wall clock).
 - The delta scheme's benefit is **token reduction** (fewer tokens per request
-  than re-sending the whole snapshot), not prompt-cache reuse — the brain rebuilds
-  the prompt each call, and (per §5, deviation D6) sends only the latest delta.
-  On compression (§5 token limit), rebuild the full prompt (same system +
-  instructions text, then a fresh full snapshot) and clear
-  `memory.lastObservation`/delta history.
+  than re-sending the whole snapshot). The client still resends the transcript
+  (§5), so the model keeps the last full snapshot and its own replies. A changed
+  enemy is a full record (tile, hp, routingMode, attackingBase, blocked tile,
+  targetingMode, distanceToBase). Removals ship as `removedEnemyIds` and
+  `removedTowers`. On compression (§5 token limit: reported `prompt_tokens`, or a
+  character estimate, plus 2048), the next `decide` replaces the transcript with
+  the same system + instructions text and a fresh full snapshot.
 - Diffing is pure worker-side using `CommanderMemory`; no sim/`SnapshotStore`
   change. Concept mirrors `plans/SnapshotDelta.md` but lives in the LLM brain.
 
@@ -220,8 +234,10 @@ during implementation are recorded in §17 and reflected inline below.
   commander is active (`uiStore.enemyCommander` resolves to an LLM config). No
   close button; visibility follows activation.
 - Layout:
-  - Top: 3-line `Commander Instructions` textarea (editing sends
-    `updateInstructions` → prompt rewrite; §5).
+  - Top: 3-line `Commander Instructions` textarea. A change posts
+    `updateInstructions` and saves the text on the active commander. Blur with
+    the same text does not (§5). Switching the active LLM commander resyncs the
+    textarea from that commander's saved instructions.
   - Middle: scrolling message log (last ~20, kept in a `chatLog` slice on
     `uiStore`).
   - Bottom: message input + Send button. Send posts `chat` to the worker and
@@ -283,9 +299,9 @@ during implementation are recorded in §17 and reflected inline below.
 
 ## 12. Response processing + command schema
 - `src/commanders/llm/schema.ts`: define the JSON command schema and a validator.
-  - Allowed command types: `llm:routeGroup` and `llm:setTargeting` ONLY.
-    `llm:gridLayoutToggle` is worker-internal and must NOT be accepted from the
-    LLM.
+  - Allowed command types: `llm:routeGroup`, `llm:siegeTower`, and
+    `llm:setTargeting`. `llm:gridLayoutToggle` is worker-internal and must NOT be
+    accepted from the LLM.
   - `routeGroup`: `{ enemyIds: number[]; hold?: boolean; holdTile?: {x,y};
     waypoints: {x,y}[] }`. **Coordinate space (corrected):** waypoints and
     `holdTile` are **tile** coords. The LLM works in the tile space described in
@@ -294,10 +310,21 @@ during implementation are recorded in §17 and reflected inline below.
     straight into `enemy.grid.computeRoute(...)` alongside `enemy.currentTile()`
     (both tile coords; `Grid.computeRoute` takes tiles, `Enemy.currentTile()`
     returns tiles). So emit tile coords from the brain and do not convert to world.
-  - `setTargeting`: `{ enemyIds: number[]; mode: string }`.
-- Malformed/validated-rejected responses: the client layer logs + the brain
-  returns no commands (retry handled by §1). The schema is also embedded in the
-  system prompt so the model knows the exact syntax.
+  - `siegeTower`: `{ enemyIds: number[]; towerTile: {x,y} }`. A live tower is
+    sieged and its `targetingMode` is cleared so the next intent does not replace
+    the explicit tower. A missing or ghost tower releases to default and keeps
+    the policy. `routeGroup` does not clear the policy; hold and route pause it.
+  - `setTargeting`: `{ enemyIds: number[]; mode: string }`. `default` stores null
+    (stuck auto-siege). `base` paths to the base and skips auto-siege. `nearest`,
+    `strongest`, and `weakest` siege a live tower by Euclidean tile distance or
+    current health (ties: nearer, then smaller y, then smaller x). `strongestAhead`
+    requires a nav distance >= 0 that is strictly closer to the base than the
+    enemy; terrain distance -1 is not ahead. Any other string is stored and does
+    not change engagement.
+- A response that yields zero commands (unrecognized shape, or every entry
+  rejected) restores the transcript and returns no commands. A soft-reject keeps
+  the valid siblings, applies them, and still appends the assistant turn. The
+  schema is also embedded in the system prompt so the model knows the exact syntax.
 - **Invalid waypoints are silently ignored (deviation D4):** the LLM emits tile
   coords, but if it emits an out-of-bounds or non-path tile, `applyCommand.ts`
   drops that leg (`computeRoute` returns empty) and the enemy simply skips that
@@ -386,18 +413,16 @@ intentional resolutions from the pre-implementation review; all keep the existin
   stay synchronous and decide every observation; only the LLM `decideLlm()` uses
   the in-flight guard + ~1 Hz cadence + pause-skip. The union return type keeps
   stub tests unchanged.
-- **D6 — Stateless per-tick calls.** Plan §5/§7 implied accumulating deltas into a
-  growing context. Shipped: `memory.conversation` is accumulated but never sent;
-  each `decide` sends only `[system, current delta, queued player messages]`. The
-  model re-plans from the latest delta.
+- **D6 — Reversed.** The stateless-call shortcut was removed. `decide` sends the
+  accumulated transcript (the client prepends system; adjacent same-role messages
+  are coalesced). A failed turn restores that transcript. Compression replaces it
+  with a fresh full snapshot when `tokenCount + 2048 >= contextLimit`.
 - **D7 — Worker creates the LLM brain directly.** Plan §1/§5 said
   `createBrain("llm", config)` and the worker passes `message.config`. Shipped:
   the worker's `start` handler calls `createLlmBrain(config, { onChat, onNotify })`
   directly; `createBrain`'s `"llm"` case is unreachable from the worker.
-- **D8 — System prompt omits per-enemy `type`.** Plan §6/§7 described an enemy
-  `type` field in the data stream. Shipped: `observation.ts` only projects
-  `id/x/y/level/hp/maxHp`, so the prompt describes enemy types globally but not
-  per-enemy.
+- **D8 — Reversed.** Enemy and tower `type` are projected into the observation
+  and the LLM data stream. `targetingMode` is projected when set.
 - **D9 — Build order batched into 4 chunks** (foundation; LLM core; UI; tests)
   instead of the 10 linear steps in §15. Functionally equivalent.
 - **D10 — Connect / first-success notifications not emitted.** Plan §11 wanted

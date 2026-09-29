@@ -16,6 +16,7 @@ import {
 import { restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdManager.js";
 import { fromRecast, toRecast } from "@/sim/navmesh/coords.js";
 import type { Tower } from "@/sim/towers/Tower.js";
+import { isEngagementPolicy, selectTargetingTower } from "./targeting.js";
 
 let nextId = 1;
 
@@ -76,6 +77,8 @@ interface EnemyManagerRef {
   forEachEnemyInRange(x: number, y: number, range: number, cb: (enemy: Enemy) => void): void;
   forEachSensorHits?(sensorId: string, callback: (enemy: Enemy) => void): boolean;
   blockedApproach?(tileX: number, tileY: number): { approachWorld: { x: number; y: number } } | null;
+  liveTowers?(): Tower[];
+  distanceToBase?(tileX: number, tileY: number): number;
 }
 
 export class Enemy {
@@ -503,8 +506,31 @@ export class Enemy {
       }
     }
 
-    // Auto-siege when stuck against a live tower (choke).
-    if (
+    // Engagement policy replaces stuck auto-siege. hold/route keep their explicit target;
+    // the policy resumes after releaseToDefault. Missing tower lookups leave the policy idle.
+    const policyActive =
+      this.routingMode !== "hold" && this.routingMode !== "route" && isEngagementPolicy(this.targetingMode);
+    const liveTowers = enemyManager?.liveTowers?.();
+    const readDistance = enemyManager?.distanceToBase;
+    if (policyActive && liveTowers && readDistance && enemyManager) {
+      const distanceAt = (tileX: number, tileY: number) => enemyManager.distanceToBase?.(tileX, tileY) ?? -1;
+      const tile = this.currentTile();
+      const chosen = selectTargetingTower(
+        this.targetingMode,
+        tile.x,
+        tile.y,
+        distanceAt(tile.x, tile.y),
+        liveTowers,
+        distanceAt,
+      );
+      this.stuckTimer = 0;
+      if (chosen) {
+        if (!(this.routingMode === "siege" && this.siegeTower === chosen)) this.applySiege(chosen);
+      } else if (this.routingMode === "siege") {
+        this.releaseToDefault();
+      }
+    } else if (
+      !isEngagementPolicy(this.targetingMode) &&
       !this.attackingBase &&
       this.routingMode === "default" &&
       enemyManager &&

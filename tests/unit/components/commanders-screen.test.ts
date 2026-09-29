@@ -104,4 +104,47 @@ describe("CommandersScreen", () => {
     const wrapper = mount(CommandersScreen, { global: { plugins: [router, pinia] } });
     expect(wrapper.text()).toContain("Active");
   });
+
+  function addCommander(id: string, name: string) {
+    persistStore.addLlmCommander({
+      id,
+      name,
+      endpointUrl: "http://localhost:11434/v1",
+      token: "",
+      modelName: "",
+      contextLimit: 32768,
+      commanderInstructions: "",
+      systemPrompt: "sys",
+    });
+  }
+
+  it("clears the selection when the active LLM commander is deleted", async () => {
+    addCommander("l_1", "My LLM");
+    uiStore.enemyCommander = "l_1";
+    vi.mocked(setEnemyCommander).mockClear();
+    const wrapper = mount(CommandersScreen, { global: { plugins: [router, pinia] } });
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Delete")!
+      .trigger("click");
+    expect(setEnemyCommander).toHaveBeenCalledWith("none");
+    expect(persistStore.llmCommanders).toHaveLength(0);
+    expect(uiStore.enemyCommander).toBe("none");
+  });
+
+  it("leaves the active commander in place when a different one is deleted", async () => {
+    addCommander("l_1", "Kept");
+    addCommander("l_2", "Other LLM");
+    uiStore.enemyCommander = "l_1";
+    vi.mocked(setEnemyCommander).mockClear();
+    const wrapper = mount(CommandersScreen, { global: { plugins: [router, pinia] } });
+    const card = wrapper.findAll(".commander-card").find((node) => node.text().includes("Other LLM"));
+    await card!
+      .findAll("button")
+      .find((button) => button.text() === "Delete")!
+      .trigger("click");
+    expect(setEnemyCommander).not.toHaveBeenCalled();
+    expect(uiStore.enemyCommander).toBe("l_1");
+    expect(persistStore.llmCommanders.map((commander) => commander.id)).toEqual(["l_1"]);
+  });
 });

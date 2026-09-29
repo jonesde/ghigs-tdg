@@ -28,6 +28,7 @@ export class EnemyManager {
   physicsWorld: PhysicsWorld | null = null;
   crowdManager: CrowdManager | null = null;
   private blockedApproachLookup: ((tileX: number, tileY: number) => BlockedApproach | null) | null = null;
+  private distanceToBaseLookup: ((tileX: number, tileY: number) => number) | null = null;
   private idToEnemy: Map<number, Enemy>;
   private pendingQueues: Map<number, PendingEnemyEntry[]>;
 
@@ -73,6 +74,23 @@ export class EnemyManager {
 
   blockedApproach(tileX: number, tileY: number): BlockedApproach | null {
     return this.blockedApproachLookup?.(tileX, tileY) ?? null;
+  }
+
+  setDistanceToBaseLookup(lookup: ((tileX: number, tileY: number) => number) | null): void {
+    this.distanceToBaseLookup = lookup;
+  }
+
+  distanceToBase(tileX: number, tileY: number): number {
+    return this.distanceToBaseLookup?.(tileX, tileY) ?? -1;
+  }
+
+  liveTowers(): Tower[] {
+    if (!this.towerManager) return [];
+    const live: Tower[] = [];
+    for (const tower of this.towerManager.towers) {
+      if (!tower.isGhost && tower.health > 0) live.push(tower);
+    }
+    return live;
   }
 
   towerAt(tileX: number, tileY: number): Tower | null {
