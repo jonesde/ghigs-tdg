@@ -42,7 +42,7 @@ export interface ObservationWave {
   maxBaseHealth: number;
   countdownRemaining: number | null;
   spawnOrders?: SpawnOrderView[];
-  commandReceipt?: { commandId: number; applied: number; skipped: number };
+  commandReceipt?: { commandId: number; applied: number; skipped: number; failedCommandId?: number };
 }
 
 export interface ObservationNav {
@@ -121,12 +121,14 @@ export function buildObservation(slice: CommanderSnapshotSlice): CommanderObserv
   if (
     slice.meta.lastAppliedCommandId !== undefined ||
     slice.meta.lastAppliedCount !== undefined ||
-    slice.meta.lastSkippedCount !== undefined
+    slice.meta.lastSkippedCount !== undefined ||
+    slice.meta.lastFailedCommandId !== undefined
   ) {
     wave.commandReceipt = {
       commandId: slice.meta.lastAppliedCommandId ?? 0,
       applied: slice.meta.lastAppliedCount ?? 0,
       skipped: slice.meta.lastSkippedCount ?? 0,
+      failedCommandId: slice.meta.lastFailedCommandId ?? 0,
     };
   }
   const observation: CommanderObservation = {

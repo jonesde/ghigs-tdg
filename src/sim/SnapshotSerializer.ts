@@ -21,12 +21,14 @@ export interface SnapshotCommandReceipt {
   commandId: number;
   applied: number;
   skipped: number;
+  failedCommandId: number;
 }
 
 export function buildSnapshot(
   engine: GameEngine,
   lastAppliedCommandId: number,
   receipt?: SnapshotCommandReceipt,
+  lastFailedCommandId?: number,
 ): SimulationSnapshot {
   const enemies = engine.enemyManager?.enemies ?? [];
   const towers = engine.towerManager?.towers ?? [];
@@ -98,7 +100,11 @@ export function buildSnapshot(
     schemaVersion: 1,
     frameId: nextFrameId++,
     lastAppliedCommandId,
-    meta: buildMeta(engine, receipt ?? { commandId: lastAppliedCommandId, applied: 0, skipped: 0 }),
+    lastFailedCommandId: lastFailedCommandId ?? receipt?.failedCommandId ?? 0,
+    meta: buildMeta(
+      engine,
+      receipt ?? { commandId: lastAppliedCommandId, applied: 0, skipped: 0, failedCommandId: lastFailedCommandId ?? 0 },
+    ),
     enemies: enemies.map((enemy) => snapshotEnemy(enemy, engine)),
     towers: towers.map((tower) => snapshotTower(tower, persistState, tower.id === selectedTowerId)),
     projectiles: (engine.projectileManager?.getRenderData() ?? []) as ProjectileSnapshot[],
@@ -157,6 +163,7 @@ function buildMeta(engine: GameEngine, receipt: SnapshotCommandReceipt): Snapsho
     lastAppliedCommandId: receipt.commandId,
     lastAppliedCount: receipt.applied,
     lastSkippedCount: receipt.skipped,
+    lastFailedCommandId: receipt.failedCommandId,
   };
 }
 

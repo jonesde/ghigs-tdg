@@ -117,6 +117,31 @@ export class WaveManager {
     this.waveComposition = this._countTypes(this.queue);
   }
 
+  // Debug-only jump: parks the wave state as if `wave` had just cleared, so a
+  // debug setWave keeps betweenWaves, countdown, and spawn states consistent
+  // instead of only moving the counter. Live enemies and pending spawns are left
+  // alone (killAll is the separate debug tool for those).
+  debugJumpToWave(wave: number): void {
+    this.queue.length = 0;
+    this.currentWave = wave;
+    this.betweenWaves = true;
+    this.countdownActive = true;
+    this.countdownTimer = BETWEEN_WAVES_TIMER;
+    this.betweenTimer = BETWEEN_WAVES_TIMER;
+    this.active = false;
+    this.bossesThisWave = 0;
+    this.baseReached = false;
+    this.waveComposition = {};
+    this._waveGameTime = 0;
+    this.spawnTimer = 0;
+    this.closeAllSpawns();
+    for (const spawnState of this.spawnStates) {
+      spawnState.visualState = "closed";
+      spawnState.closeTransitionTimer = 0;
+    }
+    this.prevWaveSpawnIndices.clear();
+  }
+
   // Count of enemies still scheduled to spawn this wave (the remaining queue). This
   // is the authoritative "entire wave emerged" signal — unlike the overflow-only
   // pending count — because it includes every enemy the wave will still produce.

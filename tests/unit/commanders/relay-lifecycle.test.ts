@@ -10,7 +10,7 @@ import { peekClockHeldForTests, resetRelayForTests, startRelay, stopRelay } from
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 
-vi.mock("@/sim/commandBus.js", () => ({ dispatchCommand: vi.fn() }));
+vi.mock("@/sim/commandBus.js", () => ({ dispatchCommand: vi.fn(), advanceCommandBusEpoch: vi.fn() }));
 vi.mock("@/sim/SnapshotStore.js", () => ({ getLatestSnapshot: vi.fn() }));
 vi.mock("@/stores/ui.js", () => ({
   useUiStore: () => ({

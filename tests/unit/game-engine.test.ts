@@ -357,10 +357,14 @@ describe("GameEngine", () => {
       expect(engine.towerManager?.towers).toContain(tower);
     });
 
-    it("executeSell sells the selected tower", () => {
+    it("executeSell sells the selected tower", async () => {
       const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
+      tower._gameSeconds = (CANCEL_BUILD_WINDOW_MS + 1000) / 1000;
       const goldBefore = engine.runState.gold;
       engine.runState.selectedTowerId = String(tower.id);
+      engine.sellSelected();
+      // The mock host grants the confirm on a microtask; flush it before selling.
+      await Promise.resolve();
       engine.executeSell();
       const expectedRefund = Math.round(tower!.totalInvested * SELL_VALUE_RATIO);
       expect(engine.runState.gold).toBe(goldBefore + expectedRefund);
@@ -452,6 +456,9 @@ describe("GameEngine", () => {
       engine.persistState.unlocked.basic.levels[2] = true;
       engine.persistState.unlocked.basic.levels[3] = true;
       engine.persistState.unlocked.basic.variantA[0] = true;
+      // Fund the account: upgrade/specialize costs must never drive gold negative
+      // (setGold floors at zero), so the refund math below stays exact.
+      engine.runState.gold = 100000;
       const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
       for (let i = 0; i < 3; i++) {
         const cost = engine.getUpgradeCost(tower!);
@@ -567,14 +574,21 @@ describe("GameEngine", () => {
       engine.debug("addGold", 1000);
       engine.debug("addBaseHealth", 10);
       engine.debug("addGems", 100);
+      expect(engine.persistState.gems).toBe(gemsBefore + 100);
+      // setWave runs the shared milestone/best-wave/unlock path, so jumping to 50
+      // also claims the 15/30/50 milestones on top of the injected gems.
       engine.debug("setWave", 50);
-      engine.debug("setTimeScale", 16);
+      engine.debug("setTimeScale", 8);
 
       expect(engine.runState.gold).toBe(goldBefore + 1000);
       expect(engine.runState.baseHealth).toBe(Math.min(livesBefore + 10, engine.runState.maxBaseHealth));
-      expect(engine.persistState.gems).toBe(gemsBefore + 100);
+      expect(engine.persistState.gems).toBeGreaterThanOrEqual(gemsBefore + 100);
+      for (const milestoneWave of [15, 30, 50]) {
+        expect(engine.runState.milestoneRewardsClaimed[milestoneWave]).toBe(true);
+      }
       expect(engine.runState.currentWave).toBe(50);
-      expect(engine.runState.timeScale).toBe(16);
+      expect(engine.waveManager!.currentWave).toBe(50);
+      expect(engine.runState.timeScale).toBe(8);
       expect(engine.persistDirty).toBe(true);
     });
 

@@ -370,10 +370,14 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
     expect(sieging.siegeTower).toBe(tower);
     expect(sieging.targetingMode).toBeNull();
     applyCommand(engine, { commandId: 0, type: "llm:setSpawnOrder", clear: true });
-    applyCommand(engine, { commandId: 0, type: "llm:setSpawnOrder", towerTile: { x: -1, y: -1 } });
+    // A tower tile with no live tower leaves default pathing. It must be in-bounds:
+    // out-of-bounds tiles are rejected at intake, so "gone" is expressed with a
+    // real tile (a spawn can never host a tower).
+    const emptyTile = engine.grid!.spawns[0]!;
+    applyCommand(engine, { commandId: 0, type: "llm:setSpawnOrder", towerTile: { x: emptyTile.x, y: emptyTile.y } });
     const walking = spawnFresh(0, 1);
     expect(walking.routingMode).toBe("default");
-    expect(engine.enemyManager!.listSpawnOrders()).toEqual([{ towerTile: { x: -1, y: -1 } }]);
+    expect(engine.enemyManager!.listSpawnOrders()).toEqual([{ towerTile: { x: emptyTile.x, y: emptyTile.y } }]);
   });
 
   it("clear drops the default and every per-spawn slot before the next spawn", () => {

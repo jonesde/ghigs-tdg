@@ -3,9 +3,8 @@ import { GameEngine } from "@/sim/GameEngine.js";
 import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { WorkerParticleSpawner } from "@/sim/ParticleSystem.js";
 import { initPhysics } from "@/sim/physics/rapierContext.js";
-import { applyCommand } from "./applyCommand.js";
-import { applyCommandWithStats } from "./applyCommandStats.js";
 import type { Command } from "./Command.js";
+import { drainCommandQueue } from "./commandDrain.js";
 import type { PersistStateSlice } from "./HostBindings.js";
 import { buildSnapshot } from "./SnapshotSerializer.js";
 import { WorkerHostBindings } from "./WorkerHostBindings.js";
@@ -23,11 +22,25 @@ declare const self: WorkerGlobalScope;
 let engine: GameEngine | null = null;
 const host = new WorkerHostBindings();
 
+// Worker generation (epoch): bumped on every init/dispose boundary. Incoming commands
+// are tagged with the arrival generation; the drain drops entries from a stale
+// generation with a warn instead of delivering a dead run's commands into the fresh
+// engine. Snapshots are stamped with the generation (meta.workerGeneration) so the
+// main thread can correlate. This is the worker-side half of the stale-command guard;
+// the main-thread half is the commandBus epoch (see commandBus.ts).
+let workerGeneration = 0;
+
+export interface QueuedCommandEntry {
+  command: Command;
+  arrivalGeneration: number;
+}
+
 // Command queue — drained at the start of each tick. This eliminates the
 // input/sim race condition: messages arriving mid-tick wait for the next
 // drain boundary.
-const commandQueue: Command[] = [];
+const commandQueue: QueuedCommandEntry[] = [];
 let lastAppliedCommandId = 0;
+let lastFailedCommandId = 0;
 let lastAppliedCount = 0;
 let lastSkippedCount = 0;
 
@@ -63,6 +76,39 @@ function postMessage(msg: WorkerToMainMessage): void {
   self.postMessage(msg);
 }
 
+// Splits queued entries into current-generation commands (drained in order) and a
+// stale count (dropped with a warn by the caller). Pure: exported for tests.
+export function splitGenerationCommands(
+  entries: readonly QueuedCommandEntry[],
+  currentGeneration: number,
+): { current: Command[]; droppedStale: number } {
+  const current: Command[] = [];
+  let droppedStale = 0;
+  for (const entry of entries) {
+    if (entry.arrivalGeneration !== currentGeneration) droppedStale++;
+    else current.push(entry.command);
+  }
+  return { current, droppedStale };
+}
+
+// Stamps the worker generation onto a built snapshot so the main thread can tell
+// which run produced it. Pure: exported for tests.
+export function stampSnapshotGeneration(snapshot: { meta: { workerGeneration?: number } }, generation: number): void {
+  snapshot.meta.workerGeneration = generation;
+}
+
+function takeCurrentGenerationCommands(): Command[] {
+  const split = splitGenerationCommands(commandQueue, workerGeneration);
+  commandQueue.length = 0;
+  if (split.droppedStale > 0) {
+    console.warn(
+      `WorkerEntry dropped ${split.droppedStale} stale-generation commands ` +
+        `(current generation ${workerGeneration})`,
+    );
+  }
+  return split.current;
+}
+
 function startLoop(): void {
   if (running) return;
   running = true;
@@ -87,42 +133,23 @@ function tick(): void {
   const rawDt = Math.min(MAX_ACCUM, (now - lastTime) / 1000);
   lastTime = now;
 
-  // Drain command queue before any simulation work.
-  // Commands are applied in arrival order; each may mutate runState/persistState.
+  // Drain command queue before any simulation work. Commands are applied in arrival
+  // order; rejected commands (validation failure or apply throw) mutate nothing,
+  // never advance lastAppliedCommandId, and record lastFailedCommandId instead.
+  // Stale-generation entries (queued for a previous run) are dropped with a warn
+  // before the drain so they never reach the fresh engine.
   // Track whether any command actually mutated visible state this tick — that is
   // the signal (NOT commandQueue.length, which is 0 by the time we decide) that
   // we must post a snapshot even while paused.
-  let stateMutatedThisTick = false;
-  let tickAppliedCount = 0;
-  let tickSkippedCount = 0;
-  let tickCommandCount = 0;
-  while (commandQueue.length > 0) {
-    const command = commandQueue.shift()!;
-    if (command.commandId !== undefined) {
-      lastAppliedCommandId = command.commandId;
-    }
-    try {
-      const stats = applyCommandWithStats(engine, command);
-      if (stats.mutated) {
-        stateMutatedThisTick = true;
-      }
-      tickAppliedCount += stats.applied;
-      tickSkippedCount += stats.skipped;
-      tickCommandCount += 1;
-    } catch (err) {
-      const errorMessage = `Command ${command.type} failed: ${(err as Error).message}`;
-      const errorStack = (err as Error).stack;
-      postMessage(
-        errorStack
-          ? { type: "workerError", message: errorMessage, stack: errorStack }
-          : { type: "workerError", message: errorMessage },
-      );
-    }
-  }
-  if (tickCommandCount > 0) {
-    lastAppliedCount = tickAppliedCount;
-    lastSkippedCount = tickSkippedCount;
-  }
+  const receipt = { lastAppliedCommandId, lastFailedCommandId, applied: lastAppliedCount, skipped: lastSkippedCount };
+  const tickCommands = takeCurrentGenerationCommands();
+  const stateMutatedThisTick = drainCommandQueue(engine, tickCommands, receipt, (message, stack) => {
+    postMessage(stack ? { type: "workerError", message, stack } : { type: "workerError", message });
+  });
+  lastAppliedCommandId = receipt.lastAppliedCommandId;
+  lastFailedCommandId = receipt.lastFailedCommandId;
+  lastAppliedCount = receipt.applied;
+  lastSkippedCount = receipt.skipped;
 
   // Fixed-timestep accumulator. timeScale comes from runState, which input
   // commands may have updated. Step budget scales with timeScale so 8×/16× do
@@ -156,11 +183,18 @@ function tick(): void {
 
     if (terminal) {
       // Final frame: post exactly once, then stop the loop until the next init.
-      const snapshot = buildSnapshot(engine, lastAppliedCommandId, {
-        commandId: lastAppliedCommandId,
-        applied: lastAppliedCount,
-        skipped: lastSkippedCount,
-      });
+      const snapshot = buildSnapshot(
+        engine,
+        lastAppliedCommandId,
+        {
+          commandId: lastAppliedCommandId,
+          applied: lastAppliedCount,
+          skipped: lastSkippedCount,
+          failedCommandId: lastFailedCommandId,
+        },
+        lastFailedCommandId,
+      );
+      stampSnapshotGeneration(snapshot, workerGeneration);
       postMessage({ type: "snapshot", snapshot });
       hasPostedSnapshot = true;
       // Persist any pending dirty state now (the loop is stopping, and the
@@ -190,11 +224,18 @@ function tick(): void {
         engine.particleSpawner?.consumeSpawns?.();
         engine.projectileManager?.consumeRenderVisualEffects?.();
       } else {
-        const snapshot = buildSnapshot(engine, lastAppliedCommandId, {
-          commandId: lastAppliedCommandId,
-          applied: lastAppliedCount,
-          skipped: lastSkippedCount,
-        });
+        const snapshot = buildSnapshot(
+          engine,
+          lastAppliedCommandId,
+          {
+            commandId: lastAppliedCommandId,
+            applied: lastAppliedCount,
+            skipped: lastSkippedCount,
+            failedCommandId: lastFailedCommandId,
+          },
+          lastFailedCommandId,
+        );
+        stampSnapshotGeneration(snapshot, workerGeneration);
         postMessage({ type: "snapshot", snapshot });
         hasPostedSnapshot = true;
         // baseline       → true  (establish gate from first frame)
@@ -225,6 +266,9 @@ function tick(): void {
   } catch (err) {
     // A simulation or snapshot error must not kill the tick loop. Report it and
     // keep scheduling so the game stays alive (and the error is visible).
+    // The accumulator is deliberately DISCARDED here rather than preserved: the
+    // failure came from stepping this exact sim state, so preserving would re-run
+    // the same throwing step every tick (error spam + frozen sim, never progress).
     const errorMessage = `Tick failed: ${(err as Error).message}`;
     const errorStack = (err as Error).stack;
     postMessage(
@@ -277,7 +321,9 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
     case "init": {
       // Harden re-entry before any await so stale loop/engine/commands from a
       // prior run are cleared synchronously. Commands posted after this message
-      // (during WASM init) remain queued for the new engine's first tick.
+      // (during WASM init) remain queued for the new engine's first tick. The
+      // generation bump retires any command that arrived for the previous run.
+      workerGeneration++;
       stopLoop();
       if (engine) {
         engine.dispose();
@@ -286,6 +332,7 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
       commandQueue.length = 0;
       awaitingAck = false;
       lastAppliedCommandId = 0;
+      lastFailedCommandId = 0;
       lastAppliedCount = 0;
       lastSkippedCount = 0;
       // Cached async init of the Rapier WASM module (plans/rapier2d.md Phase 0).
@@ -343,7 +390,7 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
       break;
     }
     case "command": {
-      commandQueue.push(msg.command);
+      commandQueue.push({ command: msg.command, arrivalGeneration: workerGeneration });
       break;
     }
     case "confirmResult": {
@@ -364,26 +411,27 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
     case "dispose": {
       stopLoop();
       // Drain queued commands (e.g. action:endRun) before teardown so quit can
-      // finalize gems/history even when dispose races the next tick.
-      while (commandQueue.length > 0 && engine) {
-        const command = commandQueue.shift()!;
-        if (command.commandId !== undefined) {
-          lastAppliedCommandId = command.commandId;
-        }
-        try {
-          applyCommand(engine, command);
-        } catch (err) {
-          const errorMessage = `Command ${command.type} failed: ${(err as Error).message}`;
-          const errorStack = (err as Error).stack;
-          postMessage(
-            errorStack
-              ? { type: "workerError", message: errorMessage, stack: errorStack }
-              : { type: "workerError", message: errorMessage },
-          );
-        }
+      // finalize gems/history even when dispose races the next tick. Rejections
+      // are receipted, never applied. Stale-generation entries are dropped first
+      // via the same take path the tick uses.
+      const receipt = {
+        lastAppliedCommandId,
+        lastFailedCommandId,
+        applied: lastAppliedCount,
+        skipped: lastSkippedCount,
+      };
+      if (engine) {
+        drainCommandQueue(engine, takeCurrentGenerationCommands(), receipt, (message, stack) => {
+          postMessage(stack ? { type: "workerError", message, stack } : { type: "workerError", message });
+        });
       }
+      lastAppliedCommandId = receipt.lastAppliedCommandId;
+      lastFailedCommandId = receipt.lastFailedCommandId;
       commandQueue.length = 0;
       awaitingAck = false;
+      // Retire this run's generation so any command still in flight after teardown
+      // can never be mistaken for the next run's.
+      workerGeneration++;
       if (engine) {
         // Safety net: bare navigation away without action:endRun still awards
         // wave-completion gems / history / endScreenData (guarded by gameEnded).

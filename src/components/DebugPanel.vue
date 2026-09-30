@@ -81,12 +81,12 @@ function dbgUnlockAll() {
 }
 
 function dbgSpeed() {
-  dispatchCommand({
-    commandId: 0,
-    type: "action:debug",
-    kind: "setTimeScale",
-    amount: gameStore.timeScale === 16 ? 1 : 16,
-  });
+  // Cycle within the worker-accepted setTimeScale whitelist (1, 2, 4, 8); anything
+  // else is rejected by intake validation and would leave the speed unchanged.
+  const speeds = [1, 2, 4, 8];
+  const currentIndex = speeds.indexOf(gameStore.timeScale);
+  const nextSpeed = speeds[(currentIndex + 1 + speeds.length) % speeds.length]!;
+  dispatchCommand({ commandId: 0, type: "action:debug", kind: "setTimeScale", amount: nextSpeed });
 }
 </script>
 

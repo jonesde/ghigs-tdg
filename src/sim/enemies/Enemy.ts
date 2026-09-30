@@ -8,20 +8,25 @@ import {
   ENEMY_LEVEL_HP_MULT,
   ENEMY_TYPES,
   ENEMY_WAVE_DAMAGE_MULT,
-  KNOCKBACK_BALLISTIC_SECONDS,
   MAX_BURN_STACKS,
   MIN_SLOW_FACTOR,
   SIEGE_STUCK_SECONDS,
 } from "@/sim/ConstantsEnemy.js";
 import { restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdManager.js";
 import { fromRecast, toRecast } from "@/sim/navmesh/coords.js";
+import { launchEnemy } from "@/sim/physics/launchEnemy.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import { isEngagementPolicy, selectTargetingTower } from "./targeting.js";
 
 let nextId = 1;
 
+// Enemy ids that already emitted the escaped-bounds warning. A containment hole
+// shoves the same body out every tick; warn once per id instead of spamming.
+const warnedOutOfBoundsIds = new Set<number>();
+
 export function resetEnemyId() {
   nextId = 1;
+  warnedOutOfBoundsIds.clear();
 }
 
 export interface AttackTarget {
@@ -329,8 +334,9 @@ export class Enemy {
     }
   }
 
-  // Impulse knockback along −moveAngle. Crowd steering is suppressed for
-  // KNOCKBACK_BALLISTIC_SECONDS so residual velocity is not overwritten.
+  // Impulse knockback along −moveAngle. Routes through the shared launchEnemy
+  // protocol (impulse + ballistic window + motion-lock release) so every knockback
+  // source behaves identically.
   applyKnockback(amount: number): void {
     if (amount <= 0) return;
     if (!this.body) return;
@@ -339,9 +345,7 @@ export class Enemy {
     const mass = Math.max(0.2, this.body.mass());
     const impulseX = -Math.cos(this.moveAngle) * amount * mass * 8;
     const impulseY = -Math.sin(this.moveAngle) * amount * mass * 8;
-    this.body.applyImpulse({ x: impulseX, y: impulseY }, true);
-    this.ballisticTimer = Math.max(this.ballisticTimer, KNOCKBACK_BALLISTIC_SECONDS);
-    this.motionLock = "none";
+    launchEnemy(this, impulseX, impulseY);
   }
 
   applyMarkTarget(mult: number, duration: number) {
@@ -670,8 +674,12 @@ export class Enemy {
     const worldHeight = this.grid.height * this.grid.tileSize;
     if (this.x < 0 || this.y < 0 || this.x > worldWidth || this.y > worldHeight) {
       // Corridor walls + navmesh should keep bodies inside; this firing means a
-      // containment hole. Still clamp so the sim does not NaN, but report it.
-      console.warn("Enemy escaped world bounds; clamping", this.id, this.x, this.y);
+      // containment hole. Still clamp so the sim does not NaN, but report it once
+      // per enemy id so a persistent hole does not spam the console every tick.
+      if (!warnedOutOfBoundsIds.has(this.id)) {
+        warnedOutOfBoundsIds.add(this.id);
+        console.warn("Enemy escaped world bounds; clamping", this.id, this.x, this.y);
+      }
       this.x = Math.max(0, Math.min(worldWidth, this.x));
       this.y = Math.max(0, Math.min(worldHeight, this.y));
       this.centerX = this.x;

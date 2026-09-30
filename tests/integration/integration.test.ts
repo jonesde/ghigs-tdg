@@ -10,7 +10,7 @@ import {
   STARTING_HEALTH_BONUS,
   StartingGold,
 } from "@/sim/Constants.js";
-import { TOWER_META } from "@/sim/ConstantsTower.js";
+import { CANCEL_BUILD_WINDOW_MS, TOWER_META } from "@/sim/ConstantsTower.js";
 import { GameEngine } from "@/sim/GameEngine.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import {
@@ -157,12 +157,17 @@ describe("Integration: Tower Placement Flow", () => {
     expect(buildSnapshot(engine).meta.selectedTowerId).toBe(String(tower.id));
   });
 
-  it("tower can be sold and gold refunded", () => {
+  it("tower can be sold and gold refunded", async () => {
     buildTowerAt(engine, 0, 0);
     const tower = engine.towerManager!.towerAt(0, 0)!;
+    // Age past the cancel window so the confirm/sell path (not cancel) applies.
+    tower._gameSeconds = (CANCEL_BUILD_WINDOW_MS + 1000) / 1000;
     applyCommand(engine, { type: "action:selectTower", towerId: tower.id });
 
     const goldBefore = buildSnapshot(engine).meta.gold;
+    applyCommand(engine, { type: "action:sellSelected" });
+    // The mock host grants the confirm on a microtask; flush it before selling.
+    await Promise.resolve();
     applyCommand(engine, { type: "action:executeSell", towerId: tower.id });
 
     const expectedRefund = Math.round(tower.totalInvested * 0.6);
@@ -206,14 +211,17 @@ describe("Integration: Economy Flow", () => {
     expect(buildSnapshot(engine).meta.gold).toBe(goldBefore - cost);
   });
 
-  it("sell returns 60% of total invested", () => {
+  it("sell returns 60% of total invested", async () => {
     buildTowerAt(engine, 0, 0);
     const tower = engine.towerManager!.towerAt(0, 0)!;
+    tower._gameSeconds = (CANCEL_BUILD_WINDOW_MS + 1000) / 1000;
     applyCommand(engine, { type: "action:selectTower", towerId: tower.id });
 
     applyCommand(engine, { type: "action:upgradeSelected" });
 
     const goldBefore = buildSnapshot(engine).meta.gold;
+    applyCommand(engine, { type: "action:sellSelected" });
+    await Promise.resolve();
     applyCommand(engine, { type: "action:executeSell", towerId: tower.id });
 
     const expectedRefund = Math.round(tower.totalInvested * 0.6);

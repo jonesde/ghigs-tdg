@@ -8,15 +8,32 @@ import type { TowerManager } from "@/sim/towers/TowerManager.js";
 import type { ColliderTag } from "./ColliderUserData.js";
 import { ContactProcessor } from "./ContactProcessor.js";
 import { buildCorridorSegments } from "./corridorWalls.js";
+import { launchEnemy } from "./launchEnemy.js";
 import { getRapier } from "./rapierContext.js";
 
 // Collision groups: membership << 16 | filter.
 // Enemies: group 1, filter everything except other enemies when enemyEnemyCollisions is false.
 // Projectiles: group 2, filter only enemies (group 1).
+// Aura sensors: group 3, filter only enemies (group 1).
 // Static world (base/towers/walls): default (all groups).
 const ENEMY_GROUP = 0x0001;
 const PROJECTILE_GROUP = 0x0002;
+const SENSOR_GROUP = 0x0004;
 const ALL_GROUPS = 0xffff;
+
+// Query scratch Balls: one shared Ball per PhysicsWorld is reused across every
+// range/cast query (radius reassigned per call) so per-tick query allocation stays
+// at zero after construction. compat Balls are pure-JS (no free()), but hoisting
+// still removes the per-query garbage. The counter exists so tests can assert that.
+let scratchBallAllocationCount = 0;
+
+export function getPhysicsQueryBallAllocations(): number {
+  return scratchBallAllocationCount;
+}
+
+export function resetPhysicsQueryStatsForTests(): void {
+  scratchBallAllocationCount = 0;
+}
 
 export interface ProjectileBodyOptions {
   projectileId: number;
@@ -48,6 +65,8 @@ export class PhysicsWorld {
   private contactProcessor: ContactProcessor;
   // When false, DetourCrowd owns enemy-enemy avoidance (GameEngine sets this).
   enemyEnemyCollisions = true;
+  // Shared query shape reused by every range/cast query (see module comment).
+  private queryBall: RAPIER.Ball | null = null;
 
   constructor(grid: Grid) {
     const RAPIER = getRapier();
@@ -101,6 +120,10 @@ export class PhysicsWorld {
 
   rebuildTowers(towerManager: TowerManager): void {
     const RAPIER = getRapier();
+    // Snapshot live ids before clearing: dropBodies emits no end-events, so every
+    // tower id that disappears here must be pruned from the contact sets or
+    // survivors keep parking against sold/ghosted towers.
+    const staleTowerIds = new Set(this.towerById.keys());
     this.dropBodies(this.towerBodies);
     this.towerById.clear();
     for (const tower of towerManager.towers) {
@@ -116,6 +139,9 @@ export class PhysicsWorld {
       const colliderDesc = RAPIER.ColliderDesc.cuboid(half, half).setActiveEvents(ActiveEvents.COLLISION_EVENTS);
       this.world.createCollider(colliderDesc, body);
       this.towerBodies.push(body);
+    }
+    for (const staleTowerId of staleTowerIds) {
+      if (!this.towerById.has(staleTowerId)) this.contactProcessor.removeTower(staleTowerId);
     }
   }
 
@@ -133,7 +159,11 @@ export class PhysicsWorld {
       const body = this.world.createRigidBody(
         RAPIER.RigidBodyDesc.fixed().setTranslation(centerX, centerY).setRotation(angle).setUserData(corridorTag),
       );
-      this.world.createCollider(RAPIER.ColliderDesc.cuboid(length / 2, halfThickness), body);
+      // Corridor walls emit collision events for the counter-only wall-pin metric in
+      // ContactProcessor; they never park or damage (see Enemy.postPhysics drift resync).
+      const corridorCollider = RAPIER.ColliderDesc.cuboid(length / 2, halfThickness);
+      corridorCollider.setActiveEvents(ActiveEvents.COLLISION_EVENTS);
+      this.world.createCollider(corridorCollider, body);
       this.corridorBodies.push(body);
     }
   }
@@ -165,7 +195,13 @@ export class PhysicsWorld {
       const body = this.world.createRigidBody(
         RAPIER.RigidBodyDesc.fixed().setTranslation(spec.x, spec.y).setUserData(tag),
       );
-      const colliderDesc = RAPIER.ColliderDesc.ball(spec.radius).setSensor(true);
+      // Explicit groups/events instead of Rapier defaults: membership sensor group,
+      // filter enemies only, collision events on so sensor overlap pairs are tracked
+      // (Rapier2d reports sensor intersections through the collision-event drain).
+      const colliderDesc = RAPIER.ColliderDesc.ball(spec.radius)
+        .setSensor(true)
+        .setCollisionGroups((SENSOR_GROUP << 16) | ENEMY_GROUP)
+        .setActiveEvents(ActiveEvents.COLLISION_EVENTS);
       this.world.createCollider(colliderDesc, body);
       this.auraSensors.set(spec.sensorId, { body, radius: spec.radius });
     }
@@ -191,7 +227,11 @@ export class PhysicsWorld {
 
   addEnemy(enemy: Enemy): void {
     const RAPIER = getRapier();
-    const enableCcd = enemy.speed >= 2.0;
+    // CCD in per-step displacement units: enable when one step moves the body more
+    // than half its radius, so fast runners cannot tunnel. (The old `speed >= 2.0`
+    // tiles/sec check mixed up units and over/under-enabled by tile size.)
+    const stepDisplacement = enemy.speed * this.grid.tileSize * FIXED_DT;
+    const enableCcd = stepDisplacement >= enemy.radius * 0.5;
     const tag: ColliderTag = { kind: "enemy", enemyId: enemy.id };
     const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(enemy.x, enemy.y)
@@ -212,12 +252,21 @@ export class PhysicsWorld {
     this.enemyByHandle.set(body.handle, enemy);
   }
 
+  // Live toggle: flips the flag AND sweeps every existing enemy collider so a
+  // mid-run change takes effect immediately instead of applying only to spawns.
   setEnemyEnemyCollisions(enabled: boolean): void {
     this.enemyEnemyCollisions = enabled;
+    const groups = enabled ? ALL_GROUPS : (ENEMY_GROUP << 16) | (ALL_GROUPS & ~ENEMY_GROUP);
+    for (const enemy of this.enemyByHandle.values()) {
+      enemy.body?.collider(0).setCollisionGroups(groups);
+    }
   }
 
   removeEnemy(enemy: Enemy): void {
     if (enemy.body) {
+      // Prune contacts first: removeRigidBody emits no end-events, so without this
+      // the dead id lingers in the sets (unbounded growth + recycled-id collision).
+      this.contactProcessor.removeEnemy(enemy.id);
       this.enemyByHandle.delete(enemy.body.handle);
       this.world.removeRigidBody(enemy.body);
       enemy.body = null;
@@ -227,6 +276,12 @@ export class PhysicsWorld {
   applyImpulse(enemy: Enemy, impulseX: number, impulseY: number): void {
     if (!enemy.body) return;
     enemy.body.applyImpulse({ x: impulseX, y: impulseY }, true);
+  }
+
+  // Shared knockback entry for callers holding the world: impulse + ballistic
+  // window + motion-lock release (see launchEnemy).
+  launchEnemy(enemy: Enemy, impulseX: number, impulseY: number): void {
+    launchEnemy(enemy, impulseX, impulseY);
   }
 
   addProjectileBody(options: ProjectileBodyOptions): RAPIER.RigidBody {
@@ -295,14 +350,26 @@ export class PhysicsWorld {
     return enemy && !enemy.removed ? enemy : null;
   }
 
-  queryEnemiesInRange(x: number, y: number, range: number): Enemy[] {
+  // Returns the shared scratch Ball sized to `radius`. One allocation per world;
+  // every query path reuses it so per-tick Ball allocation stays at zero.
+  private scratchBall(radius: number): RAPIER.Ball {
     const RAPIER = getRapier();
+    if (!this.queryBall) {
+      this.queryBall = new RAPIER.Ball(radius);
+      scratchBallAllocationCount++;
+    } else {
+      this.queryBall.radius = radius;
+    }
+    return this.queryBall;
+  }
+
+  queryEnemiesInRange(x: number, y: number, range: number): Enemy[] {
     const result: Enemy[] = [];
     const rangeSquared = range * range;
     this.world.intersectionsWithShape(
       { x, y },
       0,
-      new RAPIER.Ball(range),
+      this.scratchBall(range),
       (collider) => {
         const enemy = this.enemyFromCollider(collider);
         if (enemy) {
@@ -322,12 +389,11 @@ export class PhysicsWorld {
   }
 
   forEachEnemyInRange(x: number, y: number, range: number, cb: (enemy: Enemy) => void): void {
-    const RAPIER = getRapier();
     const rangeSquared = range * range;
     this.world.intersectionsWithShape(
       { x, y },
       0,
-      new RAPIER.Ball(range),
+      this.scratchBall(range),
       (collider) => {
         const enemy = this.enemyFromCollider(collider);
         if (enemy) {
@@ -354,7 +420,6 @@ export class PhysicsWorld {
     maxDistance: number,
     excluded?: RAPIER.Collider | Set<RAPIER.Collider> | null,
   ): { enemy: Enemy; collider: RAPIER.Collider } | null {
-    const RAPIER = getRapier();
     const length = Math.hypot(dirX, dirY) || 1;
     const velocity = { x: (dirX / length) * maxDistance, y: (dirY / length) * maxDistance };
     const excludedSet = excluded instanceof Set ? excluded : excluded ? new Set([excluded]) : null;
@@ -362,7 +427,7 @@ export class PhysicsWorld {
       { x: originX, y: originY },
       0,
       velocity,
-      new RAPIER.Ball(ballRadius),
+      this.scratchBall(ballRadius),
       0,
       1,
       true,

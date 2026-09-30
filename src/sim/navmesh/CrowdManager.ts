@@ -3,6 +3,7 @@ import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { ForceFieldSystem } from "@/sim/physics/ForceFieldSystem.js";
 import { toRecast } from "./coords.js";
+import { getRecast } from "./recastContext.js";
 
 const CROWD_MAX_ACCEL_FACTOR_DEFAULT = 8;
 
@@ -48,6 +49,9 @@ export class CrowdManager {
   private forceFieldSystem: ForceFieldSystem | null = null;
 
   constructor(navMesh: NavMesh, tileSize: number, maxAgents: number) {
+    // Init-first gate: fail fast when initNavMesh() has not resolved instead of
+    // constructing DetourCrowd against unloaded WASM.
+    void getRecast();
     this.tileSize = tileSize;
     this.crowd = new Crowd(navMesh, { maxAgents, maxAgentRadius: tileSize });
   }
@@ -93,6 +97,16 @@ export class CrowdManager {
     enemy.agent?.teleport(toRecast(world));
   }
 
+  // Re-issues every enemy's cached move target to Detour. Used after a navmesh
+  // obstacle sync that did not converge: the corridor may have rebuilt under the
+  // agents, so stale corridors get refreshed instead of steering into new walls.
+  reissueMoveTargets(enemies: readonly Enemy[]): void {
+    for (const enemy of enemies) {
+      if (enemy.removed || !enemy.agent || !enemy.lastMoveTargetWorld) continue;
+      enemy.agent.requestMoveTarget(toRecast(enemy.lastMoveTargetWorld));
+    }
+  }
+
   // Advances the crowd one fixed step, then writes each agent's desired velocity
   // into its Rapier body (unless park/ballistic).
   update(dt: number, enemies: Enemy[]): void {
@@ -105,11 +119,12 @@ export class CrowdManager {
         enemy.agent.updateParameters({ maxSpeed, maxAcceleration: maxSpeed * profile.maxAccelFactor });
       }
 
-      // Tick ballistic window.
+      // Tick ballistic window. While > 0 the body keeps its impulse/force residual;
+      // the tick it expires we fall through to the steering write below so crowd
+      // velocity is restored instead of leaving stale ballistic linvel behind.
       if (enemy.ballisticTimer > 0) {
         enemy.ballisticTimer = Math.max(0, enemy.ballisticTimer - dt);
-        // Leave body linvel alone so impulse/force residual continues.
-        continue;
+        if (enemy.ballisticTimer > 0) continue;
       }
 
       if (enemy.stunTimer > 0 || enemy.attackingBase || enemy.motionLock === "park") {

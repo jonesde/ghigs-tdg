@@ -1,6 +1,6 @@
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { Grid } from "@/sim/grid/Grid.js";
-import type { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
+import { type CrowdManager, restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdManager.js";
 import { toRecast } from "@/sim/navmesh/coords.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 
@@ -28,7 +28,16 @@ function placeEnemy(enemy: Enemy, landing: { x: number; y: number }, crowdManage
   enemy.centerY = landing.y;
   enemy.body?.setTranslation({ x: landing.x, y: landing.y }, true);
   enemy.body?.setLinvel({ x: 0, y: 0 }, true);
-  crowdManager?.teleportAgent(enemy, landing);
+  // Teleport zeroes Detour steering; restore the pre-teleport crowd velocity so
+  // steering resumes in the same direction (mirrors Enemy.postPhysics resync).
+  const crowdAgent = enemy.agent;
+  if (crowdAgent && crowdManager) {
+    const previousVelocity = crowdAgent.velocity();
+    crowdManager.teleportAgent(enemy, landing);
+    restoreCrowdAgentVelocity(crowdAgent, previousVelocity);
+  } else {
+    crowdManager?.teleportAgent(enemy, landing);
+  }
   if (enemy.lastMoveTargetWorld && enemy.agent) {
     enemy.agent.requestMoveTarget(toRecast(enemy.lastMoveTargetWorld));
   }
@@ -52,6 +61,14 @@ export function separateEnemiesFromTowers(
     if (enemy.removed) continue;
     const containing = liveTowers.find((tower) => insideSquare(enemy.x, enemy.y, tower.x, tower.y, insideLimit));
     if (!containing) continue;
+    // Intentionally parked enemies (base attackers, siege contact) stay where the
+    // contact logic put them: relocating them would break the siege/base attack
+    // they are mid-animation on. An embedded center is always sub-tile here (the
+    // insideSquare limit is tileSize/2), so the full-tile failsafe never fires —
+    // it documents the same skip rule clampBallisticEnemiesToNavMesh uses.
+    const intentionallyParked = enemy.attackingBase || enemy.motionLock === "park";
+    const towerDistance = Math.hypot(enemy.x - containing.x, enemy.y - containing.y);
+    if (intentionallyParked && towerDistance < grid.tileSize) continue;
 
     const backwardX = enemy.x - Math.cos(enemy.moveAngle);
     const backwardY = enemy.y - Math.sin(enemy.moveAngle);

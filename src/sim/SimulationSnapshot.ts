@@ -7,6 +7,7 @@ export interface SimulationSnapshot {
   schemaVersion: number; // bump on incompatible schema changes; consumers reject mismatches
   frameId: number; // monotonic per-tick counter
   lastAppliedCommandId: number; // host uses this to confirm command application
+  lastFailedCommandId: number; // last rejected command (validation or apply failure)
   meta: SnapshotMeta;
   enemies: EnemySnapshot[];
   towers: TowerSnapshot[];
@@ -109,6 +110,10 @@ export interface SnapshotMeta {
   // gridLayout is never forwarded and the one-shot feed-off toggle re-arms. Optional
   // so existing hand-built test literals need not list it.
   runId?: number;
+  // Worker lifecycle generation (WorkerEntry workerGeneration), bumped on every
+  // init/dispose. Stamped post-build by the worker; lets the main thread tell which
+  // run produced a snapshot and drop stale ones. Optional like runId.
+  workerGeneration?: number;
   // Spawn tiles in WaveManager's index order, and the latched emerge orders.
   // Optional so hand-built test metas can omit them. The serializer always sets both.
   spawns?: SpawnPointSnapshot[];
@@ -123,6 +128,7 @@ export interface SnapshotMeta {
   lastAppliedCommandId?: number;
   lastAppliedCount?: number;
   lastSkippedCount?: number;
+  lastFailedCommandId?: number;
 }
 
 // Entity snapshots — plain data only, no methods, no closures.

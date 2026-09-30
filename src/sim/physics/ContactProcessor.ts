@@ -1,7 +1,7 @@
 import type RAPIER from "@dimforge/rapier2d-compat";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { Tower } from "@/sim/towers/Tower.js";
-import { type ColliderTag, isColliderTag } from "./ColliderUserData.js";
+import { type ColliderTag, parseColliderTag } from "./ColliderUserData.js";
 
 export interface ProjectileHitEvent {
   projectileId: number;
@@ -23,6 +23,10 @@ export class ContactProcessor {
   private enemyBaseContact = new Set<number>();
   // enemyId → tower ids currently overlapping
   private enemyTowerContact = new Map<number, Set<string>>();
+  // enemyId → started-corridor-contact count this run. Counter-only wall-pin metric:
+  // corridor walls emit COLLISION_EVENTS but never park or damage; Enemy.postPhysics
+  // drift resync owns wall-shove recovery. Pruned alongside the other sets.
+  private corridorPinCount = new Map<number, number>();
   // Accumulated projectile hits this step (consumed by ProjectileManager)
   private projectileHits: ProjectileHitEvent[] = [];
 
@@ -37,7 +41,33 @@ export class ContactProcessor {
   clear(): void {
     this.enemyBaseContact.clear();
     this.enemyTowerContact.clear();
+    this.corridorPinCount.clear();
     this.projectileHits = [];
+  }
+
+  // Drops every contact record for one enemy. Call when the enemy body is destroyed
+  // (PhysicsWorld.removeEnemy, which EnemyManager.removeDeadEnemy funnels through)
+  // because Rapier emits no end-events for removed bodies — without this the sets
+  // grow unbounded and a dead id can collide with a recycled one.
+  removeEnemy(enemyId: number): void {
+    this.enemyBaseContact.delete(enemyId);
+    this.enemyTowerContact.delete(enemyId);
+    this.corridorPinCount.delete(enemyId);
+  }
+
+  // Drops one tower from every enemy contact set. Call for each tower id that
+  // disappears in PhysicsWorld.rebuildTowers (sold/ghosted) for the same no-end-event
+  // reason: otherwise the survivor set keeps parking enemies against air.
+  removeTower(towerId: string): void {
+    for (const [enemyId, towerIds] of this.enemyTowerContact) {
+      towerIds.delete(towerId);
+      if (towerIds.size === 0) this.enemyTowerContact.delete(enemyId);
+    }
+  }
+
+  // Drops all tower contacts while keeping base contacts and pin metrics.
+  clearTowerContacts(): void {
+    this.enemyTowerContact.clear();
   }
 
   // Process one collision event pair. `started` true = begin contact.
@@ -73,6 +103,10 @@ export class ContactProcessor {
     if (tagA.kind === "projectile" && tagB.kind === "enemy" && started) {
       this.projectileHits.push({ projectileId: tagA.projectileId, enemyId: tagB.enemyId });
       this.hooks.onProjectileHit?.(tagA.projectileId, tagB.enemyId);
+      return;
+    }
+    if (tagA.kind === "enemy" && tagB.kind === "corridor" && started) {
+      this.corridorPinCount.set(tagA.enemyId, (this.corridorPinCount.get(tagA.enemyId) ?? 0) + 1);
     }
   }
 
@@ -89,6 +123,10 @@ export class ContactProcessor {
 
   getEnemyTowerContacts(enemyId: number): ReadonlySet<string> {
     return this.enemyTowerContact.get(enemyId) ?? emptyTowerIds;
+  }
+
+  getCorridorPinCount(enemyId: number): number {
+    return this.corridorPinCount.get(enemyId) ?? 0;
   }
 
   // Project live contact sets onto enemy attack flags. Damage ticks run in
@@ -160,7 +198,15 @@ export class ContactProcessor {
     for (const towerId of towerIds) {
       const tower = this.hooks.getTowerById(towerId);
       if (!tower || tower.isGhost || tower.enemyAttackImmune) continue;
-      if (!lowestTower || tower.health < lowestTower.health) lowestTower = tower;
+      // Equal-health tie-break by towerId string compare so multi-tower contact is
+      // deterministic regardless of Rapier event arrival order.
+      if (
+        !lowestTower ||
+        tower.health < lowestTower.health ||
+        (tower.health === lowestTower.health && tower.id < lowestTower.id)
+      ) {
+        lowestTower = tower;
+      }
     }
     return lowestTower;
   }
@@ -170,6 +216,6 @@ const emptyTowerIds: ReadonlySet<string> = new Set();
 
 function tagFromBody(body: RAPIER.RigidBody | null): ColliderTag | null {
   if (!body) return null;
-  const userData = body.userData;
-  return isColliderTag(userData) ? userData : null;
+  // Strict per-kind validation: malformed tags are dropped instead of planting contacts.
+  return parseColliderTag(body.userData);
 }

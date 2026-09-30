@@ -10,6 +10,7 @@ import {
 import { generateTileCache, type TileCacheGeneratorConfig } from "recast-navigation/generators";
 import type { Grid } from "@/sim/grid/Grid.js";
 import { fromRecast, toRecast } from "./coords.js";
+import { getRecast } from "./recastContext.js";
 
 export interface WorldPoint {
   x: number;
@@ -30,6 +31,9 @@ export class NavMeshBuilder {
   private obstacleRefs = new Map<string, Obstacle>();
 
   constructor(grid: Grid) {
+    // Init-first gate: fail fast when initNavMesh() has not resolved instead of
+    // touching unloaded WASM further down.
+    void getRecast();
     this.grid = grid;
     this.build();
   }
@@ -126,6 +130,9 @@ export class NavMeshBuilder {
     this.tileCache?.destroy();
     this.navMesh = null;
     this.tileCache = null;
+    // Tracked obstacles reference destroyed WASM state; holding them would hand a
+    // dangling obstacle to a later removeObstacle call.
+    this.obstacleRefs.clear();
   }
 
   // Returns a world-space polyline (game coordinates) from start to goal, or []
@@ -183,18 +190,21 @@ export class NavMeshBuilder {
   // Applies every queued obstacle request to the live navmesh. `tileCache.update`
   // rebuilds up to 64 affected tiles per call and reports `upToDate` once the
   // queue is drained, so we must loop until it settles (capped to avoid a hang if
-  // the navmesh never converges).
-  private applyTileCacheUpdates(): void {
-    if (!this.tileCache || !this.navMesh) return;
+  // the navmesh never converges). Returns whether the queue converged; callers
+  // force a distance-field refresh + crowd re-request on false instead of routing
+  // on a half-applied obstacle set.
+  private applyTileCacheUpdates(): boolean {
+    if (!this.tileCache || !this.navMesh) return false;
     const maxUpdateIterations = 16;
     let updateResult = { upToDate: false };
     for (let iteration = 0; iteration < maxUpdateIterations; iteration++) {
       updateResult = this.tileCache.update(this.navMesh);
-      if (updateResult.upToDate) return;
+      if (updateResult.upToDate) return true;
     }
     if (!updateResult.upToDate) {
       console.warn("NavMeshBuilder: tileCache.update did not converge after", maxUpdateIterations, "iterations");
     }
+    return updateResult.upToDate;
   }
 
   // Registers a tower box obstacle covering the same tile square as the physics cuboid.
@@ -250,23 +260,31 @@ export class NavMeshBuilder {
     const key = `${tileX},${tileY}`;
     const obstacle = this.obstacleRefs.get(key);
     if (obstacle === undefined) return;
-    this.tileCache?.removeObstacle(obstacle);
+    // Removal against a stale or already-destroyed tile cache reports failure;
+    // surfacing it keeps the obstacleRefs map honest instead of silently leaking.
+    const removal = this.tileCache?.removeObstacle(obstacle);
+    if (removal && !removal.success) {
+      console.warn("NavMeshBuilder: removeObstacle failed for tile", tileX, tileY, "status", removal.status);
+    }
     this.obstacleRefs.delete(key);
   }
 
   // Reconciles the live obstacle set with the current tower set. Any non-ghost
   // tower whose tile has no obstacle yet gets one; any tracked obstacle whose
   // tower was sold or ghosted is removed. All queue changes are flushed with a
-  // single `tileCache.update` loop at the end.
-  syncTowers(towers: { id: string | number; tileX: number; tileY: number; isGhost: boolean }[]): void {
-    if (!this.tileCache) return;
+  // single `tileCache.update` loop at the end. Returns false when an obstacle add
+  // failed or the update queue did not converge, so the caller can force a
+  // distance-field refresh + crowd re-request instead of proceeding silently.
+  syncTowers(towers: { id: string | number; tileX: number; tileY: number; isGhost: boolean }[]): boolean {
+    if (!this.tileCache) return false;
+    let allAddsSucceeded = true;
     const liveObstacleTiles = new Set<string>();
     for (const tower of towers) {
       if (tower.isGhost) continue;
       const key = `${tower.tileX},${tower.tileY}`;
       liveObstacleTiles.add(key);
       if (!this.obstacleRefs.has(key)) {
-        this.addTowerObstacleInternal(tower.tileX, tower.tileY);
+        if (this.addTowerObstacleInternal(tower.tileX, tower.tileY) === null) allAddsSucceeded = false;
       }
     }
     for (const key of Array.from(this.obstacleRefs.keys())) {
@@ -277,6 +295,6 @@ export class NavMeshBuilder {
         this.removeTowerObstacleInternal(tileX, tileY);
       }
     }
-    this.applyTileCacheUpdates();
+    return this.applyTileCacheUpdates() && allAddsSucceeded;
   }
 }

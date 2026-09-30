@@ -1,4 +1,4 @@
-import { dispatchCommand } from "@/sim/commandBus.js";
+import { advanceCommandBusEpoch, dispatchCommand } from "@/sim/commandBus.js";
 import type { NavFieldSnapshotData, TowerSnapshot } from "@/sim/SimulationSnapshot.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -121,6 +121,10 @@ function postObservation(): void {
     lastSentEnemyIds = null;
     lastSentTowerSignature = null;
     lastSentWave = null;
+    // Run boundary: commands the commander queued for the dead run must not flush
+    // into the fresh one, so retire the bus epoch (drops pending with a warn).
+    // Cross-module side effect: advances the shared commandBus epoch.
+    advanceCommandBusEpoch("commander observed run boundary");
   }
   if (snapshot.gridLayout) {
     cachedGridLayout = snapshot.gridLayout;

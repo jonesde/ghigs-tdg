@@ -59,15 +59,30 @@ export interface EndScreenPayload {
 // free functions so the worker can call them without a Pinia instance.
 
 export function addGold(state: GameRunState, amount: number): void {
-  state.gold += amount;
+  if (!Number.isFinite(amount)) {
+    console.warn(`addGold ignored non-finite amount ${amount}`);
+    return;
+  }
+  const credit = amount < 0 ? 0 : amount;
+  if (amount < 0) console.warn(`addGold clamped negative amount ${amount} to 0`);
+  state.gold = Math.max(0, state.gold + credit);
 }
 
 export function setGold(state: GameRunState, amount: number): void {
-  state.gold = amount;
+  if (!Number.isFinite(amount)) {
+    console.warn(`setGold ignored non-finite amount ${amount}`);
+    return;
+  }
+  if (amount < 0) console.warn(`setGold clamped negative amount ${amount} to 0`);
+  state.gold = Math.max(0, amount);
 }
 
 export function damageBase(state: GameRunState, amount: number): void {
-  state.baseHealth -= amount;
+  if (!Number.isFinite(amount) || amount < 0) {
+    console.warn(`damageBase rejected invalid amount ${amount}`);
+    return;
+  }
+  state.baseHealth = Math.max(0, state.baseHealth - amount);
 }
 
 export function setWave(state: GameRunState, wave: number): void {

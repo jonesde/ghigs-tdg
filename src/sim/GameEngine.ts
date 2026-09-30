@@ -23,7 +23,8 @@ import { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
 import { generateRandomMap, getMap } from "@/sim/grid/Map.js";
 import type { HostBindings, ThemeBundle } from "@/sim/HostBindings.js";
-import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
+import { CrowdManager, restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdManager.js";
+import { toRecast } from "@/sim/navmesh/coords.js";
 import { NavDistanceField } from "@/sim/navmesh/NavDistanceField.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
@@ -51,6 +52,7 @@ import { TowerManager } from "@/sim/towers/TowerManager.js";
 import { WaveGraphTracker } from "@/sim/WaveGraphTracker.js";
 import { WaveManager } from "@/sim/waves/WaveManager.js";
 import {
+  BETWEEN_WAVES_TIMER,
   BONUS_GEM_BASE,
   DIFFICULTY_MULT_GEM_BASE,
   GameState,
@@ -85,6 +87,7 @@ interface WaveManagerRef {
     onWaveStart: ((wave: number) => void) | null,
   ): void;
   startNextWave(): void;
+  debugJumpToWave(wave: number): void;
   getRemainingScheduledSpawns(): number;
 }
 
@@ -135,6 +138,11 @@ export class GameEngine {
   shouldEndGame: boolean = false;
   gameEnded: boolean = false;
   persistDirty: boolean = false;
+  // Tower ids whose sell confirm dialog the user accepted (granted via the
+  // requestConfirm promise in sellSelected). executeSellById consumes one grant
+  // per sale, so a main-thread executeSell without a prior user confirm is
+  // rejected instead of trusted.
+  private sellConfirmGrants = new Set<string>();
 
   theme: MapThemeData | null = null;
   themeBundle: ThemeBundle;
@@ -389,8 +397,17 @@ export class GameEngine {
 
     if (this.grid!.pathVersion !== this.lastPathVersion) {
       this.physicsWorld!.rebuildTowers(this.towerManager!);
-      this.navMeshBuilder?.syncTowers(this.towerManager!.towers);
+      const towersConverged = this.navMeshBuilder?.syncTowers(this.towerManager!.towers) ?? true;
       this.navDistanceField?.ensureUpToDate(true);
+      if (!towersConverged) {
+        // Obstacle sync did not converge (add failed or update queue stuck): force a
+        // second distance-field refresh and re-request crowd corridors instead of
+        // routing on a half-applied obstacle set.
+        this.navDistanceField?.ensureUpToDate(true);
+        if (this.crowdManager && this.enemyManager) {
+          this.crowdManager.reissueMoveTargets(this.enemyManager.enemies);
+        }
+      }
       this.lastPathVersion = this.grid!.pathVersion;
       // Cuboids for this pathVersion now exist. A center inside a live tower
       // tile is where a square just appeared (ghost restore or a build under
@@ -485,32 +502,57 @@ export class GameEngine {
   // walkable point so Detour and Rapier stay aligned after the ballistic window.
   private clampBallisticEnemiesToNavMesh(): void {
     const builder = this.navMeshBuilder;
-    if (!builder || !this.enemyManager) return;
+    if (!builder || !this.enemyManager || !this.grid) return;
+    const tileSize = this.grid.tileSize;
     for (const enemy of this.enemyManager.enemies) {
       if (enemy.removed || enemy.ballisticTimer <= 0) continue;
       const nearest = builder.nearestWalkableWorld({ x: enemy.x, y: enemy.y });
       if (!nearest) continue;
       const drift = Math.hypot(nearest.x - enemy.x, nearest.y - enemy.y);
       if (drift < enemy.radius * 0.25) continue;
+      // Intentionally parked enemies (base attackers, siege/hold contact) keep their
+      // lock unless the shove carried them a full tile off the mesh — clamping them
+      // for sub-tile drift would teleport them out of an attack they are winning.
+      const intentionallyParked = enemy.attackingBase || enemy.motionLock === "park";
+      if (intentionallyParked && drift < tileSize) continue;
       enemy.body?.setTranslation({ x: nearest.x, y: nearest.y }, true);
       enemy.x = nearest.x;
       enemy.y = nearest.y;
       enemy.centerX = nearest.x;
       enemy.centerY = nearest.y;
-      this.crowdManager?.teleportAgent(enemy, nearest);
+      // Teleport zeroes Detour steering; restore the pre-teleport crowd velocity so
+      // steering resumes in the same direction (mirrors Enemy.postPhysics resync).
+      const crowdAgent = enemy.agent;
+      if (crowdAgent) {
+        const previousVelocity = crowdAgent.velocity();
+        this.crowdManager?.teleportAgent(enemy, nearest);
+        restoreCrowdAgentVelocity(crowdAgent, previousVelocity);
+        if (enemy.lastMoveTargetWorld) {
+          crowdAgent.requestMoveTarget(toRecast(enemy.lastMoveTargetWorld));
+        }
+      } else {
+        this.crowdManager?.teleportAgent(enemy, nearest);
+      }
     }
   }
 
   onWaveCleared(wave: number): void {
     setWave(this.runState, wave);
+    this.applyWaveProgressRewards(wave);
+  }
 
-    for (const m of MILESTONE_WAVES) {
-      if (wave >= m && !hasClaimedMilestoneRun(this.runState, m)) {
-        this.runState.milestoneRewardsClaimed[m] = true;
+  // Shared milestone/best-wave/unlock path: runs on every natural wave clear and
+  // on debug setWave jumps, so gem breakdowns, best waves, and map unlocks stay
+  // consistent no matter how the wave counter moved.
+  private applyWaveProgressRewards(wave: number): void {
+    for (const milestoneWave of MILESTONE_WAVES) {
+      if (wave >= milestoneWave && !hasClaimedMilestoneRun(this.runState, milestoneWave)) {
+        this.runState.milestoneRewardsClaimed[milestoneWave] = true;
 
         const hasClaimed =
-          this.runState.mapIndex >= 0 && persistHasClaimedMilestone(this.persistState, this.runState.mapIndex, m);
-        const base = MILESTONE_GEMS[m] ?? 0;
+          this.runState.mapIndex >= 0 &&
+          persistHasClaimedMilestone(this.persistState, this.runState.mapIndex, milestoneWave);
+        const base = MILESTONE_GEMS[milestoneWave] ?? 0;
         const diffMult = getDifficultyMultiplier(this.persistState);
         const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
         const mapMult = this.runState.mapIndex >= 0 ? MAP_GEM_MULTIPLIERS[this.runState.mapIndex] || 1 : 1;
@@ -532,7 +574,7 @@ export class GameEngine {
         // Record the first-time 2x marker BEFORE crediting the gems, so the reward
         // can never be granted without the claim flag being persisted.
         if (!hasClaimed && this.runState.mapIndex >= 0) {
-          persistMarkFirstTimeMilestone(this.persistState, this.runState.mapIndex, m);
+          persistMarkFirstTimeMilestone(this.persistState, this.runState.mapIndex, milestoneWave);
         }
 
         this.persistState.gems += afterFirstTime;
@@ -715,14 +757,19 @@ export class GameEngine {
   // id-addressed `llm:*` commander commands. Returns only the enemies that actually
   // exist (ids with no matching enemy are silently dropped).
   getEnemiesByIds(enemyIds: number[]): Enemy[] {
-    if (!this.enemyManager) return [];
-    const enemiesById = new Map(this.enemyManager.enemies.map((enemy) => [enemy.id, enemy]));
+    const enemiesById = this.buildEnemyLookup();
     const matchedEnemies: Enemy[] = [];
     for (const enemyId of enemyIds) {
       const enemy = enemiesById.get(enemyId);
       if (enemy) matchedEnemies.push(enemy);
     }
     return matchedEnemies;
+  }
+
+  // Single id→enemy map build shared by getEnemiesByIds, applyCommand, and
+  // applyCommandStats so one command never builds it twice.
+  buildEnemyLookup(): Map<number, Enemy> {
+    return new Map((this.enemyManager?.enemies ?? []).map((enemy) => [enemy.id, enemy]));
   }
 
   handleClick(worldX: number, worldY: number): void {
@@ -866,25 +913,52 @@ export class GameEngine {
   // kind) to keep the command payload small.
   debug(kind: DebugKind, amount?: number): void {
     switch (kind) {
-      case "addGold":
-        setGold(this.runState, this.runState.gold + (amount ?? 0));
-        break;
-      case "addBaseHealth":
-        this.runState.baseHealth = Math.max(0, Math.min(this.maxBaseHealth, this.runState.baseHealth + (amount ?? 0)));
-        break;
-      case "addGems":
-        this.persistState.gems += amount ?? 0;
-        this.persistDirty = true;
-        break;
-      case "setWave": {
-        const wave = amount ?? this.runState.currentWave;
-        this.runState.currentWave = wave;
-        if (this.waveManager) this.waveManager.currentWave = wave;
+      case "addGold": {
+        const delta = amount ?? 0;
+        if (!Number.isFinite(delta) || delta < 0) {
+          console.warn(`debug addGold rejected invalid amount ${amount}`);
+          break;
+        }
+        setGold(this.runState, this.runState.gold + delta);
         break;
       }
-      case "setTimeScale":
-        this.runState.timeScale = amount ?? this.runState.timeScale;
+      case "addBaseHealth": {
+        const delta = amount ?? 0;
+        if (!Number.isFinite(delta)) {
+          console.warn(`debug addBaseHealth rejected invalid amount ${amount}`);
+          break;
+        }
+        this.runState.baseHealth = Math.max(0, Math.min(this.maxBaseHealth, this.runState.baseHealth + delta));
         break;
+      }
+      case "addGems": {
+        const delta = amount ?? 0;
+        if (!Number.isFinite(delta) || delta < 0) {
+          console.warn(`debug addGems rejected invalid amount ${amount}`);
+          break;
+        }
+        this.persistState.gems += delta;
+        this.persistDirty = true;
+        break;
+      }
+      case "setWave": {
+        const wave = amount ?? this.runState.currentWave;
+        if (!Number.isFinite(wave) || !Number.isInteger(wave) || wave < 0) {
+          console.warn(`debug setWave rejected invalid amount ${amount}`);
+          break;
+        }
+        this.debugSetWave(wave);
+        break;
+      }
+      case "setTimeScale": {
+        const scale = amount ?? this.runState.timeScale;
+        if (scale !== 1 && scale !== 2 && scale !== 4 && scale !== 8) {
+          console.warn(`debug setTimeScale rejected invalid amount ${amount}`);
+          break;
+        }
+        this.runState.timeScale = scale;
+        break;
+      }
       case "skipWave":
         this.waveManager?.startNextWave();
         break;
@@ -895,6 +969,17 @@ export class GameEngine {
         this.debugPhysicsEnabled = (amount ?? 0) > 0;
         break;
     }
+  }
+
+  // Debug wave jump through the same milestone/best-wave/unlock path as a natural
+  // clear, with the wave manager parked between waves so betweenWaves, countdown,
+  // and spawn states stay consistent instead of only moving the counter.
+  private debugSetWave(wave: number): void {
+    setWave(this.runState, wave);
+    this.waveManager?.debugJumpToWave(wave);
+    this.runState.waveCountdown =
+      this.waveManager === null ? null : { remaining: Math.ceil(BETWEEN_WAVES_TIMER), nextWave: wave + 1 };
+    this.applyWaveProgressRewards(wave);
   }
 
   sellSelected(): void {
@@ -914,34 +999,61 @@ export class GameEngine {
 
     const towerId = tower.id;
     const isRefund = this.persistState.generalAddons.sellActive === "refund";
-    // Compute sell value once for the confirm dialog. Sell executes only via
-    // action:executeSell from the main thread (creditAmount carried on the command).
-    const creditAmount = isRefund ? tower.totalInvested : tower.sellValue();
-    void this.host.requestConfirm({
-      towerId,
-      towerType: tower.type,
-      towerLevel: tower.level,
-      sellValue: creditAmount,
-      isRefund,
-    });
+    // Single credit formula shared with executeSellById: the dialog amount, the
+    // worker-side recompute, and the credited amount all come from here.
+    const creditAmount = this.sellCreditFor(tower);
+    // The confirm result resolves worker-side (confirmResult → resolveConfirm). A
+    // granted confirm records a one-shot grant that executeSellById consumes, so
+    // the follow-up executeSell is authorized rather than trusted.
+    void this.host
+      .requestConfirm({ towerId, towerType: tower.type, towerLevel: tower.level, sellValue: creditAmount, isRefund })
+      .then((confirmed) => {
+        if (confirmed) this.sellConfirmGrants.add(towerId);
+      });
   }
 
-  executeSellById(towerId: string, precomputedCreditAmount?: number): void {
-    const tower = this.towerManager?.getTowerById(towerId);
-    if (!tower) return;
-    if (tower.isGhost) return;
-
-    if (this.persistState.generalAddons?.sellActive === "discount") return;
-
+  // Canonical sell credit: refund mode returns total invested, otherwise the
+  // discounted sell value. Used for the confirm dialog, the worker-side recompute,
+  // and the actual credit so all three always agree.
+  private sellCreditFor(tower: Tower): number {
     const isRefund = this.persistState.generalAddons?.sellActive === "refund";
-    // Prefer the value computed in sellSelected (already shown in the confirm dialog),
-    // otherwise compute it here (e.g. the non-confirm executeSell path).
-    const creditedAmount = precomputedCreditAmount ?? (isRefund ? tower.totalInvested : tower.sellValue());
+    return isRefund ? tower.totalInvested : tower.sellValue();
+  }
+
+  executeSellById(towerId: string, precomputedCreditAmount?: number): boolean {
+    const tower = this.towerManager?.getTowerById(towerId);
+    if (!tower) return false;
+    if (tower.isGhost) return false;
+
+    if (this.persistState.generalAddons?.sellActive === "discount") return false;
+
+    // Contract: every executeSell must follow a user-granted confirm for the same
+    // tower (recorded by sellSelected). The main thread is not trusted to withhold
+    // the command, so the worker enforces it. One-shot: consumed on every attempt
+    // past this point, valid or not.
+    if (!this.sellConfirmGrants.has(towerId)) {
+      const message = `sell rejected for tower ${towerId}: no confirmed sell request`;
+      this.host.notifyUi({ type: "showNotification", message });
+      throw new Error(message);
+    }
+    this.sellConfirmGrants.delete(towerId);
+
+    // Reject-and-log on mismatch: the worker-side recompute is authoritative and
+    // is the only value ever credited, so a forged precomputed amount grants nothing.
+    const expectedCredit = this.sellCreditFor(tower);
+    if (precomputedCreditAmount !== undefined && precomputedCreditAmount !== expectedCredit) {
+      const message =
+        `sell rejected for tower ${towerId}: credit mismatch ` +
+        `(command ${precomputedCreditAmount} vs worker ${expectedCredit})`;
+      this.host.notifyUi({ type: "showNotification", message });
+      throw new Error(message);
+    }
     this.towerManager!.sell(tower, this.persistState);
     this.host.syncGridTower(tower.tileX, tower.tileY, false);
-    this.runState.gold += creditedAmount;
+    setGold(this.runState, this.runState.gold + expectedCredit);
     this.runState.selectedTowerId = null;
     this.persistDirty = true;
+    return true;
   }
 
   selectTowerById(towerId: string | null): void {
@@ -955,9 +1067,9 @@ export class GameEngine {
     }
   }
 
-  executeSell(): void {
-    if (!this.runState.selectedTowerId) return;
-    this.executeSellById(this.runState.selectedTowerId);
+  executeSell(): boolean {
+    if (!this.runState.selectedTowerId) return false;
+    return this.executeSellById(this.runState.selectedTowerId);
   }
 
   cancelSelected(): void {
