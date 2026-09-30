@@ -21,6 +21,7 @@ import {
   ELECTRIC_FENCE_INTERVAL,
   ELECTRIC_FENCE_RANGE_TILES,
   GHOST_RESTORE_BASE_SECONDS,
+  GHOST_RESTORE_MIN_SECONDS,
   GHOST_RESTORE_PER_LEVEL,
   ICE_AURA_DURATION,
   ICE_AURA_RANGE,
@@ -28,11 +29,13 @@ import {
   ICE_BURST_INTERVAL,
   ICE_BURST_RANGE,
   ICE_BURST_STUN_DURATION,
+  MILESTONE_MAX_TIERS,
   PROJECTILE_SPEED_MULTIPLIER,
   SELL_VALUE_RATIO,
   STATIC_FIELD_RANGE,
   STATIC_FIELD_SLOW_AMT,
   STATIC_FIELD_SLOW_DUR,
+  TERRAIN_DAMAGE_BONUS_MAX_MULT,
   TOWER_ADDON_EFFECTS,
   TOWER_BASE,
   TOWER_LEVEL_DMG_MULT,
@@ -349,10 +352,7 @@ export class Tower {
   private applyElectricFence?: (enemy: AuraTarget) => void = (enemy: AuraTarget): void => {
     const stats = this.frameStats ?? this.stats;
     const dealtDamage = enemy.takeDamage(stats.fenceDamage) ?? stats.fenceDamage;
-    if (typeof dealtDamage === "number" && dealtDamage > 0) {
-      this.totalDamageDealt += dealtDamage;
-      this.waveDamage += dealtDamage;
-    }
+    this.creditDamage(dealtDamage);
     if (enemy.applyStun) enemy.applyStun(stats.fenceStun);
   };
 
@@ -444,13 +444,15 @@ export class Tower {
     const rangeTier = getGeneralAddonValue(this.save!, "terrainHeightRangeBonus");
     const milestoneTier = getGeneralAddonValue(this.save!, "damageMilestoneBonus");
     const milestoneLevels =
-      milestoneTier !== null && milestoneTier !== undefined
-        ? Math.floor(this.totalDamageDealt / MILESTONE_THRESHOLD)
+      typeof milestoneTier === "number"
+        ? Math.min(MILESTONE_MAX_TIERS, Math.floor(this.totalDamageDealt / MILESTONE_THRESHOLD))
         : -1;
     const h = typeof heightTier === "number" ? heightTier : -1;
     const r = typeof rangeTier === "number" ? rangeTier : -1;
     const m = typeof milestoneTier === "number" ? milestoneTier : -1;
-    return `${h}|${r}|${m}|${milestoneLevels}|${this.level}|${this.variant ?? ""}`;
+    // addons are fixed at construction today; joining them keeps the key correct
+    // if addon membership ever becomes runtime-mutable, at negligible cost.
+    return `${h}|${r}|${m}|${milestoneLevels}|${this.level}|${this.variant ?? ""}|${this.addons.join(",")}`;
   }
 
   clearStatsCache(): void {
@@ -609,22 +611,22 @@ export class Tower {
     }
 
     const heightTier = this.save ? getGeneralAddonValue(this.save, "terrainHeightBonus") : null;
-    if (heightTier !== null && heightTier !== undefined) {
-      const bonusPct = TERRAIN_HEIGHT_BONUS_PCT[heightTier as number] || 0;
-      const heightBonus = 1 + bonusPct * this.terrainHeight;
+    if (typeof heightTier === "number") {
+      const bonusPct = TERRAIN_HEIGHT_BONUS_PCT[heightTier] || 0;
+      const heightBonus = Math.min(TERRAIN_DAMAGE_BONUS_MAX_MULT, 1 + bonusPct * this.terrainHeight);
       damage *= heightBonus;
     }
 
     const rangeTier = this.save ? getGeneralAddonValue(this.save, "terrainHeightRangeBonus") : null;
-    if (rangeTier !== null && rangeTier !== undefined) {
-      const bonusPerHeight = TERRAIN_HEIGHT_RANGE_BONUS[rangeTier as number] || 0;
+    if (typeof rangeTier === "number") {
+      const bonusPerHeight = TERRAIN_HEIGHT_RANGE_BONUS[rangeTier] || 0;
       range += bonusPerHeight * this.terrainHeight;
     }
 
     const milestoneTier = this.save ? getGeneralAddonValue(this.save, "damageMilestoneBonus") : null;
-    if (milestoneTier !== null && milestoneTier !== undefined) {
-      const tiers = Math.floor(this.totalDamageDealt / MILESTONE_THRESHOLD);
-      const [dmgPct, speedPct] = MILESTONE_BONUS_PCT[milestoneTier as number] || [0, 0];
+    if (typeof milestoneTier === "number") {
+      const tiers = Math.min(MILESTONE_MAX_TIERS, Math.floor(this.totalDamageDealt / MILESTONE_THRESHOLD));
+      const [dmgPct, speedPct] = MILESTONE_BONUS_PCT[milestoneTier] || [0, 0];
       damage *= 1 + dmgPct * tiers;
       fireRate *= 1 + speedPct * tiers;
     }
@@ -707,9 +709,9 @@ export class Tower {
   currentMilestoneBonus() {
     if (!this.save) return { damagePct: 0, speedPct: 0, tiers: 0 };
     const tier = getGeneralAddonValue(this.save, "damageMilestoneBonus");
-    if (tier === null || tier === undefined) return { damagePct: 0, speedPct: 0, tiers: 0 };
-    const tiers = Math.floor(this.totalDamageDealt / MILESTONE_THRESHOLD);
-    const [dmgPct, speedPct] = MILESTONE_BONUS_PCT[tier as number] || [0, 0];
+    if (typeof tier !== "number") return { damagePct: 0, speedPct: 0, tiers: 0 };
+    const tiers = Math.min(MILESTONE_MAX_TIERS, Math.floor(this.totalDamageDealt / MILESTONE_THRESHOLD));
+    const [dmgPct, speedPct] = MILESTONE_BONUS_PCT[tier] || [0, 0];
     return { damagePct: dmgPct * tiers * 100, speedPct: speedPct * tiers * 100, tiers };
   }
 
@@ -770,12 +772,25 @@ export class Tower {
     return !this.isGhost;
   }
 
+  // Central credit point for damage this tower deals outside the projectile
+  // pipeline (electric fence, thorn reflect). Mirrors ProjectileManager.recordDamage:
+  // the stats cache key encodes totalDamageDealt, so milestones recompute lazily.
+  // Public (not private): required private members break structural assignability
+  // of Pinia's unwrapped store state to Tower.
+  creditDamage(amount: number): void {
+    if (!(amount > 0)) return;
+    this.totalDamageDealt += amount;
+    this.waveDamage += amount;
+  }
+
   takeDamage(amount: number, attacker?: Enemy): void {
     if (this.enemyAttackImmune) return;
     // Thorn reflect before ghosting so a lethal hit still reflects.
     const stats = this.stats;
     if (stats.thornReflectPct > 0 && attacker && !this.isGhost) {
-      attacker.takeDamage(amount * stats.thornReflectPct);
+      const reflected = amount * stats.thornReflectPct;
+      const dealtDamage = attacker.takeDamage(reflected) ?? reflected;
+      this.creditDamage(dealtDamage);
     }
     this.health -= amount;
     if (this.health < 0) this.health = 0;
@@ -809,7 +824,9 @@ export class Tower {
     const newMax = this.computeMaxHealth();
     const ratio = this.maxHealth > 0 ? this.health / this.maxHealth : 1;
     this.maxHealth = newMax;
-    this.health = Math.max(0, Math.round(newMax * ratio));
+    // Keep full float precision here: rounding every upgrade/downgrade cycle
+    // accumulated drift. Display sites (TowerPanel, HP bars) round as needed.
+    this.health = Math.max(0, newMax * ratio);
   }
 
   canCancel(): boolean {
@@ -909,7 +926,10 @@ export class Tower {
     // Ghost state: advance the restore timer first, then auto-restore when it elapses.
     if (this.isGhost) {
       this.ghostTimer += dt;
-      const restoreTime = GHOST_RESTORE_BASE_SECONDS - this.level * GHOST_RESTORE_PER_LEVEL;
+      const restoreTime = Math.max(
+        GHOST_RESTORE_MIN_SECONDS,
+        GHOST_RESTORE_BASE_SECONDS - this.level * GHOST_RESTORE_PER_LEVEL,
+      );
       if (this.ghostTimer >= restoreTime) {
         this.restore();
       }

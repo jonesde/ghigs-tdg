@@ -162,11 +162,11 @@
     "damageMilestoneBonus": {
       "key": "damageMilestoneBonus",
       "label": "Damage Milestones",
-      "desc": "Towers gain bonus damage & speed per 1M total damage dealt.",
+      "desc": "Towers gain bonus damage & speed per 6,000 total damage dealt.",
       "tiers": [
-        { "label": "+5%/+2%", "desc": "+5% dmg, +2% speed per 1M damage." },
-        { "label": "+10%/+5%", "desc": "+10% dmg, +5% speed per 1M damage." },
-        { "label": "+20%/+10%", "desc": "+20% dmg, +10% speed per 1M damage." }
+        { "label": "+5%/+2%", "desc": "+5% dmg, +2% speed per 6,000 damage." },
+        { "label": "+10%/+5%", "desc": "+10% dmg, +5% speed per 6,000 damage." },
+        { "label": "+20%/+10%", "desc": "+20% dmg, +10% speed per 6,000 damage." }
       ],
       "costKey": "damageMilestoneBonus"
     }

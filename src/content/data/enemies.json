@@ -2,13 +2,26 @@
   "types": {
     "minion": { "baseHp": 8, "speed": 1.0, "bounty": 1, "radius": 0.14, "attackDamage": 4, "attackSpeed": 0.5 },
     "runner": { "baseHp": 8, "speed": 2.5, "bounty": 2, "radius": 0.1, "attackDamage": 2, "attackSpeed": 1.0 },
-    "tank": { "baseHp": 32, "speed": 0.4, "bounty": 3, "radius": 0.24, "attackDamage": 10, "attackSpeed": 0.3 },
+    "tank": { "baseHp": 32, "speed": 0.4, "bounty": 3, "radius": 0.24, "knockResist": 0.3, "attackDamage": 10, "attackSpeed": 0.3 },
     "shielded": { "baseHp": 16, "speed": 0.7, "bounty": 4, "radius": 0.16, "shield": 32, "attackDamage": 10, "attackSpeed": 0.5 },
     "healer": { "baseHp": 16, "speed": 0.8, "bounty": 4, "radius": 0.16, "heal": 0.03, "healRange": 2.5, "attackDamage": 3, "attackSpeed": 0.5 },
-    "boss": { "baseHp": 128, "speed": 0.5, "bounty": 50, "radius": 0.33, "resist": 0.3, "slowResist": 0.8, "attackDamage": 20, "attackSpeed": 0.5 }
+    "boss": {
+      "baseHp": 192,
+      "speed": 0.5,
+      "bounty": 50,
+      "radius": 0.33,
+      "resist": 0.3,
+      "slowResist": 0.8,
+      "knockResist": 0.8,
+      "attackDamage": 20,
+      "attackSpeed": 0.5
+    }
   },
   "levelHpMult": { "intercept": 1, "slopePerLevel": 0.6 },
   "waveDamageMult": 0.2,
+  "bountyLevelGrowth": 0.5,
+  "bountyFullThroughWave": 10,
+  "laterWaveBountyMult": 0.25,
   "bossStunReduction": 0.3,
   "minSlowFactor": 0.1,
   "maxBurnStacks": 5,

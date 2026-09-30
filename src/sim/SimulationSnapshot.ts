@@ -17,8 +17,8 @@ export interface SimulationSnapshot {
   towers: TowerSnapshot[];
   projectiles: ProjectileSnapshot[];
   // Sparse particle spawn requests emitted this tick. Present ONLY when the
-  // worker's spawn buffer is non-empty, so quiet ticks send nothing — unlike
-  // lightning/stun effects which always ship []. The main thread spawns each
+  // worker's spawn buffer is non-empty, so quiet ticks send nothing — same sparse
+  // policy as lightningEffects/stunEffects below. The main thread spawns each
   // request into its own ParticleSystem and consumes the array exactly once.
   particleSpawns: ParticleSpawnRequest[] | undefined;
   spawnStates: SpawnStateSnapshot[]; // for spawn-queue overlay renderer

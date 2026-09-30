@@ -81,6 +81,23 @@ export interface ProjectileGame {
   sweepOriginY: number;
 }
 
+// Single source of truth for projectile pierce totals, used by every tower path.
+// Rules:
+// - railgun: 1 base hit + variant tier + forwarded `pierce` (Multi-Pierce addon);
+// - sniper variant B from level 5: `pierce ?? 1` (the Piercer statOp sets 3);
+// - every other path: 0, meaning a single hit (hitCircleProjectile treats 0 as
+//   "no pierce"). Keep this helper in sync with Tower.fire forwarding.
+export function computeMaxHitCount(
+  towerType: string,
+  towerLevel: number,
+  variant: "A" | "B" | null | undefined,
+  pierce: number | undefined,
+): number {
+  if (towerType === "railgun") return 1 + Math.max(0, towerLevel - 4) + (pierce ?? 0);
+  if (towerType === "sniper" && towerLevel >= 5 && variant === "B") return pierce ?? 1;
+  return 0;
+}
+
 interface LightningTarget {
   id: number;
   x: number;
@@ -88,7 +105,7 @@ interface LightningTarget {
   removed?: boolean;
   takeDamage(dmg: number, armorPiercing?: boolean): number | undefined;
   applyStun?(duration: number): void;
-  applyBurn?(dps: number, duration: number): void;
+  applyBurn?(dps: number, duration: number, sourceTowerId?: string): void;
   applyKnockback?(amount: number): void;
 }
 
@@ -110,7 +127,7 @@ type CastEnemy = {
   maxHp: number;
   removed: boolean;
   takeDamage(dmg: number, armorPiercing?: boolean): number | undefined;
-  applyBurn?(dps: number, duration: number): void;
+  applyBurn?(dps: number, duration: number, sourceTowerId?: string): void;
   applySlow?(factor: number, duration: number): void;
   applyStun?(duration: number): void;
   applyMarkTarget?(mult: number, duration: number): void;
@@ -131,7 +148,7 @@ export interface EnemyManager {
     hp: number;
     maxHp: number;
     takeDamage(dmg: number, armorPiercing?: boolean): number | undefined;
-    applyBurn?(dps: number, duration: number): void;
+    applyBurn?(dps: number, duration: number, sourceTowerId?: string): void;
     applySlow?(factor: number, duration: number): void;
     applyStun?(duration: number): void;
     applyMarkTarget?(mult: number, duration: number): void;
@@ -151,7 +168,7 @@ export interface EnemyManager {
       maxHp: number;
       removed: boolean;
       takeDamage(dmg: number, armorPiercing?: boolean): number | undefined;
-      applyBurn?(dps: number, duration: number): void;
+      applyBurn?(dps: number, duration: number, sourceTowerId?: string): void;
       applySlow?(factor: number, duration: number): void;
       applyStun?(duration: number): void;
       applyMarkTarget?(mult: number, duration: number): void;
@@ -466,7 +483,7 @@ export class ProjectileManager {
     projectile.splashRadius = splash ?? 0;
 
     if (towerType === "railgun") {
-      projectile.maxHitCount = 1 + tier + (pierce ?? 0);
+      projectile.maxHitCount = computeMaxHitCount(towerType, towerLevel, variant, pierce);
       projectile.stunDuration = 0.3;
     }
 
@@ -483,7 +500,7 @@ export class ProjectileManager {
 
     // Piercer: pierce through N enemies means N hits (not N-1).
     if (towerType === "sniper" && towerLevel >= 5 && variant === "B") {
-      projectile.maxHitCount = pierce ?? 1;
+      projectile.maxHitCount = computeMaxHitCount(towerType, towerLevel, variant, pierce);
     }
   }
 
@@ -922,7 +939,7 @@ export class ProjectileManager {
     }
 
     if (projectile.burnDps > 0 && enemy.applyBurn) {
-      enemy.applyBurn(projectile.burnDps, projectile.burnDuration);
+      enemy.applyBurn(projectile.burnDps, projectile.burnDuration, projectile.towerId);
     }
 
     if (projectile.slowFactor > 0 && enemy.applySlow) {
@@ -986,7 +1003,7 @@ export class ProjectileManager {
           splashEnemy.applyMarkTarget(projectile.markTarget, MARK_TARGET_DURATION);
         }
         if (projectile.burnDps > 0 && splashEnemy.applyBurn) {
-          splashEnemy.applyBurn(projectile.burnDps, projectile.burnDuration);
+          splashEnemy.applyBurn(projectile.burnDps, projectile.burnDuration, projectile.towerId);
         }
         if (projectile.slowFactor > 0 && splashEnemy.applySlow) {
           splashEnemy.applySlow(projectile.slowFactor, projectile.slowDuration);
@@ -1017,7 +1034,14 @@ export class ProjectileManager {
       );
       if (bounceTarget) {
         projectile.targetId = bounceTarget.id;
+        // Uniform bounce falloff: damage and applied status magnitudes scale by
+        // the same factor so a bounced shot is weaker across the board. Stun is
+        // duration-only, so its "magnitude" is the duration itself.
         projectile.damage *= BOUNCE_DAMAGE_FALLOFF;
+        projectile.burnDps *= BOUNCE_DAMAGE_FALLOFF;
+        projectile.slowFactor *= BOUNCE_DAMAGE_FALLOFF;
+        projectile.stunDuration *= BOUNCE_DAMAGE_FALLOFF;
+        projectile.splashStun *= BOUNCE_DAMAGE_FALLOFF;
         projectile.bounceCount++;
         return;
       }
@@ -1090,7 +1114,7 @@ export class ProjectileManager {
       }
       // Burn Circuit: chained enemies take burn damage over time
       if (opts.burnCircuit && nextTarget.applyBurn) {
-        nextTarget.applyBurn(chainDamage * BURN_CIRCUIT_DMG_MULT, BURN_CIRCUIT_DURATION);
+        nextTarget.applyBurn(chainDamage * BURN_CIRCUIT_DMG_MULT, BURN_CIRCUIT_DURATION, opts.towerId);
       }
       this.bufferLightningEffect({ x1: current.x, y1: current.y, x2: nextTarget.x, y2: nextTarget.y });
       chainsUsed++;
@@ -1153,6 +1177,12 @@ export class ProjectileManager {
         this.bufferLightningEffect({ x1: opts.originX, y1: opts.originY, x2: secondTarget.x, y2: secondTarget.y });
       }
     }
+  }
+
+  // Public entry for out-of-band damage sources (EnemyManager burn ticks) so they
+  // credit the inflicting tower's totals exactly like a resolved hit.
+  creditDamage(towerId: string, amount: number): void {
+    this.recordDamage(towerId, amount);
   }
 
   private recordDamage(towerId: string | undefined, amount: number): void {

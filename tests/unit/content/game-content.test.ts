@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyVariantOps } from "@/content/applyVariantOps.js";
-import { enemyLevelHpMult } from "@/content/formulas.js";
+import { enemyBounty, enemyLevelHpMult } from "@/content/formulas.js";
 import { getGameContent } from "@/content/gameContent.js";
 import { loadGameContent } from "@/content/loadGameContent.js";
 import { GameContentSchema } from "@/content/schemas/gameContent.js";
@@ -43,12 +43,36 @@ describe("game content packs", () => {
     expect(content.economy.mapGemMultipliers).toHaveLength(36);
   });
 
+  it("deep-freezes nested content so runtime mutation cannot corrupt packs", () => {
+    const content = loadGameContent();
+    expect(Object.isFrozen(content)).toBe(true);
+    expect(Object.isFrozen(content.towers)).toBe(true);
+    expect(Object.isFrozen(content.towers.tuning)).toBe(true);
+    expect(Object.isFrozen(content.towers.ids)).toBe(true);
+    expect(Object.isFrozen(content.enemies.types.boss)).toBe(true);
+    expect(Object.isFrozen(content.maps.levels)).toBe(true);
+    expect(Object.isFrozen(content.maps.levels[0])).toBe(true);
+
+    const originalDamageMult = content.towers.tuning.levelDmgMult;
+    expect(() => {
+      content.towers.tuning.levelDmgMult = 1;
+    }).toThrow(TypeError);
+    expect(() => {
+      content.towers.ids.push("injected");
+    }).toThrow(TypeError);
+    expect(content.towers.tuning.levelDmgMult).toBe(originalDamageMult);
+  });
+
   it("exposes facade constants matching pack data", () => {
     const content = getGameContent();
     expect(TOWER_BASE.basic).toEqual(content.towers.base.basic);
     expect(TOWER_META.basic?.cost).toBe(20);
     expect(ENEMY_TYPES.minion?.baseHp).toBe(8);
     expect(ENEMY_WAVE_DAMAGE_MULT).toBe(0.2);
+    expect(content.enemies.bountyLevelGrowth).toBe(0.5);
+    expect(content.enemies.bountyFullThroughWave).toBe(10);
+    expect(content.enemies.laterWaveBountyMult).toBe(0.25);
+    expect(content.enemies.types.boss?.baseHp).toBe(192);
     expect(TOWER_LEVEL_DMG_MULT).toBe(1.8);
     expect(MAP_LEVELS).toHaveLength(36);
     expect(TOTAL_MAPS).toBe(36);
@@ -62,6 +86,16 @@ describe("game content packs", () => {
     expect(enemyLevelHpMult(1, getGameContent().enemies.levelHpMult)).toBe(1);
     expect(enemyLevelHpMult(2, getGameContent().enemies.levelHpMult)).toBeCloseTo(1.6);
     expect(enemyLevelHpMult(3, getGameContent().enemies.levelHpMult)).toBeCloseTo(2.2);
+  });
+
+  it("pays full bounty through wave 10 and a quarter of it after", () => {
+    const growth = 0.5;
+    const fullThrough = 10;
+    const laterMult = 0.25;
+    expect(enemyBounty(1, 7, 9, growth, fullThrough, laterMult)).toBe(4);
+    expect(enemyBounty(50, 4, 10, growth, fullThrough, laterMult)).toBe(125);
+    expect(enemyBounty(1, 7, 19, growth, fullThrough, laterMult)).toBe(1);
+    expect(enemyBounty(4, 7, 19, growth, fullThrough, laterMult)).toBe(4);
   });
 
   it("applies variant ops matching legacy formulas", () => {

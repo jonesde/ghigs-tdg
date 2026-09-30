@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PROJECTILE_HIT_SLOP } from "@/sim/Constants.js";
 import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
 import {
+  BOUNCE_DAMAGE_FALLOFF,
   CHAIN_DAMAGE_FALLOFF,
   NAPALM_BURN_DPS_RATIO,
   NAPALM_BURN_DURATION,
@@ -14,7 +15,12 @@ import {
 import { resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
-import { MAX_PENDING_LIGHTNING_EFFECTS, MAX_PENDING_STUN_EFFECTS, ProjectileManager } from "@/sim/ProjectileManager.js";
+import {
+  computeMaxHitCount,
+  MAX_PENDING_LIGHTNING_EFFECTS,
+  MAX_PENDING_STUN_EFFECTS,
+  ProjectileManager,
+} from "@/sim/ProjectileManager.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../helpers/mock-grid.js";
 import { makeParticleSystem } from "../helpers/mock-managers.js";
@@ -181,6 +187,20 @@ describe("ProjectileManager", () => {
 
       const renderData = manager.getRenderData();
       expect(renderData[0]!.radius).toBe(3);
+    });
+  });
+
+  describe("tower damage credit", () => {
+    it("creditDamage adds to the looked-up tower's totals", () => {
+      const tower = { totalDamageDealt: 0, waveDamage: 0 };
+      manager = new ProjectileManager(enemyManager, particles, (towerId) =>
+        towerId === "tower-9" ? (tower as never) : null,
+      );
+      manager.creditDamage("tower-9", 12.5);
+      expect(tower.totalDamageDealt).toBeCloseTo(12.5, 6);
+      expect(tower.waveDamage).toBeCloseTo(12.5, 6);
+      manager.creditDamage("missing", 5);
+      expect(tower.totalDamageDealt).toBeCloseTo(12.5, 6);
     });
   });
 
@@ -644,7 +664,7 @@ describe("ProjectileManager", () => {
 
       manager.update(0.016);
 
-      expect(applyBurn).toHaveBeenCalledWith(100 * NAPALM_BURN_DPS_RATIO, NAPALM_BURN_DURATION);
+      expect(applyBurn).toHaveBeenCalledWith(100 * NAPALM_BURN_DPS_RATIO, NAPALM_BURN_DURATION, "");
     });
   });
 
@@ -852,6 +872,54 @@ describe("ProjectileManager", () => {
       manager.update(0.016);
 
       expect(applySlow).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("bounce shot status falloff", () => {
+    it("scales burn, slow, and stun magnitudes by BOUNCE_DAMAGE_FALLOFF on the bounced hit", () => {
+      const firstApplyBurn = vi.fn();
+      const secondApplyBurn = vi.fn();
+      const secondApplySlow = vi.fn();
+      const secondApplyStun = vi.fn();
+      const enemy1 = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100, applyBurn: firstApplyBurn });
+      const enemy2 = createMockEnemy({
+        id: 2,
+        x: 115,
+        y: 200,
+        hp: 100,
+        maxHp: 100,
+        applyBurn: secondApplyBurn,
+        applySlow: secondApplySlow,
+        applyStun: secondApplyStun,
+      });
+      enemyManager = createMockEnemyManager([enemy1, enemy2]);
+      manager = new ProjectileManager(enemyManager, particles);
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 10,
+        speed: 100,
+        range: 5,
+        towerType: "cannon",
+        towerLevel: 1,
+        targetId: 1,
+        napalm: true,
+        slowAmt: 0.5,
+        slowDur: 1,
+        stunDur: 0.4,
+        bounceShot: true,
+      });
+
+      for (let step = 0; step < 30 && manager.getRenderData().length > 0; step++) {
+        manager.update(0.016);
+      }
+
+      const burnDps = 10 * NAPALM_BURN_DPS_RATIO;
+      expect(firstApplyBurn).toHaveBeenCalledWith(burnDps, NAPALM_BURN_DURATION, "");
+      expect(secondApplyBurn).toHaveBeenCalledWith(burnDps * BOUNCE_DAMAGE_FALLOFF, NAPALM_BURN_DURATION, "");
+      expect(secondApplySlow).toHaveBeenCalledWith(0.5 * BOUNCE_DAMAGE_FALLOFF, 1);
+      expect(secondApplyStun).toHaveBeenCalledWith(0.4 * BOUNCE_DAMAGE_FALLOFF);
     });
   });
 
@@ -1601,5 +1669,27 @@ describe("pending visual-effect caps (Block D2)", () => {
     const effects = manager.getRenderVisualEffects();
     expect(effects.lightning).toHaveLength(MAX_PENDING_LIGHTNING_EFFECTS);
     expect(effects.stuns).toHaveLength(MAX_PENDING_STUN_EFFECTS);
+  });
+});
+
+describe("computeMaxHitCount (Block E1 pierce centralization)", () => {
+  it("reproduces the railgun total (1 + tier + pierce)", () => {
+    expect(computeMaxHitCount("railgun", 1, null, 0)).toBe(1);
+    expect(computeMaxHitCount("railgun", 5, "A", 0)).toBe(2);
+    expect(computeMaxHitCount("railgun", 7, "B", 2)).toBe(6);
+    expect(computeMaxHitCount("railgun", 6, "B", undefined)).toBe(3);
+  });
+
+  it("reproduces the sniper Piercer total (pierce ?? 1 from level 5)", () => {
+    expect(computeMaxHitCount("sniper", 4, "B", 3)).toBe(0);
+    expect(computeMaxHitCount("sniper", 5, "B", 3)).toBe(3);
+    expect(computeMaxHitCount("sniper", 7, "B", undefined)).toBe(1);
+    expect(computeMaxHitCount("sniper", 5, "A", 3)).toBe(0);
+  });
+
+  it("returns 0 (single hit) for every other tower path", () => {
+    for (const towerType of ["basic", "ice", "cannon", "lightning", "sturdyWall", "shotgunTank"]) {
+      expect(computeMaxHitCount(towerType, 7, "B", 2)).toBe(0);
+    }
   });
 });

@@ -71,7 +71,6 @@ src/
 │   ├── Constants.ts             # Facade: economy/maps from content packs + FIXED_DT/GameState/UI wiring
 │   ├── ConstantsTower.ts        # Facade: tower tables from src/content/data/towers.json
 │   ├── ConstantsEnemy.ts        # Facade: enemy tables from src/content/data/enemies.json
-│   ├── EnemyWalk.ts             # Base shape vertex generation and path-d string conversion
 │   ├── ProjectileManager.ts     # Game-side projectile simulation: travel, hits, splash, chain, burn, knockback
 │   ├── ParticleSystem.ts        # Game-side particle simulation: spawn, motion, life/expiry
 │   ├── WaveGraphTracker.ts      # Per-wave graph data tracking: damage, gold, gems, peak enemy HP
@@ -113,6 +112,7 @@ src/
 │   │       └── the-aftermath.json       # Alternate "Aftermath" theme data
 │   └── svg/
 │       ├── EnemyManager.ts      # Enemy rendering pool: <use> elements, hit flash, slow filters
+│       ├── EnemyWalk.ts         # Base enemy shape vertex generation (cached per shape/radius) + path-d conversion
 │       ├── TowerManager.ts      # Tower rendering pool: <use> elements, barrel rotation, level pips
 │       ├── ProjectileManager.ts # Projectile rendering pool: <circle> bullets, <line> beams
 │       ├── ParticleManager.ts   # Particle rendering pool: <circle> elements
@@ -199,7 +199,7 @@ The simulation runs in a Web Worker; the main thread renders and produces intent
 
 - **Worker owns the engine.** `src/sim/WorkerEntry.ts` constructs `GameEngine` (with plain `GameRunState` + `PersistState` + `HostBindings` + `ThemeBundle`, not Pinia), runs a `setTimeout` fixed-timestep loop, drains a command queue at the start of each tick, and posts a `SimulationSnapshot` every tick. `requestAnimationFrame` is unavailable in a worker, so a `setTimeout`-driven loop is used instead.
 - **Commands in (`src/sim/Command.ts`).** All intent is a typed `Command`: `input:*` (e.g. `input:click`), `action:*` (pause, cycle speed, upgrade, sell, select tower/build type, targeting, …), `lifecycle:*` (`init`/`dispose`), and future `llm:*`. The main thread dispatches via `commandBus.dispatchCommand` → `WorkerCommandDispatcher`, which forwards through `postMessage`. Hover and camera are main-thread-only and never become commands.
-- **Snapshots out (`src/sim/SimulationSnapshot.ts`, `SnapshotSerializer.ts`).** Each tick the worker serializes plain-data DTOs — `enemies`, `towers`, `projectiles`, `particleSpawns` (sparse spawn requests, consumed once by the main thread), `spawnStates`, `paths`/`pathsVersion` (worker-authoritative enemy paths for highlight rendering), `waveGraphDots`/`waveGraphDotsGeneration` (per-interval wave-graph data, shipped only when generation changes), `gridLayout` (constant map layout for the commander worker, omitted once cached), `lightningEffects`/`stunEffects` (ephemeral visual effects, consumed and cleared each build), plus a `meta` scalar block (lives, gold, wave, selection, `lastScaledDt`, etc.) and a `persistDirty` flag. `SnapshotSerializer.buildSnapshot` reads entity fields directly; the render managers' `syncFromGameEngine` signatures now take these snapshot arrays.
+- **Snapshots out (`src/sim/SimulationSnapshot.ts`, `SnapshotSerializer.ts`).** Each tick the worker serializes plain-data DTOs — `enemies`, `towers`, `projectiles`, `particleSpawns` (sparse spawn requests), `spawnStates`, `paths`/`pathsVersion` (worker-authoritative enemy paths for highlight rendering), `waveGraphDots`/`waveGraphDotsGeneration` (per-interval wave-graph data, shipped only when generation changes), `gridLayout` (constant map layout for the commander worker, omitted once cached), `lightningEffects`/`stunEffects` (ephemeral visual effects, `undefined` when their buffers are empty), plus a `meta` scalar block (lives, gold, wave, selection, `lastScaledDt`, etc.) and a `persistDirty` flag. Snapshots are versioned: `SNAPSHOT_SCHEMA_VERSION` is stamped on every snapshot and `SnapshotStore.apply` rejects a snapshot from another schema version (warn once, keep the previous). Enemy animation payloads (walking/hitReaction/attack theme objects with inline SVG) are **not** shipped — they are constant per type and the render proxies resolve frames from the active theme; only timing marks (`hitAnimTime`, `attackAnimTime`, `gameSeconds`) ride the snapshot. `SnapshotSerializer.buildSnapshot` reads entity fields directly; effects are *peeked* (never consumed) during build, and `WorkerEntry` consumes the particle/lightning/stun buffers only after a successful `postMessage`, so a built-but-not-posted snapshot re-ships the same effects instead of dropping them. The render managers' `syncFromGameEngine` signatures take these snapshot arrays.
 - **Reactive mirror (`src/sim/SnapshotStore.ts`).** On the main thread, `SnapshotStore` holds the latest snapshot and diff-mirrors `meta` into `gameStore` (the reactive projection). The rAF render loop reads from the `SnapshotStore`, never from the engine. `gameStore` is a cache; the worker is authoritative, and reconciliation happens within one frame.
 - **HostBindings seam (`src/sim/HostBindings.ts`).** The sim reaches the outside world only through `HostBindings`: `playSound`, `notifyUi`, `schedulePersistSave`, `syncGridTower`, `requestConfirm`. Implemented twice — `WorkerHostBindings` (worker → `postMessage`) and `MainThreadHostBindings` in `src/sim-adapters/` (main thread → `SoundManager`/`uiStore`/`persistStore`). This seam is what made the worker migration behavior-preserving at every step.
 - **Persistence batching.** The worker sets `persistDirty` on persist mutations and the host flushes `schedulePersistSave` only on significant events (wave change, game-over/victory, new milestone claim, or a 5s fallback), avoiding a `localStorage` write per mutation.
@@ -213,10 +213,13 @@ renderer never drained (underpowered machines, 30 Hz displays, brief main-thread
 stalls). The gate never blocks the simulation — only the snapshot build/post.
 
 - **Handshake:** the worker sets a module-level `awaitingAck = true` after each
-  post. The main thread's rAF render loop sends `{ type: "snapshotAck" }` once
-  per *rendered* frame (after the render-manager `syncFromGameEngine` calls,
-  before rescheduling rAF). The worker clears `awaitingAck` on `snapshotAck`. A
-  running-idle tick with `awaitingAck === true` drops the build+post entirely.
+  post and records `lastPostedFrameId`. The main thread's rAF render loop sends
+  `{ type: "snapshotAck", frameId }` once per *rendered* frame (after the
+  render-manager `syncFromGameEngine` calls, before rescheduling rAF). The worker
+  clears `awaitingAck` only when `frameId >= lastPostedFrameId`, so a stale ack
+  (a duplicate render, a late ack after a newer post) cannot release the gate
+  early. A running-idle tick with `awaitingAck === true` drops the build+post
+  entirely.
 - **Forced posts bypass the gate** (so input latency stays ≤1 frame): the
   *baseline* (first snapshot after `(re)init`) and any tick where a `Command`
   mutated visible state (`stateMutatedThisTick`, paused **or** running). A
@@ -437,8 +440,7 @@ Full-physics motion: DetourCrowd owns path follow + local avoidance; Rapier owns
 | `src/content/data/*.json` | Declarative balance/content packs (towers, enemies, economy, maps, skill-tree) validated by Zod at load |
 | `src/content/schemas/*` | Zod schemas for game content, raw map themes, LLM responses, persist save shape |
 | `src/composables/Input.ts` | Keyboard input composable: dispatches build/upgrade/sell/speed/pause intents to Pinia stores and the engine via the command seam |
-| `src/sim/EnemyWalk.ts` | Base shape vertex generation and path-d string conversion |
-| `src/sim/ProjectileManager.ts` | Game-side projectile simulation: travel, hits, splash, chain, burn, knockback |
+| `src/sim/ProjectileManager.ts` | Game-side projectile simulation: travel, hits, splash, chain, burn, knockback. `computeMaxHitCount` is the single pierce-total helper for every tower path; bounce falloff scales damage and burn/slow/stun magnitudes together; `creditDamage` is the public out-of-band credit entry used by burn ticks |
 | `src/sim/ParticleSystem.ts` | Game-side particle simulation: spawn, motion, life/expiry |
 | `src/sim/WaveGraphTracker.ts` | Per-wave graph data: damage dealt, gold earned, gems earned, peak enemy HP per wave |
 | `src/sim/physics/PhysicsWorld.ts` | Rapier2d physics world: static geometry (base/towers/corridor walls), dynamic enemy bodies driven by velocity |
@@ -449,7 +451,7 @@ Full-physics motion: DetourCrowd owns path follow + local avoidance; Rapier owns
 | File | Description |
 |---|---|
 | `src/sim/grid/Grid.ts` | Grid data structure: path tiles, base/spawn locations, build validation |
-| `src/sim/grid/Map.ts` | Procedural map generation: 36 maps, 3 regions, 6 layout styles (open, canyon, serpentine, split, bastion, battlefield); `name` computed lazily via `getMapDisplayName(map, theme)` |
+| `src/sim/grid/Map.ts` | Procedural map generation: 36 maps, 3 regions, 6 layout styles (open, canyon, serpentine, split, bastion, battlefield); `name` computed lazily via `getMapDisplayName(map, theme)`. `carveWidePath` half-extent is `floor(width/2)` (width 1 = one tile); serpentine is a single winding pass honoring `width`; every spawn is inset at least one tile from the map border; `invalidateMapCache()` drops the per-index cache |
 | `src/sim/navmesh/*` | Recast navmesh, DetourCrowd, distance field, path metrics |
 | `src/sim/physics/ForceFieldSystem.ts` | Continuous radial/directional force fields for future push/pull towers |
 | `src/sim/physics/ContactProcessor.ts` | Rapier collision events → siege/base attack + projectile hits |
@@ -458,16 +460,16 @@ Full-physics motion: DetourCrowd owns path follow + local avoidance; Rapier owns
 
 | File | Description |
 |---|---|
-| `src/sim/towers/Tower.ts` | Tower entity: stats, targeting modes, level scaling, variants, sell value, milestone bonuses; accepts `visualMeta` param (color, icon, name, animation, walking) from active theme |
+| `src/sim/towers/Tower.ts` | Tower entity: stats, targeting modes, level scaling, variants, sell value, milestone bonuses; accepts `visualMeta` param (color, icon, name, animation, walking) from active theme. Milestone tiers are capped by `milestoneMaxTiers`; the stats cache key encodes the capped tiers plus `addons.join(",")`. Terrain damage multiplier is capped by `terrainDamageBonusMaxMult`; ghost restore time is clamped by `ghostRestoreMinSeconds`; `recomputeMaxHealth` keeps float precision; thorn reflect and electric fence credit `totalDamageDealt`/`waveDamage` |
 | `src/sim/towers/TowerManager.ts` | Tower placement, upgrade, sell with refund/discount modes; receives visual meta from GameEngine |
-| `src/sim/towers/SkillTree.ts` | Gem upgrade costs, unlock/refund logic, variant definitions, general add-on config |
+| `src/sim/towers/SkillTree.ts` | Gem upgrade costs, unlock/refund logic, variant definitions, general add-on config. `isAvailable`/`tryUnlock` share one precondition helper; individual general-addon refunds (`canRefundGeneral`/`tryRefundGeneral`) mirror the bulk path, including per-flag `sellOption` refunds and clearing `sellActive` when the active mode is refunded |
 
 ### Enemies & Waves
 
 | File | Description |
 |---|---|
-| `src/sim/enemies/Enemy.ts` | Enemy entity: types, stats, pathfinding, status effects (slow, stun, shield); accepts `visualMeta` param (color, shape, name, walking, hitReaction) from active theme |
-| `src/sim/enemies/EnemyManager.ts` | Enemy lifecycle: spawning, movement, death, base reach; receives visual meta from GameEngine |
+| `src/sim/enemies/Enemy.ts` | Enemy entity: types, stats, pathfinding, status effects (slow, stun, shield); accepts `visualMeta` param (color, shape, name, walking, hitReaction) from active theme. `takeDamage` returns shield-absorbed + HP damage for telemetry; burn stacks track `sourceTowerId` and credit the inflicting tower via `EnemyManager.creditDamage` while still bypassing shields and applying resist; `knockResist` scales knockback; `postPhysics` falls back to crowd-agent or kinematic integration when no Rapier body exists |
+| `src/sim/enemies/EnemyManager.ts` | Enemy lifecycle: spawning, movement, death, base reach; receives visual meta from GameEngine. Owns the `setDamageCreditSink`/`creditDamage` bridge used by burn ticks |
 | `src/sim/waves/WaveManager.ts` | Wave composition, enemy count scaling, boss cadence, inter-wave timer |
 
 ### Rendering
@@ -475,6 +477,7 @@ Full-physics motion: DetourCrowd owns path follow + local avoidance; Rapier owns
 | File | Description |
 |---|---|
 | `src/render/svg/EnemyManager.ts` | Enemy rendering pool: `<use>` elements with `<symbol>` href animation, hit flash circles, slow filter application |
+| `src/render/svg/EnemyWalk.ts` | Base enemy shape vertex generation (cached per shape/radius, frozen results) and path-d string conversion |
 | `src/render/svg/TowerManager.ts` | Tower rendering pool: `<use>` elements with barrel rotation, level pip `<circle>` elements |
 | `src/render/svg/ProjectileManager.ts` | Projectile rendering pool: `<circle>` bullets, `<line>` beams |
 | `src/render/svg/ParticleManager.ts` | Particle rendering pool: `<circle>` elements with fade/expansion |
@@ -529,8 +532,8 @@ Declarative balance and copy live under `src/content/data/` as split JSON packs,
 
 | Pack | Contents |
 |---|---|
-| `towers.json` | meta/base stats, combat tuning scalars, variants (`settings` + `statOps`), addon effects |
-| `enemies.json` | enemy type table, HP mult coeffs, wave/boss scalars |
+| `towers.json` | meta/base stats, combat tuning scalars (`milestoneMaxTiers`, `ghostRestoreMinSeconds`, `terrainDamageBonusMaxMult`), variants (`settings` + `statOps`), addon effects. Dead knobs `deepFreezeSlowMult` and `cannonFragmentSplashTiers` were removed (the ice addon uses its inline `slowMult`, cannon-A its inline statOp tiers); lightning omits `base.projSpeed` (chain lightning is instant and the schema now allows it) |
+| `enemies.json` | enemy type table (with optional `knockResist` per type), HP mult coeffs, wave/boss scalars, `bountyLevelGrowth`, `bountyFullThroughWave`, `laterWaveBountyMult` |
 | `economy.json` | gems, milestones, difficulty, general-addon costs/effect arrays, starting gold/health |
 | `maps.json` | MAP_LEVELS (36), map-gen scalars |
 | `skill-tree.json` | level/addon costs, variant/addon labels, general-addon defs/categories |
@@ -540,6 +543,37 @@ Declarative balance and copy live under `src/content/data/` as split JSON packs,
 **Variant ops:** `TOWER_VARIANTS` no longer carry `apply` functions. Ops (`set`, `mul`, `mulTier`, `setTier`, `add`, `addPerTier`, `mulPowTier`) are interpreted in `src/content/applyVariantOps.ts` with `tierIdx = level - 5`.
 
 **Other Zod boundaries:** raw map themes (`RawMapThemeSchema` before normalize), LLM commander replies (`validateLlmResponse`), post-migrate persist save (`PersistStateSchema.safeParse` in `persistStore.load`).
+
+**Content immutability:** `loadGameContent()` recursively deep-freezes the parsed content (objects and arrays), not just the top level, so a stray writer cannot mutate nested balance tables at runtime. ESM strict mode makes such writes throw.
+
+### Block E1 Behavior Notes (for balance validation)
+
+E1 was a telemetry/correctness pass, but a few of its fixes are combat-visible and belong in any balance model:
+
+- **Shield telemetry:** `Enemy.takeDamage` now returns shield-absorbed + HP damage, so the DPS graph and milestone progression count damage consumed by enemy shields. Kill/removal and gold-on-kill logic still read `hp`/`removed` and are unchanged.
+- **Burn telemetry:** burn stacks track `sourceTowerId`; each tick credits the inflicting tower. Burn still bypasses shields and still applies enemy `resist` (resist was already applied by `takeDamage`; the change is credit, not mitigation).
+- **Knockback resist:** per-type `knockResist` scales every knockback impulse by `max(0, 1 - knockResist)`. Content values: boss `0.8`, tank `0.3`, every other type absent (0). Bosses/tanks now take 20%/70% of prior knockback displacement.
+- **Bounce status falloff:** a bounced shot scales burn DPS, slow factor, stun duration, and splash-stun by `bounceDamageFalloff` (0.8) in addition to damage, so secondary hits are uniformly weaker.
+- **Milestone cap:** `milestoneMaxTiers` (5) caps the compounding milestone damage/fire-rate bonus; `currentMilestoneBonus()` reports the capped tier count.
+- **Ghost restore floor:** `ghostRestoreMinSeconds` (5) clamps restore time; before, level ≥ 10 restored instantly (0 or negative seconds).
+- **Terrain cap:** `terrainDamageBonusMaxMult` (2.0) caps the total terrain damage multiplier. Behavior-preserving today (current max is 1.8x).
+- **Map geometry (traversal-length impact):** `carveWidePath` half-extent is now `floor(width/2)`, so split paths went from 3-wide to 1-wide and open-style width-3 paths from 5-wide to 3-wide; serpentine is a single winding corridor instead of three overlapping passes; every spawn is inset one tile from the border. Path lengths and therefore wave travel times change on most maps.
+- **sellOption refunds:** an individual general-addon refund of a purchased sell mode now refunds `SELL_OPTION_GEM_COST` and clears `sellActive` when that mode was active (previously only "Refund All" could recover it).
+
+### Block E2 Gem Income and Balance Anchors
+
+**Per-wave gem income.** `REGION_GEM_REWARDS` (`[1, 2, 4]` by region) is a flat gem award on every wave completion — no difficulty or map multiplier, no first-time doubling. All three clear paths share it: natural clear (`onWaveCleared`), pre-emptive expiry (`onWaveExpired`), and debug wave jumps (`debugSetWave`), because the award lives in `GameEngine.applyWaveProgressRewards`. The award lands in the new `waveClears` `GemBreakdown` category (`src/sim/GameRunState.ts`), increments `runGemsEarned`, credits `persistState.gems`, and sets `persistDirty`. `EndScreen.vue` and `HistoryScreen.vue` render the new category; the end-of-run first-full-clear bonus subtotal includes `waveClears.afterFirstTime`. The old `waveCompletion` category is unchanged (it remains the end-of-run `bonusGemBase` award).
+
+**Pacing:** region 0 clears pay 1 gem each, so 20 clears through wave 20 plus the first-time wave-15 milestone (2 base x2) yield 24 gems — enough for the 16-gem Level-3 unlock (`levelCosts[2] === 16`) before the wave-20 boss.
+
+**Balance anchors (map-0 placement oracle).** `tests/unit/sim/balance-wall.test.ts` builds map index 0 (`getMap(0)`, region 0, level 1, serpentine, seed 7777) and spends gold with the real `WaveManager.generateWave` / `Enemy.bounty` / `Enemy.maxHp` numbers. Gold is `startingGoldByRegion[0]` (80) plus bounties of earlier waves. Legal towers are basic and ice, placed only on terrain tiles so the corridor stays open. Time-on-target is the ordered-path chord inside each tower's range; overlapping towers stack. Ice coverage slows the boss by `slowFactor = max(minSlowFactor, 1 - slowAmt * (1 - slowResist))`. Raw damage on that crossing clears the wave's non-boss HP and shields first; the remainder hits the boss after resist (0.3). A fresh profile has levels 1 and 2 unlocked, so "no gem purchase" means basic and ice stop at level 2. Level 3 is the 16-gem unlock.
+
+Measured on difficulty tick 0:
+
+- Wave 10, budget 344 (80 starting + 264 kill gold). Boss HP 1505. A level-2 basic/ice spend deals boss damage 2569 (1.71× HP) and the boss dies. Headroom stays under 2×.
+- Wave 20, budget 919 (80 + 839). Boss HP 4239, trash HP 9056. The same level-2 cap deals boss damage 2234 (0.53× HP), so the boss keeps about half its HP. With basic allowed to level 3 (10 of 11 basics bought at level 3), boss damage is 7254 (1.71× HP) and the boss dies.
+- `bountyLevelGrowth` stays 0.5, so a higher map level still pays more per kill. `laterWaveBountyMult` (0.25) applies only after `bountyFullThroughWave` (10). That is the gold cut between the two bosses. Boss `baseHp` is 192. Starting gold stays `[80, 70, 60]`.
+- `milestoneThreshold` is 6000, the 1000-floor of one level-2 basic's post-mitigation damage across waves 1–20 on this map, and it sits above that tower's damage through wave 10. `milestoneMaxTiers` stays 5. The addon is not part of the fresh-profile fights.
 
 **How to change balance:** edit the relevant JSON pack; keep formulas/behavior hooks in TS. Run `npm run check`. Adding a new tower still needs theme frames + any new behavior code paths, but numbers/copy go in packs.
 
@@ -603,15 +637,15 @@ All component styles use `<style scoped>` to prevent leakage.
 
 | Directory | Description |
 |---|---|
-| `tests/unit/` | 27 unit test files covering all source modules (includes `map-theme.test.ts`, `spawn-manager.test.ts`, `enemy-attack.test.ts`, `snapshot-store.test.ts`, `snapshot-merge.test.ts`, `text-grid-builder.test.ts`, `text-render.test.ts`) |
-| `tests/unit/sim/` | Simulation unit tests: `applyCommand.test.ts`, `enemy-routing.test.ts`, `snapshot.test.ts` |
+| `tests/unit/` | Unit test files covering all source modules (includes `map-theme.test.ts`, `spawn-manager.test.ts`, `enemy-attack.test.ts`, `enemy-walk.test.ts`, `snapshot-store.test.ts`, `snapshot-merge.test.ts`, `text-grid-builder.test.ts`, `text-render.test.ts`) |
+| `tests/unit/sim/` | Simulation unit tests: `applyCommand.test.ts`, `enemy-routing.test.ts`, `snapshot.test.ts`, `balance-wall.test.ts` (map-0 placement oracle), `gem-income.test.ts` (per-wave gem award paths) |
 | `tests/unit/commanders/` | Commander unit tests: `observation.test.ts`, `stubby-brain.test.ts`, `stubbs-brain.test.ts` |
 | `tests/unit/components/` | Vue component tests (15 files, includes `pause-menu.test.ts`, `text-game-root.test.ts`) |
 | `tests/integration/` | End-to-end wave simulation (`integration.test.ts`), worker command→snapshot round-trip (`worker-roundtrip.test.ts`), and commander worker round-trip (`commander.test.ts`) |
 | `tests/helpers/` | Shared mocks: `mock-stores.ts`, `mock-grid.ts`, `mock-managers.ts`, `mockDefaultTheme` |
 | `tests/setup.ts` | Global test setup: in-memory localStorage, Canvas 2D mock, performance.now |
 
-**~1000 tests** across all files.
+**~1400 tests** across all files.
 
 ### What's Covered
 
@@ -619,15 +653,18 @@ All component styles use `<style scoped>` to prevent leakage.
 |---|---|---|
 | Game Engine | `game-engine.test.ts` | Loop, buy/upgrade/sell, pause, timeScale, gem economy, difficulty scaling; WaveGraphTracker covered indirectly |
 | Grid & Navmesh | `grid.test.ts`, `tests/unit/sim/navmesh/*` | Tile queries, Recast corridor, DetourCrowd motion, tower obstacles |
-| Maps | `map.test.ts` | All 36 maps have valid spawn-to-base paths, region metadata, gem rewards |
-| Towers | `towers.test.ts` | Stats with caching, level/variant/addon/terrain/milestone bonuses, sell value |
-| Enemies | `enemies.test.ts` | HP/speed formulas, wave scaling, status effects (slow/stun/burn/shield/heal) |
+| Maps | `map.test.ts` | All 36 maps have valid spawn-to-base paths, region metadata, gem rewards, inset spawns, cache invalidation |
+| Towers | `towers.test.ts` | Stats with caching, level/variant/addon/terrain/milestone bonuses (with tier cap), sell value, float health precision, ghost restore clamp, thorn credit |
+| Enemies | `enemies.test.ts`, `enemy-manager.test.ts` | HP/speed formulas, wave scaling, status effects (slow/stun/burn/shield/heal), shield/burn damage returns and credit, knockResist, headless `postPhysics` |
 | Waves | `waves.test.ts` | Composition, boss placement, level calculation, inter-wave timing |
+| Content packs | `content/game-content.test.ts` | Zod parse, facade constants, variant ops, recursive deep freeze |
+| Balance wall | `tests/unit/sim/balance-wall.test.ts` | Map-0 placement oracle: wave-10 basic+ice level-2 kill, wave-20 level-2 remainder, wave-20 basic level-3 kill, milestone threshold, region boss cadence |
+| Gem income | `tests/unit/sim/gem-income.test.ts` | Flat `REGION_GEM_REWARDS` on natural clear / pre-emptive expiry / debug jump, `waveClears` breakdown, region 1/2 values, 16-gem wave-20 pacing, endGame history payload |
 | Tower Manager | `tower-manager.test.ts` | Build, sell, update, towerAt |
 | Enemy Manager | `enemy-manager.test.ts` | Spawn, cull, getEnemiesInRange |
 | Enemy Attack | `enemy-attack.test.ts` | Enemy base/tower attack behavior, damage, and cooldowns |
-| Skill Tree | `skill-tree.test.ts` | Unlock/refund/cost logic for all towers and general addons |
-| Projectiles | `projectile-manager.test.ts`, `game-projectile-manager.test.ts` | Render pool (`<circle>`/`<line>`) and game-side simulation: all 8 tower types × 2 variants (16 projectile behaviors), splash, chain, burn, knockback |
+| Skill Tree | `skill-tree.test.ts` | Unlock/refund/cost logic for all towers and general addons, individual-vs-bulk sellOption refund parity |
+| Projectiles | `projectile-manager.test.ts`, `game-projectile-manager.test.ts` | Render pool (`<circle>`/`<line>`) and game-side simulation: all 8 tower types × 2 variants (16 projectile behaviors), splash, chain, burn, knockback, centralized pierce totals, bounce status falloff |
 | Particles | `particles.test.ts` | Spawn, update, render, fade, expire, count limits |
 | Spawn Manager | `spawn-manager.test.ts` | Spawn element pool initialization, syncFromGameEngine DOM writes, element recycling |
 | SVG Render Managers | `svg-effect-manager.test.ts` | Effect pool allocation, syncFromGameEngine DOM writes, element recycling, visibility toggling |

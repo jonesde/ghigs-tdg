@@ -12,6 +12,7 @@ import { useUiStore } from "@/stores/ui.js";
 interface GemBreakdown {
   bossKills: { base: number; afterDiff: number; afterRegion: number; afterFirstTime: number };
   milestones: { base: number; afterDiff: number; afterRegion: number; afterFirstTime: number };
+  waveClears: { base: number; afterDiff: number; afterRegion: number; afterFirstTime: number };
   waveCompletion: { base: number; afterDiff: number; afterRegion: number; afterFirstTime: number };
   firstClearBonus: number;
 }
@@ -83,12 +84,14 @@ describe("EndScreen", () => {
       victory: true,
       gemBreakdown: {
         waveCompletion: { base: 30, afterDiff: 30, afterRegion: 60, afterFirstTime: 60 },
+        waveClears: { base: 20, afterDiff: 20, afterRegion: 20, afterFirstTime: 20 },
         bossKills: { base: 10, afterDiff: 10, afterRegion: 20, afterFirstTime: 20 },
         milestones: { base: 5, afterDiff: 5, afterRegion: 10, afterFirstTime: 10 },
       } as unknown as GemBreakdown,
     };
     const wrapper = mount(EndScreen, { props: { won: true }, global: { plugins: [router, pinia] } });
     expect(wrapper.text()).toContain("Wave Completion");
+    expect(wrapper.text()).toContain("Wave Clears");
     expect(wrapper.text()).toContain("Boss Kills");
     expect(wrapper.text()).toContain("Milestones");
   });

@@ -1,9 +1,11 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
+import { getGameContent } from "@/content/gameContent.js";
 import { GENERAL_ADDON_GEM_COSTS, SELL_OPTION_GEM_COST } from "@/sim/Constants.js";
 import {
   canRefund,
+  canRefundGeneral,
   countRefundableGems,
   GENERAL_ADDON_DEFS,
   getGeneralAddonValue,
@@ -14,6 +16,7 @@ import {
   maxLevelFor,
   refundAllGems,
   tryRefund,
+  tryRefundGeneral,
   tryUnlock,
   tryUnlockGeneral,
   unlockCost,
@@ -34,9 +37,9 @@ interface SaveFixture {
   generalAddons: Record<string, unknown>;
 }
 
-// Local constants matching SkillTree.js (not exported)
-const LEVEL_COSTS = [0, 0, 16, 32, 64, 128, 256];
-const ADDON_COSTS = [100, 300, 900];
+// Read the live costs from content so the assertions track balance tuning.
+const LEVEL_COSTS = getGameContent().skillTree.levelCosts;
+const ADDON_COSTS = getGameContent().skillTree.addonCosts;
 
 function freshSave(): SaveFixture {
   return {
@@ -576,6 +579,60 @@ describe("SkillTree — General Add-ons", () => {
       expect(save.generalAddons.sellRefundUnlocked).toBe(false);
       expect(save.generalAddons.sellDiscountUnlocked).toBe(false);
       expect(save.generalAddons.sellActive).toBeNull();
+    });
+  });
+
+  describe("individual sellOption refunds (bulk parity)", () => {
+    it("canRefundGeneral reports the cost of each purchased sell mode", () => {
+      const save = freshSave();
+      tryUnlockGeneral(save, "sellOption", 0);
+      expect(canRefundGeneral(save, "sellOption", 0)).toBe(SELL_OPTION_GEM_COST);
+      expect(canRefundGeneral(save, "sellOption", 1)).toBe(0);
+      tryUnlockGeneral(save, "sellOption", 1);
+      expect(canRefundGeneral(save, "sellOption", 1)).toBe(SELL_OPTION_GEM_COST);
+    });
+
+    it("refunds the active sell mode and clears sellActive", () => {
+      const save = freshSave();
+      tryUnlockGeneral(save, "sellOption", 0);
+      const gemsAfterPurchase = save.gems;
+      const result = tryRefundGeneral(save, "sellOption", 0);
+      expect(result.ok).toBe(true);
+      expect(result.gems).toBe(SELL_OPTION_GEM_COST);
+      expect(save.gems).toBe(gemsAfterPurchase + SELL_OPTION_GEM_COST);
+      expect(save.generalAddons.sellRefundUnlocked).toBe(false);
+      expect(save.generalAddons.sellActive).toBeNull();
+    });
+
+    it("refunds the inactive sell mode without clearing the active selection", () => {
+      const save = freshSave();
+      tryUnlockGeneral(save, "sellOption", 0);
+      tryUnlockGeneral(save, "sellOption", 1); // active switches to discount
+      const gemsAfterPurchases = save.gems;
+      const result = tryRefundGeneral(save, "sellOption", 0);
+      expect(result.ok).toBe(true);
+      expect(save.gems).toBe(gemsAfterPurchases + SELL_OPTION_GEM_COST);
+      expect(save.generalAddons.sellRefundUnlocked).toBe(false);
+      expect(save.generalAddons.sellDiscountUnlocked).toBe(true);
+      expect(save.generalAddons.sellActive).toBe("discount");
+    });
+
+    it("fails to refund a sell mode that was never purchased", () => {
+      const save = freshSave();
+      const result = tryRefundGeneral(save, "sellOption", 0);
+      expect(result.ok).toBe(false);
+    });
+
+    it("restores the same end state as the bulk refund for one flag", () => {
+      const save = freshSave();
+      tryUnlockGeneral(save, "sellOption", 0);
+      const singleRefundSave = freshSave();
+      tryUnlockGeneral(singleRefundSave, "sellOption", 0);
+      tryRefundGeneral(save, "sellOption", 0);
+      refundAllGems(singleRefundSave);
+      expect(save.gems).toBe(singleRefundSave.gems);
+      expect(save.generalAddons.sellActive).toBeNull();
+      expect(singleRefundSave.generalAddons.sellActive).toBeNull();
     });
   });
 });

@@ -60,6 +60,10 @@ function _carveStraight(tiles: Tile[][], from: Point, nextWaypoint: Point) {
   tiles[curY]![curX]!.type = "path";
 }
 
+// Carves an axis-aligned corridor between two points. `width` is the intended
+// tile width of the corridor: width<=1 is a single tile, width 2-3 spans 3 tiles,
+// width 4-5 spans 5, and so on (half-extent = floor(width/2)). The previous
+// ceil(width/2) painted 3 tiles for width=1.
 function carveWidePath(
   tiles: Tile[][],
   from: Point,
@@ -91,7 +95,7 @@ function carveWidePath(
     }
   }
   for (const pt of pts) {
-    const halfW = Math.ceil(width / 2);
+    const halfW = Math.floor(width / 2);
     for (let deltaY = -halfW; deltaY <= halfW; deltaY++) {
       for (let deltaX = -halfW; deltaX <= halfW; deltaX++) {
         const neighborX = pt.x + deltaX;
@@ -111,93 +115,72 @@ function carveWidePath(
   }
 }
 
-interface SerpentineConfig {
-  phase: "cross" | "drift" | "down";
-  crossTargetX?: number;
-  crossTargetY?: number;
-  downStepMultiplier?: number;
-}
-
+// Single-pass serpentine: one continuous winding corridor from spawn to base.
+// `width` is the corridor width in tiles (half-extent = floor(width/2), same
+// semantics as carveWidePath). The corridor advances monotonically along the
+// main axis and turns perpendicular by at most SERPENTINE_STEP each time, then
+// descends by at most SERPENTINE_DOWN_CAP tiles, so spawn→base reachability is
+// guaranteed by construction. (Historically this style ran three overlapping
+// carve passes — cross/drift/down — all from the same spawn.)
 function carveSerpentine(
   tiles: Tile[][],
   from: Point,
   nextWaypoint: Point,
-  _width: number = 1,
-  config: SerpentineConfig = { phase: "cross" },
+  width: number = 1,
   isLandscape: boolean = false,
 ) {
-  const W = tiles[0]!.length;
-  const H = tiles.length;
+  const widthLimit = tiles[0]!.length;
+  const heightLimit = tiles.length;
+  const halfExtent = Math.floor(width / 2);
   let curX = from.x;
   let curY = from.y;
   let dir = isLandscape ? (from.y < nextWaypoint.y ? 1 : -1) : from.x < nextWaypoint.x ? 1 : -1;
   const step = SERPENTINE_STEP;
-  const downCap =
-    config.phase === "down" ? Math.floor(SERPENTINE_DOWN_CAP * (config.downStepMultiplier ?? 2)) : SERPENTINE_DOWN_CAP;
-  const crossTarget = isLandscape
-    ? (config.crossTargetY ?? Math.floor(H / 2) + 2)
-    : (config.crossTargetX ?? Math.floor(W / 2) + 2);
-  const carved: number[][] = [];
   const mainBound = isLandscape ? nextWaypoint.x : nextWaypoint.y;
-  const perpBound = isLandscape ? H : W;
+  const perpBound = isLandscape ? heightLimit : widthLimit;
 
-  while (isLandscape ? curX < mainBound : curY < mainBound) {
-    let targetMain: number;
-    if (config.phase === "cross") {
-      targetMain =
-        dir > 0
-          ? Math.min(crossTarget, isLandscape ? curY + step : curX + step)
-          : Math.max(1, isLandscape ? curY - step : curX - step);
-    } else if (config.phase === "drift") {
-      targetMain =
-        dir > 0
-          ? Math.min(perpBound - 2, isLandscape ? curY + step : curX + step)
-          : Math.max(1, isLandscape ? curY - step : curX - step);
-    } else {
-      targetMain =
-        dir > 0
-          ? Math.min(perpBound - 2, isLandscape ? curY + step : curX + step)
-          : Math.max(1, isLandscape ? curY - step : curX - step);
-    }
-    while ((isLandscape ? curY : curX) !== targetMain) {
-      if (tiles[curY]![curX]!.type !== "base") {
-        tiles[curY]![curX]!.type = "path";
-        tiles[curY]![curX]!.height = 1;
-        carved.push([curX, curY]);
+  const carveAt = (centerX: number, centerY: number) => {
+    for (let deltaY = -halfExtent; deltaY <= halfExtent; deltaY++) {
+      for (let deltaX = -halfExtent; deltaX <= halfExtent; deltaX++) {
+        const tileX = centerX + deltaX;
+        const tileY = centerY + deltaY;
+        if (tileX < 0 || tileY < 0 || tileX >= widthLimit || tileY >= heightLimit) continue;
+        if (tiles[tileY]![tileX]!.type === "base") continue;
+        tiles[tileY]![tileX]!.type = "path";
+        tiles[tileY]![tileX]!.height = 1;
       }
+    }
+  };
+
+  while ((isLandscape ? curX : curY) < mainBound) {
+    const perpCoordinate = isLandscape ? curY : curX;
+    const targetPerp = dir > 0 ? Math.min(perpBound - 2, perpCoordinate + step) : Math.max(1, perpCoordinate - step);
+    while ((isLandscape ? curY : curX) !== targetPerp) {
+      carveAt(curX, curY);
       if (isLandscape) curY += dir;
       else curX += dir;
     }
-    const downSteps = Math.min(downCap, isLandscape ? nextWaypoint.x - curX : nextWaypoint.y - curY);
-    for (let i = 0; i < downSteps; i++) {
-      if (tiles[curY]?.[curX] && tiles[curY]![curX]!.type !== "base") {
-        tiles[curY]![curX]!.type = "path";
-        tiles[curY]![curX]!.height = 1;
-        carved.push([curX, curY]);
-      }
+    const mainRemaining = mainBound - (isLandscape ? curX : curY);
+    const descentSteps = Math.min(SERPENTINE_DOWN_CAP, mainRemaining);
+    for (let descent = 0; descent < descentSteps; descent++) {
+      carveAt(curX, curY);
       if (isLandscape) curX++;
       else curY++;
     }
     dir *= -1;
   }
+
   while ((isLandscape ? curY : curX) !== (isLandscape ? nextWaypoint.y : nextWaypoint.x)) {
-    if (tiles[curY]![curX]!.type !== "base") {
-      tiles[curY]![curX]!.type = "path";
-      tiles[curY]![curX]!.height = 1;
-      carved.push([curX, curY]);
-    }
+    carveAt(curX, curY);
     if (isLandscape) curY += Math.sign(nextWaypoint.y - curY);
     else curX += Math.sign(nextWaypoint.x - curX);
   }
   while ((isLandscape ? curX : curY) !== (isLandscape ? nextWaypoint.x : nextWaypoint.y)) {
-    if (tiles[curY]![curX]!.type !== "base") {
-      tiles[curY]![curX]!.type = "path";
-      tiles[curY]![curX]!.height = 1;
-      carved.push([curX, curY]);
-    }
+    carveAt(curX, curY);
     if (isLandscape) curX += Math.sign(nextWaypoint.x - curX);
     else curY += Math.sign(nextWaypoint.y - curY);
   }
+  carveAt(curX, curY);
 }
 
 function carveCanyon(
@@ -478,7 +461,14 @@ function carveOpenAreaAt(
   }
 }
 
+// Generated maps are cached per MAP_LEVELS index. The pack is immutable content
+// loaded once, so entries never go stale in a normal run. Tests that remap an
+// index (or swap map content) call invalidateMapCache() to drop prior layouts.
 const mapCache = new Map<number, GeneratedMap>();
+
+export function invalidateMapCache(): void {
+  mapCache.clear();
+}
 
 export function getMap(index: number): GeneratedMap {
   const cached = mapCache.get(index);
@@ -763,15 +753,11 @@ export function generateRandomMap(
       if (isLandscape) {
         const spawn = { x: Math.floor(width * (0.1 + rng() * 0.3)), y: Math.round(rng() * 2) };
         spawns.push(spawn);
-        carveSerpentine(tiles, spawn, base, 1, { phase: "cross", crossTargetY: Math.floor(height / 2) + 2 }, true);
-        carveSerpentine(tiles, { x: spawn.x, y: spawn.y }, base, 1, { phase: "drift" }, true);
-        carveSerpentine(tiles, { x: spawn.x, y: spawn.y }, base, 1, { phase: "down", downStepMultiplier: 2 }, true);
+        carveSerpentine(tiles, spawn, base, 1, true);
       } else {
         const spawn = { x: Math.round(rng() * 2), y: Math.floor(height * (0.1 + rng() * 0.3)) };
         spawns.push(spawn);
-        carveSerpentine(tiles, spawn, base, 1, { phase: "cross", crossTargetX: Math.floor(width / 2) + 2 });
-        carveSerpentine(tiles, { x: spawn.x, y: spawn.y }, base, 1, { phase: "drift" });
-        carveSerpentine(tiles, { x: spawn.x, y: spawn.y }, base, 1, { phase: "down", downStepMultiplier: 2 });
+        carveSerpentine(tiles, spawn, base, 1);
       }
       break;
     }
@@ -833,7 +819,14 @@ export function generateRandomMap(
       const baseY = base.y + deltaY;
       if (baseX >= 0 && baseY >= 0 && baseX < width && baseY < height) tiles[baseY]![baseX]!.type = "base";
     }
-  for (const spawn of spawns) tiles[spawn.y]![spawn.x]!.type = "spawn";
+  // Inset every spawn one tile from the map border. Styles could place a spawn on
+  // row/column 0 (bastion, serpentine); the carve always passes through the
+  // adjacent inset tile, so moving the spawn keeps it on the corridor.
+  for (const spawn of spawns) {
+    spawn.x = Math.max(1, Math.min(width - 2, spawn.x));
+    spawn.y = Math.max(1, Math.min(height - 2, spawn.y));
+    tiles[spawn.y]![spawn.x]!.type = "spawn";
+  }
 
   return {
     regionId,

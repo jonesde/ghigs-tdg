@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { MAP_GEM_MULTIPLIERS, MAP_LEVELS, TOTAL_MAPS } from "@/sim/Constants.js";
 import { BOSS_CADENCE } from "@/sim/ConstantsEnemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
-import { generateRandomMap, getMap } from "@/sim/grid/Map.js";
+import { generateRandomMap, getMap, invalidateMapCache } from "@/sim/grid/Map.js";
 import { orderedPath } from "../helpers/navmesh-test-utils.js";
 
 describe("Map generation", () => {
@@ -67,6 +67,25 @@ describe("Map generation", () => {
       const map0 = getMap(0);
       const map1 = getMap(1);
       expect(map0).not.toBe(map1);
+    });
+
+    it("invalidates cached maps via invalidateMapCache", () => {
+      const first = getMap(0);
+      invalidateMapCache();
+      const second = getMap(0);
+      expect(second).not.toBe(first);
+    });
+
+    it("insets every spawn at least one tile from the map border", () => {
+      for (let i = 0; i < TOTAL_MAPS; i++) {
+        const map = getMap(i);
+        for (const spawn of map.spawns) {
+          expect(spawn.x, `Map ${i} spawn x`).toBeGreaterThanOrEqual(1);
+          expect(spawn.y, `Map ${i} spawn y`).toBeGreaterThanOrEqual(1);
+          expect(spawn.x, `Map ${i} spawn x`).toBeLessThanOrEqual(map.width - 2);
+          expect(spawn.y, `Map ${i} spawn y`).toBeLessThanOrEqual(map.height - 2);
+        }
+      }
     });
 
     it("all maps have name property", () => {

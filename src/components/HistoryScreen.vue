@@ -130,6 +130,10 @@ function replayRun(entry: Record<string, unknown>) {
             <h3>Milestones</h3>
             <div v-for="(line, i) in formatBreakdown(entry, 'milestones')" :key="i" class="breakdown-line">{{ line }}</div>
           </div>
+          <div v-if="formatBreakdown(entry, 'waveClears')?.length" class="breakdown-section">
+            <h3>Wave Clears</h3>
+            <div v-for="(line, i) in formatBreakdown(entry, 'waveClears')" :key="i" class="breakdown-line">{{ line }}</div>
+          </div>
           <div v-if="formatBreakdown(entry, 'waveCompletion')?.length" class="breakdown-section">
             <h3>Wave Completion</h3>
             <div v-for="(line, i) in formatBreakdown(entry, 'waveCompletion')" :key="i" class="breakdown-line">{{ line }}</div>

@@ -76,6 +76,28 @@ describe("EnemyManager", () => {
     });
   });
 
+  describe("damage credit sink", () => {
+    it("routes creditDamage through the wired sink and filters non-positive amounts", () => {
+      const credits: Array<{ towerId: string; amount: number }> = [];
+      manager.setDamageCreditSink((towerId, amount) => credits.push({ towerId, amount }));
+      manager.creditDamage("tower-1", 4.5);
+      manager.creditDamage("tower-1", 0);
+      expect(credits).toEqual([{ towerId: "tower-1", amount: 4.5 }]);
+    });
+
+    it("credits burn ticks from Enemy.computeIntent through the sink", () => {
+      const credits: Array<{ towerId: string; amount: number }> = [];
+      manager.setDamageCreditSink((towerId, amount) => credits.push({ towerId, amount }));
+      const enemy = manager.spawn("minion", 1, 0, 1);
+      enemy.hp = 100;
+      enemy.applyBurn(5, 1.0, "tower-burn");
+      manager.preStep(1.0);
+      expect(credits).toHaveLength(1);
+      expect(credits[0]!.towerId).toBe("tower-burn");
+      expect(credits[0]!.amount).toBeCloseTo(5, 4);
+    });
+  });
+
   describe("postStep", () => {
     it("calls onEnemyKill when an enemy is removed", () => {
       const enemy = manager.spawn("minion", 1, 0, 1);

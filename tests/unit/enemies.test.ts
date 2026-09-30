@@ -2,13 +2,14 @@
 /** @vitest-environment node */
 
 import { createPinia, setActivePinia } from "pinia";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
 import {
   BOSS_STUN_REDUCTION,
   ENEMY_LEVEL_HP_MULT,
   ENEMY_TYPES,
   ENEMY_WAVE_DAMAGE_MULT,
+  enemyLevelBounty,
   MIN_SLOW_FACTOR,
 } from "@/sim/ConstantsEnemy.js";
 import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
@@ -110,11 +111,12 @@ describe("Enemy", () => {
       expect(enemy2.maxHp / enemy1.maxHp).toBeCloseTo(expectedRatio, 4);
     });
 
-    it("computes bounty using level scaling", () => {
-      const level = 3;
-      const enemy = new Enemy("minion", level, 0, grid, 1, 0);
-      const expected = Math.ceil(ENEMY_TYPES.minion.bounty * (1 + 0.5 * (level - 1)));
-      expect(enemy.bounty).toBe(expected);
+    it("applies bounty level growth, full through wave 10 and discounted after", () => {
+      const early = new Enemy("minion", 4, 0, grid, 10, 0);
+      const late = new Enemy("minion", 4, 0, grid, 11, 0);
+      expect(early.bounty).toBe(enemyLevelBounty(ENEMY_TYPES.minion.bounty, 4, 10));
+      expect(late.bounty).toBe(enemyLevelBounty(ENEMY_TYPES.minion.bounty, 4, 11));
+      expect(late.bounty).toBeLessThan(early.bounty);
     });
 
     it("sets shield for shielded enemies", () => {
@@ -148,6 +150,15 @@ describe("Enemy", () => {
       const enemy = new Enemy("boss", 1, 0, grid, 1, 0);
       expect((enemy as { resist: number }).resist).toBe(ENEMY_TYPES.boss.resist);
       expect((enemy as { slowResist: number }).slowResist).toBe(ENEMY_TYPES.boss.slowResist);
+    });
+
+    it("sets knockResist from the type table (boss 0.8, tank 0.3)", () => {
+      const boss = new Enemy("boss", 1, 0, grid, 1, 0);
+      const tank = new Enemy("tank", 1, 0, grid, 1, 0);
+      const minion = new Enemy("minion", 1, 0, grid, 1, 0);
+      expect(boss.knockResist).toBe(0.8);
+      expect(tank.knockResist).toBe(0.3);
+      expect(minion.knockResist).toBe(0);
     });
 
     it("initializes status effects to zero", () => {
@@ -232,11 +243,22 @@ describe("Enemy", () => {
       expect(damage).toBe(7);
     });
 
-    it("returns 0 when damage is fully absorbed by shield", () => {
+    it("returns the total damage applied including shield absorption", () => {
       const enemy = new Enemy("shielded", 1, 0, grid, 1, 0);
       (enemy as { shield: number }).shield = 100;
       const damage = enemy.takeDamage(5);
-      expect(damage).toBe(0);
+      expect(damage).toBe(5);
+      expect((enemy as { shield: number }).shield).toBe(95);
+      expect(enemy.hp).toBe(enemy.maxHp);
+    });
+
+    it("returns absorbed plus HP damage on a partial shield hit", () => {
+      const enemy = new Enemy("shielded", 1, 0, grid, 1, 0);
+      (enemy as { shield: number }).shield = 3;
+      const damage = enemy.takeDamage(10);
+      expect(damage).toBeCloseTo(10, 4);
+      expect((enemy as { shield: number }).shield).toBe(0);
+      expect(enemy.hp).toBeLessThan(enemy.maxHp);
     });
   });
 
@@ -306,6 +328,33 @@ describe("Enemy", () => {
     });
   });
 
+  describe("applyKnockback", () => {
+    it("scales the impulse by (1 - knockResist)", () => {
+      const minion = spawn("minion", 1, 0, 1);
+      minion.moveAngle = 0;
+      minion.applyKnockback(1);
+      expect(minion.body!.linvel().x).toBeCloseTo(-8, 3);
+
+      const tank = spawn("tank", 1, 0, 1);
+      tank.moveAngle = 0;
+      tank.applyKnockback(1);
+      expect(tank.body!.linvel().x).toBeCloseTo(-8 * (1 - 0.3), 3);
+
+      const boss = spawn("boss", 1, 0, 1);
+      boss.moveAngle = 0;
+      boss.applyKnockback(1);
+      expect(boss.body!.linvel().x).toBeCloseTo(-8 * (1 - 0.8), 3);
+    });
+
+    it("does nothing when knockResist fully absorbs the impulse", () => {
+      const minion = spawn("minion", 1, 0, 1);
+      minion.knockResist = 1;
+      minion.moveAngle = 0;
+      minion.applyKnockback(1);
+      expect(minion.body!.linvel().x).toBe(0);
+    });
+  });
+
   describe("applyBurn", () => {
     it("adds a burn entry", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
@@ -322,6 +371,28 @@ describe("Enemy", () => {
       expect(enemy.burnStack).toHaveLength(2);
       const totalDps = enemy.burnStack.reduce((sum, burnEntry) => sum + burnEntry.dps, 0);
       expect(totalDps).toBe(15);
+    });
+
+    it("tracks the inflicting tower id on the stack", () => {
+      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+      enemy.applyBurn(5, 3.0, "tower-3");
+      expect(enemy.burnStack[0]!.sourceTowerId).toBe("tower-3");
+    });
+
+    it("updates the source tower when refreshing a similar stack", () => {
+      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+      enemy.applyBurn(5, 1.0, "tower-a");
+      enemy.applyBurn(5, 3.0, "tower-b");
+      expect(enemy.burnStack).toHaveLength(1);
+      expect(enemy.burnStack[0]!.timer).toBeCloseTo(3.0, 4);
+      expect(enemy.burnStack[0]!.sourceTowerId).toBe("tower-b");
+    });
+
+    it("keeps the previous source when refreshing without a source id", () => {
+      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+      enemy.applyBurn(5, 1.0, "tower-a");
+      enemy.applyBurn(5, 3.0);
+      expect(enemy.burnStack[0]!.sourceTowerId).toBe("tower-a");
     });
   });
 
@@ -420,6 +491,76 @@ describe("Enemy", () => {
       expect(enemy.removed).toBe(true);
       expect(enemy.x).toBe(startX);
       expect(enemy.y).toBe(startY);
+    });
+
+    it("credits burn damage to the inflicting tower", () => {
+      const enemy = spawn("minion", 1, 0, 1);
+      enemy.hp = 100;
+      enemy.applyBurn(5, 2.0, "tower-credit");
+      const credits: { towerId: string; amount: number }[] = [];
+      const enemyManager = {
+        enemies: [enemy],
+        getEnemiesInRange: () => [],
+        forEachEnemyInRange: () => {},
+        creditDamage: (towerId: string, amount: number) => credits.push({ towerId, amount }),
+      };
+      enemy.computeIntent(1.0, enemyManager);
+      expect(credits).toHaveLength(1);
+      expect(credits[0]!.towerId).toBe("tower-credit");
+      expect(credits[0]!.amount).toBeCloseTo(5, 4);
+    });
+
+    it("ticks burn through shields but still applies resist", () => {
+      const boss = new Enemy("boss", 1, 0, grid, 1, 0);
+      boss.shield = 100;
+      boss.applyBurn(10, 1.0, "tower-boss");
+      const creditedAmounts: number[] = [];
+      const enemyManager = {
+        enemies: [boss],
+        getEnemiesInRange: () => [],
+        forEachEnemyInRange: () => {},
+        creditDamage: (_towerId: string, amount: number) => creditedAmounts.push(amount),
+      };
+      boss.computeIntent(1.0, enemyManager);
+      expect(boss.shield).toBe(100);
+      expect(boss.hp).toBeCloseTo(boss.maxHp - 10 * (1 - boss.resist), 4);
+      expect(creditedAmounts[0]).toBeCloseTo(10 * (1 - boss.resist), 4);
+    });
+
+    it("ticks burn without credit when the stack has no source tower", () => {
+      const enemy = spawn("minion", 1, 0, 1);
+      enemy.hp = 100;
+      enemy.applyBurn(5, 2.0);
+      const credit = vi.fn();
+      const enemyManager = {
+        enemies: [enemy],
+        getEnemiesInRange: () => [],
+        forEachEnemyInRange: () => {},
+        creditDamage: credit,
+      };
+      enemy.computeIntent(1.0, enemyManager);
+      expect(enemy.hp).toBeCloseTo(95, 4);
+      expect(credit).not.toHaveBeenCalled();
+    });
+
+    it("integrates kinematically in postPhysics without a physics body", () => {
+      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+      const startX = enemy.x;
+      const startY = enemy.y;
+      enemy.lastMoveTargetWorld = { x: startX + grid.tileSize * 10, y: startY };
+      expect(() => enemy.postPhysics(0.5)).not.toThrow();
+      expect(enemy.x).toBeCloseTo(startX + enemy.speed * grid.tileSize * 0.5, 4);
+      expect(enemy.y).toBeCloseTo(startY, 4);
+      expect(enemy.moveAngle).toBeCloseTo(0, 4);
+    });
+
+    it("holds position in kinematic postPhysics while stunned", () => {
+      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+      const startX = enemy.x;
+      enemy.applyStun(1.0);
+      enemy.lastMoveTargetWorld = { x: startX + grid.tileSize * 10, y: enemy.y };
+      enemy.postPhysics(0.5);
+      expect(enemy.x).toBe(startX);
     });
   });
 

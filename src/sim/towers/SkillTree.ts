@@ -132,15 +132,37 @@ export function isUnlocked(save: PersistState, towerId: string, tier: string, in
   return false;
 }
 
+// Shared tower-unlock precondition chain for isAvailable/tryUnlock, so the two
+// cannot drift. Returns the first failing reason; caller handles gems and the
+// already-unlocked case. Assumes the tower entry may be missing.
+function checkTowerUnlockPreconditions(
+  save: PersistState,
+  towerId: string,
+  tier: string,
+  index: number,
+): { ok: true } | { ok: false; reason: string } {
+  const unlocked = save.unlocked[towerId];
+  if (!unlocked) return { ok: false, reason: "Tower not found" };
+  if (!unlocked.levels || !unlocked.variantA || !unlocked.variantB) return { ok: false, reason: "Invalid save data" };
+  if (tier === "level" && index >= 3 && !unlocked.levels[index - 1]) {
+    return { ok: false, reason: "Unlock previous level first" };
+  }
+  if (tier === "variantA" && index > 0 && !unlocked.variantA[index - 1]) {
+    return { ok: false, reason: "Unlock previous tier first" };
+  }
+  if (tier === "variantB" && index > 0 && !unlocked.variantB[index - 1]) {
+    return { ok: false, reason: "Unlock previous tier first" };
+  }
+  if ((tier === "variantA" || tier === "variantB") && index === 0 && !unlocked.levels[3]) {
+    return { ok: false, reason: "Unlock level 4 first" };
+  }
+  return { ok: true };
+}
+
 export function isAvailable(save: PersistState, towerId: string, tier: string, index: number, cost: number): boolean {
   if (isUnlocked(save, towerId, tier, index)) return true;
   if (save.gems < cost) return false;
-  const unlocked = save.unlocked[towerId]!;
-  if (tier === "level" && index >= 3 && !unlocked.levels[index - 1]) return false;
-  if (tier === "variantA" && index > 0 && !unlocked.variantA[index - 1]) return false;
-  if (tier === "variantB" && index > 0 && !unlocked.variantB[index - 1]) return false;
-  if ((tier === "variantA" || tier === "variantB") && index === 0 && !unlocked.levels[3]) return false;
-  return true;
+  return checkTowerUnlockPreconditions(save, towerId, tier, index).ok;
 }
 
 export function unlockCost(tier: string, index: number): number {
@@ -183,18 +205,10 @@ export function tryUnlock(save: PersistState, towerId: string, tier: string, ind
   const cost = getCost(tier, index);
   if (save.gems < cost) return { ok: false, reason: "Not enough gems" };
 
-  const unlocked = save.unlocked[towerId];
-  if (!unlocked) return { ok: false, reason: "Tower not found" };
-  if (!unlocked.levels || !unlocked.variantA || !unlocked.variantB) return { ok: false, reason: "Invalid save data" };
-  if (tier === "level" && index >= 3 && !unlocked.levels[index - 1])
-    return { ok: false, reason: "Unlock previous level first" };
-  if (tier === "variantA" && index > 0 && !unlocked.variantA[index - 1])
-    return { ok: false, reason: "Unlock previous tier first" };
-  if (tier === "variantB" && index > 0 && !unlocked.variantB[index - 1])
-    return { ok: false, reason: "Unlock previous tier first" };
-  if ((tier === "variantA" || tier === "variantB") && index === 0 && !unlocked.levels[3])
-    return { ok: false, reason: "Unlock level 4 first" };
+  const precondition = checkTowerUnlockPreconditions(save, towerId, tier, index);
+  if (!precondition.ok) return precondition;
 
+  const unlocked = save.unlocked[towerId]!;
   save.gems -= cost;
   if (tier === "level") unlocked.levels[index] = true;
   else if (tier === "variantA") unlocked.variantA[index] = true;
@@ -325,7 +339,13 @@ export function getGeneralAddonTierData(save: PersistState, key: string) {
 }
 
 export function canRefundGeneral(save: PersistState, key: string, index: number): number {
-  if (key === "sellOption") return 0;
+  // sellOption purchasable flags refund individually exactly like the bulk path
+  // (countRefundableGems / refundAllGems): each purchased flag is worth its cost.
+  if (key === "sellOption") {
+    const generalAddons = save.generalAddons;
+    const purchased = index === 0 ? generalAddons.sellRefundUnlocked : generalAddons.sellDiscountUnlocked;
+    return purchased ? SELL_OPTION_GEM_COST : 0;
+  }
   const current = getGeneralAddonValue(save, key);
   if (current !== index) return 0;
   const def = GENERAL_ADDON_DEFS[key];
@@ -336,6 +356,17 @@ export function canRefundGeneral(save: PersistState, key: string, index: number)
 export function tryRefundGeneral(save: PersistState, key: string, index: number) {
   const refundAmount = canRefundGeneral(save, key, index);
   if (refundAmount === 0) return { ok: false, reason: "Cannot refund this tier" };
+  if (key === "sellOption") {
+    const generalAddons = save.generalAddons;
+    const target = index === 0 ? "refund" : "discount";
+    if (index === 0) generalAddons.sellRefundUnlocked = false;
+    else generalAddons.sellDiscountUnlocked = false;
+    // Refunding the active mode clears it; refunding the inactive mode leaves the
+    // current selection alone. Same end state as refundAllGems for the refunded flag.
+    if (generalAddons.sellActive === target) generalAddons.sellActive = null;
+    save.gems += refundAmount;
+    return { ok: true, gems: refundAmount };
+  }
   if (index > 0) {
     save.generalAddons[key] = index - 1;
   } else {

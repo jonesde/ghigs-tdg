@@ -841,5 +841,19 @@ describe("GameEngine", () => {
       expect(reacquired!.removed).toBe(false);
       expect(reacquired!.id).toBe(enemy.id);
     });
+
+    it("credits burn ticks to the inflicting tower's totals", () => {
+      const persistState = createTestPersistState();
+      initEngine(0, persistState);
+      const tower = buildAndSelectTower();
+      tower.cooldown = 9999;
+      const enemy = placeEnemyInTowerRange(tower);
+      enemy.hp = 1000;
+      enemy.applyBurn(10, 5, tower.id);
+      const damageBefore = tower.totalDamageDealt;
+      engine.update(1 / 60);
+      expect(tower.totalDamageDealt).toBeGreaterThan(damageBefore);
+      expect(enemy.hp).toBeLessThan(1000);
+    });
   });
 });

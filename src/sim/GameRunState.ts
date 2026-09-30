@@ -37,6 +37,9 @@ export interface GameRunState {
 export interface GemBreakdown {
   bossKills: BreakdownEntry;
   milestones: BreakdownEntry;
+  // Flat per-wave-clear award (REGION_GEM_REWARDS[regionId]); unlike
+  // waveCompletion it pays on every clear and carries no multipliers.
+  waveClears: BreakdownEntry;
   waveCompletion: BreakdownEntry;
   firstClearBonus: number;
 }
@@ -141,6 +144,7 @@ export function createFreshGemBreakdown(): GemBreakdown {
   return {
     bossKills: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
     milestones: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
+    waveClears: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
     waveCompletion: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
     firstClearBonus: 0,
   };

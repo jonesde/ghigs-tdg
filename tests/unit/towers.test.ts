@@ -2,7 +2,7 @@
 /** @vitest-environment node */
 
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MILESTONE_BONUS_PCT,
   MILESTONE_THRESHOLD,
@@ -16,7 +16,14 @@ import {
   TOWER_META,
   UPGRADE_COST_BASE,
 } from "@/sim/Constants.js";
-import { CANNON_FRAGMENT_SPLASH_TIERS } from "@/sim/ConstantsTower.js";
+import {
+  GHOST_RESTORE_BASE_SECONDS,
+  GHOST_RESTORE_MIN_SECONDS,
+  GHOST_RESTORE_PER_LEVEL,
+  MILESTONE_MAX_TIERS,
+  TERRAIN_DAMAGE_BONUS_MAX_MULT,
+  TOWER_VARIANTS,
+} from "@/sim/ConstantsTower.js";
 import { Tower } from "@/sim/towers/Tower.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../helpers/mock-grid";
@@ -255,25 +262,18 @@ describe("Tower", () => {
       expect(tower.stats.splash).toBeCloseTo(baseSplash * TOWER_LEVEL_SPLASH_MULT ** 6 * 1.5, 6);
     });
 
-    it("Variant A (Fragment) multiplies the level-scaled splash by CANNON_FRAGMENT_SPLASH_TIERS per tier", () => {
+    it("Variant A (Fragment) multiplies the level-scaled splash by the fragment tiers per tier", () => {
+      const fragmentOp = TOWER_VARIANTS.cannon.A.statOps.find((op) => op.field === "splash");
+      const fragmentTiers = (fragmentOp as { tiers: number[] }).tiers;
       const tower = new Tower("cannon", 0, 0, makeSave(), makeMockGrid());
       const baseSplash = TOWER_BASE.cannon.splash!;
       tower.level = 4;
       expect(tower.specialize("A", makeSave())).toBe(true);
-      expect(tower.stats.splash).toBeCloseTo(
-        baseSplash * TOWER_LEVEL_SPLASH_MULT ** 4 * CANNON_FRAGMENT_SPLASH_TIERS[0]!,
-        6,
-      );
+      expect(tower.stats.splash).toBeCloseTo(baseSplash * TOWER_LEVEL_SPLASH_MULT ** 4 * fragmentTiers[0]!, 6);
       expect(tower.doUpgrade(makeSave()).ok).toBe(true);
-      expect(tower.stats.splash).toBeCloseTo(
-        baseSplash * TOWER_LEVEL_SPLASH_MULT ** 5 * CANNON_FRAGMENT_SPLASH_TIERS[1]!,
-        6,
-      );
+      expect(tower.stats.splash).toBeCloseTo(baseSplash * TOWER_LEVEL_SPLASH_MULT ** 5 * fragmentTiers[1]!, 6);
       expect(tower.doUpgrade(makeSave()).ok).toBe(true);
-      expect(tower.stats.splash).toBeCloseTo(
-        baseSplash * TOWER_LEVEL_SPLASH_MULT ** 6 * CANNON_FRAGMENT_SPLASH_TIERS[2]!,
-        6,
-      );
+      expect(tower.stats.splash).toBeCloseTo(baseSplash * TOWER_LEVEL_SPLASH_MULT ** 6 * fragmentTiers[2]!, 6);
     });
 
     it("Variant A (Overload) increases chain by 2*t and damage by 1.2^t per tier", () => {
@@ -455,14 +455,37 @@ describe("Tower", () => {
       const expectedDamage = baseDamage * (1 + TERRAIN_HEIGHT_BONUS_PCT[1] * 3);
       expect(tower.stats.damage).toBeCloseTo(expectedDamage, 4);
     });
+
+    it("is behavior-preserving at the current maximum (+80% -> 1.8x)", () => {
+      const save = makeSave();
+      save.generalAddons.terrainHeightBonus = 2; // tier 2: +20% per height
+      const map = makeBastionMap();
+      map.tiles[0][0].height = 4;
+      const grid = { tiles: map.tiles, tileSize: 36 };
+      const tower = new Tower("basic", 0, 0, save, grid);
+      const baseDamage = TOWER_BASE.basic.damage;
+      expect(tower.stats.damage).toBeCloseTo(baseDamage * 1.8, 4);
+      expect(TERRAIN_DAMAGE_BONUS_MAX_MULT).toBeGreaterThanOrEqual(1.8);
+    });
+
+    it("caps the total terrain damage multiplier at TERRAIN_DAMAGE_BONUS_MAX_MULT", () => {
+      const save = makeSave();
+      save.generalAddons.terrainHeightBonus = 2; // tier 2: +20% per height
+      const map = makeBastionMap();
+      map.tiles[0][0].height = 10; // raw 1 + 0.2 * 10 = 3.0 -> capped
+      const grid = { tiles: map.tiles, tileSize: 36 };
+      const tower = new Tower("basic", 0, 0, save, grid);
+      const baseDamage = TOWER_BASE.basic.damage;
+      expect(tower.stats.damage).toBeCloseTo(baseDamage * TERRAIN_DAMAGE_BONUS_MAX_MULT, 4);
+    });
   });
 
   describe("milestone bonus", () => {
     it("applies milestone bonus when addon is active and damage threshold crossed", () => {
       const save = makeSave();
-      save.generalAddons.damageMilestoneBonus = 0; // tier 0: +5% dmg per 1M
+      save.generalAddons.damageMilestoneBonus = 0; // tier 0: +5% damage per threshold
       const tower = new Tower("basic", 0, 0, save, makeMockGrid());
-      tower.totalDamageDealt = MILESTONE_THRESHOLD; // 1M damage
+      tower.totalDamageDealt = MILESTONE_THRESHOLD;
       const baseDamage = TOWER_BASE.basic.damage;
       const expectedDamage = baseDamage * (1 + MILESTONE_BONUS_PCT[0][0] * 1);
       expect(tower.stats.damage).toBeCloseTo(expectedDamage, 4);
@@ -472,7 +495,7 @@ describe("Tower", () => {
       const save = makeSave();
       save.generalAddons.damageMilestoneBonus = 0;
       const tower = new Tower("basic", 0, 0, save, makeMockGrid());
-      tower.totalDamageDealt = MILESTONE_THRESHOLD * 2; // 2M damage
+      tower.totalDamageDealt = MILESTONE_THRESHOLD * 2;
       const baseDamage = TOWER_BASE.basic.damage;
       const expectedDamage = baseDamage * (1 + MILESTONE_BONUS_PCT[0][0] * 2);
       expect(tower.stats.damage).toBeCloseTo(expectedDamage, 4);
@@ -480,7 +503,7 @@ describe("Tower", () => {
 
     it("invalidates cache when totalDamageDealt crosses a milestone threshold", () => {
       const save = makeSave();
-      save.generalAddons.damageMilestoneBonus = 0; // tier 0: +5% dmg per 1M
+      save.generalAddons.damageMilestoneBonus = 0; // tier 0: +5% damage per threshold
       const tower = new Tower("basic", 0, 0, save, makeMockGrid());
 
       // Below threshold — stats are cached
@@ -498,18 +521,50 @@ describe("Tower", () => {
 
     it("invalidates cache when totalDamageDealt crosses a second milestone threshold", () => {
       const save = makeSave();
-      save.generalAddons.damageMilestoneBonus = 0; // tier 0: +5% dmg per 1M
+      save.generalAddons.damageMilestoneBonus = 0; // tier 0: +5% damage per threshold
       const tower = new Tower("basic", 0, 0, save, makeMockGrid());
 
       tower.totalDamageDealt = MILESTONE_THRESHOLD;
-      const statsAt1M = tower.stats;
+      const statsAtOneTier = tower.stats;
 
       tower.totalDamageDealt = MILESTONE_THRESHOLD * 2;
-      const statsAt2M = tower.stats;
+      const statsAtTwoTiers = tower.stats;
 
-      expect(statsAt2M.damage).toBeGreaterThan(statsAt1M.damage);
+      expect(statsAtTwoTiers.damage).toBeGreaterThan(statsAtOneTier.damage);
       const baseDamage = TOWER_BASE.basic.damage;
-      expect(statsAt2M.damage).toBeCloseTo(baseDamage * (1 + MILESTONE_BONUS_PCT[0][0] * 2), 4);
+      expect(statsAtTwoTiers.damage).toBeCloseTo(baseDamage * (1 + MILESTONE_BONUS_PCT[0][0] * 2), 4);
+    });
+
+    it("caps milestone tiers at MILESTONE_MAX_TIERS", () => {
+      const save = makeSave();
+      save.generalAddons.damageMilestoneBonus = 0;
+      const tower = new Tower("basic", 0, 0, save, makeMockGrid());
+      tower.totalDamageDealt = MILESTONE_THRESHOLD * (MILESTONE_MAX_TIERS + 3);
+      const baseDamage = TOWER_BASE.basic.damage;
+      const expectedDamage = baseDamage * (1 + MILESTONE_BONUS_PCT[0][0] * MILESTONE_MAX_TIERS);
+      expect(tower.stats.damage).toBeCloseTo(expectedDamage, 4);
+      expect(tower.currentMilestoneBonus().tiers).toBe(MILESTONE_MAX_TIERS);
+    });
+
+    it("keeps the stats cache hit once damage grows past the milestone cap", () => {
+      const save = makeSave();
+      save.generalAddons.damageMilestoneBonus = 0;
+      const tower = new Tower("basic", 0, 0, save, makeMockGrid());
+      tower.totalDamageDealt = MILESTONE_THRESHOLD * MILESTONE_MAX_TIERS;
+      void tower.stats;
+      const computeSpy = vi.spyOn(tower, "_computeStats");
+      tower.totalDamageDealt = MILESTONE_THRESHOLD * (MILESTONE_MAX_TIERS + 4);
+      void tower.stats;
+      expect(computeSpy).not.toHaveBeenCalled();
+    });
+
+    it("recomputes stats when the addon set changes (cache key includes addons)", () => {
+      const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
+      tower.addons = [0];
+      expect(tower.stats.critChance).toBe(0.15);
+      tower.addons = [2];
+      expect(tower.stats.bounceShot).toBe(true);
+      expect(tower.stats.critChance).toBe(0);
     });
   });
 
@@ -828,11 +883,38 @@ describe("Tower", () => {
         hp: 100,
         takeDamage(d: number) {
           enemy.hp -= d;
+          return d;
         },
       };
       tower.takeDamage(10, enemy);
       // attacker takes 10 * 0.3 = 3 reflected damage
       expect(enemy.hp).toBe(97);
+    });
+
+    it("credits reflected thorn damage to totalDamageDealt/waveDamage", () => {
+      const tower = new Tower("sturdyWall", 2, 3, makeSave(), makeMockGrid());
+      tower.level = 5;
+      tower.variant = "A";
+      const enemy = {
+        hp: 100,
+        takeDamage(d: number) {
+          enemy.hp -= d;
+          return d;
+        },
+      };
+      tower.takeDamage(10, enemy);
+      expect(tower.totalDamageDealt).toBeCloseTo(3, 6);
+      expect(tower.waveDamage).toBeCloseTo(3, 6);
+    });
+
+    it("credits the attacker's full takeDamage return (shield absorb included)", () => {
+      const tower = new Tower("sturdyWall", 2, 3, makeSave(), makeMockGrid());
+      tower.level = 5;
+      tower.variant = "A";
+      const enemy = { hp: 100, takeDamage: () => 4 };
+      tower.takeDamage(10, enemy);
+      expect(tower.totalDamageDealt).toBeCloseTo(4, 6);
+      expect(tower.waveDamage).toBeCloseTo(4, 6);
     });
 
     it("sturdyWall B (Electric Fence) sets fence damage and stun", () => {
@@ -863,6 +945,27 @@ describe("Tower", () => {
     });
   });
 
+  describe("max health precision", () => {
+    it("keeps fractional health when recomputing at the same level", () => {
+      const tower = new Tower("shotgunTank", 0, 0, makeSave(), makeMockGrid());
+      tower.health = 10.5;
+      tower.recomputeMaxHealth();
+      expect(tower.health).toBeCloseTo(10.5, 10);
+    });
+
+    it("does not drift across repeated upgrade/downgrade cycles", () => {
+      const tower = new Tower("shotgunTank", 0, 0, makeSave(), makeMockGrid());
+      tower.health = tower.maxHealth / 3;
+      const expectedHealth = tower.maxHealth / 3;
+      for (let cycle = 0; cycle < 20; cycle++) {
+        expect(tower.doUpgrade(makeSave()).ok).toBe(true);
+        tower.level--;
+        tower.recomputeMaxHealth();
+      }
+      expect(tower.health).toBeCloseTo(expectedHealth, 6);
+    });
+  });
+
   describe("ghost state (Phases 1 & 5)", () => {
     it("cannot upgrade or sell while ghosted", () => {
       const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
@@ -884,6 +987,26 @@ describe("Tower", () => {
       expect(tower.isGhost).toBe(false);
       expect(tower.health).toBe(tower.maxHealth);
       expect(tower.ghostTimer).toBe(0);
+    });
+
+    it("clamps the ghost restore time to GHOST_RESTORE_MIN_SECONDS", () => {
+      const grid = { tileSize: 36, tiles: makeBastionMap().tiles, clearTowerGhost() {} };
+      const tower = new Tower("basic", 0, 0, makeSave(), grid);
+      tower.level = 10; // unclamped 50 - 10 * 5 = 0
+      expect(GHOST_RESTORE_BASE_SECONDS - tower.level * GHOST_RESTORE_PER_LEVEL).toBeLessThanOrEqual(0);
+      tower.isGhost = true;
+      tower.ghostTimer = GHOST_RESTORE_MIN_SECONDS - 1;
+      const enemyManager = {
+        enemies: [],
+        getEnemiesInRange: () => [],
+        forEachEnemyInRange: () => {},
+        getEnemyById: () => null,
+        towerAt: () => null,
+      };
+      tower.update(0.5, enemyManager, {}, null);
+      expect(tower.isGhost).toBe(true);
+      tower.update(0.6, enemyManager, {}, null);
+      expect(tower.isGhost).toBe(false);
     });
 
     it("takeDamage below zero triggers ghost state and pending effect", () => {

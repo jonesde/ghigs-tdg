@@ -5,7 +5,9 @@ export const TowerBaseSchema = z.object({
   range: z.number(),
   damage: z.number(),
   fireRate: z.number(),
-  projSpeed: z.number(),
+  // Optional: towers that never spawn a traveling projectile (lightning, wall)
+  // omit it. Tower.fire falls back to 1 for any consumer that reads it.
+  projSpeed: z.number().optional(),
   splash: z.number().optional(),
   slowAmt: z.number().optional(),
   slowDur: z.number().optional(),
@@ -72,7 +74,6 @@ export const TowerTuningSchema = z.object({
   napalmBurnDuration: z.number(),
   critChance: z.number(),
   goldPerCrit: z.number(),
-  deepFreezeSlowMult: z.number(),
   iceBurstStunDuration: z.number(),
   iceBurstInterval: z.number(),
   iceBurstRange: z.number(),
@@ -94,13 +95,15 @@ export const TowerTuningSchema = z.object({
   marksmanChance: z.number(),
   ghostRestoreBaseSeconds: z.number(),
   ghostRestorePerLevel: z.number(),
+  ghostRestoreMinSeconds: z.number(),
+  terrainDamageBonusMaxMult: z.number(),
+  milestoneMaxTiers: z.number(),
   ghostParticleDuration: z.number(),
   ghostParticleCount: z.number(),
   ghostOpacity: z.number(),
   electricFenceRangeTiles: z.number(),
   electricFenceInterval: z.number(),
   knockbackHpDivisor: z.number(),
-  cannonFragmentSplashTiers: z.tuple([z.number(), z.number(), z.number()]),
 });
 
 export const TowersContentSchema = z.object({

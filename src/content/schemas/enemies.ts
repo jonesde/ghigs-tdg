@@ -10,6 +10,7 @@ export const EnemyMetaSchema = z.object({
   healRange: z.number().optional(),
   resist: z.number().optional(),
   slowResist: z.number().optional(),
+  knockResist: z.number().optional(),
   attackDamage: z.number(),
   attackSpeed: z.number(),
 });
@@ -18,6 +19,9 @@ export const EnemiesContentSchema = z.object({
   types: z.record(z.string(), EnemyMetaSchema),
   levelHpMult: z.object({ intercept: z.number(), slopePerLevel: z.number() }),
   waveDamageMult: z.number(),
+  bountyLevelGrowth: z.number(),
+  bountyFullThroughWave: z.number(),
+  laterWaveBountyMult: z.number(),
   bossStunReduction: z.number(),
   minSlowFactor: z.number(),
   maxBurnStacks: z.number(),

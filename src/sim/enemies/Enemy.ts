@@ -8,6 +8,7 @@ import {
   ENEMY_LEVEL_HP_MULT,
   ENEMY_TYPES,
   ENEMY_WAVE_DAMAGE_MULT,
+  enemyLevelBounty,
   MAX_BURN_STACKS,
   MIN_SLOW_FACTOR,
   SIEGE_STUCK_SECONDS,
@@ -47,6 +48,9 @@ interface SlowEntry {
 interface BurnEntry {
   dps: number;
   timer: number;
+  // Tower that applied this stack, for DPS-graph / milestone credit. Absent on
+  // legacy/test constructions; burn still ticks, just without credit.
+  sourceTowerId?: string | undefined;
 }
 
 interface EnemyMetaRef {
@@ -58,6 +62,7 @@ interface EnemyMetaRef {
   hitReaction: unknown;
   resist?: number;
   slowResist?: number;
+  knockResist?: number;
   shield?: number;
   heal?: number;
   healRange?: number;
@@ -150,6 +155,9 @@ interface EnemyManagerRef {
   blockedApproach?(tileX: number, tileY: number): { approachWorld: { x: number; y: number } } | null;
   liveTowers?(): Tower[];
   distanceToBase?(tileX: number, tileY: number): number;
+  // Cross-module: burn ticks route their dealt damage here so the inflicting
+  // tower's totalDamageDealt/waveDamage (DPS graph, milestones) include it.
+  creditDamage?(towerId: string, amount: number): void;
 }
 
 export class Enemy {
@@ -176,6 +184,9 @@ export class Enemy {
   theme: MapThemeData | null;
   resist: number;
   slowResist: number;
+  // Fraction of incoming knockback impulse ignored (0..1). Boss/tank types use
+  // this instead of a mass hack so every knockback source scales uniformly.
+  knockResist: number;
   shield: number;
   maxShield: number;
   heal: number;
@@ -276,6 +287,7 @@ export class Enemy {
     this.visualMeta = enemyVisual;
     this.resist = meta.resist || 0;
     this.slowResist = meta.slowResist || 0;
+    this.knockResist = meta.knockResist || 0;
     this.shield = meta.shield ? meta.shield * level : 0;
     this.maxShield = this.shield;
     this.heal = meta.heal || 0;
@@ -286,7 +298,7 @@ export class Enemy {
     this.maxHp = meta.baseHp * ENEMY_LEVEL_HP_MULT(level) * waveMult * diffMult;
     this.hp = this.maxHp;
     this.speed = meta.speed;
-    this.bounty = Math.ceil(meta.bounty * (1 + 0.5 * (level - 1)));
+    this.bounty = enemyLevelBounty(meta.bounty, level, wave);
     this.attackDamage = meta.attackDamage * ENEMY_LEVEL_HP_MULT(level) * waveMult * diffMult;
     this.attackSpeed = meta.attackSpeed;
     this.attackTimer = 0;
@@ -353,16 +365,18 @@ export class Enemy {
     this.stunTimer = Math.max(this.stunTimer, duration);
   }
 
-  applyBurn(dps: number, duration: number) {
+  applyBurn(dps: number, duration: number, sourceTowerId?: string) {
     // Same/similar DPS refreshes duration; otherwise stack up to MAX_BURN_STACKS,
     // replacing the lowest-DPS entry when full so weak ticks cannot crowd out strong ones.
     const similarEntry = this.burnStack.find((entry) => Math.abs(entry.dps - dps) < 1e-6);
     if (similarEntry) {
       similarEntry.timer = Math.max(similarEntry.timer, duration);
+      // The latest application owns the refreshed stack, so its tower is credited.
+      similarEntry.sourceTowerId = sourceTowerId ?? similarEntry.sourceTowerId;
       return;
     }
     if (this.burnStack.length < MAX_BURN_STACKS) {
-      this.burnStack.push({ dps, timer: duration });
+      this.burnStack.push({ dps, timer: duration, sourceTowerId });
       return;
     }
     let lowestIndex = 0;
@@ -372,21 +386,23 @@ export class Enemy {
       }
     }
     if (dps >= this.burnStack[lowestIndex]!.dps) {
-      this.burnStack[lowestIndex] = { dps, timer: duration };
+      this.burnStack[lowestIndex] = { dps, timer: duration, sourceTowerId };
     }
   }
 
   // Impulse knockback along −moveAngle. Routes through the shared launchEnemy
   // protocol (impulse + ballistic window + motion-lock release) so every knockback
-  // source behaves identically.
+  // source behaves identically. Per-type knockResist scales the impulse before any
+  // body work so resisted types can never be launched.
   applyKnockback(amount: number): void {
-    if (amount <= 0) return;
+    const effectiveAmount = amount * Math.max(0, 1 - this.knockResist);
+    if (effectiveAmount <= 0) return;
     if (!this.body) return;
     // Scale impulse so typical knockback amounts move the body ~`amount` world units
     // over the ballistic window against linear damping.
     const mass = Math.max(0.2, this.body.mass());
-    const impulseX = -Math.cos(this.moveAngle) * amount * mass * 8;
-    const impulseY = -Math.sin(this.moveAngle) * amount * mass * 8;
+    const impulseX = -Math.cos(this.moveAngle) * effectiveAmount * mass * 8;
+    const impulseY = -Math.sin(this.moveAngle) * effectiveAmount * mass * 8;
     launchEnemy(this, impulseX, impulseY);
   }
 
@@ -399,13 +415,18 @@ export class Enemy {
     this.antiHealTimer = Math.max(this.antiHealTimer, duration);
   }
 
+  // Returns the total damage applied this call: shield absorbed + HP damage
+  // (post-resist, pre-overkill-clamp). Callers use the return only for telemetry
+  // (DPS graph / milestones); kill and gold-on-kill logic reads `removed`/`hp`.
   takeDamage(amount: number, armorPiercing: boolean = false) {
+    if (amount <= 0) return 0;
+    let absorbed = 0;
     if (this.shield > 0 && !armorPiercing) {
-      const absorbed = Math.min(this.shield, amount);
+      absorbed = Math.min(this.shield, amount);
       this.shield -= absorbed;
       amount -= absorbed;
     }
-    if (amount <= 0) return 0;
+    if (amount <= 0) return absorbed;
     let dmg = amount * (1 - this.resist);
     if (this.markTargetMult > 0) {
       dmg *= 1 + this.markTargetMult;
@@ -414,7 +435,7 @@ export class Enemy {
     if (this.hp < 0) this.hp = 0;
     this.hitAnimTime = this._gameSeconds;
     if (this.hp <= 0) this.removed = true;
-    return dmg;
+    return absorbed + dmg;
   }
 
   // The enemy's current tile, derived from its world-space centerline (lane-offset
@@ -526,7 +547,13 @@ export class Enemy {
       for (let burnIndex = this.burnStack.length - 1; burnIndex >= 0; burnIndex--) {
         const burnEntry = this.burnStack[burnIndex]!;
         burnEntry.timer -= dt;
-        this.takeDamage(burnEntry.dps * dt, true);
+        // Burn bypasses shields (armorPiercing) but still takes enemy resist via
+        // takeDamage. Credit the applied damage to the inflicting tower so the DPS
+        // graph and milestone progression include burn.
+        const burnDamage = this.takeDamage(burnEntry.dps * dt, true);
+        if (burnEntry.sourceTowerId) {
+          enemyManager?.creditDamage?.(burnEntry.sourceTowerId, burnDamage);
+        }
         if (burnEntry.timer <= 0) {
           this.burnStack.splice(burnIndex, 1);
         }
@@ -666,11 +693,23 @@ export class Enemy {
   // Reads stepped body, sparse agent resync, contact-driven attacks, bounds.
   postPhysics(dt: number): void {
     if (this.removed) return;
-    const pos = this.body!.translation();
-    this.centerX = pos.x;
-    this.centerY = pos.y;
-    this.x = pos.x;
-    this.y = pos.y;
+    if (this.body) {
+      const pos = this.body.translation();
+      this.centerX = pos.x;
+      this.centerY = pos.y;
+      this.x = pos.x;
+      this.y = pos.y;
+    } else if (this.agent) {
+      // Physics-less enemy with a crowd agent: Detour still integrates the agent,
+      // so mirror its position instead of dereferencing a missing body.
+      const agentPos = fromRecast(this.agent.position());
+      this.centerX = agentPos.x;
+      this.centerY = agentPos.y;
+      this.x = agentPos.x;
+      this.y = agentPos.y;
+    } else {
+      this.integrateKinematic(dt);
+    }
 
     // Sparse agent resync: teleporting every frame zeroes Detour steering (even
     // with set_vel restore). Only realign when the body has been shoved off the
@@ -733,10 +772,32 @@ export class Enemy {
       this.agent?.teleport(toRecast({ x: this.x, y: this.y }));
     }
 
-    const linvel = this.body!.linvel();
-    const moveSpeedEpsilon = 1e-4;
-    if (Math.hypot(linvel.x, linvel.y) >= moveSpeedEpsilon) {
-      this.moveAngle = Math.atan2(linvel.y, linvel.x);
+    if (this.body) {
+      const linvel = this.body.linvel();
+      const moveSpeedEpsilon = 1e-4;
+      if (Math.hypot(linvel.x, linvel.y) >= moveSpeedEpsilon) {
+        this.moveAngle = Math.atan2(linvel.y, linvel.x);
+      }
     }
+  }
+
+  // Physics-less fallback: integrate toward the cached move target at the
+  // enemy's effective speed so computeIntent + postPhysics form a usable loop in
+  // headless constructions. Stun, base attack, and park states hold position.
+  private integrateKinematic(dt: number): void {
+    const target = this.lastMoveTargetWorld;
+    if (!target || this.stunTimer > 0 || this.attackingBase || this.motionLock === "park") return;
+    const deltaX = target.x - this.x;
+    const deltaY = target.y - this.y;
+    const distance = Math.hypot(deltaX, deltaY);
+    if (distance <= 1e-6) return;
+    const stepDistance = Math.min(distance, this.speed * this.slowFactor * this.grid.tileSize * dt);
+    const directionX = deltaX / distance;
+    const directionY = deltaY / distance;
+    this.x += directionX * stepDistance;
+    this.y += directionY * stepDistance;
+    this.centerX = this.x;
+    this.centerY = this.y;
+    this.moveAngle = Math.atan2(directionY, directionX);
   }
 }

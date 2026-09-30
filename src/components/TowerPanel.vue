@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted } from "vue";
-import { UPGRADE_COST_REDUCTION_PCT } from "@/sim/Constants.js";
+import { MILESTONE_THRESHOLD, UPGRADE_COST_REDUCTION_PCT } from "@/sim/Constants.js";
 import { CANCEL_BUILD_WINDOW_MS, SELL_VALUE_RATIO, TOWER_META } from "@/sim/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import type { TowerSnapshot } from "@/sim/SimulationSnapshot.js";
@@ -98,6 +98,7 @@ onUnmounted(() => {
 });
 
 const milestoneTier = computed(() => persistStore.generalAddons?.damageMilestoneBonus);
+const milestoneStepLabel = MILESTONE_THRESHOLD.toLocaleString("en-US");
 const milestoneBonus = computed(() => {
   if (milestoneTier.value !== null && milestoneTier.value !== undefined && tower.value) {
     return tower.value.milestoneBonus;
@@ -222,7 +223,7 @@ function handleFixedAim(dir: string | null) {
     <div class="stat-row"><span>Previous Wave</span><span>{{ damageStats?.previousWave?.toLocaleString() ?? 0 }}</span></div>
 
     <div v-if="milestoneBonus && milestoneBonus.tiers > 0" class="milestone-bonus">
-      Milestone Bonus: +{{ Math.round(milestoneBonus.damagePct) }}% dmg, +{{ Math.round(milestoneBonus.speedPct) }}% speed ({{ milestoneBonus.tiers }}×1M total)
+      Milestone Bonus: +{{ Math.round(milestoneBonus.damagePct) }}% dmg, +{{ Math.round(milestoneBonus.speedPct) }}% speed ({{ milestoneBonus.tiers }}×{{ milestoneStepLabel }} total)
     </div>
 
     <div class="stat-row"><span>Targeting</span><kbd>F</kbd></div>

@@ -17,6 +17,7 @@ interface BreakdownEntry {
 interface GemBreakdown {
   bossKills: BreakdownEntry;
   milestones: BreakdownEntry;
+  waveClears: BreakdownEntry;
   waveCompletion: BreakdownEntry;
   firstClearBonus: number;
 }
@@ -121,6 +122,7 @@ export const useGameStore = defineStore("game", {
     gemBreakdown: {
       bossKills: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
       milestones: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
+      waveClears: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
       waveCompletion: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
       firstClearBonus: 0,
     },
@@ -210,6 +212,7 @@ export const useGameStore = defineStore("game", {
       this.gemBreakdown = {
         bossKills: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
         milestones: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
+        waveClears: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
         waveCompletion: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
         firstClearBonus: 0,
       };
@@ -280,6 +283,7 @@ export const useGameStore = defineStore("game", {
       this.gemBreakdown = {
         bossKills: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
         milestones: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
+        waveClears: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
         waveCompletion: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
         firstClearBonus: 0,
       };

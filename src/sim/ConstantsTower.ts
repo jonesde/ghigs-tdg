@@ -26,7 +26,7 @@ export interface TowerBase {
   range: number;
   damage: number;
   fireRate: number;
-  projSpeed: number;
+  projSpeed?: number;
   splash?: number;
   slowAmt?: number;
   slowDur?: number;
@@ -95,7 +95,6 @@ export const NAPALM_BURN_DPS_RATIO = tuning.napalmBurnDpsRatio;
 export const NAPALM_BURN_DURATION = tuning.napalmBurnDuration;
 export const CRIT_CHANCE = tuning.critChance;
 export const GOLD_PER_CRIT = tuning.goldPerCrit;
-export const DEEP_FREEZE_SLOW_MULT = tuning.deepFreezeSlowMult;
 export const ICE_BURST_STUN_DURATION = tuning.iceBurstStunDuration;
 export const ICE_BURST_INTERVAL = tuning.iceBurstInterval;
 export const ICE_BURST_RANGE = tuning.iceBurstRange;
@@ -117,13 +116,15 @@ export const ANTI_HEAL_DURATION = tuning.antiHealDuration;
 export const MARKSMAN_CHANCE = tuning.marksmanChance;
 export const GHOST_RESTORE_BASE_SECONDS = tuning.ghostRestoreBaseSeconds;
 export const GHOST_RESTORE_PER_LEVEL = tuning.ghostRestorePerLevel;
+export const GHOST_RESTORE_MIN_SECONDS = tuning.ghostRestoreMinSeconds;
+export const TERRAIN_DAMAGE_BONUS_MAX_MULT = tuning.terrainDamageBonusMaxMult;
+export const MILESTONE_MAX_TIERS = tuning.milestoneMaxTiers;
 export const GHOST_PARTICLE_DURATION = tuning.ghostParticleDuration;
 export const GHOST_PARTICLE_COUNT = tuning.ghostParticleCount;
 export const GHOST_OPACITY = tuning.ghostOpacity;
 export const ELECTRIC_FENCE_RANGE_TILES = tuning.electricFenceRangeTiles;
 export const ELECTRIC_FENCE_INTERVAL = tuning.electricFenceInterval;
 export const KNOCKBACK_HP_DIVISOR = tuning.knockbackHpDivisor;
-export const CANNON_FRAGMENT_SPLASH_TIERS: readonly number[] = tuning.cannonFragmentSplashTiers;
 
 function toVariantConfig(def: {
   name: string;

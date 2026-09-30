@@ -10,6 +10,7 @@ import { createTestGameStore } from "../helpers/mock-stores";
 interface GemBreakdown {
   bossKills: { base: number; afterDiff: number; afterRegion: number; afterFirstTime: number };
   milestones: { base: number; afterDiff: number; afterRegion: number; afterFirstTime: number };
+  waveClears: { base: number; afterDiff: number; afterRegion: number; afterFirstTime: number };
   waveCompletion: { base: number; afterDiff: number; afterRegion: number; afterFirstTime: number };
   firstClearBonus: number;
 }
@@ -18,6 +19,7 @@ function nonZeroGemBreakdown(): GemBreakdown {
   return {
     bossKills: { base: 10, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
     milestones: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
+    waveClears: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
     waveCompletion: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
     firstClearBonus: 0,
   };
@@ -90,6 +92,7 @@ describe("GameStore", () => {
     it("starts with initial gemBreakdown structure", () => {
       expect(store.gemBreakdown.bossKills).toEqual({ base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 });
       expect(store.gemBreakdown.milestones).toEqual({ base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 });
+      expect(store.gemBreakdown.waveClears).toEqual({ base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 });
       expect(store.gemBreakdown.waveCompletion).toEqual({ base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 });
       expect(store.gemBreakdown.firstClearBonus).toBe(0);
     });
@@ -308,6 +311,7 @@ describe("GameStore", () => {
       store.setGemBreakdown(nonZeroGemBreakdown());
       store.initMap(0, { regionId: 0 } as unknown as GeneratedMap, null);
       expect(store.gemBreakdown.bossKills.base).toBe(0);
+      expect(store.gemBreakdown.waveClears.base).toBe(0);
     });
   });
 

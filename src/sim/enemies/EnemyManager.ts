@@ -40,6 +40,10 @@ export class EnemyManager {
   crowdManager: CrowdManager | null = null;
   private blockedApproachLookup: ((tileX: number, tileY: number) => BlockedApproach | null) | null = null;
   private distanceToBaseLookup: ((tileX: number, tileY: number) => number) | null = null;
+  // Cross-module: GameEngine wires this to the ProjectileManager so burn ticks
+  // (applied inside Enemy.updateStatusTimers) credit the inflicting tower's
+  // totalDamageDealt/waveDamage like direct hits do.
+  private damageCreditSink: ((towerId: string, amount: number) => void) | null = null;
   private idToEnemy: Map<number, Enemy>;
   private pendingQueues: Map<number, PendingEnemyEntry[]>;
   // Overflow evictions since run start. Bounded queues must stay lossless-visible:
@@ -111,6 +115,15 @@ export class EnemyManager {
 
   distanceToBase(tileX: number, tileY: number): number {
     return this.distanceToBaseLookup?.(tileX, tileY) ?? -1;
+  }
+
+  setDamageCreditSink(sink: ((towerId: string, amount: number) => void) | null): void {
+    this.damageCreditSink = sink;
+  }
+
+  creditDamage(towerId: string, amount: number): void {
+    if (!(amount > 0)) return;
+    this.damageCreditSink?.(towerId, amount);
   }
 
   liveTowers(): Tower[] {

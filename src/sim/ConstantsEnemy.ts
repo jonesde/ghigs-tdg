@@ -1,4 +1,4 @@
-import { enemyLevelHpMult as computeEnemyLevelHpMult } from "@/content/formulas.js";
+import { enemyBounty as computeEnemyBounty, enemyLevelHpMult as computeEnemyLevelHpMult } from "@/content/formulas.js";
 import { getGameContent } from "@/content/gameContent.js";
 
 export interface EnemyMeta {
@@ -26,6 +26,21 @@ export const ENEMY_LEVEL_HP_MULT = (level: number): number =>
   computeEnemyLevelHpMult(level, getGameContent().enemies.levelHpMult);
 
 export const ENEMY_WAVE_DAMAGE_MULT = enemies.waveDamageMult;
+export const BOUNTY_LEVEL_GROWTH = enemies.bountyLevelGrowth;
+export const BOUNTY_FULL_THROUGH_WAVE = enemies.bountyFullThroughWave;
+export const LATER_WAVE_BOUNTY_MULT = enemies.laterWaveBountyMult;
+
+export function enemyLevelBounty(baseBounty: number, level: number, wave: number): number {
+  return computeEnemyBounty(
+    baseBounty,
+    level,
+    wave,
+    BOUNTY_LEVEL_GROWTH,
+    BOUNTY_FULL_THROUGH_WAVE,
+    LATER_WAVE_BOUNTY_MULT,
+  );
+}
+
 export const BOSS_STUN_REDUCTION = enemies.bossStunReduction;
 export const MIN_SLOW_FACTOR = enemies.minSlowFactor;
 export const MAX_BURN_STACKS = enemies.maxBurnStacks;

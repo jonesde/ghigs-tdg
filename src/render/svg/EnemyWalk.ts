@@ -1,4 +1,21 @@
+// Base shape vertex generation and path-d string conversion. Vertex lists are
+// pure geometry shared by every enemy of the same (shape, radius), so results are
+// cached per pair and frozen to keep the cache from being poisoned by callers.
+
+const BASE_VERTEX_CACHE = new Map<string, number[][]>();
+
 export function buildBaseVertices(shape: string, radius: number): number[][] {
+  const cacheKey = `${shape}|${radius}`;
+  const cached = BASE_VERTEX_CACHE.get(cacheKey);
+  if (cached) return cached;
+  const vertices = buildShapeVertices(shape, radius);
+  for (const vertex of vertices) Object.freeze(vertex);
+  Object.freeze(vertices);
+  BASE_VERTEX_CACHE.set(cacheKey, vertices);
+  return vertices;
+}
+
+function buildShapeVertices(shape: string, radius: number): number[][] {
   switch (shape) {
     case "circle":
       return buildCircleVertices(radius, 32);
@@ -52,17 +69,24 @@ function buildHexagonVertices(radius: number): number[][] {
   return verts;
 }
 
+// Twelve-vertex clockwise outline of an axis-aligned plus. The previous eight
+// points connected diagonal corners and traced a bow-tie/hourglass instead of
+// the cross silhouette.
 function buildCrossVertices(radius: number): number[][] {
-  const height = radius * 0.3;
+  const armHalfWidth = radius * 0.3;
   return [
-    [-height, -radius],
-    [-radius, -height],
-    [radius, -height],
-    [height, -radius],
-    [height, radius],
-    [radius, height],
-    [-radius, height],
-    [-height, radius],
+    [-armHalfWidth, -radius],
+    [armHalfWidth, -radius],
+    [armHalfWidth, -armHalfWidth],
+    [radius, -armHalfWidth],
+    [radius, armHalfWidth],
+    [armHalfWidth, armHalfWidth],
+    [armHalfWidth, radius],
+    [-armHalfWidth, radius],
+    [-armHalfWidth, armHalfWidth],
+    [-radius, armHalfWidth],
+    [-radius, -armHalfWidth],
+    [-armHalfWidth, -armHalfWidth],
   ];
 }
 
