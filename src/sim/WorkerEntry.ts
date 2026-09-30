@@ -4,6 +4,7 @@ import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { WorkerParticleSpawner } from "@/sim/ParticleSystem.js";
 import { initPhysics } from "@/sim/physics/rapierContext.js";
 import { applyCommand } from "./applyCommand.js";
+import { applyCommandWithStats } from "./applyCommandStats.js";
 import type { Command } from "./Command.js";
 import type { PersistStateSlice } from "./HostBindings.js";
 import { buildSnapshot } from "./SnapshotSerializer.js";
@@ -27,6 +28,8 @@ const host = new WorkerHostBindings();
 // drain boundary.
 const commandQueue: Command[] = [];
 let lastAppliedCommandId = 0;
+let lastAppliedCount = 0;
+let lastSkippedCount = 0;
 
 // Fixed-timestep accumulator — same structure as the current GameEngine.loop,
 // but driven by setTimeout instead of requestAnimationFrame.
@@ -90,15 +93,22 @@ function tick(): void {
   // the signal (NOT commandQueue.length, which is 0 by the time we decide) that
   // we must post a snapshot even while paused.
   let stateMutatedThisTick = false;
+  let tickAppliedCount = 0;
+  let tickSkippedCount = 0;
+  let tickCommandCount = 0;
   while (commandQueue.length > 0) {
     const command = commandQueue.shift()!;
     if (command.commandId !== undefined) {
       lastAppliedCommandId = command.commandId;
     }
     try {
-      if (applyCommand(engine, command)) {
+      const stats = applyCommandWithStats(engine, command);
+      if (stats.mutated) {
         stateMutatedThisTick = true;
       }
+      tickAppliedCount += stats.applied;
+      tickSkippedCount += stats.skipped;
+      tickCommandCount += 1;
     } catch (err) {
       const errorMessage = `Command ${command.type} failed: ${(err as Error).message}`;
       const errorStack = (err as Error).stack;
@@ -108,6 +118,10 @@ function tick(): void {
           : { type: "workerError", message: errorMessage },
       );
     }
+  }
+  if (tickCommandCount > 0) {
+    lastAppliedCount = tickAppliedCount;
+    lastSkippedCount = tickSkippedCount;
   }
 
   // Fixed-timestep accumulator. timeScale comes from runState, which input
@@ -142,7 +156,11 @@ function tick(): void {
 
     if (terminal) {
       // Final frame: post exactly once, then stop the loop until the next init.
-      const snapshot = buildSnapshot(engine, lastAppliedCommandId);
+      const snapshot = buildSnapshot(engine, lastAppliedCommandId, {
+        commandId: lastAppliedCommandId,
+        applied: lastAppliedCount,
+        skipped: lastSkippedCount,
+      });
       postMessage({ type: "snapshot", snapshot });
       hasPostedSnapshot = true;
       // Persist any pending dirty state now (the loop is stopping, and the
@@ -172,7 +190,11 @@ function tick(): void {
         engine.particleSpawner?.consumeSpawns?.();
         engine.projectileManager?.consumeRenderVisualEffects?.();
       } else {
-        const snapshot = buildSnapshot(engine, lastAppliedCommandId);
+        const snapshot = buildSnapshot(engine, lastAppliedCommandId, {
+          commandId: lastAppliedCommandId,
+          applied: lastAppliedCount,
+          skipped: lastSkippedCount,
+        });
         postMessage({ type: "snapshot", snapshot });
         hasPostedSnapshot = true;
         // baseline       → true  (establish gate from first frame)
@@ -264,6 +286,8 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
       commandQueue.length = 0;
       awaitingAck = false;
       lastAppliedCommandId = 0;
+      lastAppliedCount = 0;
+      lastSkippedCount = 0;
       // Cached async init of the Rapier WASM module (plans/rapier2d.md Phase 0).
       // Required before any getRapier().
       await initPhysics();

@@ -4,6 +4,7 @@ import { nearestPathTileTo } from "../navTile.js";
 import type { CommanderObservation, ObservationEnemy, ObservationTower } from "../observation.js";
 import { type ApiClient, type ChatMessage, createApiClient } from "./apiClient.js";
 import { summarizeLlmCommands } from "./commandSummary.js";
+import type { ParsedLlmCommand } from "./schema.js";
 import { validateLlmResponse } from "./schema.js";
 import { buildSystemPrompt } from "./systemPrompt.js";
 import type { LlmCommanderConfig } from "./types.js";
@@ -90,6 +91,7 @@ function waveSummary(observation: CommanderObservation): unknown {
     maxBaseHp: observation.wave.maxBaseHealth,
     countdownSeconds,
     spawnOrders: observation.wave.spawnOrders ?? [],
+    commandReceipt: observation.wave.commandReceipt ?? null,
   };
 }
 
@@ -241,12 +243,138 @@ function parseModelContent(content: string): unknown {
   }
 }
 
+function withObservationTag(summary: string, observation: CommanderObservation): string {
+  return observation.observationId === undefined ? summary : `obs #${observation.observationId} ${summary}`;
+}
+
 function appendRejectionNote(memory: CommanderMemory): void {
   const note = memory.rejectionNote;
   if (!note) return;
   const lastMessage = memory.conversation[memory.conversation.length - 1];
   if (lastMessage?.role !== "user") return;
   lastMessage.content = `${lastMessage.content}\n\nPrevious reply was rejected: ${note}\nReturn only the JSON command block.`;
+}
+
+function isTileInBounds(tile: { x: number; y: number }, columnCount: number, rowCount: number): boolean {
+  return (
+    Number.isInteger(tile.x) &&
+    Number.isInteger(tile.y) &&
+    tile.x >= 0 &&
+    tile.y >= 0 &&
+    tile.x < columnCount &&
+    tile.y < rowCount
+  );
+}
+
+function filterSemanticCommands(
+  parsedCommands: ParsedLlmCommand[],
+  observation: CommanderObservation,
+): { filteredCommands: ParsedLlmCommand[]; droppedReasons: string[] } {
+  const liveEnemyIds = new Set(observation.enemies.map((enemy) => enemy.id));
+  const gridLayout = observation.map;
+  const rowCount = gridLayout?.length ?? 0;
+  const columnCount = gridLayout?.[0]?.length ?? 0;
+  const hasBounds = !!gridLayout && rowCount > 0 && columnCount > 0;
+  const filteredCommands: ParsedLlmCommand[] = [];
+  const droppedReasons: string[] = [];
+  const filterLiveIds = (enemyIds: number[]): number[] => enemyIds.filter((id) => liveEnemyIds.has(id));
+  const isTileValid = (tile: { x: number; y: number }): boolean =>
+    !hasBounds || isTileInBounds(tile, columnCount, rowCount);
+
+  for (const command of parsedCommands) {
+    if (command.type === "llm:routeGroup") {
+      const liveIds = filterLiveIds(command.enemyIds);
+      if (liveIds.length < command.enemyIds.length) {
+        const unknownIds = command.enemyIds.filter((id) => !liveEnemyIds.has(id));
+        droppedReasons.push(`routeGroup dropped unknown enemyIds: ${unknownIds.join(", ")}`);
+      }
+      const validWaypoints = command.waypoints.filter(isTileValid);
+      if (validWaypoints.length < command.waypoints.length) {
+        droppedReasons.push(`routeGroup dropped out-of-bounds waypoints`);
+      }
+      let validHoldTile = command.holdTile;
+      if (validHoldTile && !isTileValid(validHoldTile)) {
+        droppedReasons.push(`routeGroup dropped out-of-bounds holdTile (${validHoldTile.x}, ${validHoldTile.y})`);
+        validHoldTile = undefined;
+      }
+      if (liveIds.length === 0) {
+        droppedReasons.push(`routeGroup dropped: no live enemyIds`);
+        continue;
+      }
+      const filteredRouteGroup: ParsedLlmCommand = {
+        type: "llm:routeGroup",
+        enemyIds: liveIds,
+        waypoints: validWaypoints,
+      };
+      if (command.hold !== undefined) filteredRouteGroup.hold = command.hold;
+      if (validHoldTile) filteredRouteGroup.holdTile = validHoldTile;
+      filteredCommands.push(filteredRouteGroup);
+    } else if (command.type === "llm:siegeTower") {
+      if (!isTileValid(command.towerTile)) {
+        droppedReasons.push(
+          `siegeTower dropped out-of-bounds towerTile (${command.towerTile.x}, ${command.towerTile.y})`,
+        );
+        continue;
+      }
+      const liveIds = filterLiveIds(command.enemyIds);
+      if (liveIds.length < command.enemyIds.length) {
+        const unknownIds = command.enemyIds.filter((id) => !liveEnemyIds.has(id));
+        droppedReasons.push(`siegeTower dropped unknown enemyIds: ${unknownIds.join(", ")}`);
+      }
+      if (liveIds.length === 0) {
+        droppedReasons.push(`siegeTower dropped: no live enemyIds`);
+        continue;
+      }
+      filteredCommands.push({ type: "llm:siegeTower", enemyIds: liveIds, towerTile: command.towerTile });
+    } else if (command.type === "llm:setTargeting") {
+      const liveIds = filterLiveIds(command.enemyIds);
+      if (liveIds.length < command.enemyIds.length) {
+        const unknownIds = command.enemyIds.filter((id) => !liveEnemyIds.has(id));
+        droppedReasons.push(`setTargeting dropped unknown enemyIds: ${unknownIds.join(", ")}`);
+      }
+      if (liveIds.length === 0) {
+        droppedReasons.push(`setTargeting dropped: no live enemyIds`);
+        continue;
+      }
+      filteredCommands.push({ type: "llm:setTargeting", enemyIds: liveIds, mode: command.mode });
+    } else if (command.type === "llm:setSpawnOrder") {
+      let validHoldTile = command.holdTile;
+      if (validHoldTile && !isTileValid(validHoldTile)) {
+        droppedReasons.push(`setSpawnOrder dropped out-of-bounds holdTile (${validHoldTile.x}, ${validHoldTile.y})`);
+        validHoldTile = undefined;
+      }
+      let validWaypoints = command.waypoints;
+      if (validWaypoints) {
+        const filteredWaypoints = validWaypoints.filter(isTileValid);
+        if (filteredWaypoints.length < validWaypoints.length) {
+          droppedReasons.push(`setSpawnOrder dropped out-of-bounds waypoints`);
+        }
+        validWaypoints = filteredWaypoints;
+      }
+      let validTowerTile = command.towerTile;
+      if (validTowerTile && !isTileValid(validTowerTile)) {
+        droppedReasons.push(`setSpawnOrder dropped out-of-bounds towerTile (${validTowerTile.x}, ${validTowerTile.y})`);
+        validTowerTile = undefined;
+      }
+      const hasMovement = command.hold === true || validWaypoints !== undefined || validTowerTile !== undefined;
+      if (!hasMovement && command.targetingMode === undefined) {
+        droppedReasons.push(`setSpawnOrder dropped: no valid movement or targetingMode`);
+        continue;
+      }
+      const filteredSpawnOrder: ParsedLlmCommand = { type: "llm:setSpawnOrder" };
+      if (command.spawnIndex !== undefined) filteredSpawnOrder.spawnIndex = command.spawnIndex;
+      if (command.clear) filteredSpawnOrder.clear = true;
+      if (command.hold !== undefined) filteredSpawnOrder.hold = command.hold;
+      if (validHoldTile) filteredSpawnOrder.holdTile = validHoldTile;
+      if (validWaypoints) filteredSpawnOrder.waypoints = validWaypoints;
+      if (command.targetingMode) filteredSpawnOrder.targetingMode = command.targetingMode;
+      if (validTowerTile) filteredSpawnOrder.towerTile = validTowerTile;
+      filteredCommands.push(filteredSpawnOrder);
+    } else {
+      filteredCommands.push(command);
+    }
+  }
+  return { filteredCommands, droppedReasons };
 }
 
 // Creates the LLM commander brain. `decide` is async (it awaits the API client)
@@ -347,7 +475,7 @@ export function createLlmBrain(config: LlmCommanderConfig, callbacks: LlmBrainCa
         restoreTurn();
         const reason = "error" in result ? result.error : "empty response";
         noteFailure(`LLM request failed: ${reason}`, "error" in result);
-        trace("", `request failed: ${reason}`);
+        trace("", withObservationTag(`request failed: ${reason}`, observation));
         return [];
       }
 
@@ -359,7 +487,7 @@ export function createLlmBrain(config: LlmCommanderConfig, callbacks: LlmBrainCa
         const rejectionReason = "LLM response was not valid JSON";
         memory.rejectionNote = rejectionReason;
         noteFailure(rejectionReason, true);
-        trace(result.content, `rejected: ${rejectionReason}`);
+        trace(result.content, withObservationTag(`rejected: ${rejectionReason}`, observation));
         return [];
       }
 
@@ -369,15 +497,35 @@ export function createLlmBrain(config: LlmCommanderConfig, callbacks: LlmBrainCa
         const rejectionReason = `LLM response rejected: ${parsed.error}`;
         memory.rejectionNote = rejectionReason;
         noteFailure(rejectionReason, true);
-        trace(result.content, `rejected: ${rejectionReason}`);
+        trace(result.content, withObservationTag(`rejected: ${rejectionReason}`, observation));
+        return [];
+      }
+
+      const semantic = filterSemanticCommands(parsed.commands, observation);
+      const droppedText = semantic.droppedReasons.join("; ");
+      const combinedError =
+        parsed.error && droppedText ? `${parsed.error}; ${droppedText}` : (parsed.error ?? (droppedText || undefined));
+      if (semantic.filteredCommands.length === 0 && parsed.commands.length > 0) {
+        restoreTurn();
+        const rejectionReason = `LLM response rejected: ${combinedError ?? "all commands filtered"}`;
+        memory.rejectionNote = rejectionReason;
+        noteFailure(rejectionReason, true);
+        trace(result.content, withObservationTag(`rejected: ${rejectionReason}`, observation));
         return [];
       }
 
       memory.conversation.push({ role: "assistant", content: result.content });
       memory.rejectionNote = null;
       lastNotifiedFailure = null;
-      if (parsed.error) noteFailure(`LLM response rejected: ${parsed.error}`, true);
-      trace(result.content, summarizeLlmCommands(parsed.commands, parsed.error));
+      if (combinedError) {
+        const correctiveHint = droppedText
+          ? `LLM response rejected: ${combinedError}. Use only live enemyIds and tiles within map bounds.`
+          : `LLM response rejected: ${combinedError}`;
+        memory.rejectionNote = correctiveHint;
+        noteFailure(`LLM response rejected: ${combinedError}`, true);
+      }
+      const commandSummary = summarizeLlmCommands(semantic.filteredCommands, combinedError);
+      trace(result.content, withObservationTag(commandSummary, observation));
       if (parsed.chat) callbacks.onChat?.(parsed.chat);
 
       const tokenCount = result.promptTokens > 0 ? result.promptTokens : estimateTokens(systemPrompt, transcript);
@@ -389,7 +537,7 @@ export function createLlmBrain(config: LlmCommanderConfig, callbacks: LlmBrainCa
         memory.lastObservation = observation;
       }
 
-      return parsed.commands.map(translateCommand);
+      return semantic.filteredCommands.map(translateCommand);
     },
   };
 }

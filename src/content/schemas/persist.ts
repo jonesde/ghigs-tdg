@@ -2,8 +2,10 @@ import { z } from "zod";
 import {
   MAX_DECISION_INTERVAL_MS,
   MAX_REQUEST_TIMEOUT_MS,
+  MAX_TEMPERATURE,
   MIN_DECISION_INTERVAL_MS,
   MIN_REQUEST_TIMEOUT_MS,
+  MIN_TEMPERATURE,
 } from "@/commanders/llm/types.js";
 
 const TowerUnlocksSchema = z.object({
@@ -41,6 +43,8 @@ const LlmCommanderConfigSchema = z.object({
   pauseForCommander: z.boolean(),
   decisionIntervalMs: z.number().int().min(MIN_DECISION_INTERVAL_MS).max(MAX_DECISION_INTERVAL_MS),
   reasoningEnabled: z.boolean(),
+  temperatureReasoningOff: z.number().min(MIN_TEMPERATURE).max(MAX_TEMPERATURE),
+  temperatureReasoningOn: z.number().min(MIN_TEMPERATURE).max(MAX_TEMPERATURE),
 });
 
 export const PersistStateSchema = z.object({

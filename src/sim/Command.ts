@@ -113,4 +113,6 @@ export type Command =
     }
   // Releases living enemies whose routingMode is hold. Filters are optional.
   | { commandId: number; type: "llm:releaseHeld"; wave?: number; spawnIndex?: number }
-  | { commandId: number; type: "llm:gridLayoutToggle" };
+  // Deprecated alias for llm:setGridLayoutFeed with enabled toggled. Kept for compat.
+  | { commandId: number; type: "llm:gridLayoutToggle" }
+  | { commandId: number; type: "llm:setGridLayoutFeed"; enabled: boolean };

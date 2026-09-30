@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { validateLlmResponse } from "@/commanders/llm/schema.js";
-import { DEFAULT_LLM_SYSTEM_PROMPT, type LlmCommanderConfig } from "@/commanders/llm/types.js";
+import {
+  DEFAULT_LLM_SYSTEM_PROMPT,
+  DEFAULT_TEMPERATURE_REASONING_OFF,
+  DEFAULT_TEMPERATURE_REASONING_ON,
+  type LlmCommanderConfig,
+} from "@/commanders/llm/types.js";
 
 const config: LlmCommanderConfig = {
   id: "c",
@@ -15,6 +20,8 @@ const config: LlmCommanderConfig = {
   pauseForCommander: false,
   decisionIntervalMs: 1000,
   reasoningEnabled: false,
+  temperatureReasoningOff: DEFAULT_TEMPERATURE_REASONING_OFF,
+  temperatureReasoningOn: DEFAULT_TEMPERATURE_REASONING_ON,
 };
 
 describe("validateLlmResponse", () => {
@@ -22,7 +29,7 @@ describe("validateLlmResponse", () => {
     const result = validateLlmResponse(
       [
         { type: "llm:routeGroup", enemyIds: [1, 2], waypoints: [{ x: 3, y: 4 }] },
-        { type: "llm:setTargeting", enemyIds: [5], mode: "aggressive" },
+        { type: "llm:setTargeting", enemyIds: [5], mode: "nearest" },
       ],
       config,
     );
@@ -56,11 +63,12 @@ describe("validateLlmResponse", () => {
     const result = validateLlmResponse(
       [
         { type: "llm:routeGroup", enemyIds: [], waypoints: [] },
-        { type: "llm:setTargeting", enemyIds: ["x"], mode: "a" },
+        { type: "llm:setTargeting", enemyIds: ["x"], mode: "nearest" },
       ],
       config,
     );
     expect(result.commands).toHaveLength(0);
+    expect(result.error).toBe("empty enemyIds");
   });
 
   it("drops setTargeting without a mode", () => {

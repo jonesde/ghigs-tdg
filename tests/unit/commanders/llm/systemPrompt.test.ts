@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { buildSystemPrompt } from "@/commanders/llm/systemPrompt.js";
-import { DEFAULT_LLM_SYSTEM_PROMPT, type LlmCommanderConfig } from "@/commanders/llm/types.js";
+import {
+  DEFAULT_LLM_SYSTEM_PROMPT,
+  DEFAULT_TEMPERATURE_REASONING_OFF,
+  DEFAULT_TEMPERATURE_REASONING_ON,
+  type LlmCommanderConfig,
+} from "@/commanders/llm/types.js";
 import { VICTORY_WAVE } from "@/sim/Constants.js";
 import { TOWER_LEVEL_DMG_MULT, TOWER_LEVEL_RANGE_MULT, TOWER_LEVEL_RATE_MULT } from "@/sim/ConstantsTower.js";
 
@@ -18,6 +23,8 @@ function makeConfig(): LlmCommanderConfig {
     pauseForCommander: false,
     decisionIntervalMs: 1000,
     reasoningEnabled: false,
+    temperatureReasoningOff: DEFAULT_TEMPERATURE_REASONING_OFF,
+    temperatureReasoningOn: DEFAULT_TEMPERATURE_REASONING_ON,
   };
 }
 

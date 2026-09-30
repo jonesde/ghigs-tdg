@@ -1,10 +1,13 @@
 import { defineStore } from "pinia";
 import {
   DEFAULT_REQUEST_TIMEOUT_MS,
+  DEFAULT_TEMPERATURE_REASONING_OFF,
+  DEFAULT_TEMPERATURE_REASONING_ON,
   type LlmCommanderConfig,
   MAX_REQUEST_TIMEOUT_MS,
   MIN_REQUEST_TIMEOUT_MS,
   normalizeDecisionIntervalMs,
+  normalizeTemperature,
 } from "@/commanders/llm/types.js";
 import { PersistStateSchema } from "@/content/schemas/persist.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -162,7 +165,23 @@ function fillCommanderTimeouts(commanders: unknown): LlmCommanderConfig[] {
     const pauseForCommander = commander.pauseForCommander === true;
     const decisionIntervalMs = normalizeDecisionIntervalMs(commander.decisionIntervalMs);
     const reasoningEnabled = commander.reasoningEnabled === true;
-    filled.push({ ...commander, requestTimeoutMs, pauseForCommander, decisionIntervalMs, reasoningEnabled });
+    const temperatureReasoningOff = normalizeTemperature(
+      commander.temperatureReasoningOff,
+      DEFAULT_TEMPERATURE_REASONING_OFF,
+    );
+    const temperatureReasoningOn = normalizeTemperature(
+      commander.temperatureReasoningOn,
+      DEFAULT_TEMPERATURE_REASONING_ON,
+    );
+    filled.push({
+      ...commander,
+      requestTimeoutMs,
+      pauseForCommander,
+      decisionIntervalMs,
+      reasoningEnabled,
+      temperatureReasoningOff,
+      temperatureReasoningOn,
+    });
   }
   return filled;
 }
@@ -220,7 +239,7 @@ function migrateV2ToV3(parsed: Record<string, unknown>): PersistStateShape {
       result.unlocked[towerId] = mergeTowerUnlocks(result.unlocked[towerId]);
     }
   }
-  result.llmCommanders = [];
+  result.llmCommanders = fillCommanderTimeouts(parsed.llmCommanders);
   result.saveVersion = CURRENT_SAVE_VERSION;
   return result;
 }

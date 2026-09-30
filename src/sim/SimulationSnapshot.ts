@@ -118,6 +118,11 @@ export interface SnapshotMeta {
   // `endScreenData` (set on triggerEnd), and `milestoneRewardsClaimed` is only
   // read worker-side for persist-flush decisions (directly from runState). Both
   // were previously deep-cloned every postMessage for no consumer on the main thread.
+  // Command receipt for the last drained command batch (Block C feedback). Optional
+  // so hand-built test literals need not list them; the serializer always sets them.
+  lastAppliedCommandId?: number;
+  lastAppliedCount?: number;
+  lastSkippedCount?: number;
 }
 
 // Entity snapshots — plain data only, no methods, no closures.

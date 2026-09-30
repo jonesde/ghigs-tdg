@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const SET_TARGETING_MODES = ["default", "base", "nearest", "strongest", "weakest", "strongestAhead"] as const;
+
 const TileCoordinateSchema = z.object({ x: z.number().finite(), y: z.number().finite() });
 
 // Soft-filter non-finite entries so one bad id does not drop the whole command.

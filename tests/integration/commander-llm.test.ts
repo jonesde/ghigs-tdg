@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CommanderMemory } from "@/commanders/brain.js";
 import { createLlmBrain } from "@/commanders/llm/brain.js";
-import { DEFAULT_LLM_SYSTEM_PROMPT, type LlmCommanderConfig } from "@/commanders/llm/types.js";
+import { validateLlmResponse } from "@/commanders/llm/schema.js";
+import {
+  DEFAULT_LLM_SYSTEM_PROMPT,
+  DEFAULT_TEMPERATURE_REASONING_OFF,
+  DEFAULT_TEMPERATURE_REASONING_ON,
+  type LlmCommanderConfig,
+} from "@/commanders/llm/types.js";
 import type { CommanderObservation } from "@/commanders/observation.js";
 import type { CommanderToMainMessage } from "@/commanders/protocol.js";
 import { GameState } from "@/sim/Constants.js";
@@ -30,6 +36,8 @@ function makeConfig(): LlmCommanderConfig {
     pauseForCommander: false,
     decisionIntervalMs: 1000,
     reasoningEnabled: false,
+    temperatureReasoningOff: DEFAULT_TEMPERATURE_REASONING_OFF,
+    temperatureReasoningOn: DEFAULT_TEMPERATURE_REASONING_ON,
   };
 }
 
@@ -444,7 +452,7 @@ describe("Integration: LLM commander worker pause + relay", () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     const raw = JSON.stringify([
-      { type: "llm:routeGroup", enemyIds: [1, 2], hold: true, holdTile: { x: 3, y: 4 }, waypoints: [] },
+      { type: "llm:routeGroup", enemyIds: [1], hold: true, holdTile: { x: 3, y: 4 }, waypoints: [] },
     ]);
     const fetchFn = vi.fn(async () => responseWithContent(raw));
     gw.fetch = fetchFn as unknown as typeof fetch;
@@ -457,7 +465,7 @@ describe("Integration: LLM commander worker pause + relay", () => {
     vi.advanceTimersByTime(1000);
     await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
     await vi.advanceTimersByTimeAsync(0);
-    expect(traceMessages()).toEqual([{ responseText: raw, commandSummary: "hold 1, 2 at (3, 4)" }]);
+    expect(traceMessages()).toEqual([{ responseText: raw, commandSummary: "hold 1 at (3, 4)" }]);
   });
 
   it("keeps the chat sentence in the chat log and the raw body in the trace", async () => {
@@ -498,7 +506,7 @@ describe("Integration: LLM commander worker pause + relay", () => {
     await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
     await vi.advanceTimersByTimeAsync(0);
     const applied = posted.flatMap((message) => (message.type === "commands" ? message.commands : []));
-    expect(applied.every((command) => command.type === "llm:gridLayoutToggle")).toBe(true);
+    expect(applied.every((command) => command.type === "llm:setGridLayoutFeed")).toBe(true);
     expect(traceMessages()[0]?.responseText).toBe("this is not json");
     expect(traceMessages()[0]?.commandSummary).toContain("rejected:");
   });
@@ -541,7 +549,7 @@ describe("Unit: LLM brain round-trip + malformed", () => {
           choices: [
             {
               message: {
-                content: JSON.stringify([{ type: "llm:routeGroup", enemyIds: [1], waypoints: [{ x: 5, y: 6 }] }]),
+                content: JSON.stringify([{ type: "llm:routeGroup", enemyIds: [1], waypoints: [{ x: 1, y: 1 }] }]),
               },
             },
           ],
@@ -550,11 +558,11 @@ describe("Unit: LLM brain round-trip + malformed", () => {
     })) as unknown as typeof fetch;
     const brain = createLlmBrain(makeConfig(), { fetchFn });
     const commands = await brain.decide(makeObservation(), makeMemory());
-    const route = commands.find((c) => c.type === "llm:routeGroup");
+    const route = commands.find((command) => command.type === "llm:routeGroup");
     expect(route).toBeDefined();
     if (route && route.type === "llm:routeGroup") {
       expect(route.enemyIds).toEqual([1]);
-      expect(route.waypoints).toEqual([{ x: 5, y: 6 }]);
+      expect(route.waypoints).toEqual([{ x: 1, y: 1 }]);
     }
   });
 
@@ -780,5 +788,97 @@ describe("Unit: LLM brain round-trip + malformed", () => {
 
     await brain.decide(makeObservation(), memory);
     expect(notify).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects an unknown setTargeting mode with an error string", async () => {
+    const parsed = validateLlmResponse([{ type: "llm:setTargeting", enemyIds: [1], mode: "snipe" }], makeConfig());
+    expect(parsed.commands).toEqual([]);
+    expect(parsed.error).toBe("setTargeting unknown mode: snipe");
+
+    const content = JSON.stringify([{ type: "llm:setTargeting", enemyIds: [1], mode: "snipe" }]);
+    const fetchFn = vi.fn(async () => responseWithContent(content));
+    const notify = vi.fn();
+    const brain = createLlmBrain(makeConfig(), { fetchFn: fetchFn as unknown as typeof fetch, onNotify: notify });
+    const memory = makeMemory();
+    const commands = await brain.decide(makeObservation(), memory);
+    expect(commands).toEqual([]);
+    expect(memory.rejectionNote).toContain("setTargeting unknown mode: snipe");
+    expect(notify).toHaveBeenCalled();
+  });
+
+  it("records empty enemyIds as an error instead of silently skipping", async () => {
+    const parsed = validateLlmResponse([{ type: "llm:routeGroup", enemyIds: [], waypoints: [] }], makeConfig());
+    expect(parsed.commands).toEqual([]);
+    expect(parsed.error).toBe("empty enemyIds");
+
+    const content = JSON.stringify([{ type: "llm:routeGroup", enemyIds: [], waypoints: [] }]);
+    const fetchFn = vi.fn(async () => responseWithContent(content));
+    const brain = createLlmBrain(makeConfig(), { fetchFn: fetchFn as unknown as typeof fetch });
+    const memory = makeMemory();
+    const commands = await brain.decide(makeObservation(), memory);
+    expect(commands).toEqual([]);
+    expect(memory.rejectionNote).toContain("empty enemyIds");
+  });
+
+  it("rejects a malformed routeGroup and resends the reason next turn", async () => {
+    const parsed = validateLlmResponse([{ type: "llm:routeGroup", hold: true }], makeConfig());
+    expect(parsed.commands).toEqual([]);
+    expect(parsed.error).toBe("routeGroup is invalid");
+
+    const fetchFn = vi.fn();
+    fetchFn.mockResolvedValueOnce(responseWithContent(JSON.stringify([{ type: "llm:routeGroup", hold: true }])));
+    fetchFn.mockResolvedValueOnce(responseWithContent("[]"));
+    const brain = createLlmBrain(makeConfig(), { fetchFn: fetchFn as unknown as typeof fetch });
+    const memory = makeMemory();
+    const commands = await brain.decide(makeObservation(), memory);
+    expect(commands).toEqual([]);
+    expect(memory.rejectionNote).toContain("routeGroup is invalid");
+
+    await brain.decide(makeObservation(), memory);
+    const messages = messagesFromCall(fetchFn, 1);
+    const userMessage = messages[messages.length - 1]?.content ?? "";
+    expect(userMessage).toContain("Previous reply was rejected: LLM response rejected: routeGroup is invalid");
+  });
+
+  it("filters out-of-bounds tiles but keeps sibling valid commands with a corrective note", async () => {
+    const content = JSON.stringify([
+      { type: "llm:routeGroup", enemyIds: [1], waypoints: [{ x: 1, y: 1 }] },
+      { type: "llm:routeGroup", enemyIds: [1], waypoints: [{ x: 99, y: 99 }] },
+    ]);
+    const fetchFn = vi.fn(async () => responseWithContent(content));
+    const notify = vi.fn();
+    const brain = createLlmBrain(makeConfig(), { fetchFn: fetchFn as unknown as typeof fetch, onNotify: notify });
+    const memory = makeMemory();
+    const commands = await brain.decide(makeObservation(), memory);
+    expect(commands).toHaveLength(2);
+    const filteredCommand = commands[1];
+    expect(filteredCommand?.type).toBe("llm:routeGroup");
+    if (filteredCommand?.type === "llm:routeGroup") expect(filteredCommand.waypoints).toEqual([]);
+    expect(memory.rejectionNote).toContain("out-of-bounds");
+    expect(memory.conversation.some((message) => message.role === "assistant")).toBe(true);
+    expect(notify).toHaveBeenCalled();
+  });
+
+  it("drops commands for unknown enemy ids and rejects when every command is filtered", async () => {
+    const mixedContent = JSON.stringify([
+      { type: "llm:routeGroup", enemyIds: [1], waypoints: [{ x: 1, y: 1 }] },
+      { type: "llm:routeGroup", enemyIds: [99], waypoints: [{ x: 0, y: 0 }] },
+    ]);
+    const mixedFetch = vi.fn(async () => responseWithContent(mixedContent));
+    const mixedBrain = createLlmBrain(makeConfig(), { fetchFn: mixedFetch as unknown as typeof fetch });
+    const mixedMemory = makeMemory();
+    const mixedCommands = await mixedBrain.decide(makeObservation(), mixedMemory);
+    expect(mixedCommands).toHaveLength(1);
+    expect(mixedMemory.rejectionNote).toContain("unknown enemyIds");
+    expect(mixedMemory.conversation.some((message) => message.role === "assistant")).toBe(true);
+
+    const allDroppedContent = JSON.stringify([{ type: "llm:routeGroup", enemyIds: [99], waypoints: [{ x: 0, y: 0 }] }]);
+    const droppedFetch = vi.fn(async () => responseWithContent(allDroppedContent));
+    const droppedBrain = createLlmBrain(makeConfig(), { fetchFn: droppedFetch as unknown as typeof fetch });
+    const droppedMemory = makeMemory();
+    const droppedCommands = await droppedBrain.decide(makeObservation(), droppedMemory);
+    expect(droppedCommands).toEqual([]);
+    expect(droppedMemory.rejectionNote).toContain("unknown enemyIds");
+    expect(droppedMemory.conversation).toEqual([]);
   });
 });

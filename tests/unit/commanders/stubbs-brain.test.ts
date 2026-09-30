@@ -212,4 +212,62 @@ describe("StubbsBrain", () => {
     );
     expect(siegeTowerTile(next)).toEqual({ x: 5, y: 3 });
   });
+
+  it("prunes dead enemy ids from the wave set each decide", () => {
+    const brain = createStubbsBrain() as unknown as SyncBrain;
+    const memory = freshMemory();
+    brain.decide(observation({ enemies: [enemy(1, 1, 3), enemy(2, 1, 3)], towers: [tower(5, 3, 100)] }), memory);
+    const quiet = brain.decide(observation({ enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 100)] }), memory);
+    expect(quiet).toHaveLength(0);
+    expect(memory.seenByWave.get(1)).toEqual(new Set([1]));
+  });
+
+  it("re-routes only live enemies after a death plus a tower change", () => {
+    const brain = createStubbsBrain() as unknown as SyncBrain;
+    const memory = freshMemory();
+    brain.decide(
+      observation({ enemies: [enemy(1, 1, 3), enemy(2, 1, 3)], towers: [tower(5, 3, 100, 100, 1)] }),
+      memory,
+    );
+    const reroute = brain.decide(
+      observation({ enemies: [enemy(1, 1, 3)], towers: [tower(5, 3, 100, 100, 2)] }),
+      memory,
+    );
+    expect(reroute).toHaveLength(1);
+    const command = reroute[0]!;
+    expect(command.type).toBe("llm:siegeTower");
+    if (command.type === "llm:siegeTower") {
+      expect(command.enemyIds).toEqual([1]);
+    }
+  });
+
+  it("falls back to the first live enemy tile when no path tile exists", () => {
+    const brain = createStubbsBrain() as unknown as SyncBrain;
+    const terrainMap: number[][] = Array.from({ length: 4 }, () => Array(4).fill(0) as number[]);
+    function terrainObservation(enemyTile: { x: number; y: number }, towerDistance: number): CommanderObservation {
+      const distances: number[][] = Array.from({ length: 4 }, () => Array(4).fill(-1) as number[]);
+      distances[enemyTile.y]![enemyTile.x] = 5;
+      distances[3]![3] = towerDistance;
+      return {
+        map: terrainMap,
+        enemies: [enemy(1, enemyTile.x, enemyTile.y)],
+        towers: [tower(3, 3, 100)],
+        wave: {
+          currentWave: 1,
+          pendingEnemyCount: 0,
+          spawnStates: [],
+          remainingScheduledSpawns: 0,
+          active: true,
+          baseHealth: 20,
+          maxBaseHealth: 20,
+          countdownRemaining: null,
+        },
+        nav: { pathVersion: 0, distanceToBase: distances, spawnReachable: [true] },
+      };
+    }
+    // Tower ahead of the fallback tile (2 < 5) is sieged.
+    expect(siegeTowerTile(brain.decide(terrainObservation({ x: 1, y: 1 }, 2), freshMemory()))).toEqual({ x: 3, y: 3 });
+    // Tower behind the fallback tile (9 > 5) is left on the default path.
+    expect(brain.decide(terrainObservation({ x: 1, y: 1 }, 9), freshMemory())).toHaveLength(0);
+  });
 });

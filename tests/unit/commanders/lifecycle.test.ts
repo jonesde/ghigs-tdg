@@ -1,3 +1,4 @@
+import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/sim/commandBus.js", () => ({ dispatchCommand: vi.fn() }));
@@ -10,9 +11,11 @@ import { setEnemyCommander } from "@/commanders/index.js";
 import { startRelay, stopRelay } from "@/commanders/relay.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
+import { useUiStore } from "@/stores/ui.js";
 
 describe("commander switch releases previous orders", () => {
   beforeEach(() => {
+    setActivePinia(createPinia());
     vi.mocked(dispatchCommand).mockClear();
     vi.mocked(startRelay).mockClear();
     vi.mocked(stopRelay).mockClear();
@@ -22,6 +25,7 @@ describe("commander switch releases previous orders", () => {
   });
 
   it("clears route and targeting before starting the next commander", () => {
+    useUiStore().enemyCommander = "stubby";
     setEnemyCommander("stubbs");
     expect(dispatchCommand).toHaveBeenNthCalledWith(1, {
       commandId: 0,
@@ -41,6 +45,7 @@ describe("commander switch releases previous orders", () => {
   });
 
   it("clears route and targeting for none and does not start a relay", () => {
+    useUiStore().enemyCommander = "stubby";
     setEnemyCommander("none");
     expect(dispatchCommand).toHaveBeenNthCalledWith(1, {
       commandId: 0,
@@ -57,5 +62,13 @@ describe("commander switch releases previous orders", () => {
     });
     expect(stopRelay).toHaveBeenCalledTimes(1);
     expect(startRelay).not.toHaveBeenCalled();
+  });
+
+  it("skips release dispatches when no commander was active (none -> stubby)", () => {
+    useUiStore().enemyCommander = "none";
+    setEnemyCommander("stubby");
+    expect(dispatchCommand).not.toHaveBeenCalled();
+    expect(stopRelay).toHaveBeenCalledTimes(1);
+    expect(startRelay).toHaveBeenCalledWith("stubby");
   });
 });

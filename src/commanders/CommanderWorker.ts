@@ -3,7 +3,12 @@ import { GameState } from "@/sim/Constants.js";
 import type { CommanderBrain, CommanderMemory } from "./brain.js";
 import { createBrain } from "./brain.js";
 import { createLlmBrain } from "./llm/brain.js";
-import { DEFAULT_DECISION_INTERVAL_MS, type LlmCommanderConfig, normalizeDecisionIntervalMs } from "./llm/types.js";
+import {
+  DEFAULT_DECISION_INTERVAL_MS,
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  type LlmCommanderConfig,
+  normalizeDecisionIntervalMs,
+} from "./llm/types.js";
 import type { CommanderObservation } from "./observation.js";
 import { buildObservation } from "./observation.js";
 import type {
@@ -53,8 +58,16 @@ let pauseForCommander = false;
 let activeLlmConfig: LlmCommanderConfig | null = null;
 let latestObservation: CommanderObservation | null = null;
 
+// Slack past the fetch abort timer after which a posted hold is force-released.
+const HOLD_CAP_SLACK_MS = 5000;
+
 function postToMain(message: CommanderToMainMessage): void {
   self.postMessage(message);
+}
+
+function commandsMessage(commands: Command[], observationId: number | undefined): CommanderToMainMessage {
+  if (observationId === undefined) return { type: "commands", commands };
+  return { type: "commands", commands, observationId };
 }
 
 function resetMemory(): void {
@@ -86,24 +99,40 @@ async function decideLlm(): Promise<void> {
   const now = Date.now();
   if (now - lastDecisionTimeMs < decisionIntervalMs) return;
   deciding = true;
-  // Hold stops the sim clock without GameState.PAUSED. PAUSED makes this worker
-  // skip decide, which would drop the request the hold is waiting on.
   const holding = pauseForCommander;
-  if (holding) postToMain({ type: "hold", hold: true });
+  let holdPosted = false;
+  let holdCapTimer: ReturnType<typeof setTimeout> | null = null;
   try {
     if (brain.awaitReady) await brain.awaitReady();
     if (pausedForBrain || !latestObservation) return;
-    const commands = await brain.decide(latestObservation, memory);
-    postToMain({ type: "commands", commands });
+    const consumedObservation = latestObservation;
+    if (holding) {
+      // Crosses the worker boundary: stops the sim clock for the in-flight request.
+      // Posted after the backoff wait so the clock keeps running while waiting.
+      postToMain({ type: "hold", hold: true });
+      holdPosted = true;
+      const holdCapMs = (activeLlmConfig?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS) + HOLD_CAP_SLACK_MS;
+      holdCapTimer = setTimeout(() => {
+        // Crosses the worker boundary: force-releases a hold the bounded fetch did not release.
+        if (holdPosted) {
+          holdPosted = false;
+          postToMain({ type: "hold", hold: false });
+        }
+      }, holdCapMs);
+    }
+    const commands = await brain.decide(consumedObservation, memory);
+    postToMain(commandsMessage(commands, consumedObservation.observationId));
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     postToMain({ type: "notify", message: `Commander error: ${errorMessage}` });
   } finally {
+    if (holdCapTimer !== null) clearTimeout(holdCapTimer);
     // Stamp after the request. pauseForCommander stops the sim clock for the whole
     // call, so a start stamp lets the request consume the gap and the next observation
     // re-pauses immediately.
     lastDecisionTimeMs = Date.now();
-    if (holding) postToMain({ type: "hold", hold: false });
+    // Crosses the worker boundary: restarts the sim clock once the request settles.
+    if (holdPosted) postToMain({ type: "hold", hold: false });
     deciding = false;
   }
 }
@@ -204,21 +233,21 @@ async function dispatchCommanderMessage(message: MainToCommanderMessage): Promis
       }
       if (slice.gridLayout) {
         memory.gridLayout = slice.gridLayout;
-        // The map never changes mid-run; emit the feed-off toggle exactly once so
+        // The map never changes mid-run; emit the feed-off set command exactly once so
         // the engine stops shipping gridLayout (steady-state per-tick cost → zero).
         if (!gridLayoutToggleSent) {
           gridLayoutToggleSent = true;
-          commands.push({ commandId: 0, type: "llm:gridLayoutToggle" });
+          commands.push({ commandId: 0, type: "llm:setGridLayoutFeed", enabled: false });
         }
       }
       const observation: CommanderObservation = buildObservation({
         ...slice,
         gridLayout: memory.gridLayout ?? slice.gridLayout,
       });
-      // The one-shot gridLayoutToggle is posted on its own message so both the
+      // The one-shot gridLayout feed-off command is posted on its own message so both the
       // stub and LLM paths share it, then each path posts its own command batch.
       if (commands.length > 0) {
-        postToMain({ type: "commands", commands });
+        postToMain(commandsMessage(commands, observation.observationId));
       }
       if (brainKind === "llm") {
         latestObservation = observation;
@@ -227,7 +256,7 @@ async function dispatchCommanderMessage(message: MainToCommanderMessage): Promis
       } else {
         const decision = brain.decide(observation, memory);
         const brainCommands = decision instanceof Promise ? await decision : decision;
-        postToMain({ type: "commands", commands: brainCommands });
+        postToMain(commandsMessage(brainCommands, observation.observationId));
       }
       break;
     }

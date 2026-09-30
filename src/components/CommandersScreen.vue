@@ -7,10 +7,15 @@ import {
   DEFAULT_DECISION_INTERVAL_MS,
   DEFAULT_LLM_SYSTEM_PROMPT,
   DEFAULT_REQUEST_TIMEOUT_MS,
+  DEFAULT_TEMPERATURE_REASONING_OFF,
+  DEFAULT_TEMPERATURE_REASONING_ON,
   type LlmCommanderConfig,
+  MAX_DECISION_INTERVAL_MS,
   MAX_REQUEST_TIMEOUT_MS,
+  MIN_DECISION_INTERVAL_MS,
   MIN_REQUEST_TIMEOUT_MS,
   normalizeDecisionIntervalMs,
+  normalizeTemperature,
 } from "@/commanders/llm/types.js";
 import { postUpdateInstructions } from "@/commanders/relay.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -62,11 +67,19 @@ const formCommanderInstructions = ref("");
 const formSystemPrompt = ref(DEFAULT_LLM_SYSTEM_PROMPT);
 const formRequestTimeoutSeconds = ref(DEFAULT_REQUEST_TIMEOUT_MS / 1000);
 const formPauseForCommander = ref(false);
+const formDecisionIntervalSeconds = ref(DEFAULT_DECISION_INTERVAL_MS / 1000);
+const formReasoningEnabled = ref(false);
+const formTemperatureReasoningOff = ref(DEFAULT_TEMPERATURE_REASONING_OFF);
+const formTemperatureReasoningOn = ref(DEFAULT_TEMPERATURE_REASONING_ON);
 
 function requestTimeoutMsFromSeconds(secondsValue: number): number {
   const milliseconds = Math.round(Number(secondsValue) * 1000);
   if (!Number.isFinite(milliseconds)) return DEFAULT_REQUEST_TIMEOUT_MS;
   return Math.min(MAX_REQUEST_TIMEOUT_MS, Math.max(MIN_REQUEST_TIMEOUT_MS, milliseconds));
+}
+
+function decisionIntervalMsFromSeconds(secondsValue: number): number {
+  return normalizeDecisionIntervalMs(Math.round(Number(secondsValue) * 1000));
 }
 
 function openNewForm() {
@@ -80,6 +93,10 @@ function openNewForm() {
   formSystemPrompt.value = DEFAULT_LLM_SYSTEM_PROMPT;
   formRequestTimeoutSeconds.value = DEFAULT_REQUEST_TIMEOUT_MS / 1000;
   formPauseForCommander.value = false;
+  formDecisionIntervalSeconds.value = DEFAULT_DECISION_INTERVAL_MS / 1000;
+  formReasoningEnabled.value = false;
+  formTemperatureReasoningOff.value = DEFAULT_TEMPERATURE_REASONING_OFF;
+  formTemperatureReasoningOn.value = DEFAULT_TEMPERATURE_REASONING_ON;
   formError.value = "";
   showForm.value = true;
 }
@@ -95,6 +112,16 @@ function openEditForm(config: LlmCommanderConfig) {
   formSystemPrompt.value = config.systemPrompt;
   formRequestTimeoutSeconds.value = config.requestTimeoutMs / 1000;
   formPauseForCommander.value = config.pauseForCommander === true;
+  formDecisionIntervalSeconds.value = normalizeDecisionIntervalMs(config.decisionIntervalMs) / 1000;
+  formReasoningEnabled.value = config.reasoningEnabled === true;
+  formTemperatureReasoningOff.value = normalizeTemperature(
+    config.temperatureReasoningOff,
+    DEFAULT_TEMPERATURE_REASONING_OFF,
+  );
+  formTemperatureReasoningOn.value = normalizeTemperature(
+    config.temperatureReasoningOn,
+    DEFAULT_TEMPERATURE_REASONING_ON,
+  );
   formError.value = "";
   showForm.value = true;
 }
@@ -124,8 +151,10 @@ function saveForm() {
     systemPrompt: formSystemPrompt.value.trim(),
     requestTimeoutMs: requestTimeoutMsFromSeconds(formRequestTimeoutSeconds.value),
     pauseForCommander: formPauseForCommander.value,
-    decisionIntervalMs: normalizeDecisionIntervalMs(previous?.decisionIntervalMs ?? DEFAULT_DECISION_INTERVAL_MS),
-    reasoningEnabled: previous?.reasoningEnabled === true,
+    decisionIntervalMs: decisionIntervalMsFromSeconds(formDecisionIntervalSeconds.value),
+    reasoningEnabled: formReasoningEnabled.value,
+    temperatureReasoningOff: normalizeTemperature(formTemperatureReasoningOff.value, DEFAULT_TEMPERATURE_REASONING_OFF),
+    temperatureReasoningOn: normalizeTemperature(formTemperatureReasoningOn.value, DEFAULT_TEMPERATURE_REASONING_ON),
   };
   if (editingId.value) {
     persistStore.updateLlmCommander(config);
@@ -155,10 +184,10 @@ async function testEndpoint(): Promise<void> {
     systemPrompt: probeText,
     requestTimeoutMs: requestTimeoutMsFromSeconds(formRequestTimeoutSeconds.value),
     pauseForCommander: formPauseForCommander.value,
-    decisionIntervalMs: DEFAULT_DECISION_INTERVAL_MS,
-    reasoningEnabled: editingId.value
-      ? persistStore.llmCommanders.find((entry) => entry.id === editingId.value)?.reasoningEnabled === true
-      : false,
+    decisionIntervalMs: decisionIntervalMsFromSeconds(formDecisionIntervalSeconds.value),
+    reasoningEnabled: formReasoningEnabled.value,
+    temperatureReasoningOff: normalizeTemperature(formTemperatureReasoningOff.value, DEFAULT_TEMPERATURE_REASONING_OFF),
+    temperatureReasoningOn: normalizeTemperature(formTemperatureReasoningOn.value, DEFAULT_TEMPERATURE_REASONING_ON),
   };
   // Ornith/Qwen chat templates reject a system-only body. The probe needs a user turn.
   const result = await createApiClient().complete(config.systemPrompt, [{ role: "user", content: probeText }], config);
@@ -254,7 +283,7 @@ function goBack() {
           <input class="form-input" v-model="formEndpointUrl" type="text" placeholder="host:port or https://..." />
           <div class="form-hint">
             A bare host:port becomes http://host:port/v1. A bare value that already ends in /v1 is kept once. An
-            http:// or https:// URL is stored as entered.
+            http:// or https:// URL with no path gains /v1; one ending in /v1 or /chat/completions is kept.
           </div>
 
           <label class="form-label">Token / API Key</label>
@@ -268,6 +297,42 @@ function goBack() {
 
           <label class="form-label">Request timeout (seconds)</label>
           <input class="form-input" v-model.number="formRequestTimeoutSeconds" type="number" min="1" max="180" />
+
+          <label class="form-label">Temperature (reasoning off)</label>
+          <input
+            class="form-input commander-temperature-off"
+            v-model.number="formTemperatureReasoningOff"
+            type="number"
+            min="0"
+            max="2"
+            step="0.1"
+          />
+
+          <label class="form-label">Temperature (reasoning on)</label>
+          <input
+            class="form-input commander-temperature-on"
+            v-model.number="formTemperatureReasoningOn"
+            type="number"
+            min="0"
+            max="2"
+            step="0.1"
+          />
+
+          <label class="form-label">Decision interval (seconds)</label>
+          <input
+            class="form-input commander-decision-interval"
+            v-model.number="formDecisionIntervalSeconds"
+            type="number"
+            :min="MIN_DECISION_INTERVAL_MS / 1000"
+            :max="MAX_DECISION_INTERVAL_MS / 1000"
+            step="1"
+          />
+          <div class="form-hint">How often the commander is asked for new orders (1–10 seconds).</div>
+
+          <label class="form-check">
+            <input class="commander-reasoning" type="checkbox" v-model="formReasoningEnabled" />
+            Enable reasoning
+          </label>
 
           <label class="form-check">
             <input class="commander-pause" type="checkbox" v-model="formPauseForCommander" />

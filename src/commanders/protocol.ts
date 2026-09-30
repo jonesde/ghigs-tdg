@@ -14,6 +14,7 @@ export type CommanderKind = "stubby" | "stubbs" | "llm";
 // full SimulationSnapshot, not "the whole snapshot". The relay owns the gridLayout
 // and navField caches and always supplies them when available.
 export interface CommanderSnapshotSlice {
+  observationId: number;
   gridLayout: number[][] | undefined; // constant map (0=terrain,1=path,2=base,3=spawn)
   enemies: EnemySnapshot[];
   towers: TowerSnapshot[];
@@ -33,7 +34,7 @@ export type MainToCommanderMessage =
   | { type: "updateCallSettings"; pauseForCommander: boolean; decisionIntervalMs: number; reasoningEnabled: boolean };
 
 export type CommanderToMainMessage =
-  | { type: "commands"; commands: Command[] }
+  | { type: "commands"; commands: Command[]; observationId?: number }
   | { type: "notify"; message: string }
   | { type: "chat"; text: string; from: "commander" }
   | { type: "hold"; hold: boolean }

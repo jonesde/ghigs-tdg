@@ -1,8 +1,9 @@
 import { dispatchCommand } from "@/sim/commandBus.js";
-import type { NavFieldSnapshotData } from "@/sim/SimulationSnapshot.js";
+import type { NavFieldSnapshotData, TowerSnapshot } from "@/sim/SimulationSnapshot.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 import { useUiStore } from "@/stores/ui.js";
 import type { LlmCommanderConfig } from "./llm/types.js";
+import { DEFAULT_DECISION_INTERVAL_MS, normalizeDecisionIntervalMs } from "./llm/types.js";
 import type {
   CommanderKind,
   CommanderSnapshotSlice,
@@ -20,6 +21,19 @@ let relayIntervalId: ReturnType<typeof setInterval> | null = null;
 let cachedGridLayout: number[][] | undefined;
 let cachedNavField: NavFieldSnapshotData | undefined;
 let cachedRunId: number | null = null;
+let nextObservationId = 1;
+// True while the sim clock is stopped for an in-flight commander request. The relay
+// is the only main-thread party that posts commanderHold, so it owns this flag.
+let clockHeldByCommander = false;
+// Throttle state for llm commanders: observations post at decisionIntervalMs unless
+// something significant changed. Stub kinds post every tick (250 ms) as before.
+let relayCommanderKind: CommanderKind | null = null;
+let relayDecisionIntervalMs = DEFAULT_DECISION_INTERVAL_MS;
+let lastPostedAtMs = 0;
+let firstPostPending = true;
+let lastSentEnemyIds: number[] | null = null;
+let lastSentTowerSignature: string | null = null;
+let lastSentWave: number | null = null;
 
 // Pinia state is a proxy. Worker.postMessage structured-clones its argument and throws
 // DataCloneError on that proxy, which leaves the worker running with no start message
@@ -46,6 +60,8 @@ export function startRelay(kind: CommanderKind, config?: LlmCommanderConfig): vo
     } else if (message.type === "hold") {
       // Clock stop for an in-flight request. Not action:togglePause: that enters
       // GameState.PAUSED and the commander worker would skip the decide the hold waits on.
+      // Track the flag so stopRelay only releases a clock this commander stopped.
+      clockHeldByCommander = message.hold;
       dispatchCommand({ commandId: 0, type: "action:commanderHold", hold: message.hold });
     }
   };
@@ -59,7 +75,30 @@ export function startRelay(kind: CommanderKind, config?: LlmCommanderConfig): vo
   const startMessage: MainToCommanderMessage =
     config === undefined ? { type: "start", kind } : { type: "start", kind, config: cloneCommanderConfig(config) };
   commanderWorker.postMessage(startMessage);
+  relayCommanderKind = kind;
+  relayDecisionIntervalMs =
+    kind === "llm" ? normalizeDecisionIntervalMs(config?.decisionIntervalMs) : DEFAULT_DECISION_INTERVAL_MS;
+  lastPostedAtMs = 0;
+  firstPostPending = true;
+  lastSentEnemyIds = null;
+  lastSentTowerSignature = null;
+  lastSentWave = null;
   relayIntervalId = setInterval(postObservation, RELAY_INTERVAL_MS);
+}
+
+function towerSignatureForThrottle(towers: TowerSnapshot[]): string {
+  return towers
+    .map((tower) => `${tower.tileX},${tower.tileY}:${tower.level}`)
+    .sort()
+    .join("|");
+}
+
+function sameEnemyIds(sent: number[], live: number[]): boolean {
+  if (sent.length !== live.length) return false;
+  for (let index = 0; index < sent.length; index++) {
+    if (sent[index] !== live[index]) return false;
+  }
+  return true;
 }
 
 function postObservation(): void {
@@ -76,6 +115,12 @@ function postObservation(): void {
     cachedRunId = snapshot.meta.runId ?? null;
     cachedGridLayout = undefined;
     cachedNavField = undefined;
+    nextObservationId = 1;
+    // Stale throttle baselines would suppress the new run's first decisions.
+    firstPostPending = true;
+    lastSentEnemyIds = null;
+    lastSentTowerSignature = null;
+    lastSentWave = null;
   }
   if (snapshot.gridLayout) {
     cachedGridLayout = snapshot.gridLayout;
@@ -83,7 +128,25 @@ function postObservation(): void {
   if (snapshot.navField) {
     cachedNavField = snapshot.navField;
   }
+  if (relayCommanderKind === "llm") {
+    const liveEnemyIds = snapshot.enemies.map((enemy) => enemy.id).sort((left, right) => left - right);
+    const towerSignature = towerSignatureForThrottle(snapshot.towers);
+    const wave = snapshot.meta.currentWave;
+    const significantChange =
+      firstPostPending ||
+      lastSentEnemyIds === null ||
+      !sameEnemyIds(lastSentEnemyIds, liveEnemyIds) ||
+      lastSentTowerSignature !== towerSignature ||
+      lastSentWave !== wave;
+    if (!significantChange && Date.now() - lastPostedAtMs < relayDecisionIntervalMs) return;
+    lastPostedAtMs = Date.now();
+    firstPostPending = false;
+    lastSentEnemyIds = liveEnemyIds;
+    lastSentTowerSignature = towerSignature;
+    lastSentWave = wave;
+  }
   const slice: CommanderSnapshotSlice = {
+    observationId: nextObservationId++,
     gridLayout: cachedGridLayout,
     enemies: snapshot.enemies,
     towers: snapshot.towers,
@@ -127,11 +190,35 @@ function failCommanderWorker(message: string): void {
   useUiStore().setEnemyCommander("none");
 }
 
+export function resetRelayForTests(): void {
+  cachedGridLayout = undefined;
+  cachedNavField = undefined;
+  cachedRunId = null;
+  nextObservationId = 1;
+  clockHeldByCommander = false;
+  relayCommanderKind = null;
+  relayDecisionIntervalMs = DEFAULT_DECISION_INTERVAL_MS;
+  lastPostedAtMs = 0;
+  firstPostPending = true;
+  lastSentEnemyIds = null;
+  lastSentTowerSignature = null;
+  lastSentWave = null;
+}
+
+export function peekNextObservationIdForTests(): number {
+  return nextObservationId;
+}
+
+export function peekClockHeldForTests(): boolean {
+  return clockHeldByCommander;
+}
+
 export function stopRelay(): void {
   if (relayIntervalId !== null) {
     clearInterval(relayIntervalId);
     relayIntervalId = null;
   }
+  relayCommanderKind = null;
   const worker = commanderWorker;
   commanderWorker = null;
   if (worker) {
@@ -141,13 +228,18 @@ export function stopRelay(): void {
     worker.postMessage({ type: "stop" } satisfies MainToCommanderMessage);
     worker.terminate();
     // terminate() drops an in-flight decide's hold release and would leave the clock stopped.
-    dispatchCommand({ commandId: 0, type: "action:commanderHold", hold: false });
+    if (clockHeldByCommander) {
+      clockHeldByCommander = false;
+      dispatchCommand({ commandId: 0, type: "action:commanderHold", hold: false });
+    }
+  } else {
+    clockHeldByCommander = false;
   }
   // NOTE: `cachedGridLayout` is intentionally NOT cleared here. The plan (§1.4)
   // requires the relay to own the gridLayout cache across worker restarts: once the
   // commander worker has toggled the engine feed off, a restarted worker would
   // otherwise receive no gridLayout and have no map. Keeping the cache lets the new
-  // worker re-cache and re-emit the one-shot toggle (which flips the engine feed
-  // back on). The cache self-corrects on a new run because the engine re-enables the
+  // worker re-cache and re-emit the one-shot feed-off (which sets the engine feed
+  // back off). The cache self-corrects on a new run because the engine re-enables the
   // feed (gridLayoutEnabled resets true in _initMap), so the next snapshot refreshes it.
 }

@@ -51,23 +51,20 @@ function observation(opts: {
 }
 
 describe("StubbyBrain", () => {
-  it("holds newly-seen enemies at their current tile while spawning", () => {
+  it("batches newly-seen enemies into one hold command while spawning", () => {
     const brain = createStubbyBrain() as unknown as SyncBrain;
     const memory = freshMemory();
     const commands = brain.decide(
       observation({ currentWave: 1, remainingScheduledSpawns: 3, enemies: [enemy(1, 2, 3), enemy(2, 4, 3)] }),
       memory,
     );
-    expect(commands).toHaveLength(2);
-    for (const command of commands) {
-      expect(command.type).toBe("llm:routeGroup");
-      if (command.type === "llm:routeGroup") {
-        expect(command.hold).toBe(true);
-        expect(command.enemyIds).toHaveLength(1);
-        const id = command.enemyIds[0]!;
-        const expectedTile = id === 1 ? { x: 2, y: 3 } : { x: 4, y: 3 };
-        expect(command.holdTile).toEqual(expectedTile);
-      }
+    expect(commands).toHaveLength(1);
+    const command = commands[0]!;
+    expect(command.type).toBe("llm:routeGroup");
+    if (command.type === "llm:routeGroup") {
+      expect(command.hold).toBe(true);
+      expect(command.enemyIds).toEqual([1, 2]);
+      expect(command.holdTile).toBeUndefined();
     }
     expect(memory.seenByWave.get(1)).toEqual(new Set([1, 2]));
   });

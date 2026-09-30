@@ -90,8 +90,8 @@ describe("Integration: real commander worker round-trip (stubby)", () => {
     for (let tick = 0; tick < 30; tick++) engine.update(FIXED_DT);
     const firstCommands = postObservation();
 
-    // Exactly one gridLayoutToggle is emitted on first gridLayout receipt.
-    const toggles = firstCommands.filter((c) => c.type === "llm:gridLayoutToggle");
+    // Exactly one setGridLayoutFeed (feed off) is emitted on first gridLayout receipt.
+    const toggles = firstCommands.filter((c) => c.type === "llm:setGridLayoutFeed");
     expect(toggles).toHaveLength(1);
     // Spawned enemies are held while spawning.
     const holds = firstCommands.filter((c) => c.type === "llm:routeGroup" && c.hold === true);

@@ -1,4 +1,9 @@
-import type { LlmCommanderConfig } from "./types.js";
+import {
+  DEFAULT_TEMPERATURE_REASONING_OFF,
+  DEFAULT_TEMPERATURE_REASONING_ON,
+  type LlmCommanderConfig,
+  normalizeTemperature,
+} from "./types.js";
 
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
@@ -16,16 +21,32 @@ export interface ApiClient {
 const BASE_BACKOFF_MS = 3000;
 const MAX_BACKOFF_MS = 30000;
 const REQUEST_TIMEOUT_MS = 30000;
-const REQUEST_TEMPERATURE = 0.2;
 
 export function normalizeEndpointUrl(raw: string): string {
   const trimmed = raw.trim();
-  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-    return trimmed;
-  }
   const stripped = trimmed.replace(/\/+$/, "");
+  if (/\/chat\/completions$/i.test(stripped)) {
+    if (stripped.startsWith("http://") || stripped.startsWith("https://")) return stripped;
+    return `http://${stripped}`;
+  }
+  if (stripped.startsWith("http://") || stripped.startsWith("https://")) {
+    if (/\/v1$/i.test(stripped)) return stripped;
+    try {
+      const parsedUrl = new URL(stripped);
+      if (parsedUrl.pathname === "" || parsedUrl.pathname === "/") return `${stripped}/v1`;
+    } catch {
+      return stripped;
+    }
+    return stripped;
+  }
   if (/\/v1$/i.test(stripped)) return `http://${stripped}`;
   return `http://${stripped}/v1`;
+}
+
+export function buildChatCompletionsUrl(baseUrl: string): string {
+  const stripped = baseUrl.trim().replace(/\/+$/, "");
+  if (/\/chat\/completions$/i.test(stripped)) return stripped;
+  return `${stripped}/chat/completions`;
 }
 
 function delay(milliseconds: number): Promise<void> {
@@ -90,13 +111,21 @@ export function createApiClient(fetchFn: typeof fetch = globalThis.fetch): ApiCl
       lastAttemptTimeMs = Date.now();
 
       const baseUrl = normalizeEndpointUrl(config.endpointUrl);
-      const url = `${baseUrl}/chat/completions`;
+      const url = buildChatCompletionsUrl(baseUrl);
+      const reasoningEnabled = config.reasoningEnabled === true;
+      const fallbackTemperature = reasoningEnabled
+        ? DEFAULT_TEMPERATURE_REASONING_ON
+        : DEFAULT_TEMPERATURE_REASONING_OFF;
+      const temperature = normalizeTemperature(
+        reasoningEnabled ? config.temperatureReasoningOn : config.temperatureReasoningOff,
+        fallbackTemperature,
+      );
       const body: Record<string, unknown> = {
         messages: [{ role: "system", content: systemPrompt }, ...messages],
-        temperature: REQUEST_TEMPERATURE,
+        temperature,
         stream: false,
       };
-      applyReasoningFields(body, config.reasoningEnabled === true);
+      applyReasoningFields(body, reasoningEnabled);
       if (config.modelName) body.model = config.modelName;
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (config.token) headers.Authorization = `Bearer ${config.token}`;
@@ -147,7 +176,8 @@ export function createApiClient(fetchFn: typeof fetch = globalThis.fetch): ApiCl
         nextBackoffMs = 0;
         return { content, promptTokens: tokenCount };
       } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
+        const errorName = (error as Error)?.name;
+        if ((error instanceof DOMException && error.name === "AbortError") || errorName === "AbortError") {
           escalateBackoff();
           return { error: "timeout" };
         }

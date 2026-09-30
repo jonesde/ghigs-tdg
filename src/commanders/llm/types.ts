@@ -9,6 +9,26 @@ export const DEFAULT_DECISION_INTERVAL_MS = 1000;
 export const MIN_DECISION_INTERVAL_MS = 1000;
 export const MAX_DECISION_INTERVAL_MS = 10000;
 
+export const DEFAULT_TEMPERATURE_REASONING_OFF = 0.7;
+export const DEFAULT_TEMPERATURE_REASONING_ON = 0.6;
+export const MIN_TEMPERATURE = 0;
+export const MAX_TEMPERATURE = 2;
+
+export function normalizeTemperature(value: unknown, fallback: number): number {
+  if (typeof value === "number" && Number.isFinite(value) && value >= MIN_TEMPERATURE && value <= MAX_TEMPERATURE) {
+    return value;
+  }
+  if (
+    typeof fallback === "number" &&
+    Number.isFinite(fallback) &&
+    fallback >= MIN_TEMPERATURE &&
+    fallback <= MAX_TEMPERATURE
+  ) {
+    return fallback;
+  }
+  return DEFAULT_TEMPERATURE_REASONING_OFF;
+}
+
 export function normalizeDecisionIntervalMs(value: unknown): number {
   if (
     typeof value === "number" &&
@@ -34,4 +54,6 @@ export interface LlmCommanderConfig {
   pauseForCommander: boolean; // stop the sim clock while a request is in flight
   decisionIntervalMs: number; // gap after a request finishes; default 1000, range 1000–10000
   reasoningEnabled: boolean; // chat-completions reasoning fields; false sends the disable set
+  temperatureReasoningOff: number; // sampling temperature when reasoning is off; default 0.7, range 0–2
+  temperatureReasoningOn: number; // sampling temperature when reasoning is on; default 0.6, range 0–2
 }

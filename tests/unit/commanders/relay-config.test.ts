@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { reactive } from "vue";
-import type { LlmCommanderConfig } from "@/commanders/llm/types.js";
+import {
+  DEFAULT_TEMPERATURE_REASONING_OFF,
+  DEFAULT_TEMPERATURE_REASONING_ON,
+  type LlmCommanderConfig,
+} from "@/commanders/llm/types.js";
 import { cloneCommanderConfig } from "@/commanders/relay.js";
 
 describe("cloneCommanderConfig", () => {
@@ -18,6 +22,8 @@ describe("cloneCommanderConfig", () => {
       pauseForCommander: true,
       decisionIntervalMs: 1000,
       reasoningEnabled: false,
+      temperatureReasoningOff: DEFAULT_TEMPERATURE_REASONING_OFF,
+      temperatureReasoningOn: DEFAULT_TEMPERATURE_REASONING_ON,
     });
     const cloned = cloneCommanderConfig(config);
     expect(cloned).not.toBe(config);

@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createApiClient, normalizeEndpointUrl } from "@/commanders/llm/apiClient.js";
-import type { LlmCommanderConfig } from "@/commanders/llm/types.js";
+import { buildChatCompletionsUrl, createApiClient, normalizeEndpointUrl } from "@/commanders/llm/apiClient.js";
+import {
+  DEFAULT_TEMPERATURE_REASONING_OFF,
+  DEFAULT_TEMPERATURE_REASONING_ON,
+  type LlmCommanderConfig,
+} from "@/commanders/llm/types.js";
 
 function makeConfig(overrides: Partial<LlmCommanderConfig> = {}): LlmCommanderConfig {
   return {
@@ -16,6 +20,8 @@ function makeConfig(overrides: Partial<LlmCommanderConfig> = {}): LlmCommanderCo
     pauseForCommander: false,
     decisionIntervalMs: 1000,
     reasoningEnabled: false,
+    temperatureReasoningOff: DEFAULT_TEMPERATURE_REASONING_OFF,
+    temperatureReasoningOn: DEFAULT_TEMPERATURE_REASONING_ON,
     ...overrides,
   };
 }
@@ -29,9 +35,10 @@ function statusResponse(status: number): Response {
 }
 
 describe("normalizeEndpointUrl", () => {
-  it("uses http(s) verbatim", () => {
-    expect(normalizeEndpointUrl("https://example.com")).toBe("https://example.com");
-    expect(normalizeEndpointUrl("http://localhost:8080")).toBe("http://localhost:8080");
+  it("appends /v1 to an http(s) URL with no path", () => {
+    expect(normalizeEndpointUrl("https://example.com")).toBe("https://example.com/v1");
+    expect(normalizeEndpointUrl("http://localhost:8080")).toBe("http://localhost:8080/v1");
+    expect(normalizeEndpointUrl("http://localhost:8080/")).toBe("http://localhost:8080/v1");
   });
   it("treats bare host:port as http://host/v1", () => {
     expect(normalizeEndpointUrl("localhost:1234")).toBe("http://localhost:1234/v1");
@@ -42,8 +49,34 @@ describe("normalizeEndpointUrl", () => {
     expect(normalizeEndpointUrl("localhost:1234/v1/")).toBe("http://localhost:1234/v1");
     expect(normalizeEndpointUrl(normalizeEndpointUrl("localhost:1234/v1"))).toBe("http://localhost:1234/v1");
   });
-  it("keeps an http(s) URL verbatim", () => {
+  it("keeps an http(s) URL that already ends in /v1", () => {
     expect(normalizeEndpointUrl("http://localhost:1234/v1")).toBe("http://localhost:1234/v1");
+    expect(normalizeEndpointUrl("http://localhost:1234/v1/")).toBe("http://localhost:1234/v1");
+  });
+  it("keeps a full /chat/completions URL as the request base", () => {
+    expect(normalizeEndpointUrl("http://localhost:1234/v1/chat/completions")).toBe(
+      "http://localhost:1234/v1/chat/completions",
+    );
+    expect(normalizeEndpointUrl("localhost:1234/v1/chat/completions")).toBe(
+      "http://localhost:1234/v1/chat/completions",
+    );
+  });
+  it("keeps an http(s) URL with a custom path stored as entered", () => {
+    expect(normalizeEndpointUrl("https://example.com/custom/path")).toBe("https://example.com/custom/path");
+  });
+});
+
+describe("buildChatCompletionsUrl", () => {
+  it("appends /chat/completions to a /v1 base", () => {
+    expect(buildChatCompletionsUrl("http://localhost:1234/v1")).toBe("http://localhost:1234/v1/chat/completions");
+  });
+  it("does not duplicate /chat/completions when the base already ends with it", () => {
+    expect(buildChatCompletionsUrl("http://localhost:1234/v1/chat/completions")).toBe(
+      "http://localhost:1234/v1/chat/completions",
+    );
+    expect(buildChatCompletionsUrl("http://localhost:1234/v1/chat/completions/")).toBe(
+      "http://localhost:1234/v1/chat/completions",
+    );
   });
 });
 
@@ -62,7 +95,7 @@ describe("createApiClient.complete", () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
     const body = JSON.parse(capturedInit!.body as string);
     expect(body.model).toBeUndefined();
-    expect(body.temperature).toBe(0.2);
+    expect(body.temperature).toBe(DEFAULT_TEMPERATURE_REASONING_OFF);
     expect(body.reasoning_effort).toBe("none");
     expect(body.enable_thinking).toBe(false);
     expect(body.chat_template_kwargs).toEqual({ enable_thinking: false, thinking: false });
@@ -84,7 +117,68 @@ describe("createApiClient.complete", () => {
     expect(body.chat_template_kwargs).toEqual({ enable_thinking: true, thinking: true });
     expect(body.thinking).toEqual({ type: "enabled" });
     expect(body.reasoning).toEqual({ enabled: true, effort: "medium" });
-    expect(body.temperature).toBe(0.2);
+    expect(body.temperature).toBe(DEFAULT_TEMPERATURE_REASONING_ON);
+  });
+
+  it("selects the configured temperature per reasoning flag", async () => {
+    const seenTemperatures: unknown[] = [];
+    const fetchFn = vi.fn(async (_url: string, init?: RequestInit) => {
+      seenTemperatures.push(JSON.parse(init!.body as string).temperature);
+      return okResponse({ choices: [{ message: { content: "x" } }] });
+    });
+    const client = createApiClient(fetchFn as unknown as typeof fetch);
+    await client.complete(
+      "sys",
+      [],
+      makeConfig({ reasoningEnabled: false, temperatureReasoningOff: 1.2, temperatureReasoningOn: 0.3 }),
+    );
+    await client.complete(
+      "sys",
+      [],
+      makeConfig({ reasoningEnabled: true, temperatureReasoningOff: 1.2, temperatureReasoningOn: 0.3 }),
+    );
+    expect(seenTemperatures).toEqual([1.2, 0.3]);
+  });
+
+  it("falls back to temperature defaults when the config fields are undefined", async () => {
+    const seenTemperatures: unknown[] = [];
+    const fetchFn = vi.fn(async (_url: string, init?: RequestInit) => {
+      seenTemperatures.push(JSON.parse(init!.body as string).temperature);
+      return okResponse({ choices: [{ message: { content: "x" } }] });
+    });
+    const client = createApiClient(fetchFn as unknown as typeof fetch);
+    const withoutTemperatures = makeConfig() as Partial<LlmCommanderConfig>;
+    delete withoutTemperatures.temperatureReasoningOff;
+    delete withoutTemperatures.temperatureReasoningOn;
+    await client.complete("sys", [], { ...withoutTemperatures, reasoningEnabled: false } as LlmCommanderConfig);
+    await client.complete("sys", [], { ...withoutTemperatures, reasoningEnabled: true } as LlmCommanderConfig);
+    expect(seenTemperatures).toEqual([DEFAULT_TEMPERATURE_REASONING_OFF, DEFAULT_TEMPERATURE_REASONING_ON]);
+  });
+
+  it("clamps an out-of-range configured temperature to the default", async () => {
+    let capturedInit: RequestInit | undefined;
+    const fetchFn = vi.fn(async (_url: string, init?: RequestInit) => {
+      capturedInit = init;
+      return okResponse({ choices: [{ message: { content: "x" } }] });
+    });
+    const client = createApiClient(fetchFn as unknown as typeof fetch);
+    await client.complete("sys", [], makeConfig({ temperatureReasoningOff: 9 }));
+    expect(JSON.parse(capturedInit!.body as string).temperature).toBe(DEFAULT_TEMPERATURE_REASONING_OFF);
+  });
+
+  it("posts to a full /chat/completions endpoint without duplicating the path", async () => {
+    const seenUrls: string[] = [];
+    const fetchFn = vi.fn(async (url: string) => {
+      seenUrls.push(url);
+      return okResponse({ choices: [{ message: { content: "x" } }] });
+    });
+    const client = createApiClient(fetchFn as unknown as typeof fetch);
+    await client.complete("sys", [], makeConfig({ endpointUrl: "http://localhost:1234/v1/chat/completions" }));
+    await client.complete("sys", [], makeConfig({ endpointUrl: "http://localhost:1234/v1" }));
+    expect(seenUrls).toEqual([
+      "http://localhost:1234/v1/chat/completions",
+      "http://localhost:1234/v1/chat/completions",
+    ]);
   });
 
   it("omits model when empty and sends Bearer token when set", async () => {
@@ -190,6 +284,16 @@ describe("createApiClient.complete", () => {
   it("returns {error: 'timeout'} on abort", async () => {
     const fetchFn = vi.fn(async () => {
       throw new DOMException("aborted", "AbortError");
+    });
+    const client = createApiClient(fetchFn);
+    expect(await client.complete("sys", [], makeConfig())).toEqual({ error: "timeout" });
+  });
+
+  it("returns {error: 'timeout'} on a non-DOMException abort", async () => {
+    const abortError = new Error("aborted");
+    abortError.name = "AbortError";
+    const fetchFn = vi.fn(async () => {
+      throw abortError;
     });
     const client = createApiClient(fetchFn);
     expect(await client.complete("sys", [], makeConfig())).toEqual({ error: "timeout" });

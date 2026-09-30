@@ -27,17 +27,16 @@ export function createStubbyBrain(): CommanderBrain {
       const waveStillEmerging = remainingScheduledSpawns > 0 || pendingEnemyCount > 0;
 
       if (waveStillEmerging) {
+        const freshIds: number[] = [];
         for (const enemy of observation.enemies) {
           if (seenIds.has(enemy.id)) continue;
           seenIds.add(enemy.id);
-          commands.push({
-            commandId: 0,
-            type: "llm:routeGroup",
-            enemyIds: [enemy.id],
-            hold: true,
-            holdTile: { x: enemy.tileX, y: enemy.tileY },
-            waypoints: [],
-          });
+          freshIds.push(enemy.id);
+        }
+        // One batched hold per tick, without holdTile: the engine parks each enemy
+        // at its current tile at apply time, which is fresher than the observed tile.
+        if (freshIds.length > 0) {
+          commands.push({ commandId: 0, type: "llm:routeGroup", enemyIds: freshIds, hold: true, waypoints: [] });
         }
         memory.phase = "holding";
         return commands;

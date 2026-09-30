@@ -17,7 +17,17 @@ let nextFrameId = 1;
 
 const EMPTY_STATUS_EFFECTS: StatusEffectSnapshot[] = Object.freeze([]) as unknown as StatusEffectSnapshot[];
 
-export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number): SimulationSnapshot {
+export interface SnapshotCommandReceipt {
+  commandId: number;
+  applied: number;
+  skipped: number;
+}
+
+export function buildSnapshot(
+  engine: GameEngine,
+  lastAppliedCommandId: number,
+  receipt?: SnapshotCommandReceipt,
+): SimulationSnapshot {
   const enemies = engine.enemyManager?.enemies ?? [];
   const towers = engine.towerManager?.towers ?? [];
   const persistState = engine.persistState;
@@ -88,7 +98,7 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
     schemaVersion: 1,
     frameId: nextFrameId++,
     lastAppliedCommandId,
-    meta: buildMeta(engine),
+    meta: buildMeta(engine, receipt ?? { commandId: lastAppliedCommandId, applied: 0, skipped: 0 }),
     enemies: enemies.map((enemy) => snapshotEnemy(enemy, engine)),
     towers: towers.map((tower) => snapshotTower(tower, persistState, tower.id === selectedTowerId)),
     projectiles: (engine.projectileManager?.getRenderData() ?? []) as ProjectileSnapshot[],
@@ -114,7 +124,7 @@ export function buildSnapshot(engine: GameEngine, lastAppliedCommandId: number):
   };
 }
 
-function buildMeta(engine: GameEngine): SnapshotMeta {
+function buildMeta(engine: GameEngine, receipt: SnapshotCommandReceipt): SnapshotMeta {
   const rs = engine.runState;
   return {
     state: rs.state,
@@ -144,6 +154,9 @@ function buildMeta(engine: GameEngine): SnapshotMeta {
     runId: engine.runId,
     spawns: (engine.grid?.spawns ?? []).map((spawn, spawnIndex) => ({ spawnIndex, x: spawn.x, y: spawn.y })),
     spawnOrders: engine.enemyManager?.listSpawnOrders() ?? [],
+    lastAppliedCommandId: receipt.commandId,
+    lastAppliedCount: receipt.applied,
+    lastSkippedCount: receipt.skipped,
   };
 }
 

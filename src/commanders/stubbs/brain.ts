@@ -45,6 +45,11 @@ export function createStubbsBrain(): CommanderBrain {
       }
 
       const aliveIds = new Set<number>(observation.enemies.map((enemy) => enemy.id));
+      // Drop ids that died since the last tick so the wave set only names live
+      // enemies; otherwise a re-route would address corpses and the set grows stale.
+      for (const seenId of seenIds) {
+        if (!aliveIds.has(seenId)) seenIds.delete(seenId);
+      }
       const newlySeenIds: number[] = [];
       for (const enemy of observation.enemies) {
         if (seenIds.has(enemy.id)) continue;
@@ -55,13 +60,19 @@ export function createStubbsBrain(): CommanderBrain {
       const gridLayout = observation.map;
       const navDistances = observation.nav?.distanceToBase;
       if (!gridLayout || !navDistances) {
+        // Silent by design: nav is simply not cached yet on the earliest ticks, and
+        // the brain has no notify channel back to main (decide returns Command[]).
         return commands;
       }
 
       const liveTowers = observation.towers.filter((tower) => tower.hp > 0);
       const towerSignature = computeTowerSignature(liveTowers);
 
-      const enemyTile = representativeEnemyTile(observation.enemies, gridLayout);
+      const enemyTile =
+        representativeEnemyTile(observation.enemies, gridLayout) ??
+        (observation.enemies.length > 0
+          ? { x: observation.enemies[0]!.tileX, y: observation.enemies[0]!.tileY }
+          : null);
       const enemyDistance = enemyTile ? distanceAt(navDistances, enemyTile.x, enemyTile.y) : -1;
 
       let targetTower: ObservationTower | null = null;

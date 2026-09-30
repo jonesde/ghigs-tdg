@@ -232,6 +232,81 @@ describe("CommandersScreen", () => {
     expect(persistStore.llmCommanders[0].reasoningEnabled).toBe(true);
   });
 
+  it("saves temperature defaults for a new commander", async () => {
+    const wrapper = mount(CommandersScreen, { global: { plugins: [router, pinia] } });
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("New LLM Commander"))!
+      .trigger("click");
+    const inputs = document.body.querySelectorAll("input.form-input");
+    const nameInput = inputs[0] as HTMLInputElement;
+    const endpointInput = inputs[1] as HTMLInputElement;
+    const temperatureOffInput = inputs[6] as HTMLInputElement;
+    const temperatureOnInput = inputs[7] as HTMLInputElement;
+    expect(temperatureOffInput.value).toBe("0.7");
+    expect(temperatureOnInput.value).toBe("0.6");
+    nameInput.value = "Cool Commander";
+    nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    endpointInput.value = "localhost:1234";
+    endpointInput.dispatchEvent(new Event("input", { bubbles: true }));
+    const saveButton = document.body.querySelector("button.form-btn.confirm") as HTMLButtonElement;
+    saveButton.click();
+    await Promise.resolve();
+    expect(persistStore.llmCommanders[0].temperatureReasoningOff).toBe(0.7);
+    expect(persistStore.llmCommanders[0].temperatureReasoningOn).toBe(0.6);
+  });
+
+  it("saves custom temperatures and preserves them across an edit", async () => {
+    const wrapper = mount(CommandersScreen, { global: { plugins: [router, pinia] } });
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("New LLM Commander"))!
+      .trigger("click");
+    let inputs = document.body.querySelectorAll("input.form-input");
+    (inputs[0] as HTMLInputElement).value = "Warm Commander";
+    inputs[0].dispatchEvent(new Event("input", { bubbles: true }));
+    (inputs[1] as HTMLInputElement).value = "localhost:1234";
+    inputs[1].dispatchEvent(new Event("input", { bubbles: true }));
+    (inputs[6] as HTMLInputElement).value = "1.2";
+    inputs[6].dispatchEvent(new Event("input", { bubbles: true }));
+    (inputs[7] as HTMLInputElement).value = "0.3";
+    inputs[7].dispatchEvent(new Event("input", { bubbles: true }));
+    (document.body.querySelector("button.form-btn.confirm") as HTMLButtonElement).click();
+    await Promise.resolve();
+    expect(persistStore.llmCommanders[0].temperatureReasoningOff).toBe(1.2);
+    expect(persistStore.llmCommanders[0].temperatureReasoningOn).toBe(0.3);
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Edit")!
+      .trigger("click");
+    inputs = document.body.querySelectorAll("input.form-input");
+    expect((inputs[6] as HTMLInputElement).value).toBe("1.2");
+    expect((inputs[7] as HTMLInputElement).value).toBe("0.3");
+    (document.body.querySelector("button.form-btn.confirm") as HTMLButtonElement).click();
+    await Promise.resolve();
+    expect(persistStore.llmCommanders[0].temperatureReasoningOff).toBe(1.2);
+    expect(persistStore.llmCommanders[0].temperatureReasoningOn).toBe(0.3);
+  });
+
+  it("clamps an out-of-range temperature to the default on save", async () => {
+    const wrapper = mount(CommandersScreen, { global: { plugins: [router, pinia] } });
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("New LLM Commander"))!
+      .trigger("click");
+    const inputs = document.body.querySelectorAll("input.form-input");
+    (inputs[0] as HTMLInputElement).value = "Clamped Commander";
+    inputs[0].dispatchEvent(new Event("input", { bubbles: true }));
+    (inputs[1] as HTMLInputElement).value = "localhost:1234";
+    inputs[1].dispatchEvent(new Event("input", { bubbles: true }));
+    (inputs[6] as HTMLInputElement).value = "9";
+    inputs[6].dispatchEvent(new Event("input", { bubbles: true }));
+    (document.body.querySelector("button.form-btn.confirm") as HTMLButtonElement).click();
+    await Promise.resolve();
+    expect(persistStore.llmCommanders[0].temperatureReasoningOff).toBe(0.7);
+    expect(persistStore.llmCommanders[0].temperatureReasoningOn).toBe(0.6);
+  });
+
   it("tests the endpoint without adding a commander", async () => {
     let requestBody = "";
     vi.stubGlobal(
@@ -260,5 +335,67 @@ describe("CommandersScreen", () => {
     expect(lastMessage?.role).toBe("user");
     expect(lastMessage?.content).toBe("Reply with [] and nothing else.");
     vi.unstubAllGlobals();
+  });
+
+  it("saves decision-interval and reasoning defaults for a new commander", async () => {
+    const wrapper = mount(CommandersScreen, { global: { plugins: [router, pinia] } });
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("New LLM Commander"))!
+      .trigger("click");
+    // An earlier test leaves its form open in <body>; scope to the newest dialog.
+    const dialogs = document.body.querySelectorAll(".form-dialog");
+    const dialog = dialogs[dialogs.length - 1] as HTMLElement;
+    const inputs = dialog.querySelectorAll("input.form-input");
+    const decisionInput = inputs[8] as HTMLInputElement;
+    const reasoningInput = dialog.querySelector("input.commander-reasoning") as HTMLInputElement;
+    expect(decisionInput.value).toBe("1");
+    expect(reasoningInput.checked).toBe(false);
+    const nameInput = inputs[0] as HTMLInputElement;
+    const endpointInput = inputs[1] as HTMLInputElement;
+    nameInput.value = "Defaulted Commander";
+    nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    endpointInput.value = "localhost:1234";
+    endpointInput.dispatchEvent(new Event("input", { bubbles: true }));
+    const saveButton = dialog.querySelector("button.form-btn.confirm") as HTMLButtonElement;
+    saveButton.click();
+    await Promise.resolve();
+    expect(persistStore.llmCommanders[0].decisionIntervalMs).toBe(1000);
+    expect(persistStore.llmCommanders[0].reasoningEnabled).toBe(false);
+  });
+
+  it("saves a custom decision interval and reasoning, preserved across an edit", async () => {
+    const wrapper = mount(CommandersScreen, { global: { plugins: [router, pinia] } });
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("New LLM Commander"))!
+      .trigger("click");
+    let dialogs = document.body.querySelectorAll(".form-dialog");
+    let dialog = dialogs[dialogs.length - 1] as HTMLElement;
+    let inputs = dialog.querySelectorAll("input.form-input");
+    (inputs[0] as HTMLInputElement).value = "Thinking Commander";
+    inputs[0].dispatchEvent(new Event("input", { bubbles: true }));
+    (inputs[1] as HTMLInputElement).value = "localhost:1234";
+    inputs[1].dispatchEvent(new Event("input", { bubbles: true }));
+    (inputs[8] as HTMLInputElement).value = "4";
+    inputs[8].dispatchEvent(new Event("input", { bubbles: true }));
+    (dialog.querySelector("input.commander-reasoning") as HTMLInputElement).click();
+    (dialog.querySelector("button.form-btn.confirm") as HTMLButtonElement).click();
+    await Promise.resolve();
+    expect(persistStore.llmCommanders[0].decisionIntervalMs).toBe(4000);
+    expect(persistStore.llmCommanders[0].reasoningEnabled).toBe(true);
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Edit")!
+      .trigger("click");
+    dialogs = document.body.querySelectorAll(".form-dialog");
+    dialog = dialogs[dialogs.length - 1] as HTMLElement;
+    inputs = dialog.querySelectorAll("input.form-input");
+    expect((inputs[8] as HTMLInputElement).value).toBe("4");
+    expect((dialog.querySelector("input.commander-reasoning") as HTMLInputElement).checked).toBe(true);
+    (dialog.querySelector("button.form-btn.confirm") as HTMLButtonElement).click();
+    await Promise.resolve();
+    expect(persistStore.llmCommanders[0].decisionIntervalMs).toBe(4000);
+    expect(persistStore.llmCommanders[0].reasoningEnabled).toBe(true);
   });
 });

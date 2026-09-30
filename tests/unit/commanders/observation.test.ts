@@ -122,4 +122,15 @@ describe("buildObservation", () => {
     expect(observation.wave.maxBaseHealth).toBe(40);
     expect(observation.wave.countdownRemaining).toBe(8.26);
   });
+
+  it("carries the snapshot command receipt into the wave block", () => {
+    const slice = makeSlice({ meta: fakeMeta({ lastAppliedCommandId: 9, lastAppliedCount: 2, lastSkippedCount: 1 }) });
+    const observation = buildObservation(slice);
+    expect(observation.wave.commandReceipt).toEqual({ commandId: 9, applied: 2, skipped: 1 });
+  });
+
+  it("leaves commandReceipt undefined when the meta has no receipt fields", () => {
+    const observation = buildObservation(makeSlice({}));
+    expect(observation.wave.commandReceipt).toBeUndefined();
+  });
 });

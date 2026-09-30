@@ -42,6 +42,7 @@ export interface ObservationWave {
   maxBaseHealth: number;
   countdownRemaining: number | null;
   spawnOrders?: SpawnOrderView[];
+  commandReceipt?: { commandId: number; applied: number; skipped: number };
 }
 
 export interface ObservationNav {
@@ -53,6 +54,7 @@ export interface ObservationNav {
 // The abstracted semantic view the brain consumes. Field names are intentionally
 // stable for LLM commanders.
 export interface CommanderObservation {
+  observationId?: number;
   map: number[][] | undefined;
   spawns?: SpawnPointSnapshot[];
   enemies: ObservationEnemy[];
@@ -116,7 +118,19 @@ export function buildObservation(slice: CommanderSnapshotSlice): CommanderObserv
     countdownRemaining: slice.meta.waveCountdown?.remaining ?? null,
     spawnOrders: slice.meta.spawnOrders ?? [],
   };
+  if (
+    slice.meta.lastAppliedCommandId !== undefined ||
+    slice.meta.lastAppliedCount !== undefined ||
+    slice.meta.lastSkippedCount !== undefined
+  ) {
+    wave.commandReceipt = {
+      commandId: slice.meta.lastAppliedCommandId ?? 0,
+      applied: slice.meta.lastAppliedCount ?? 0,
+      skipped: slice.meta.lastSkippedCount ?? 0,
+    };
+  }
   const observation: CommanderObservation = {
+    observationId: slice.observationId,
     map: slice.gridLayout,
     spawns: slice.meta.spawns ?? [],
     enemies,

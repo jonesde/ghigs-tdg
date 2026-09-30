@@ -1,4 +1,4 @@
-import { LlmCommandSchema, LlmResponseBodySchema } from "@/content/schemas/llmResponse.js";
+import { LlmCommandSchema, LlmResponseBodySchema, SET_TARGETING_MODES } from "@/content/schemas/llmResponse.js";
 import type { LlmCommanderConfig } from "./types.js";
 
 interface TileCoordinate {
@@ -55,6 +55,8 @@ export interface LlmResponseResult {
   chat?: string | undefined;
   error?: string | undefined;
 }
+
+const SET_TARGETING_MODE_SET: ReadonlySet<string> = new Set(SET_TARGETING_MODES);
 
 function rejectSpawnOrder(command: {
   clear?: boolean | undefined;
@@ -157,6 +159,8 @@ export function validateLlmResponse(raw: unknown, _config: LlmCommanderConfig): 
         error = error ?? "setTargeting missing mode";
       } else if (type === "llm:setSpawnOrder") {
         error = error ?? "setSpawnOrder is invalid";
+      } else if (type === "llm:routeGroup") {
+        error = error ?? "routeGroup is invalid";
       }
       continue;
     }
@@ -178,7 +182,14 @@ export function validateLlmResponse(raw: unknown, _config: LlmCommanderConfig): 
       commands.push(release);
       continue;
     }
-    if (command.enemyIds.length === 0) continue;
+    if (command.type === "llm:setTargeting" && !SET_TARGETING_MODE_SET.has(command.mode)) {
+      error = error ?? `setTargeting unknown mode: ${command.mode}`;
+      continue;
+    }
+    if (command.enemyIds.length === 0) {
+      error = error ?? "empty enemyIds";
+      continue;
+    }
 
     if (command.type === "llm:routeGroup") {
       const routeGroup: ParsedRouteGroup = {

@@ -114,7 +114,7 @@ export function applyCommand(engine: GameEngine, command: Command): boolean {
     // retains a defensive no-op "setTheme" case for forward-compat.
     // LLM / enemy-commander commands (Phase 1 commander seam). These mutate enemy
     // routing state and so return true (force-post the snapshot) except the
-    // gridLayoutToggle config flip, which returns false (no visible state change).
+    // gridLayout feed config flips, which return false (no visible state change).
     case "llm:routeGroup": {
       const enemies = engine.getEnemiesByIds(command.enemyIds);
       for (const enemy of enemies) {
@@ -172,6 +172,9 @@ export function applyCommand(engine: GameEngine, command: Command): boolean {
     }
     case "llm:gridLayoutToggle":
       if (engine.grid) engine.gridLayoutEnabled = !engine.gridLayoutEnabled;
+      return false;
+    case "llm:setGridLayoutFeed":
+      if (engine.grid) engine.gridLayoutEnabled = command.enabled;
       return false;
     // init and dispose are lifecycle messages handled by the worker entry
     // (not pushed onto the command queue), but they are part of the Command

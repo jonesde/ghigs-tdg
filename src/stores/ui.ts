@@ -207,8 +207,11 @@ export const useUiStore = defineStore("ui", {
     setEnemyCommander(id: string | "none") {
       this.clearChatLog();
       this.clearLlmTrace();
-      this.enemyCommander = id;
+      // Starts (and stops the prior commander) before overwriting enemyCommander so
+      // stopEnemyCommander still sees the prior id and can skip its release
+      // dispatches when nothing was active. The relay itself never reads this state.
       startEnemyCommander(id);
+      this.enemyCommander = id;
     },
 
     appendChatLog(entry: ChatLogEntry) {
