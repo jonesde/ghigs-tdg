@@ -41,6 +41,7 @@ interface SaveFixture {
     upgradeCostReduction: null;
     terrainHeightBonus: null | number;
     damageMilestoneBonus: null | number;
+    progressiveThirdChoice: null | number;
   };
 }
 
@@ -66,7 +67,15 @@ function makeSave(addons: boolean[] | null = null): SaveFixture {
       upgradeCostReduction: null,
       terrainHeightBonus: null,
       damageMilestoneBonus: null,
+      progressiveThirdChoice: null,
     },
+  };
+}
+
+function tileCoordinateMethods() {
+  return {
+    tileToWorld: (tileX: number, tileY: number) => ({ x: tileX * 36 + 18, y: tileY * 36 + 18 }),
+    worldToTile: (worldX: number, worldY: number) => ({ x: Math.floor(worldX / 36), y: Math.floor(worldY / 36) }),
   };
 }
 
@@ -76,7 +85,7 @@ function makeMockGrid() {
     tileSize: 36,
     tiles: map.tiles,
     getBase: () => ({ x: map.base.x, y: map.base.y }),
-    tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+    ...tileCoordinateMethods(),
   };
 }
 
@@ -118,7 +127,7 @@ describe("Tower", () => {
 
     it("captures terrain height from grid", () => {
       const map = makeBastionMap();
-      const grid = { tileSize: 36, tiles: map.tiles };
+      const grid = { tileSize: 36, tiles: map.tiles, ...tileCoordinateMethods() };
       // Bastion map has all height=1
       const tower = new Tower("basic", 0, 0, makeSave(), grid);
       expect(tower.terrainHeight).toBe(1);
@@ -436,7 +445,7 @@ describe("Tower", () => {
       const save = makeSave();
       save.generalAddons.terrainHeightBonus = 0; // tier 0: +5% per level
       const map = makeBastionMap();
-      const grid = { tiles: map.tiles, tileSize: 36 };
+      const grid = { tiles: map.tiles, tileSize: 36, ...tileCoordinateMethods() };
       const tower = new Tower("basic", 0, 0, save, grid);
       const baseDamage = TOWER_BASE.basic.damage;
       const expectedDamage = baseDamage * (1 + TERRAIN_HEIGHT_BONUS_PCT[0] * 1);
@@ -449,7 +458,7 @@ describe("Tower", () => {
       // Create a grid with height=3 at position
       const map = makeBastionMap();
       map.tiles[0][0].height = 3;
-      const grid = { tiles: map.tiles, tileSize: 36 };
+      const grid = { tiles: map.tiles, tileSize: 36, ...tileCoordinateMethods() };
       const tower = new Tower("basic", 0, 0, save, grid);
       const baseDamage = TOWER_BASE.basic.damage;
       const expectedDamage = baseDamage * (1 + TERRAIN_HEIGHT_BONUS_PCT[1] * 3);
@@ -461,7 +470,7 @@ describe("Tower", () => {
       save.generalAddons.terrainHeightBonus = 2; // tier 2: +20% per height
       const map = makeBastionMap();
       map.tiles[0][0].height = 4;
-      const grid = { tiles: map.tiles, tileSize: 36 };
+      const grid = { tiles: map.tiles, tileSize: 36, ...tileCoordinateMethods() };
       const tower = new Tower("basic", 0, 0, save, grid);
       const baseDamage = TOWER_BASE.basic.damage;
       expect(tower.stats.damage).toBeCloseTo(baseDamage * 1.8, 4);
@@ -473,7 +482,7 @@ describe("Tower", () => {
       save.generalAddons.terrainHeightBonus = 2; // tier 2: +20% per height
       const map = makeBastionMap();
       map.tiles[0][0].height = 10; // raw 1 + 0.2 * 10 = 3.0 -> capped
-      const grid = { tiles: map.tiles, tileSize: 36 };
+      const grid = { tiles: map.tiles, tileSize: 36, ...tileCoordinateMethods() };
       const tower = new Tower("basic", 0, 0, save, grid);
       const baseDamage = TOWER_BASE.basic.damage;
       expect(tower.stats.damage).toBeCloseTo(baseDamage * TERRAIN_DAMAGE_BONUS_MAX_MULT, 4);
@@ -978,7 +987,7 @@ describe("Tower", () => {
 
     it("restore resets health and clears ghost flag", () => {
       const map = makeBastionMap();
-      const grid = { tileSize: 36, tiles: map.tiles, clearTowerGhost() {} };
+      const grid = { tileSize: 36, tiles: map.tiles, clearTowerGhost() {}, ...tileCoordinateMethods() };
       const tower = new Tower("basic", 0, 0, makeSave(), grid);
       tower.health = 1;
       tower.isGhost = true;
@@ -990,7 +999,7 @@ describe("Tower", () => {
     });
 
     it("clamps the ghost restore time to GHOST_RESTORE_MIN_SECONDS", () => {
-      const grid = { tileSize: 36, tiles: makeBastionMap().tiles, clearTowerGhost() {} };
+      const grid = { tileSize: 36, tiles: makeBastionMap().tiles, clearTowerGhost() {}, ...tileCoordinateMethods() };
       const tower = new Tower("basic", 0, 0, makeSave(), grid);
       tower.level = 10; // unclamped 50 - 10 * 5 = 0
       expect(GHOST_RESTORE_BASE_SECONDS - tower.level * GHOST_RESTORE_PER_LEVEL).toBeLessThanOrEqual(0);

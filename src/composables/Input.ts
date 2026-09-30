@@ -53,6 +53,31 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
     // Space is cancelled for pause and would never be inserted into the field.
     if (isTextEntryTarget(event)) return;
 
+    // A placement hold freezes the simulation clock. Pause and speed keys must not reach the
+    // worker: the main-thread timeScale would change while the board stays paused.
+    if (gs.progressivePlacementHold) {
+      if (event.key === " " || event.key === "a" || event.key === "d") {
+        event.preventDefault();
+        return;
+      }
+      if (event.key === "Tab" && !gs.selectedTowerType) {
+        event.preventDefault();
+        return;
+      }
+      // Rotation stays on the main thread until the place command carries the quarter-turn count.
+      if (event.key === "r" || event.key === "R") {
+        gs.rotateProgressiveBlock?.();
+        event.preventDefault();
+        return;
+      }
+      const offerDigit = parseInt(event.key, 10);
+      if (offerDigit >= 1 && offerDigit <= 3) {
+        gs.selectProgressiveOffer?.(offerDigit - 1);
+        event.preventDefault();
+        return;
+      }
+    }
+
     switch (event.key) {
       case " ":
         if (uiStore.showPauseMenu) {

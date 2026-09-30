@@ -1,5 +1,5 @@
 import type { SimulationSnapshot } from "@/sim/SimulationSnapshot.js";
-import type { TextRenderScale } from "./types.js";
+import { type TextRenderScale, textPixelX, textPixelY } from "./types.js";
 
 const PATH_COLOR = "rgba(255,255,255,0.4)";
 const PATH_LINE_WIDTH = 1.5;
@@ -36,9 +36,9 @@ export class TextPathRenderer {
       const b = indices[triangle + 1]! * 2;
       const c = indices[triangle + 2]! * 2;
       ctx.beginPath();
-      ctx.moveTo(positions[a]! * scale.scaleX, positions[a + 1]! * scale.scaleY);
-      ctx.lineTo(positions[b]! * scale.scaleX, positions[b + 1]! * scale.scaleY);
-      ctx.lineTo(positions[c]! * scale.scaleX, positions[c + 1]! * scale.scaleY);
+      ctx.moveTo(textPixelX(positions[a]!, scale), textPixelY(positions[a + 1]!, scale));
+      ctx.lineTo(textPixelX(positions[b]!, scale), textPixelY(positions[b + 1]!, scale));
+      ctx.lineTo(textPixelX(positions[c]!, scale), textPixelY(positions[c + 1]!, scale));
       ctx.closePath();
       ctx.stroke();
     }

@@ -566,6 +566,19 @@ describe("GameEngine", () => {
       expect(engine.runState.gold).toBe(goldBefore - lv5Cost);
     });
 
+    it("syncPersist applies a skill-tree gem delta onto the worker persist copy", () => {
+      engine.persistState.gems = 206;
+      engine.persistDirty = false;
+      engine.syncPersist(engine.persistState.unlocked, engine.persistState.generalAddons, -100);
+      expect(engine.persistState.gems).toBe(106);
+      expect(engine.persistDirty).toBe(true);
+
+      engine.persistDirty = false;
+      engine.syncPersist(engine.persistState.unlocked, engine.persistState.generalAddons, 0);
+      expect(engine.persistState.gems).toBe(106);
+      expect(engine.persistDirty).toBe(false);
+    });
+
     it("debug mutates the authoritative runState/persistState", () => {
       const goldBefore = engine.runState.gold;
       const livesBefore = engine.runState.baseHealth;

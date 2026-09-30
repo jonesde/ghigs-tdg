@@ -27,6 +27,8 @@ interface SplashGridQuery {
   isPath(x: number, y: number): boolean;
   inBounds(x: number, y: number): boolean;
   blocked: Set<string>;
+  worldOriginX?: number;
+  worldOriginY?: number;
 }
 
 const LIGHTNING_SEGMENTS = 5;
@@ -202,7 +204,7 @@ export class EffectManager {
   ): void {
     this.syncLightning(dt);
     this.syncStun(dt);
-    this.syncBuildPreview(buildTilePos, selectedTowerType, buildPreviewColor, buildValid);
+    this.syncBuildPreview(buildTilePos, selectedTowerType, buildPreviewColor, buildValid, grid);
     this.syncUpgradeButton(selectedTower, grid);
   }
 
@@ -234,7 +236,12 @@ export class EffectManager {
           const tileKey = `${neighborX},${neighborY}`;
           if (tileKey === excludeKey) continue;
           if (grid.blocked.has(tileKey)) continue;
-          return { cx: neighborX * TILE_SIZE + TILE_SIZE / 2, cy: neighborY * TILE_SIZE + TILE_SIZE / 2 };
+          const originX = grid.worldOriginX ?? 0;
+          const originY = grid.worldOriginY ?? 0;
+          return {
+            cx: originX + neighborX * TILE_SIZE + TILE_SIZE / 2,
+            cy: originY + neighborY * TILE_SIZE + TILE_SIZE / 2,
+          };
         }
       }
     }
@@ -432,14 +439,17 @@ export class EffectManager {
     selectedTowerType: string | null,
     buildPreviewColor: string | null,
     buildValid: boolean,
+    grid?: SplashGridQuery | null,
   ): void {
+    const originX = grid?.worldOriginX ?? 0;
+    const originY = grid?.worldOriginY ?? 0;
     const posKey = buildTilePos ? `${buildTilePos.tileX},${buildTilePos.tileY}` : "";
-    const signature = `${posKey}|${selectedTowerType ?? ""}|${buildValid ? 1 : 0}`;
+    const signature = `${posKey}|${selectedTowerType ?? ""}|${buildValid ? 1 : 0}|${originX},${originY}`;
     if (signature === this.lastBuildPreviewKey) return;
     this.lastBuildPreviewKey = signature;
     if (selectedTowerType && buildTilePos) {
-      const tileX = buildTilePos.tileX * TILE_SIZE;
-      const tileY = buildTilePos.tileY * TILE_SIZE;
+      const tileX = originX + buildTilePos.tileX * TILE_SIZE;
+      const tileY = originY + buildTilePos.tileY * TILE_SIZE;
       const centerX = tileX + TILE_SIZE / 2;
       const centerY = tileY + TILE_SIZE / 2;
 
@@ -568,8 +578,10 @@ export class EffectManager {
 
         if (this.selectedTileRectEl) {
           this.selectedTileRectEl.style.visibility = "visible";
-          const tileX = Math.floor(tower.x / TILE_SIZE) * TILE_SIZE + 1;
-          const tileY = Math.floor(tower.y / TILE_SIZE) * TILE_SIZE + 1;
+          const originX = grid?.worldOriginX ?? 0;
+          const originY = grid?.worldOriginY ?? 0;
+          const tileX = originX + Math.floor((tower.x - originX) / TILE_SIZE) * TILE_SIZE + 1;
+          const tileY = originY + Math.floor((tower.y - originY) / TILE_SIZE) * TILE_SIZE + 1;
           this.selectedTileRectEl.setAttribute("transform", `translate(${tileX}, ${tileY})`);
           this.selectedTileRectEl.setAttribute("width", String(TILE_SIZE - 2));
           this.selectedTileRectEl.setAttribute("height", String(TILE_SIZE - 2));

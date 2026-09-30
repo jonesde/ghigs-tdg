@@ -50,16 +50,17 @@ export type Command =
   | { commandId: number; type: "action:cancelBuildMode" }
   | { commandId: number; type: "action:selectBuildType"; towerType: string | null }
   // action:syncPersist carries the main-thread-owned persist slices (unlocked +
-  // generalAddons) into the worker. The skill tree mutates these on the main
-  // thread (persistStore), but the worker runs off a snapshot taken at init and
-  // has no other way to learn mid-run unlocks/addon changes. See the specialize
-  // desync fix: without this, Tower.specialize fails its unlocked guard while the
-  // UI shows the variant as available, silently deducting gold with no effect.
+  // generalAddons) into the worker, plus the gem delta from that same skill-tree
+  // edit. The worker runs off a snapshot taken at init. Without the unlock slice,
+  // Tower.specialize fails its guard while the UI shows the variant as available
+  // and gold is deducted with no effect. Without gemDelta, the next persist flush
+  // writes the worker's pre-purchase gem total back over the spend.
   | {
       commandId: number;
       type: "action:syncPersist";
       unlocked: PersistState["unlocked"];
       generalAddons: PersistState["generalAddons"];
+      gemDelta: number;
     }
   // action:debug is the unified debug-injection command used by the DebugPanel
   // (gold/lives/gems/wave/speed injection + skip-wave/kill-all). It replaces the
@@ -73,6 +74,16 @@ export type Command =
   // production path to force VICTORY/GAME_OVER). It transitions runState and
   // returns true so the worker's terminal branch posts exactly one final snapshot.
   | { commandId: number; type: "action:debugEndRun"; victory?: boolean }
+  // Quarter-turns are main-thread preview state until this command. The worker
+  // re-checks the offer and the lattice before stamping the block.
+  | {
+      commandId: number;
+      type: "action:placeProgressiveBlock";
+      templateIndex: number;
+      rotation: number;
+      blockX: number;
+      blockY: number;
+    }
 
   // ---- Lifecycle ----
   | {

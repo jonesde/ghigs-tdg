@@ -381,4 +381,31 @@ describe("WorkerCommandDispatcher", () => {
     expect(posted).toHaveLength(1);
     expect(posted[0]!.command.commandId).toBeGreaterThan(0);
   });
+
+  it("posts a plain copy of nested persist slices", () => {
+    const posted: Array<{ command: Command }> = [];
+    const fakeWorker = {
+      postMessage: (message: { command: Command }) => {
+        posted.push(message);
+      },
+    };
+    const dispatcher = new WorkerCommandDispatcher(fakeWorker as unknown as Worker);
+    const persist = createTestPersistState();
+    persist.generalAddons.progressiveThirdChoice = 0;
+    const outgoing: Command = {
+      commandId: 0,
+      type: "action:syncPersist",
+      unlocked: persist.unlocked,
+      generalAddons: persist.generalAddons,
+      gemDelta: -100,
+    };
+    dispatcher.dispatch(outgoing);
+    const postedCommand = posted[0]?.command;
+    if (postedCommand?.type !== "action:syncPersist") throw new Error("expected action:syncPersist");
+    expect(postedCommand.generalAddons).not.toBe(persist.generalAddons);
+    expect(postedCommand.generalAddons.progressiveThirdChoice).toBe(0);
+    expect(postedCommand.gemDelta).toBe(-100);
+    persist.generalAddons.progressiveThirdChoice = null;
+    expect(postedCommand.generalAddons.progressiveThirdChoice).toBe(0);
+  });
 });

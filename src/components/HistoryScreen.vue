@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
-import { generateRandomMap, getMap, getMapDisplayName } from "@/sim/grid/Map.js";
+import { generateRandomMap, getMapDisplayName } from "@/sim/grid/Map.js";
+import { resolveGeneratedMap } from "@/sim/grid/ProgressiveMap.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -59,7 +60,7 @@ interface MapInfo {
 
 function getMapInfo(mapIndex: number) {
   if (mapIndex < 0) return null;
-  const map = getMap(mapIndex);
+  const map = resolveGeneratedMap(mapIndex);
   return { name: getMapDisplayName(map, themeStore.defaultTheme), region: regionNames[map.regionId], style: map.style };
 }
 
@@ -79,7 +80,7 @@ function replayRun(entry: Record<string, unknown>) {
     gameStore.map = mapData;
     gameStore.randomMapParams = p;
   } else {
-    const mapData = getMap(entry.mapIndex as number);
+    const mapData = resolveGeneratedMap(entry.mapIndex as number);
     gameStore.mapIndex = entry.mapIndex as number;
     gameStore.map = mapData;
   }

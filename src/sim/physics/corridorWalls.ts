@@ -17,6 +17,8 @@ function isWalkable(grid: Grid, tileX: number, tileY: number): boolean {
 // Same containment as the old per-tile cuboid forest; packed as a polyline later.
 export function buildCorridorSegments(grid: Grid): CorridorSegment[] {
   const tileSize = grid.tileSize;
+  const originX = grid.worldOriginX;
+  const originY = grid.worldOriginY;
   const inset = corridorWallInsetWorld(tileSize);
   const segments: CorridorSegment[] = [];
 
@@ -71,23 +73,23 @@ export function buildCorridorSegments(grid: Grid): CorridorSegment[] {
         let corner2I: number;
         let corner2J: number;
         if (neighbor.dy !== 0) {
-          const y = neighbor.dy < 0 ? tileY * tileSize : (tileY + 1) * tileSize;
-          x1 = tileX * tileSize;
+          const y = originY + (neighbor.dy < 0 ? tileY * tileSize : (tileY + 1) * tileSize);
+          x1 = originX + tileX * tileSize;
           y1 = y;
           corner1I = tileX;
           corner1J = neighbor.dy < 0 ? tileY : tileY + 1;
-          x2 = (tileX + 1) * tileSize;
+          x2 = originX + (tileX + 1) * tileSize;
           y2 = y;
           corner2I = tileX + 1;
           corner2J = corner1J;
         } else {
-          const x = neighbor.dx < 0 ? tileX * tileSize : (tileX + 1) * tileSize;
+          const x = originX + (neighbor.dx < 0 ? tileX * tileSize : (tileX + 1) * tileSize);
           x1 = x;
-          y1 = tileY * tileSize;
+          y1 = originY + tileY * tileSize;
           corner1I = neighbor.dx < 0 ? tileX : tileX + 1;
           corner1J = tileY;
           x2 = x;
-          y2 = (tileY + 1) * tileSize;
+          y2 = originY + (tileY + 1) * tileSize;
           corner2I = corner1I;
           corner2J = tileY + 1;
         }
@@ -112,8 +114,8 @@ export function buildCorridorSegments(grid: Grid): CorridorSegment[] {
     const parts = key.split(",");
     const gridI = Number(parts[0]);
     const gridJ = Number(parts[1]);
-    const vertexX = gridI * tileSize;
-    const vertexY = gridJ * tileSize;
+    const vertexX = originX + gridI * tileSize;
+    const vertexY = originY + gridJ * tileSize;
     segments.push({ x1: vertexX - dir.sx * inset, y1: vertexY, x2: vertexX, y2: vertexY - dir.sy * inset });
   }
 

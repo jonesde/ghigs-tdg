@@ -288,6 +288,7 @@ describe("worker round-trip", () => {
       type: "action:syncPersist",
       unlocked: syncedState.unlocked,
       generalAddons: syncedState.generalAddons,
+      gemDelta: 0,
     });
     await wait(40);
     // syncPersist returns true → the worker must post a fresh snapshot.

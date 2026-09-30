@@ -114,10 +114,10 @@ export function applyCommand(engine: GameEngine, command: Command, enemyLookup?:
       engine.runState.selectedTowerType = command.towerType as TowerId | null;
       return true;
     case "action:syncPersist":
-      // Main-thread-owned persist slices (unlocked + generalAddons) pushed into the
-      // worker so mid-run skill-tree unlocks reach specialize/cost logic. No runState
-      // mutation, but we return true anyway so the UI reflects updated costs.
-      engine.syncPersist(command.unlocked, command.generalAddons);
+      // Main-thread skill-tree edits (unlocks, add-ons, and the gem delta) pushed
+      // into the worker. The gem delta lands on the copy the persist flush writes,
+      // so a mid-run purchase is not restored to the pre-purchase total.
+      engine.syncPersist(command.unlocked, command.generalAddons, command.gemDelta);
       return true;
     case "action:debug":
       engine.debug(command.kind, command.amount);
@@ -131,6 +131,8 @@ export function applyCommand(engine: GameEngine, command: Command, enemyLookup?:
       // assert the final-snapshot + stopLoop path deterministically.
       setGameState(engine.runState, command.victory === false ? GameState.GAME_OVER : GameState.VICTORY);
       return true;
+    case "action:placeProgressiveBlock":
+      return engine.placeProgressiveBlock(command.templateIndex, command.rotation, command.blockX, command.blockY);
     // NOTE: lifecycle:setTheme is intentionally absent — mid-run theme
     // switching is out of scope per README.md.
     // LLM / enemy-commander commands (Phase 1 commander seam). These mutate enemy

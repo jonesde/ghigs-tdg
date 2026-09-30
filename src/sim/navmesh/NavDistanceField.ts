@@ -77,10 +77,7 @@ export class NavDistanceField {
         reachable = worldPath.length > 0;
         if (reachable) {
           pathLengthWorld = polylineLength(worldPath);
-          tilePath = worldPath.map((point) => ({
-            x: Math.floor(point.x / this.grid.tileSize),
-            y: Math.floor(point.y / this.grid.tileSize),
-          }));
+          tilePath = worldPath.map((point) => this.grid.worldToTile(point.x, point.y));
         }
       } else {
         const tileDistance = this.distanceToBase[spawn.y]?.[spawn.x] ?? -1;

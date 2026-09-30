@@ -26,9 +26,17 @@ describe("TextTowerManager", () => {
       getEnemyGlyph: (shape: string) => shape,
     };
     const manager = new TextTowerManager();
-    manager.render(ctx, [{ id: "t1", type: "basic", tileX: 2, tileY: 1 } as never], themeAccess, scale);
+    manager.render(ctx, [{ id: "t1", type: "basic", tileX: 2, tileY: 1, x: 90, y: 54 } as never], themeAccess, scale);
     expect(mockCtx.fillText).toHaveBeenCalledWith("─", 90, 54);
     expect(mockCtx.fillStyle).toBe("#8fbc8f");
+    (mockCtx.fillText as ReturnType<typeof vi.fn>).mockClear();
+    manager.render(ctx, [{ id: "t1", type: "basic", tileX: 2, tileY: 1, x: 90, y: 54 } as never], themeAccess, {
+      scaleX: 1,
+      scaleY: 1,
+      originX: -36,
+      originY: -72,
+    });
+    expect(mockCtx.fillText).toHaveBeenCalledWith("─", 126, 126);
   });
 });
 

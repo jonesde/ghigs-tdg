@@ -19,7 +19,11 @@ export class WorkerCommandDispatcher implements CommandDispatcher {
     if (outgoing.commandId === undefined || outgoing.commandId <= 0) {
       outgoing.commandId = nextFallbackCommandId++;
     }
-    const msg: MainToWorkerMessage = { type: "command", command: outgoing };
+    // Pinia proxies on action:syncPersist are not structured-cloneable. postMessage throws
+    // DataCloneError and the worker keeps its init-time addon snapshot, so a mid-run unlock
+    // (including Third Block Choice) never changes the live offer. JSON copy matches init.
+    const cloneable = JSON.parse(JSON.stringify(outgoing)) as Command;
+    const msg: MainToWorkerMessage = { type: "command", command: cloneable };
     this.worker.postMessage(msg);
   }
 }

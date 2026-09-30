@@ -44,6 +44,7 @@ const memory: CommanderMemory = {
   rejectionNote: null,
 };
 let gridLayoutToggleSent = false;
+let cachedLayoutGeneration = -1;
 // The run the cached layout belongs to (GameEngine.runId). On a run restart the
 // previous layout is stale and the one-shot feed-off toggle must re-arm, so the
 // engine's freshly re-enabled feed is turned back off after the new map is cached.
@@ -86,6 +87,7 @@ function resetMemory(): void {
   memory.isCompressing = false;
   memory.rejectionNote = null;
   gridLayoutToggleSent = false;
+  cachedLayoutGeneration = -1;
   lastRunId = null;
   deciding = false;
   lastDecisionTimeMs = 0;
@@ -221,6 +223,7 @@ async function dispatchCommanderMessage(message: MainToCommanderMessage): Promis
         memory.gridLayout = undefined;
         memory.heights = undefined;
         gridLayoutToggleSent = false;
+        cachedLayoutGeneration = -1;
         memory.phase = "idle";
         memory.seenByWave = new Map<number, Set<number>>();
         memory.lastRushWaveNumber = null;
@@ -237,9 +240,12 @@ async function dispatchCommanderMessage(message: MainToCommanderMessage): Promis
       if (slice.gridLayout) {
         memory.gridLayout = slice.gridLayout;
         if (slice.heights) memory.heights = slice.heights;
-        // The map never changes mid-run; emit the feed-off set command exactly once so
-        // the engine stops shipping gridLayout and heights (steady-state per-tick cost → zero).
-        if (!gridLayoutToggleSent) {
+        // Normal maps ship the layout once. A progressive placement bumps
+        // layoutGeneration and re-enables the feed, so the worker caches the new
+        // rectangle and turns the feed off again.
+        const generation = slice.meta.layoutGeneration ?? 0;
+        if (!gridLayoutToggleSent || generation !== cachedLayoutGeneration) {
+          cachedLayoutGeneration = generation;
           gridLayoutToggleSent = true;
           commands.push({ commandId: 0, type: "llm:setGridLayoutFeed", enabled: false });
         }

@@ -22,7 +22,8 @@
     "upgradeCostReduction": [40, 80, 150],
     "terrainHeightBonus": [40, 80, 150],
     "terrainHeightRangeBonus": [50, 100, 200],
-    "damageMilestoneBonus": [50, 100, 180]
+    "damageMilestoneBonus": [50, 100, 180],
+    "progressiveThirdChoice": [100]
   },
   "slowHealingPerRound": [20, 50, 100],
   "sellOptionGemCost": 50,

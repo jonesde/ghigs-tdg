@@ -25,6 +25,7 @@ export const EconomyContentSchema = z.object({
     terrainHeightBonus: z.tuple([z.number(), z.number(), z.number()]),
     terrainHeightRangeBonus: z.tuple([z.number(), z.number(), z.number()]),
     damageMilestoneBonus: z.tuple([z.number(), z.number(), z.number()]),
+    progressiveThirdChoice: z.tuple([z.number()]),
   }),
   slowHealingPerRound: z.tuple([z.number(), z.number(), z.number()]),
   sellOptionGemCost: z.number(),

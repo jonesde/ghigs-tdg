@@ -167,6 +167,91 @@ export class EnemyManager {
     return this.towerManager?.towerAt(tileX, tileY) ?? null;
   }
 
+  // Remaps pending queues, spawn orders, and live enemy.spawnIndex after a
+  // progressive placement moves spawn ids. Dropped ids land on the surviving
+  // previous index with the smallest pending count (ties: smallest index).
+  // A surviving spawn keeps its own order when a dropped id maps onto it.
+  reindexSpawns(previousSpawns: Array<{ id?: number }>, nextSpawns: Array<{ id?: number }>): void {
+    const nextIndexById = new Map<number, number>();
+    nextSpawns.forEach((spawn, index) => {
+      if (spawn.id !== undefined) nextIndexById.set(spawn.id, index);
+    });
+    const survivingPreviousIndexes: number[] = [];
+    previousSpawns.forEach((spawn, index) => {
+      if (spawn.id !== undefined && nextIndexById.has(spawn.id)) survivingPreviousIndexes.push(index);
+    });
+    let destinationPrevious = survivingPreviousIndexes[0] ?? 0;
+    let smallestPending = Number.POSITIVE_INFINITY;
+    for (const index of survivingPreviousIndexes) {
+      const pending = this.getPendingCountForSpawn(index);
+      if (pending < smallestPending || (pending === smallestPending && index < destinationPrevious)) {
+        smallestPending = pending;
+        destinationPrevious = index;
+      }
+    }
+    const destinationSpawn = previousSpawns[destinationPrevious];
+    const destinationNext =
+      destinationSpawn?.id !== undefined && nextIndexById.has(destinationSpawn.id)
+        ? nextIndexById.get(destinationSpawn.id)!
+        : 0;
+    const oldIndexToNewIndex = new Map<number, number>();
+    previousSpawns.forEach((spawn, index) => {
+      if (spawn.id !== undefined && nextIndexById.has(spawn.id)) {
+        oldIndexToNewIndex.set(index, nextIndexById.get(spawn.id)!);
+      } else {
+        oldIndexToNewIndex.set(index, destinationNext);
+      }
+    });
+    const nextQueues = new Map<number, PendingEnemyEntry[]>();
+    for (const [oldIndex, queue] of this.pendingQueues) {
+      const nextIndex = oldIndexToNewIndex.get(oldIndex) ?? destinationNext;
+      const existing = nextQueues.get(nextIndex);
+      if (existing) existing.push(...queue);
+      else nextQueues.set(nextIndex, queue.slice());
+    }
+    this.pendingQueues = nextQueues;
+    const nextOrders = new Map<number, SpawnOrder>();
+    for (const [oldIndex, order] of this.spawnOrdersByIndex) {
+      const spawn = previousSpawns[oldIndex];
+      if (spawn?.id === undefined || !nextIndexById.has(spawn.id)) continue;
+      nextOrders.set(nextIndexById.get(spawn.id)!, order);
+    }
+    for (const [oldIndex, order] of this.spawnOrdersByIndex) {
+      const spawn = previousSpawns[oldIndex];
+      if (spawn?.id !== undefined && nextIndexById.has(spawn.id)) continue;
+      const nextIndex = oldIndexToNewIndex.get(oldIndex) ?? destinationNext;
+      if (!nextOrders.has(nextIndex)) nextOrders.set(nextIndex, order);
+    }
+    this.spawnOrdersByIndex = nextOrders;
+    for (const enemy of this.enemies) {
+      const nextIndex = oldIndexToNewIndex.get(enemy.spawnIndex);
+      if (nextIndex !== undefined) enemy.spawnIndex = nextIndex;
+    }
+    this.spawnCountsDirty = true;
+  }
+
+  // Tile indices stored on routes and standing orders move with the grid. World
+  // positions (enemy.x/y, holdWorld) stay where they are.
+  shiftLayoutIndices(shiftX: number, shiftY: number): void {
+    if (shiftX === 0 && shiftY === 0) return;
+    const shiftTile = (tile: { x: number; y: number }) => {
+      tile.x += shiftX;
+      tile.y += shiftY;
+    };
+    for (const enemy of this.enemies) {
+      for (const tile of enemy.routeTiles) shiftTile(tile);
+    }
+    const shiftOrder = (order: SpawnOrder) => {
+      if (order.holdTile) shiftTile(order.holdTile);
+      if (order.waypoints) {
+        for (const tile of order.waypoints) shiftTile(tile);
+      }
+      if (order.towerTile) shiftTile(order.towerTile);
+    };
+    if (this.defaultSpawnOrder) shiftOrder(this.defaultSpawnOrder);
+    for (const order of this.spawnOrdersByIndex.values()) shiftOrder(order);
+  }
+
   clear(): void {
     for (const enemy of this.enemies) {
       this.crowdManager?.removeAgent(enemy);

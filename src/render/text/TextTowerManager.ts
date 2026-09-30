@@ -1,11 +1,8 @@
 import type { TowerSnapshot } from "@/sim/SimulationSnapshot.js";
-import type { TextRenderScale, TextThemeAccess } from "./types.js";
+import { type TextRenderScale, type TextThemeAccess, textPixelX, textPixelY } from "./types.js";
 
-const TILE_SIZE = 36;
-
-// Draws each tower's theme icon at its static tile-center cell on the canvas
-// overlay. Towers never move, so their world position is the tile center
-// `(tileX + 0.5) * TILE_SIZE`, converted to canvas px via the shared scale.
+// Draws each tower's theme icon at its world center. The snapshot already stores that
+// center on tower.x / tower.y, and the scale subtracts a progressive world origin.
 export class TextTowerManager {
   render(
     ctx: CanvasRenderingContext2D,
@@ -19,10 +16,8 @@ export class TextTowerManager {
       const visual = themeAccess.getTowerVisual(tower.type);
       const icon = visual?.icon ?? "T";
       const color = visual?.color ?? "#ffffff";
-      const worldX = (tower.tileX + 0.5) * TILE_SIZE;
-      const worldY = (tower.tileY + 0.5) * TILE_SIZE;
-      const pixelX = worldX * scale.scaleX;
-      const pixelY = worldY * scale.scaleY;
+      const pixelX = textPixelX(tower.x, scale);
+      const pixelY = textPixelY(tower.y, scale);
       ctx.fillStyle = color;
       ctx.fillText(icon, pixelX, pixelY);
     }

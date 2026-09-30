@@ -2,7 +2,7 @@ import type { MapThemeData, SpawnState } from "@/render/themes/index.js";
 import type { DebugKind } from "@/sim/Command.js";
 import { ICE_AURA_RANGE, STATIC_FIELD_RANGE } from "@/sim/ConstantsTower.js";
 import type { AttackTarget, Enemy } from "@/sim/enemies/Enemy.js";
-import { resetEnemyId } from "@/sim/enemies/Enemy.js";
+import { invalidateNearestWalkableCache, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { writeFlightVelocities } from "@/sim/enemies/flyingSteer.js";
 import type { GameRunState } from "@/sim/GameRunState.js";
@@ -21,7 +21,19 @@ import {
 } from "@/sim/GameRunState.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
-import { forkRunSeed, generateRandomMap, getMap, mulberry32 } from "@/sim/grid/Map.js";
+import { forkRunSeed, generateRandomMap, mulberry32 } from "@/sim/grid/Map.js";
+import {
+  type BlockTemplate,
+  boardToGeneratedMap,
+  commitPlacement,
+  createProgressiveBoard,
+  drawBlockOffer,
+  gemMultiplierForMap,
+  type ProgressiveBoard,
+  type ProgressiveStamp,
+  progressiveConfigForIndex,
+  resolveGeneratedMap,
+} from "@/sim/grid/ProgressiveMap.js";
 import type { HostBindings, ThemeBundle } from "@/sim/HostBindings.js";
 import { CrowdManager, restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdManager.js";
 import { toRecast } from "@/sim/navmesh/coords.js";
@@ -60,9 +72,9 @@ import {
   FIXED_DT,
   GAMEPLAY_ENEMY_CAP,
   GameState,
-  MAP_GEM_MULTIPLIERS,
   MILESTONE_GEMS,
   MILESTONE_WAVES,
+  PROGRESSIVE_PLACEMENT_INTERVAL,
   REGION_GEM_REWARDS,
   SELL_DISCOUNT_PCT,
   SELL_VALUE_RATIO,
@@ -81,11 +93,21 @@ interface WaveManagerRef {
   betweenWaves: boolean;
   countdownActive: boolean;
   countdownTimer: number;
+  betweenTimer: number;
   baseReached: boolean;
   waveComposition: Record<string, number>;
   active: boolean;
   _waveGameTime: number;
   spawnStates: SpawnState[];
+  advanceHeld: boolean;
+  map: {
+    regionId: number;
+    level: number;
+    bossCadence: number;
+    spawns: { x: number; y: number; id?: number }[];
+    seed: number;
+  };
+  resizeSpawnStatesById(previousSpawns: Array<{ id?: number }>, nextSpawns: Array<{ id?: number }>): void;
   update(
     dt: number,
     onWaveCleared: ((wave: number) => void) | null,
@@ -154,6 +176,15 @@ export class GameEngine {
   // stale layout from a previous run is never forwarded and the toggle re-arms on a
   // run restart (robust even for same-map replays, where mapIndex/layout are equal).
   runId: number = 0;
+  progressivePlacementHold = false;
+  progressiveResumeMode: "countdown" | "expire-advance" | null = null;
+  progressiveOffer: number[] = [];
+  progressivePlacements: ProgressiveStamp[] = [];
+  layoutGeneration = 0;
+  lastPostedLayoutGeneration = -1;
+  private progressiveBoard: ProgressiveBoard | null = null;
+  private progressiveCatalog: BlockTemplate[] | null = null;
+  private progressiveRng: (() => number) | null = null;
   // Last wave-graph dots generation posted (mirrors lastPostedPathVersion).
   // Reset on (re)init so the first post after a new run includes the array.
   lastPostedWaveGraphGeneration: number = 0;
@@ -211,7 +242,7 @@ export class GameEngine {
   }
 
   loadMap(mapIndex: number = this.mapIndex): void {
-    const mapData = getMap(mapIndex);
+    const mapData = resolveGeneratedMap(mapIndex);
     this._initMap(mapIndex, mapData, this.persistState);
   }
 
@@ -229,6 +260,15 @@ export class GameEngine {
     this.lastPostedWaveGraphGeneration = 0;
     this.gridLayoutEnabled = true;
     this.runId += 1;
+    this.progressivePlacementHold = false;
+    this.progressiveResumeMode = null;
+    this.progressiveOffer = [];
+    this.progressivePlacements = [];
+    this.layoutGeneration = 0;
+    this.lastPostedLayoutGeneration = -1;
+    this.progressiveBoard = null;
+    this.progressiveCatalog = null;
+    this.progressiveRng = null;
     this.gameEnded = false;
     this.shouldEndGame = false;
 
@@ -290,6 +330,16 @@ export class GameEngine {
     // Fork the per-run combat-roll source from (map seed, runId) and hand it to
     // every sim roller, so the same run replays identically and distinct runs diverge.
     this.simRng = mulberry32(forkRunSeed(mapData.seed, this.runId));
+    if (mapData.style === "progressive") {
+      const config = progressiveConfigForIndex(mapIndex);
+      if (config) {
+        const started = createProgressiveBoard(config);
+        this.progressiveBoard = started.board;
+        this.progressiveCatalog = started.catalog;
+        // Separate stream from simRng: same seed, so offers do not consume combat rolls.
+        this.progressiveRng = mulberry32(forkRunSeed(mapData.seed, this.runId));
+      }
+    }
     this.projectileManager.setRng(this.simRng);
     this.particleSpawner.setRng?.(this.simRng);
     this.enemyManager.setTowerManager(this.towerManager);
@@ -393,7 +443,7 @@ export class GameEngine {
     const base = 1;
     const diffMult = getDifficultyMultiplier(this.persistState);
     const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
-    const mapMult = this.runState.mapIndex >= 0 ? MAP_GEM_MULTIPLIERS[this.runState.mapIndex] || 1 : 1;
+    const mapMult = this.runState.mapIndex >= 0 ? gemMultiplierForMap(this.runState.mapIndex) : 1;
 
     const afterDiff = Math.ceil(base * gemMult);
     const afterRegion = Math.ceil(afterDiff * mapMult);
@@ -430,6 +480,10 @@ export class GameEngine {
       (wave) => this.onWaveStart(wave),
       (wave) => this.onWaveExpired(wave),
     );
+    if (this.progressivePlacementHold) {
+      this.runState.waveCountdown = null;
+      return;
+    }
 
     // Per-tick backlog drain (not only on death): releases queued enemies whenever
     // the live count is under the gameplay cap, so immortal base-attackers can
@@ -609,6 +663,7 @@ export class GameEngine {
   onWaveCleared(wave: number): void {
     setWave(this.runState, wave);
     this.applyWaveProgressRewards(wave);
+    if (this.isProgressiveHoldWave(wave)) this.armPlacementHold("countdown");
   }
 
   // Timer-expiry seam, distinct from the killed path above. Expiry currently pays
@@ -618,6 +673,7 @@ export class GameEngine {
   onWaveExpired(wave: number): void {
     setWave(this.runState, wave);
     this.applyWaveProgressRewards(wave);
+    if (this.isProgressiveHoldWave(wave)) this.armPlacementHold("expire-advance");
   }
 
   // Shared milestone/best-wave/unlock path: runs on every natural wave clear and
@@ -650,7 +706,7 @@ export class GameEngine {
         const base = MILESTONE_GEMS[milestoneWave] ?? 0;
         const diffMult = getDifficultyMultiplier(this.persistState);
         const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
-        const mapMult = this.runState.mapIndex >= 0 ? MAP_GEM_MULTIPLIERS[this.runState.mapIndex] || 1 : 1;
+        const mapMult = this.runState.mapIndex >= 0 ? gemMultiplierForMap(this.runState.mapIndex) : 1;
 
         const afterDiff = Math.ceil(base * gemMult);
         const afterRegion = Math.ceil(afterDiff * mapMult);
@@ -778,7 +834,7 @@ export class GameEngine {
     if (totalBonus > 0) {
       const diffMult = getDifficultyMultiplier(this.persistState);
       const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
-      const mapMult = this.runState.mapIndex >= 0 ? MAP_GEM_MULTIPLIERS[this.runState.mapIndex] || 1 : 1;
+      const mapMult = this.runState.mapIndex >= 0 ? gemMultiplierForMap(this.runState.mapIndex) : 1;
       const afterDiff = Math.ceil(totalBonus * gemMult);
       const afterRegion = Math.ceil(afterDiff * mapMult);
 
@@ -842,8 +898,10 @@ export class GameEngine {
     const selectedTower = this.getSelectedTower();
     if (!selectedTower || this.runState.selectedTowerType) return false;
     const tileSize = this.grid?.tileSize || 36;
-    const buildX = (selectedTower.tileX + 1) * tileSize - 12;
-    const buildY = selectedTower.tileY * tileSize + 2;
+    const originX = this.grid?.worldOriginX ?? 0;
+    const originY = this.grid?.worldOriginY ?? 0;
+    const buildX = originX + (selectedTower.tileX + 1) * tileSize - 12;
+    const buildY = originY + selectedTower.tileY * tileSize + 2;
     return worldX >= buildX && worldX <= buildX + 10 && worldY >= buildY && worldY <= buildY + 10;
   }
 
@@ -874,9 +932,16 @@ export class GameEngine {
   handleClick(worldX: number, worldY: number): void {
     if (!this.grid) return;
 
-    const tileSize = this.grid?.tileSize || 36;
-    const tx = Math.floor(worldX / tileSize),
-      ty = Math.floor(worldY / tileSize);
+    const tile = this.grid.worldToTile(worldX, worldY);
+    const tx = tile.x;
+    const ty = tile.y;
+
+    if (this.progressivePlacementHold) {
+      this.runState.selectedTowerType = null;
+      const tower = this.towerManager?.towerAt(tx, ty);
+      this.runState.selectedTowerId = tower ? String(tower.id) : null;
+      return;
+    }
 
     if (this.isUpgradeBtnAt(worldX, worldY)) {
       this.upgradeSelected();
@@ -995,13 +1060,18 @@ export class GameEngine {
   }
 
   // Merges the main-thread-owned persist slices (unlocked + generalAddons) into
-  // the worker's persistState. The skill tree mutates these on the main thread
-  // (persistStore); this keeps the worker authoritative-copy in sync so mid-run
-  // unlocks reach Tower.specialize / cost calculations. Returns true so the
-  // worker posts a fresh snapshot reflecting the updated slice.
-  syncPersist(unlocked: PersistState["unlocked"], generalAddons: PersistState["generalAddons"]): boolean {
+  // the worker's persistState, and applies the skill-tree gem delta to that same
+  // copy. Returns true so the worker posts a fresh snapshot.
+  syncPersist(unlocked: PersistState["unlocked"], generalAddons: PersistState["generalAddons"], gemDelta = 0): boolean {
     if (unlocked) this.persistState.unlocked = unlocked;
     if (generalAddons) this.persistState.generalAddons = generalAddons;
+    if (gemDelta !== 0) {
+      this.persistState.gems += gemDelta;
+      // This copy is what the next persist flush writes over persistStore.gems.
+      // Leave it dirty so a spend with no other reward event is still saved,
+      // instead of a later flush restoring the pre-purchase total.
+      this.persistDirty = true;
+    }
     return true;
   }
 
@@ -1050,6 +1120,7 @@ export class GameEngine {
         break;
       }
       case "setTimeScale": {
+        if (this.progressivePlacementHold) break;
         const scale = amount ?? this.runState.timeScale;
         if (scale !== 1 && scale !== 2 && scale !== 4 && scale !== 8) {
           console.warn(`debug setTimeScale rejected invalid amount ${amount}`);
@@ -1059,7 +1130,7 @@ export class GameEngine {
         break;
       }
       case "skipWave":
-        this.waveManager?.startNextWave();
+        this.skipWave();
         break;
       case "killAll":
         this.enemyManager?.clear();
@@ -1074,11 +1145,22 @@ export class GameEngine {
   // clear, with the wave manager parked between waves so betweenWaves, countdown,
   // and spawn states stay consistent instead of only moving the counter.
   private debugSetWave(wave: number): void {
+    this.releasePlacementHold();
     setWave(this.runState, wave);
     this.waveManager?.debugJumpToWave(wave);
     this.runState.waveCountdown =
       this.waveManager === null ? null : { remaining: Math.ceil(BETWEEN_WAVES_TIMER), nextWave: wave + 1 };
     this.applyWaveProgressRewards(wave);
+    // Only the destination wave holds. Missed intervals are not replayed, and wave 100 is victory.
+    if (this.isProgressiveHoldWave(wave) && this.armPlacementHold("countdown")) this.runState.waveCountdown = null;
+  }
+
+  private skipWave(): void {
+    if (this.progressivePlacementHold) {
+      this.releasePlacementHold();
+      setGameState(this.runState, GameState.PLAYING);
+    }
+    this.waveManager?.startNextWave();
   }
 
   sellSelected(): void {
@@ -1232,14 +1314,17 @@ export class GameEngine {
   }
 
   togglePause(): void {
+    if (this.progressivePlacementHold) return;
     togglePauseState(this.runState);
   }
 
   cycleSpeed(): number {
+    if (this.progressivePlacementHold) return this.runState.timeScale;
     return cycleTimeScale(this.runState, 1);
   }
 
   cycleSpeedReverse(): number {
+    if (this.progressivePlacementHold) return this.runState.timeScale;
     return cycleTimeScale(this.runState, -1);
   }
 
@@ -1270,6 +1355,163 @@ export class GameEngine {
       this.runState.selectedTowerType = null;
       setHoverTile(this.runState, null);
     }
+  }
+
+  placeProgressiveBlock(templateIndex: number, rotation: number, blockX: number, blockY: number): boolean {
+    if (!this.progressivePlacementHold) return false;
+    if (!this.progressiveOffer.includes(templateIndex)) return false;
+    const board = this.progressiveBoard;
+    const catalog = this.progressiveCatalog;
+    const rng = this.progressiveRng;
+    const config = progressiveConfigForIndex(this.runState.mapIndex);
+    const grid = this.grid;
+    const previousMap = this.runState.map;
+    if (!board || !catalog || !rng || !config || !grid || !previousMap || !this.waveManager || !this.enemyManager) {
+      return false;
+    }
+    const committed = commitPlacement(board, catalog, templateIndex, rotation, blockX, blockY, rng);
+    if (!committed) return false;
+    const nextMap = boardToGeneratedMap(config, committed.board, catalog);
+    this.progressiveBoard = committed.board;
+    for (const block of committed.added) {
+      this.progressivePlacements.push({
+        templateIndex: block.templateIndex,
+        rotation: block.rotation,
+        blockX: block.blockX,
+        blockY: block.blockY,
+        fill: block.fill,
+      });
+    }
+    const previousSpawns = previousMap.spawns;
+    this.runState.map = nextMap;
+    const shift = grid.replaceFromMap(nextMap);
+    if (this.towerManager) {
+      for (const tower of this.towerManager.towers) {
+        tower.tileX += shift.shiftX;
+        tower.tileY += shift.shiftY;
+      }
+    }
+    this.enemyManager.shiftLayoutIndices(shift.shiftX, shift.shiftY);
+    this.enemyManager.reindexSpawns(previousSpawns, nextMap.spawns);
+    this.waveManager.map = nextMap;
+    this.waveManager.resizeSpawnStatesById(previousSpawns, nextMap.spawns);
+    invalidateNearestWalkableCache(grid);
+    this.rebuildWalkGraph();
+    this.layoutGeneration += 1;
+    this.gridLayoutCache = null;
+    this.gridHeightsCache = null;
+    // The commander feed turns off after the first layout. A stamp has to ship
+    // the new rectangle, so the feed is armed again until the worker caches it.
+    this.gridLayoutEnabled = true;
+    this.resumeAfterPlacement();
+    return true;
+  }
+
+  private isProgressiveHoldWave(wave: number): boolean {
+    if (this.runState.map?.style !== "progressive") return false;
+    return wave % PROGRESSIVE_PLACEMENT_INTERVAL === 0 && wave > 0 && wave < VICTORY_WAVE;
+  }
+
+  private progressiveChoiceCount(): number {
+    return this.persistState.generalAddons.progressiveThirdChoice !== null ? 3 : 2;
+  }
+
+  private armPlacementHold(mode: "countdown" | "expire-advance"): boolean {
+    if (!this.progressiveBoard || !this.progressiveCatalog || !this.progressiveRng) return false;
+    const offer = drawBlockOffer(
+      this.progressiveBoard,
+      this.progressiveCatalog,
+      this.progressiveChoiceCount(),
+      this.progressiveRng,
+    );
+    if (offer.length === 0) return false;
+    this.progressiveOffer = offer;
+    this.progressivePlacementHold = true;
+    this.progressiveResumeMode = mode;
+    if (this.waveManager) {
+      this.waveManager.advanceHeld = true;
+      this.waveManager.betweenWaves = true;
+      this.waveManager.countdownActive = false;
+      this.waveManager.active = false;
+    }
+    this.runState.selectedTowerType = null;
+    setGameState(this.runState, GameState.PAUSED);
+    this.runState.waveCountdown = null;
+    return true;
+  }
+
+  private releasePlacementHold(): void {
+    this.progressivePlacementHold = false;
+    this.progressiveResumeMode = null;
+    this.progressiveOffer = [];
+    if (this.waveManager) this.waveManager.advanceHeld = false;
+  }
+
+  private resumeAfterPlacement(): void {
+    const mode = this.progressiveResumeMode;
+    this.progressivePlacementHold = false;
+    this.progressiveOffer = [];
+    this.progressiveResumeMode = null;
+    if (this.waveManager) this.waveManager.advanceHeld = false;
+    setGameState(this.runState, GameState.PLAYING);
+    if (mode === "expire-advance") {
+      this.waveManager?.startNextWave();
+      this.onWaveStart(this.waveManager?.currentWave ?? this.runState.currentWave);
+      return;
+    }
+    if (this.waveManager) {
+      this.waveManager.betweenWaves = true;
+      this.waveManager.countdownActive = true;
+      this.waveManager.countdownTimer = BETWEEN_WAVES_TIMER;
+      this.waveManager.betweenTimer = BETWEEN_WAVES_TIMER;
+      this.waveManager.active = false;
+    }
+    this.runState.waveCountdown = {
+      remaining: Math.ceil(BETWEEN_WAVES_TIMER),
+      nextWave: (this.waveManager?.currentWave ?? this.runState.currentWave) + 1,
+    };
+  }
+
+  private rebuildWalkGraph(): void {
+    const grid = this.grid;
+    const enemyManager = this.enemyManager;
+    const towerManager = this.towerManager;
+    if (!grid || !enemyManager || !towerManager || !this.physicsWorld) return;
+    this.physicsWorld.rebuildCorridor();
+    const nextBuilder = new NavMeshBuilder(grid);
+    if (!nextBuilder.isSuccess() || !nextBuilder.getNavMesh()) {
+      const buildError = nextBuilder.getError() ?? "unknown navmesh error";
+      nextBuilder.destroy();
+      throw new Error(`Navmesh build failed: ${buildError}`);
+    }
+    for (const enemy of enemyManager.enemies) enemy.agent = null;
+    this.crowdManager?.destroy();
+    this.navMeshBuilder?.destroy();
+    this.navMeshBuilder = nextBuilder;
+    this.crowdManager = new CrowdManager(nextBuilder.getNavMesh()!, grid.tileSize, GAMEPLAY_ENEMY_CAP);
+    this.crowdManager.setForceFieldSystem(this.forceFieldSystem);
+    enemyManager.setCrowdManager(this.crowdManager);
+    const base = grid.getBase();
+    const baseWorld = grid.tileToWorld(base.x, base.y);
+    for (const enemy of enemyManager.enemies) {
+      if (enemy.removed || enemy.flyingHeight > 0) {
+        enemy.clearFlightPolyline();
+        continue;
+      }
+      this.crowdManager.addAgent(enemy);
+    }
+    this.crowdManager.reissueMoveTargets(enemyManager.enemies);
+    for (const enemy of enemyManager.enemies) {
+      if (enemy.removed || enemy.flyingHeight > 0 || !enemy.agent || enemy.lastMoveTargetWorld) continue;
+      this.crowdManager.setBaseTarget(enemy, baseWorld);
+    }
+    this.physicsWorld.rebuildTowers(towerManager);
+    this.navMeshBuilder.syncTowers(towerManager.towers);
+    this.navDistanceField?.setNavMeshBuilder(this.navMeshBuilder);
+    this.navDistanceField?.ensureUpToDate(true);
+    this.flightDistanceField?.ensureUpToDate(this.liveTowerAt, grid.pathVersion);
+    this.lastPathVersion = grid.pathVersion;
+    separateEnemiesFromTowers(enemyManager.enemies, towerManager.towers, grid, this.crowdManager);
   }
 }
 

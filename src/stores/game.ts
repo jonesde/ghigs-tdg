@@ -1,7 +1,8 @@
 import { defineStore } from "pinia";
 import { GameState, STARTING_BASE_HEALTH, StartingGold } from "@/sim/Constants.js";
-import type { Grid } from "@/sim/grid/Grid.js";
+import { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
+import { generateProgressiveMap, type ProgressiveStamp, progressiveConfigForIndex } from "@/sim/grid/ProgressiveMap.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 
 type GameStateValue = (typeof GameState)[keyof typeof GameState];
@@ -61,6 +62,10 @@ export interface GameStoreLike {
   selectBuildType(type: TowerId | null): void;
   selectTower(tower: Tower | null): void;
   setHoverTile(tile: HoverTile | null): void;
+  progressivePlacementHold?: boolean;
+  progressiveRotation?: number;
+  rotateProgressiveBlock?: () => void;
+  selectProgressiveOffer?: (index: number) => void;
 }
 
 interface GameStateShape {
@@ -92,6 +97,12 @@ interface GameStateShape {
   camera: CameraState;
   randomMapParams: Record<string, unknown> | null;
   worker: Worker | null;
+  progressivePlacementHold: boolean;
+  progressiveOffer: number[];
+  progressiveRotation: number;
+  progressiveSelectedOffer: number;
+  progressivePlacements: ProgressiveStamp[];
+  layoutGeneration: number;
 }
 
 export const useGameStore = defineStore("game", {
@@ -130,6 +141,12 @@ export const useGameStore = defineStore("game", {
     camera: { x: 0, y: 0, zoom: 1 },
     randomMapParams: null,
     worker: null,
+    progressivePlacementHold: false,
+    progressiveOffer: [],
+    progressiveRotation: 0,
+    progressiveSelectedOffer: 0,
+    progressivePlacements: [],
+    layoutGeneration: 0,
   }),
 
   getters: {
@@ -224,6 +241,31 @@ export const useGameStore = defineStore("game", {
       this.hoverTile = null;
       this.endScreenData = null;
       this.camera = { x: 0, y: 0, zoom: 1 };
+      this.progressivePlacementHold = false;
+      this.progressiveOffer = [];
+      this.progressiveRotation = 0;
+      this.progressiveSelectedOffer = 0;
+      this.progressivePlacements = [];
+      this.layoutGeneration = 0;
+    },
+
+    rotateProgressiveBlock() {
+      this.progressiveRotation = (this.progressiveRotation + 1) % 4;
+    },
+
+    selectProgressiveOffer(index: number) {
+      if (index < 0 || index >= this.progressiveOffer.length) return;
+      this.progressiveSelectedOffer = index;
+    },
+
+    applyProgressiveLayout(layoutGeneration: number, stamps: ProgressiveStamp[]) {
+      const config = progressiveConfigForIndex(this.mapIndex);
+      if (!config) return;
+      const map = generateProgressiveMap(config, stamps);
+      this.map = map;
+      this.grid = new Grid(map);
+      this.progressivePlacements = stamps.map((stamp) => ({ ...stamp }));
+      this.layoutGeneration = layoutGeneration;
     },
 
     setCamera(x: number, y: number, zoom: number) {
@@ -290,6 +332,12 @@ export const useGameStore = defineStore("game", {
       this.endScreenData = null;
       this.camera = { x: 0, y: 0, zoom: 1 };
       this.randomMapParams = null;
+      this.progressivePlacementHold = false;
+      this.progressiveOffer = [];
+      this.progressiveRotation = 0;
+      this.progressiveSelectedOffer = 0;
+      this.progressivePlacements = [];
+      this.layoutGeneration = 0;
     },
   },
 });

@@ -13,6 +13,8 @@ export interface FlightGrid {
   isBase(tileX: number, tileY: number): boolean;
   getHeight(tileX: number, tileY: number): number;
   tileToWorld(tileX: number, tileY: number): { x: number; y: number };
+  worldOriginX?: number;
+  worldOriginY?: number;
 }
 
 export type LiveTowerAt = (tileX: number, tileY: number) => boolean;
@@ -61,9 +63,11 @@ export function tilesTouchedBySegment(
   endX: number,
   endY: number,
   tileSize: number,
+  worldOriginX = 0,
+  worldOriginY = 0,
 ): TilePoint[] {
-  const originX = startX / tileSize;
-  const originY = startY / tileSize;
+  const originX = (startX - worldOriginX) / tileSize;
+  const originY = (startY - worldOriginY) / tileSize;
   const targetX = endX / tileSize;
   const targetY = endY / tileSize;
   let tileX = Math.floor(originX);
@@ -171,7 +175,15 @@ function straightLeg(
   if (from.x === to.x && from.y === to.y) return [from];
   const fromWorld = grid.tileToWorld(from.x, from.y);
   const toWorld = grid.tileToWorld(to.x, to.y);
-  const touched = tilesTouchedBySegment(fromWorld.x, fromWorld.y, toWorld.x, toWorld.y, grid.tileSize);
+  const touched = tilesTouchedBySegment(
+    fromWorld.x,
+    fromWorld.y,
+    toWorld.x,
+    toWorld.y,
+    grid.tileSize,
+    grid.worldOriginX ?? 0,
+    grid.worldOriginY ?? 0,
+  );
   for (const tile of touched) {
     if (!canTraverseTile(grid, tile.x, tile.y, flyingHeight, liveTowerAt)) return null;
   }

@@ -44,5 +44,23 @@
     { "width": 45, "height": 20, "regionId": 2, "level": 10, "style": "serpentine", "seed": 285547 },
     { "width": 45, "height": 30, "regionId": 2, "level": 11, "style": "split", "seed": 293324 },
     { "width": 45, "height": 30, "regionId": 2, "level": 12, "style": "battlefield", "seed": 262216 }
-  ]
+  ],
+  "progressive": {
+    "blockSize": 5,
+    "placementInterval": 3,
+    "variants": [
+      { "regionId": 0, "level": 1, "entryCount": 1, "seed": 900001 },
+      { "regionId": 0, "level": 5, "entryCount": 2, "seed": 900002 },
+      { "regionId": 0, "level": 9, "entryCount": 3, "seed": 900003 },
+      { "regionId": 0, "level": 12, "entryCount": 4, "seed": 900004 },
+      { "regionId": 1, "level": 1, "entryCount": 1, "seed": 900005 },
+      { "regionId": 1, "level": 5, "entryCount": 2, "seed": 900006 },
+      { "regionId": 1, "level": 9, "entryCount": 3, "seed": 900007 },
+      { "regionId": 1, "level": 12, "entryCount": 4, "seed": 900008 },
+      { "regionId": 2, "level": 1, "entryCount": 1, "seed": 900009 },
+      { "regionId": 2, "level": 5, "entryCount": 2, "seed": 900010 },
+      { "regionId": 2, "level": 9, "entryCount": 3, "seed": 900011 },
+      { "regionId": 2, "level": 12, "entryCount": 4, "seed": 900012 }
+    ]
+  }
 }

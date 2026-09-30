@@ -70,15 +70,17 @@ export class NavMeshBuilder {
 
     const positions: number[] = [];
     const indices: number[] = [];
+    const originX = this.grid.worldOriginX;
+    const originY = this.grid.worldOriginY;
     for (let tileY = 0; tileY < this.grid.height; tileY++) {
       for (let tileX = 0; tileX < this.grid.width; tileX++) {
         if (!this.isWalkableTile(tileX, tileY)) continue;
         const baseVertex = positions.length / 3;
         const corners: Vector3[] = [
-          toRecast({ x: tileX * tileSize, y: tileY * tileSize }),
-          toRecast({ x: (tileX + 1) * tileSize, y: tileY * tileSize }),
-          toRecast({ x: (tileX + 1) * tileSize, y: (tileY + 1) * tileSize }),
-          toRecast({ x: tileX * tileSize, y: (tileY + 1) * tileSize }),
+          toRecast({ x: originX + tileX * tileSize, y: originY + tileY * tileSize }),
+          toRecast({ x: originX + (tileX + 1) * tileSize, y: originY + tileY * tileSize }),
+          toRecast({ x: originX + (tileX + 1) * tileSize, y: originY + (tileY + 1) * tileSize }),
+          toRecast({ x: originX + tileX * tileSize, y: originY + (tileY + 1) * tileSize }),
         ];
         for (const corner of corners) {
           positions.push(corner.x, corner.y, corner.z);

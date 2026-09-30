@@ -256,6 +256,27 @@ export class SnapshotStore {
     // when the worker has nulled it, null the preview; never overwrite a
     // non-null local value from the snapshot.
     if (meta.selectedTowerType === null) gs.selectedTowerType = null;
+    const placementHold = meta.progressivePlacementHold === true;
+    if (gs.progressivePlacementHold !== placementHold) {
+      gs.progressivePlacementHold = placementHold;
+      if (placementHold) {
+        gs.progressiveRotation = 0;
+        gs.progressiveSelectedOffer = 0;
+      }
+    }
+    const offer = meta.progressiveOffer ?? [];
+    if (gs.progressiveOffer.join(",") !== offer.join(",")) {
+      gs.progressiveOffer = offer.slice();
+      gs.progressiveRotation = 0;
+      gs.progressiveSelectedOffer = 0;
+    }
+    if (
+      meta.layoutGeneration !== undefined &&
+      snapshot.progressivePlacements &&
+      meta.layoutGeneration !== gs.layoutGeneration
+    ) {
+      gs.applyProgressiveLayout(meta.layoutGeneration, snapshot.progressivePlacements);
+    }
     // hoverTile is host-authoritative (updated directly on gameStore by Input.ts /
     // SvgGameRoot.vue) — do NOT mirror it or it would clobber the main-thread
     // value. camera is main-thread-only — NOT mirrored.

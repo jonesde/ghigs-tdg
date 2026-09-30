@@ -3,7 +3,14 @@ import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import type { MapStyle } from "@/sim/Constants.js";
 import { MAP_GEM_MULTIPLIERS } from "@/sim/Constants.js";
-import { generateRandomMap, getMap } from "@/sim/grid/Map.js";
+import { generateRandomMap, getMap, getMapDisplayName } from "@/sim/grid/Map.js";
+import {
+  gemMultiplierForMap,
+  progressiveConfigForIndex,
+  progressiveMapIndex,
+  progressiveUnlockMapIndex,
+  resolveGeneratedMap,
+} from "@/sim/grid/ProgressiveMap.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -72,6 +79,26 @@ const mapEntries = computed<Record<number, MapEntry>>(() => {
       bestWave: typeof persistStore.bestWaves[`best_${i}`] === "number" ? persistStore.bestWaves[`best_${i}`] : 0,
     };
   }
+  const theme = themeStore.activeTheme ?? themeStore.defaultTheme;
+  for (let regionId = 0; regionId < 3; regionId++) {
+    for (let variantIndex = 0; variantIndex < 4; variantIndex++) {
+      const index = progressiveMapIndex(regionId, variantIndex);
+      const config = progressiveConfigForIndex(index);
+      if (!config) continue;
+      const map = resolveGeneratedMap(index);
+      const bestKey = `best_${index}`;
+      entries[index] = {
+        name: getMapDisplayName(map, theme),
+        region: regionNames.value[map.regionId] ?? `Region ${regionId + 1}`,
+        style: map.style,
+        gemReward: gemMultiplierForMap(index),
+        width: map.width,
+        height: map.height,
+        locked: persistStore.highestUnlockedMap < progressiveUnlockMapIndex(config),
+        bestWave: typeof persistStore.bestWaves[bestKey] === "number" ? persistStore.bestWaves[bestKey] : 0,
+      };
+    }
+  }
   return entries;
 });
 
@@ -85,6 +112,7 @@ interface MapGroup {
   regionId: number;
   name: string;
   maps: { index: number }[];
+  progressive: { index: number }[];
 }
 
 const mapsByRegion = computed<MapGroup[]>(() => {
@@ -97,6 +125,9 @@ const mapsByRegion = computed<MapGroup[]>(() => {
       regionId: regionIdx,
       name: regionNames.value[regionIdx],
       maps: Array.from({ length: count }, (_, i) => ({ index: start + i })),
+      progressive: Array.from({ length: 4 }, (_, variantIndex) => ({
+        index: progressiveMapIndex(regionIdx, variantIndex),
+      })),
     });
     start += count;
   }
@@ -118,7 +149,7 @@ async function startMap(index: number) {
   }
 
   // Load map data into the store so SvgGameRoot can pick it up
-  const mapData = getMap(index);
+  const mapData = resolveGeneratedMap(index);
   gameStore.initMap(index, mapData, null);
 
   router.push("/game");
@@ -233,6 +264,30 @@ function startRandomMap() {
           <div class="map-name">{{ getFullEntry(m.index).name }}</div>
           <div class="map-region">
             {{ getFullEntry(m.index).region }} • {{ getFullEntry(m.index).style }} • 💎 x{{ getFullEntry(m.index).gemReward }}
+          </div>
+          <div class="map-best">Best Wave: {{ getFullEntry(m.index).bestWave }}</div>
+          <div class="map-dimensions">{{ getFullEntry(m.index).width }}×{{ getFullEntry(m.index).height }}</div>
+        </div>
+        <div class="region-header progressive-header">
+          <span class="region-label">Progressive</span>
+          <span class="region-divider"></span>
+        </div>
+        <div
+          v-for="m in group.progressive"
+          :key="m.index"
+          class="map-card"
+          :class="{ locked: getFullEntry(m.index).locked }"
+          tabindex="0"
+          role="button"
+          @click="!getFullEntry(m.index).locked && startMap(m.index)"
+          @keydown.enter="!getFullEntry(m.index).locked && startMap(m.index)"
+          @keydown.space.prevent="!getFullEntry(m.index).locked && startMap(m.index)"
+        >
+          <div class="map-name">{{ getFullEntry(m.index).name }}</div>
+          <div class="map-region">
+            {{ getFullEntry(m.index).region }} • {{ getFullEntry(m.index).style }} • 💎 x{{
+              getFullEntry(m.index).gemReward
+            }}
           </div>
           <div class="map-best">Best Wave: {{ getFullEntry(m.index).bestWave }}</div>
           <div class="map-dimensions">{{ getFullEntry(m.index).width }}×{{ getFullEntry(m.index).height }}</div>
@@ -359,9 +414,15 @@ function startRandomMap() {
 
 .map-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
   justify-content: center;
+}
+
+@media (max-width: 720px) {
+  .map-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .region-header {
@@ -399,6 +460,7 @@ function startRandomMap() {
 .region-2 .region-divider { background: linear-gradient(to right, rgba(138, 125, 106, 0.5), transparent); }
 
 .map-card {
+  min-width: 0;
   padding: 12px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -421,6 +483,7 @@ function startRandomMap() {
   font-weight: bold;
   font-size: var(--font-md);
   margin-bottom: 6px;
+  overflow-wrap: anywhere;
 }
 
 .map-region {

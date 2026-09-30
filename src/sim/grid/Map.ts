@@ -12,8 +12,13 @@ import { BOSS_CADENCE } from "@/sim/ConstantsEnemy.js";
 
 export function getMapDisplayName(map: GeneratedMap | null, theme: MapThemeData | null): string {
   if (!map) return "";
+  if (map.style === "progressive" && map.entryCount !== undefined) {
+    const region = theme?.regions.find((regionEntry) => regionEntry.id === map.regionId);
+    const regionName = region?.name ?? `Region ${map.regionId + 1}`;
+    return `${regionName} Progressive ${map.entryCount}`;
+  }
   if (!theme) return map.name || "Random Map";
-  const region = theme.regions.find((r) => r.id === map.regionId);
+  const region = theme.regions.find((regionEntry) => regionEntry.id === map.regionId);
   if (region && map.level !== undefined) {
     return `${region.name} Map ${map.level}`;
   }
@@ -21,13 +26,18 @@ export function getMapDisplayName(map: GeneratedMap | null, theme: MapThemeData 
 }
 
 interface Tile {
-  type: "terrain" | "path" | "base" | "spawn";
+  type: "terrain" | "path" | "base" | "spawn" | "void";
   height: number;
 }
 
 interface Point {
   x: number;
   y: number;
+}
+
+export interface MapSpawnPoint extends Point {
+  id?: number;
+  fixed?: boolean;
 }
 
 export interface GeneratedMap {
@@ -37,11 +47,15 @@ export interface GeneratedMap {
   width: number;
   height: number;
   tiles: Tile[][];
-  spawns: Point[];
+  spawns: MapSpawnPoint[];
   base: Point;
   name: string;
   bossCadence: number;
   seed: number;
+  entryCount?: number;
+  // Absolute tile coordinate of tiles[0][0]. World x of that corner is originTileX * 36.
+  originTileX?: number;
+  originTileY?: number;
 }
 
 function _carveStraight(tiles: Tile[][], from: Point, nextWaypoint: Point) {

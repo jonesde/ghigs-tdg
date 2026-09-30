@@ -1,5 +1,5 @@
 interface Tile {
-  type: "terrain" | "path" | "base" | "spawn";
+  type: "terrain" | "path" | "base" | "spawn" | "void";
   height: number;
 }
 
@@ -17,6 +17,8 @@ interface MapData {
   tiles: unknown[][];
   spawns: { x: number; y: number }[];
   base: { x: number; y: number };
+  originTileX?: number;
+  originTileY?: number;
 }
 
 export class Grid {
@@ -30,6 +32,10 @@ export class Grid {
   terrainTowers: Set<string>;
   ghostTowers: Set<string>;
   regionId: number = 0;
+  // World position of tiles[0][0]'s minimum corner. West/north growth lowers this
+  // and shifts tile indices so an existing tile keeps the same world position.
+  worldOriginX: number = 0;
+  worldOriginY: number = 0;
   // Bumped on every tower build/sell/ghost/restore, terrain included, so Rapier
   // tower colliders and navmesh TileCache obstacles rebuild and the EnemyManager
   // live-tower cache (keyed on this value) refreshes. Corridor walls are static
@@ -48,7 +54,33 @@ export class Grid {
     this.terrainTowers = new Set();
     this.ghostTowers = new Set();
     this.regionId = map.regionId ?? 0;
+    this.worldOriginX = (map.originTileX ?? 0) * this.tileSize;
+    this.worldOriginY = (map.originTileY ?? 0) * this.tileSize;
     this.pathVersion = 0;
+  }
+
+  // Swaps in a grown progressive layout. Returns the tile-index shift applied to
+  // every key that was stored against the previous rectangle. Callers shift
+  // tower and route indices by the same amount and leave world positions alone.
+  replaceFromMap(map: MapData): { shiftX: number; shiftY: number } {
+    const nextOriginX = (map.originTileX ?? 0) * this.tileSize;
+    const nextOriginY = (map.originTileY ?? 0) * this.tileSize;
+    const shiftX = Math.round((this.worldOriginX - nextOriginX) / this.tileSize);
+    const shiftY = Math.round((this.worldOriginY - nextOriginY) / this.tileSize);
+    if (shiftX !== 0 || shiftY !== 0) {
+      this.blocked = shiftKeySet(this.blocked, shiftX, shiftY);
+      this.terrainTowers = shiftKeySet(this.terrainTowers, shiftX, shiftY);
+      this.ghostTowers = shiftKeySet(this.ghostTowers, shiftX, shiftY);
+    }
+    this.worldOriginX = nextOriginX;
+    this.worldOriginY = nextOriginY;
+    this.width = map.width;
+    this.height = map.height;
+    this.tiles = map.tiles as Tile[][];
+    this.spawns = map.spawns.map((spawn) => ({ x: spawn.x, y: spawn.y }));
+    this.base = { x: map.base.x, y: map.base.y };
+    this.pathVersion++;
+    return { shiftX, shiftY };
   }
 
   get blockCount(): number {
@@ -71,6 +103,10 @@ export class Grid {
     return this.inBounds(x, y) && this.tiles[y]![x]!.type === "spawn";
   }
 
+  isVoid(x: number, y: number): boolean {
+    return this.inBounds(x, y) && this.tiles[y]![x]!.type === "void";
+  }
+
   inBounds(x: number, y: number): boolean {
     return x >= 0 && y >= 0 && x < this.width && y < this.height;
   }
@@ -88,7 +124,7 @@ export class Grid {
     if (tileType.type === "path") {
       return !this.blocked.has(`${x},${y}`) && !this.ghostTowers.has(`${x},${y}`);
     }
-    if (tileType.type === "spawn") return false;
+    if (tileType.type === "spawn" || tileType.type === "void") return false;
     return false;
   }
 
@@ -192,11 +228,17 @@ export class Grid {
   }
 
   worldToTile(wx: number, wy: number): Point {
-    return { x: Math.floor(wx / this.tileSize), y: Math.floor(wy / this.tileSize) };
+    return {
+      x: Math.floor((wx - this.worldOriginX) / this.tileSize),
+      y: Math.floor((wy - this.worldOriginY) / this.tileSize),
+    };
   }
 
   tileToWorld(tx: number, ty: number): Point {
-    return { x: tx * this.tileSize + this.tileSize / 2, y: ty * this.tileSize + this.tileSize / 2 };
+    return {
+      x: this.worldOriginX + tx * this.tileSize + this.tileSize / 2,
+      y: this.worldOriginY + ty * this.tileSize + this.tileSize / 2,
+    };
   }
 
   getBase(): Point {
@@ -264,17 +306,28 @@ export class Grid {
         if (this.isTerrain(outwardX, outwardY)) continue;
         if (side.dx !== 0) {
           const edgeX = center.x + side.dx * half;
-          const y1 = tile.y * this.tileSize;
-          const y2 = (tile.y + 1) * this.tileSize;
+          const y1 = this.worldOriginY + tile.y * this.tileSize;
+          const y2 = this.worldOriginY + (tile.y + 1) * this.tileSize;
           segments.push({ x1: edgeX, y1, x2: edgeX, y2 });
         } else {
           const edgeY = center.y + side.dy * half;
-          const x1 = tile.x * this.tileSize;
-          const x2 = (tile.x + 1) * this.tileSize;
+          const x1 = this.worldOriginX + tile.x * this.tileSize;
+          const x2 = this.worldOriginX + (tile.x + 1) * this.tileSize;
           segments.push({ x1, y1: edgeY, x2, y2: edgeY });
         }
       }
     }
     return segments;
   }
+}
+
+function shiftKeySet(keys: Set<string>, shiftX: number, shiftY: number): Set<string> {
+  const shifted = new Set<string>();
+  for (const key of keys) {
+    const separator = key.indexOf(",");
+    const tileX = Number(key.slice(0, separator));
+    const tileY = Number(key.slice(separator + 1));
+    shifted.add(`${tileX + shiftX},${tileY + shiftY}`);
+  }
+  return shifted;
 }

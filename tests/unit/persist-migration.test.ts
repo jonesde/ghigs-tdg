@@ -182,3 +182,12 @@ describe("PersistStore save migration pauseForCommander backfill", () => {
     expect(result.llmCommanders.map((entry) => entry.temperatureReasoningOn)).toEqual([0.6, 0.3, 0.6, 0.6]);
   });
 });
+
+describe("PersistStore save migration progressiveThirdChoice backfill", () => {
+  it("keeps save version 4 and fills progressiveThirdChoice when a v4 save omits it", () => {
+    const result = migrateToCurrent({ saveVersion: 4, gems: 10, generalAddons: { extraHealth: null } });
+    expect(result.saveVersion).toBe(4);
+    expect(result.generalAddons.progressiveThirdChoice).toBeNull();
+    expect(result.generalAddons.extraHealth).toBeNull();
+  });
+});

@@ -78,7 +78,7 @@
     ]
   },
   "generalAddonCategories": {
-    "economy": { "label": "Economy", "addons": ["sellOption", "startingGold", "upgradeCostReduction"] },
+    "economy": { "label": "Economy", "addons": ["sellOption", "startingGold", "upgradeCostReduction", "progressiveThirdChoice"] },
     "health": { "label": "Health", "addons": ["extraHealth", "slowHealing"] },
     "damage": { "label": "Damage", "addons": ["terrainHeightBonus", "terrainHeightRangeBonus", "damageMilestoneBonus"] }
   },
@@ -169,6 +169,13 @@
         { "label": "+20%/+10%", "desc": "+20% dmg, +10% speed per 6,000 damage." }
       ],
       "costKey": "damageMilestoneBonus"
+    },
+    "progressiveThirdChoice": {
+      "key": "progressiveThirdChoice",
+      "label": "Third Block Choice",
+      "desc": "Progressive maps offer 3 block choices instead of 2.",
+      "tiers": [{ "label": "3 choices", "desc": "Each block pause offers a third template." }],
+      "costKey": "progressiveThirdChoice"
     }
   }
 }

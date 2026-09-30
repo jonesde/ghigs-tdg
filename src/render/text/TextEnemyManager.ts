@@ -1,5 +1,5 @@
 import type { EnemySnapshot } from "@/sim/SimulationSnapshot.js";
-import type { TextRenderScale, TextThemeAccess } from "./types.js";
+import { type TextRenderScale, type TextThemeAccess, textPixelX, textPixelY } from "./types.js";
 
 // Draws each enemy's theme glyph at its scaled *continuous* world position
 // (enemy.x / enemy.y), converted to canvas px via the shared scale. Enemies
@@ -21,8 +21,8 @@ export class TextEnemyManager {
       const shape = visual?.shape ?? "circle";
       const color = visual?.color ?? "#ffffff";
       const glyph = themeAccess.getEnemyGlyph(shape);
-      const pixelX = enemy.x * scale.scaleX;
-      const pixelY = enemy.y * scale.scaleY;
+      const pixelX = textPixelX(enemy.x, scale);
+      const pixelY = textPixelY(enemy.y, scale);
       ctx.fillStyle = color;
       ctx.fillText(glyph, pixelX, pixelY);
     }

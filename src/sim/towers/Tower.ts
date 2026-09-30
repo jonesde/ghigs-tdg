@@ -58,6 +58,7 @@ interface GridRef {
   tiles?: { type: string; height: number }[][];
   getBase(): { x: number; y: number };
   tileToWorld(tx: number, ty: number): { x: number; y: number };
+  worldToTile(wx: number, wy: number): { x: number; y: number };
   clearTowerGhost(x: number, y: number): void;
 }
 
@@ -372,8 +373,9 @@ export class Tower {
     this.tileX = tileX;
     this.tileY = tileY;
     this.grid = grid;
-    this.x = tileX * (grid?.tileSize || 36) + (grid?.tileSize || 36) / 2;
-    this.y = tileY * (grid?.tileSize || 36) + (grid?.tileSize || 36) / 2;
+    const center = grid.tileToWorld(tileX, tileY);
+    this.x = center.x;
+    this.y = center.y;
     const towerId = type as TowerId;
     this.meta = TOWER_META[towerId]!;
     this.base = TOWER_BASE[towerId]!;
@@ -847,7 +849,6 @@ export class Tower {
     // center is the fallback when the field is missing or the tile is unreachable.
     const base = this.grid.getBase();
     const baseWorld = this.grid.tileToWorld(base.x, base.y);
-    const tileSize = this.grid.tileSize;
 
     switch (this.targeting) {
       case "first":
@@ -857,22 +858,16 @@ export class Tower {
         // comparison preserves the old reduce tie-break (ties keep the first).
         const preferFarther = this.targeting === "last";
         let best = enemies[0]!;
-        const bestNav = this.navDistanceToBase?.(
-          Math.floor(best.x / tileSize),
-          Math.floor(best.y / tileSize),
-          best.flyingHeight ?? 0,
-        );
+        const bestTile = this.grid.worldToTile(best.x, best.y);
+        const bestNav = this.navDistanceToBase?.(bestTile.x, bestTile.y, best.flyingHeight ?? 0);
         let bestNavDistance = bestNav === undefined ? -1 : bestNav;
         const bestBaseDeltaX = best.x - baseWorld.x;
         const bestBaseDeltaY = best.y - baseWorld.y;
         let bestSquaredDistance = bestBaseDeltaX * bestBaseDeltaX + bestBaseDeltaY * bestBaseDeltaY;
         for (let index = 1; index < enemies.length; index++) {
           const candidate = enemies[index]!;
-          const candidateNav = this.navDistanceToBase?.(
-            Math.floor(candidate.x / tileSize),
-            Math.floor(candidate.y / tileSize),
-            candidate.flyingHeight ?? 0,
-          );
+          const candidateTile = this.grid.worldToTile(candidate.x, candidate.y);
+          const candidateNav = this.navDistanceToBase?.(candidateTile.x, candidateTile.y, candidate.flyingHeight ?? 0);
           const candidateNavDistance = candidateNav === undefined ? -1 : candidateNav;
           const candidateBaseDeltaX = candidate.x - baseWorld.x;
           const candidateBaseDeltaY = candidate.y - baseWorld.y;

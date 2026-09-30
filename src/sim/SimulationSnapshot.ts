@@ -1,4 +1,5 @@
 import type { MapThemeAnimation, SpawnState } from "@/render/themes/index.js";
+import type { ProgressiveStamp } from "@/sim/grid/ProgressiveMap.js";
 import type { ParticleSpawnRequest } from "@/sim/ParticleSystem.js";
 import type { ProjectileManager } from "@/sim/ProjectileManager.js";
 import type { GameRunState } from "./GameRunState.js";
@@ -44,6 +45,10 @@ export interface SimulationSnapshot {
   // 3=spawn), built once from engine.grid.tiles. Gated by the engine's
   // gridLayoutEnabled data-feed toggle: present only while enabled, undefined once
   // the client has toggled the feed off (it caches the map and never needs it again).
+  // Placement log for progressive maps. Shipped only when layoutGeneration
+  // changes, the same way waveGraphDots ships on its generation. Undefined means
+  // the main thread keeps the log it already applied.
+  progressivePlacements?: ProgressiveStamp[] | undefined;
   gridLayout?: number[][] | undefined;
   // Stored tile height, same dimensions as gridLayout. Shipped in the same
   // one-shot feed. A live tower adds 1; that bonus is not baked into this array.
@@ -144,6 +149,13 @@ export interface SnapshotMeta {
   lastAppliedCount?: number;
   lastSkippedCount?: number;
   lastFailedCommandId?: number;
+  // Progressive placement. Optional so hand-built test metas can omit them.
+  // The serializer always sets them. worldOrigin defaults to 0 for normal maps.
+  progressivePlacementHold?: boolean;
+  progressiveOffer?: number[];
+  worldOriginX?: number;
+  worldOriginY?: number;
+  layoutGeneration?: number;
 }
 
 // Entity snapshots — plain data only, no methods, no closures.

@@ -5,6 +5,8 @@ export interface CommandGridInfo {
   width: number;
   height: number;
   tileSize: number;
+  worldOriginX?: number;
+  worldOriginY?: number;
 }
 
 export interface CommandTile {
@@ -71,8 +73,8 @@ function clickReason(worldX: number, worldY: number, grid: CommandGridInfo | nul
   if (!Number.isFinite(worldX) || !Number.isFinite(worldY)) return "input:click worldX/worldY must be finite";
   if (grid) {
     const tileSize = grid.tileSize > 0 ? grid.tileSize : FALLBACK_TILE_SIZE;
-    const tileX = Math.floor(worldX / tileSize);
-    const tileY = Math.floor(worldY / tileSize);
+    const tileX = Math.floor((worldX - (grid.worldOriginX ?? 0)) / tileSize);
+    const tileY = Math.floor((worldY - (grid.worldOriginY ?? 0)) / tileSize);
     if (tileX < 0 || tileY < 0 || tileX >= grid.width || tileY >= grid.height) {
       return "input:click outside grid bounds";
     }
@@ -178,6 +180,9 @@ export function validateCommand(command: Command, grid?: CommandGridInfo | null)
       if (!command.generalAddons || typeof command.generalAddons !== "object") {
         return "action:syncPersist generalAddons must exist";
       }
+      if (typeof command.gemDelta !== "number" || !Number.isFinite(command.gemDelta)) {
+        return "action:syncPersist gemDelta must be a finite number";
+      }
       return null;
     case "action:debug":
       return debugReason(command.kind, command.amount);
@@ -188,6 +193,21 @@ export function validateCommand(command: Command, grid?: CommandGridInfo | null)
         return "action:debugEndRun victory must be a boolean";
       }
       return null;
+    case "action:placeProgressiveBlock": {
+      if (!Number.isInteger(command.templateIndex) || command.templateIndex < 0 || command.templateIndex > 9) {
+        return "action:placeProgressiveBlock templateIndex must be an integer 0-9";
+      }
+      if (!Number.isInteger(command.rotation) || command.rotation < 0 || command.rotation > 3) {
+        return "action:placeProgressiveBlock rotation must be an integer 0-3";
+      }
+      if (!Number.isInteger(command.blockX) || Math.abs(command.blockX) > 64) {
+        return "action:placeProgressiveBlock blockX must be an integer within 64";
+      }
+      if (!Number.isInteger(command.blockY) || Math.abs(command.blockY) > 64) {
+        return "action:placeProgressiveBlock blockY must be an integer within 64";
+      }
+      return null;
+    }
     case "lifecycle:init":
       if (!Number.isInteger(command.mapIndex) || command.mapIndex < -1) {
         return "lifecycle:init mapIndex must be an integer >= -1";

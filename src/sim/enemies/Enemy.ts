@@ -86,6 +86,7 @@ interface GridRef {
   height: number;
   spawns: { x: number; y: number }[];
   tileToWorld(tx: number, ty: number): { x: number; y: number };
+  worldToTile(wx: number, wy: number): { x: number; y: number };
   getBase(): { x: number; y: number };
   isBase(x: number, y: number): boolean;
   isPath(x: number, y: number): boolean;
@@ -114,6 +115,12 @@ let nearestWalkableCacheMisses = 0;
 export function resetNearestWalkableCacheForTests(): void {
   nearestWalkableCacheHits = 0;
   nearestWalkableCacheMisses = 0;
+}
+
+// The cache key is tileY * width + tileX. A grown progressive grid reuses the
+// same object with a new width, so a stale entry would name the wrong tile.
+export function invalidateNearestWalkableCache(grid: GridRef): void {
+  nearestWalkableCache.delete(grid);
 }
 
 export function getNearestWalkableCacheStats(): { hits: number; misses: number } {
@@ -466,7 +473,7 @@ export class Enemy {
   // The enemy's current tile, derived from its world-space centerline (lane-offset
   // independent). The commander uses this as the start point for routing.
   currentTile(): { x: number; y: number } {
-    return { x: Math.floor(this.centerX / this.grid.tileSize), y: Math.floor(this.centerY / this.grid.tileSize) };
+    return this.grid.worldToTile(this.centerX, this.centerY);
   }
 
   nextCornerWorld(): { x: number; y: number } | null {
@@ -937,10 +944,7 @@ export class Enemy {
     const start = this.currentTile();
     let goals: TilePoint[] = [];
     if (this.routingMode === "hold" && this.holdWorld) {
-      const holdTile = {
-        x: Math.floor(this.holdWorld.x / this.grid.tileSize),
-        y: Math.floor(this.holdWorld.y / this.grid.tileSize),
-      };
+      const holdTile = this.grid.worldToTile(this.holdWorld.x, this.holdWorld.y);
       if (canTraverseTile(this.grid, holdTile.x, holdTile.y, height, liveTowerAt)) goals = [holdTile];
       else {
         const neighbor = nearestTraversableNeighbor(this.grid, holdTile.x, holdTile.y, height, liveTowerAt, start);

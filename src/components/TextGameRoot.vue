@@ -14,7 +14,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { TextEnemyManager } from "@/render/text/TextEnemyManager.js";
 import { TextGridBuilder } from "@/render/text/TextGridBuilder.js";
 import { TextOverlayRenderer } from "@/render/text/TextOverlayRenderer.js";
@@ -67,6 +67,8 @@ const scaledHeight = computed(() => Math.round(gridHeight.value * 3 * cellHeight
 const scale = computed<TextRenderScale>(() => ({
   scaleX: (3 * cellWidthPx.value) / 36,
   scaleY: (3 * cellHeightPx.value) / 36,
+  originX: gameStore.grid?.worldOriginX ?? 0,
+  originY: gameStore.grid?.worldOriginY ?? 0,
 }));
 
 const canvasWidth = computed(() => Math.round(gridWidth.value * 3 * cellWidthPx.value));
@@ -130,14 +132,23 @@ function renderFrame(): void {
   renderFrameHandle = requestAnimationFrame(renderFrame);
 }
 
-onMounted(() => {
+function rebuildTextGrid(): void {
   const grid: Grid | null = gameStore.grid;
-  if (grid) {
-    gridWidth.value = grid.width;
-    gridHeight.value = grid.height;
-    const builder = new TextGridBuilder(grid);
-    gridText.value = builder.getText();
-  }
+  if (!grid) return;
+  gridWidth.value = grid.width;
+  gridHeight.value = grid.height;
+  const builder = new TextGridBuilder(grid);
+  gridText.value = builder.getText();
+}
+
+// A progressive stamp replaces gameStore.map. Rebuild the character grid so the new blocks appear.
+watch(
+  () => gameStore.map,
+  () => rebuildTextGrid(),
+);
+
+onMounted(() => {
+  rebuildTextGrid();
   measureCell();
   renderFrameHandle = requestAnimationFrame(renderFrame);
 });

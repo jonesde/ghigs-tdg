@@ -13,6 +13,7 @@ import GameShop from "./GameShop.vue";
 import HelpDialog from "./HelpDialog.vue";
 import MinimapPanel from "./MinimapPanel.vue";
 import PauseMenu from "./PauseMenu.vue";
+import ProgressivePlacement from "./ProgressivePlacement.vue";
 import SkillTree from "./SkillTree.vue";
 import StatsPanel from "./StatsPanel.vue";
 import SvgGameRoot from "./SvgGameRoot.vue";
@@ -89,6 +90,7 @@ onUnmounted(() => {
 
     <!-- Wave countdown overlay -->
     <WaveCountdown v-if="gameStore.waveCountdown" />
+    <ProgressivePlacement />
 
     <!-- PauseMenu overlay -->
     <PauseMenu v-if="uiStore.showPauseMenu" />

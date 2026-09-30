@@ -6,6 +6,7 @@
 
       <g ref="worldLayer" class="camera-wrapper">
         <g class="grid-layer" v-html="gridContent"></g>
+        <g class="progressive-ghost" v-html="progressiveGhost"></g>
         <g ref="entityLayer" class="entity-layer"></g>
         <g ref="uiOverlayLayer" class="ui-overlay-layer"></g>
         <g ref="projectileLayer" class="projectile-layer"></g>
@@ -31,6 +32,14 @@ import { GameState, SELL_DISCOUNT_PCT } from "@/sim/Constants.js";
 import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
 import { TOWER_META, TowerIds } from "@/sim/ConstantsTower.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
+import {
+  blockCoordinateForTile,
+  legalSites,
+  placementLegal,
+  progressiveBlockWorldCorner,
+  progressiveConfigForIndex,
+  replayProgressiveBoard,
+} from "@/sim/grid/ProgressiveMap.js";
 import type { ThemeBundle } from "@/sim/HostBindings.js";
 import { ParticleSystem } from "@/sim/ParticleSystem.js";
 import type { PersistState } from "@/sim/PersistState.js";
@@ -101,9 +110,29 @@ const mapTileSize = 36;
 const mapViewBox = computed(() => {
   const map = gameStore.map;
   if (!map) return undefined;
+  const originX = (map.originTileX ?? 0) * mapTileSize;
+  const originY = (map.originTileY ?? 0) * mapTileSize;
   const w = map.width * mapTileSize;
   const h = map.height * mapTileSize;
-  return `0 0 ${w} ${h}`;
+  return `${originX} ${originY} ${w} ${h}`;
+});
+
+const progressiveGhost = computed(() => {
+  if (!gameStore.progressivePlacementHold || !gameStore.map) return "";
+  const config = progressiveConfigForIndex(gameStore.mapIndex);
+  const templateIndex = gameStore.progressiveOffer[gameStore.progressiveSelectedOffer];
+  if (!config || templateIndex === undefined) return "";
+  const replayed = replayProgressiveBoard(config, gameStore.progressivePlacements);
+  const sites = legalSites(replayed.board, replayed.catalog, templateIndex).filter(
+    (site) => site.rotation === gameStore.progressiveRotation,
+  );
+  return sites
+    .map((site) => {
+      const corner = progressiveBlockWorldCorner(site.blockX, site.blockY, mapTileSize);
+      const size = 5 * mapTileSize;
+      return `<rect x="${corner.x}" y="${corner.y}" width="${size}" height="${size}" fill="rgba(95,208,255,0.22)" stroke="#5fd0ff" stroke-width="2" />`;
+    })
+    .join("");
 });
 
 let enemyManager!: EnemyManager;
@@ -209,9 +238,11 @@ const flushHover = (): void => {
   mouseWorldPos.value = worldPos;
 
   const grid = gameStore.grid;
-  const tileSize = grid?.tileSize ?? mapTileSize;
-  const tileX = Math.floor(worldPos.x / tileSize);
-  const tileY = Math.floor(worldPos.y / tileSize);
+  const tile = grid
+    ? grid.worldToTile(worldPos.x, worldPos.y)
+    : { x: Math.floor(worldPos.x / mapTileSize), y: Math.floor(worldPos.y / mapTileSize) };
+  const tileX = tile.x;
+  const tileY = tile.y;
   if (grid?.inBounds(tileX, tileY)) {
     gameStore.setHoverTile({ tileX, tileY });
   } else {
@@ -230,8 +261,8 @@ const computeHoverUpgradeBtn = (worldX: number, worldY: number): boolean => {
   const grid = gameStore.grid;
   if (!grid) return false;
   const tileSize = grid.tileSize || mapTileSize;
-  const buildX = (selectedTower.tileX + 1) * tileSize - 12;
-  const buildY = selectedTower.tileY * tileSize + 2;
+  const buildX = grid.worldOriginX + (selectedTower.tileX + 1) * tileSize - 12;
+  const buildY = grid.worldOriginY + selectedTower.tileY * tileSize + 2;
   return worldX >= buildX && worldX <= buildX + 10 && worldY >= buildY && worldY <= buildY + 10;
 };
 
@@ -251,8 +282,48 @@ const dispatchClick = (clientX: number, clientY: number): void => {
   pt.y = clientY;
   const worldPos = pt.matrixTransform(inverseCtm);
 
+  const placement = progressivePlacementCommand(worldPos.x, worldPos.y);
+  if (placement) {
+    dispatcher.dispatch({ commandId: nextClickCommandId++, ...placement });
+    return;
+  }
   dispatcher.dispatch({ commandId: nextClickCommandId++, type: "input:click", worldX: worldPos.x, worldY: worldPos.y });
 };
+
+function progressivePlacementCommand(
+  worldX: number,
+  worldY: number,
+): {
+  type: "action:placeProgressiveBlock";
+  templateIndex: number;
+  rotation: number;
+  blockX: number;
+  blockY: number;
+} | null {
+  if (!gameStore.progressivePlacementHold || !gameStore.map || !gameStore.grid) return null;
+  const config = progressiveConfigForIndex(gameStore.mapIndex);
+  const templateIndex = gameStore.progressiveOffer[gameStore.progressiveSelectedOffer];
+  if (!config || templateIndex === undefined) return null;
+  const tile = gameStore.grid.worldToTile(worldX, worldY);
+  const block = blockCoordinateForTile(gameStore.map.originTileX ?? 0, gameStore.map.originTileY ?? 0, tile.x, tile.y);
+  const replayed = replayProgressiveBoard(config, gameStore.progressivePlacements);
+  const legal = placementLegal(
+    replayed.board,
+    replayed.catalog,
+    templateIndex,
+    gameStore.progressiveRotation,
+    block.blockX,
+    block.blockY,
+  );
+  if (!legal) return null;
+  return {
+    type: "action:placeProgressiveBlock",
+    templateIndex,
+    rotation: gameStore.progressiveRotation,
+    blockX: block.blockX,
+    blockY: block.blockY,
+  };
+}
 
 const onMouseDown = (e: MouseEvent): void => {
   if (e.button !== 0) return;
@@ -518,6 +589,17 @@ onMounted(async () => {
 
   requestAnimationFrame(renderLoop);
 });
+
+watch(
+  () => gameStore.map,
+  async (map) => {
+    if (!map || !svgRoot.value || disposed || !spawnManager) return;
+    const { Grid } = await import("@/sim/grid/Grid.js");
+    gameStore.grid = new Grid(map);
+    await nextTick();
+    spawnManager.init(svgRoot.value, map.spawns.length);
+  },
+);
 
 onUnmounted(() => {
   pendingHoverScheduled = false;

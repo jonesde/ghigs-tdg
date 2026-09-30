@@ -74,7 +74,8 @@ export function buildSnapshot(
   // 3=spawn) built from engine.grid.tiles. Gated by gridLayoutEnabled so it ships
   // only until the worker caches it and toggles the feed off — keeping steady-state
   // per-tick cost at zero. Terrain never changes mid-run, so the built array is
-  // memoized on the engine and reused (same reference) until runId changes.
+  // memoized on the engine and reused until runId changes or the engine clears
+  // the cache after a progressive placement.
   let gridLayout: number[][] | undefined;
   if (grid && engine.gridLayoutEnabled) {
     if (engine.gridLayoutCache === null || engine.gridLayoutCacheRunId !== engine.runId) {
@@ -103,6 +104,10 @@ export function buildSnapshot(
   // sends just the most recent WAVE_GRAPH_MAX_SEND dots; the main thread merges
   // them into its accumulation. The generation is always included so a change
   // stays detectable even when the window itself is omitted.
+  const progressivePlacements =
+    engine.layoutGeneration !== engine.lastPostedLayoutGeneration ? engine.progressivePlacements : undefined;
+  if (progressivePlacements) engine.lastPostedLayoutGeneration = engine.layoutGeneration;
+
   const tracker = engine.waveGraphTracker;
   let waveGraphDots: WaveGraphDot[] | undefined;
   let waveGraphDotsGeneration = 0;
@@ -145,6 +150,7 @@ export function buildSnapshot(
         : null,
     waveGraphDots,
     waveGraphDotsGeneration,
+    progressivePlacements,
     gridLayout,
     heights,
   };
@@ -186,6 +192,11 @@ function buildMeta(engine: GameEngine, receipt: SnapshotCommandReceipt): Snapsho
     lastAppliedCount: receipt.applied,
     lastSkippedCount: receipt.skipped,
     lastFailedCommandId: receipt.failedCommandId,
+    progressivePlacementHold: engine.progressivePlacementHold,
+    progressiveOffer: engine.progressiveOffer,
+    worldOriginX: engine.grid?.worldOriginX ?? 0,
+    worldOriginY: engine.grid?.worldOriginY ?? 0,
+    layoutGeneration: engine.layoutGeneration,
   };
 }
 

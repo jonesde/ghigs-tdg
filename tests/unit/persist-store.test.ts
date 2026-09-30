@@ -37,6 +37,7 @@ describe("PersistStore", () => {
       expect(store.generalAddons.terrainHeightBonus).toBeNull();
       expect(store.generalAddons.damageMilestoneBonus).toBeNull();
       expect(store.generalAddons.slowHealing).toBeNull();
+      expect(store.generalAddons.progressiveThirdChoice).toBeNull();
     });
 
     it("has all expected general addon keys in default state", () => {
@@ -50,6 +51,7 @@ describe("PersistStore", () => {
         "terrainHeightBonus",
         "damageMilestoneBonus",
         "slowHealing",
+        "progressiveThirdChoice",
       ];
       for (const key of expectedKeys) {
         expect(store.generalAddons).toHaveProperty(key);
@@ -358,6 +360,7 @@ describe("PersistStore", () => {
       expect(store.generalAddons.startingGold).toBeNull();
       expect(store.generalAddons.sellRefundUnlocked).toBe(false);
       expect(store.generalAddons.slowHealing).toBeNull();
+      expect(store.generalAddons.progressiveThirdChoice).toBeNull();
     });
 
     it("preserves saved nested values over defaults during migration", () => {

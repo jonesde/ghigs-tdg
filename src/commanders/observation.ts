@@ -65,17 +65,19 @@ export interface CommanderObservation {
   nav?: ObservationNav;
 }
 
-function worldToTile(worldCoordinate: number, tileSize: number): number {
-  return Math.floor(worldCoordinate / tileSize);
+function worldToTile(worldCoordinate: number, worldOrigin: number, tileSize: number): number {
+  return Math.floor((worldCoordinate - worldOrigin) / tileSize);
 }
 
 // Pure projection from a throttled snapshot slice into the brain's semantic view.
 export function buildObservation(slice: CommanderSnapshotSlice): CommanderObservation {
   const tileSize = slice.meta.tileSize ?? 36;
+  const originX = slice.meta.worldOriginX ?? 0;
+  const originY = slice.meta.worldOriginY ?? 0;
   const navField: NavFieldSnapshotData | undefined = slice.nav;
   const enemies: ObservationEnemy[] = slice.enemies.map((enemy) => {
-    const tileX = worldToTile(enemy.x, tileSize);
-    const tileY = worldToTile(enemy.y, tileSize);
+    const tileX = worldToTile(enemy.x, originX, tileSize);
+    const tileY = worldToTile(enemy.y, originY, tileSize);
     const distanceToBase = enemy.distanceToBase ?? navField?.distanceToBase[tileY]?.[tileX] ?? -1;
     const observationEnemy: ObservationEnemy = {
       id: enemy.id,

@@ -77,6 +77,7 @@ function makeSave(): SaveFixture {
       upgradeCostReduction: null,
       terrainHeightBonus: null,
       damageMilestoneBonus: null,
+      progressiveThirdChoice: null,
     },
   };
 }
@@ -148,6 +149,9 @@ describe("TowerManager", () => {
         canBuild: () => true,
         registerTower: () => allowRegister,
         unregisterTower: () => true,
+        getBase: () => ({ x: 0, y: 0 }),
+        tileToWorld: (tileX: number, tileY: number) => ({ x: tileX * 36 + 18, y: tileY * 36 + 18 }),
+        worldToTile: (worldX: number, worldY: number) => ({ x: Math.floor(worldX / 36), y: Math.floor(worldY / 36) }),
       } as unknown as Grid;
       const stubProjectiles = { spawn: () => {}, fireLightning: () => {}, spawnLightningFlash: () => {} };
       const stubManager = new TowerManager(stubGrid, particles, stubProjectiles, sound);

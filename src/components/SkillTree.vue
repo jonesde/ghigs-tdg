@@ -26,15 +26,17 @@ import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
 
-// Pushes the main-thread-owned persist slices (unlocked + generalAddons) into
-// the worker so mid-run skill-tree unlocks reach Tower.specialize / cost logic.
-// No-op when no worker is registered (e.g. the skill tree opened pre-run).
-function syncPersistToWorker(): void {
+// Writes the skill-tree edit into the worker persist copy. That copy is what the
+// next flush saves over persistStore.gems, so the gem delta has to travel with
+// the unlocks. No-op when no worker is registered (skill tree opened pre-run).
+function saveAndSyncPersist(gemsBefore: number): void {
+  persistStore.save();
   dispatchCommand({
     commandId: 0,
     type: "action:syncPersist",
     unlocked: persistStore.unlocked,
     generalAddons: persistStore.generalAddons,
+    gemDelta: persistStore.gems - gemsBefore,
   });
 }
 
@@ -46,10 +48,10 @@ const uiStore = useUiStore();
 const towerIds = Object.values(TowerIds) as TowerId[];
 
 function handleTowerNodeClick(towerId: TowerId, tier: string, index: number, element: HTMLElement) {
+  const gemsBefore = persistStore.gems;
   const result = tryUnlock(persistStore.$state, towerId, tier, index);
   if (result.ok) {
-    persistStore.save();
-    syncPersistToWorker();
+    saveAndSyncPersist(gemsBefore);
   } else if (result.reason === "Already unlocked") {
     const refundGems = canRefund(persistStore.$state, towerId, tier, index);
     if (refundGems > 0) {
@@ -78,9 +80,9 @@ function handleGeneralClick(key: string, type: string | number, opt: string | nu
       flashElement(element);
       return;
     }
+    const gemsBefore = persistStore.gems;
     generalAddons.sellActive = opt;
-    persistStore.save();
-    syncPersistToWorker();
+    saveAndSyncPersist(gemsBefore);
     return;
   }
 
@@ -97,10 +99,10 @@ function handleGeneralClick(key: string, type: string | number, opt: string | nu
     return;
   }
 
+  const gemsBefore = persistStore.gems;
   const result = tryUnlockGeneral(persistStore.$state, key, idxNum);
   if (result.ok) {
-    persistStore.save();
-    syncPersistToWorker();
+    saveAndSyncPersist(gemsBefore);
   } else {
     flashElement(element);
   }
@@ -114,9 +116,9 @@ function showRefundConfirm(towerId: TowerId, tier: string, index: number, gems: 
     confirmLabel: "Refund",
     cancelLabel: "Cancel",
     onConfirm: () => {
+      const gemsBefore = persistStore.gems;
       tryRefund(persistStore.$state, towerId, tier, index);
-      persistStore.save();
-      syncPersistToWorker();
+      saveAndSyncPersist(gemsBefore);
     },
   });
 }
@@ -130,9 +132,9 @@ function showGeneralRefundConfirm(key: string, index: number, gems: number) {
     confirmLabel: "Refund",
     cancelLabel: "Cancel",
     onConfirm: () => {
+      const gemsBefore = persistStore.gems;
       tryRefundGeneral(persistStore.$state, key, index);
-      persistStore.save();
-      syncPersistToWorker();
+      saveAndSyncPersist(gemsBefore);
     },
   });
 }
@@ -176,9 +178,9 @@ function showRefundAllConfirm() {
     confirmLabel: "Refund All",
     cancelLabel: "Cancel",
     onConfirm: () => {
+      const gemsBefore = persistStore.gems;
       refundAllGems(persistStore.$state);
-      persistStore.save();
-      syncPersistToWorker();
+      saveAndSyncPersist(gemsBefore);
     },
   });
 }

@@ -50,6 +50,9 @@ export class WaveManager {
   _waveGameTime: number;
   countdownActive: boolean;
   countdownTimer: number;
+  // Set by the engine while a progressive placement hold owns the clock. update
+  // returns before the between-waves countdown or the next wave can start.
+  advanceHeld: boolean;
 
   constructor(map: MapRef, enemyManager: EnemyManagerRef) {
     this.map = map;
@@ -70,6 +73,7 @@ export class WaveManager {
     this._waveGameTime = 0;
     this.countdownActive = false;
     this.countdownTimer = BETWEEN_WAVES_TIMER;
+    this.advanceHeld = false;
     this.spawnStates = map.spawns.map(() => ({ visualState: "closed" as const, closeTransitionTimer: 0 }));
     this.prevWaveSpawnIndices = new Set();
   }
@@ -168,6 +172,33 @@ export class WaveManager {
     }
   }
 
+  // Keeps visual state for spawn ids that survived a layout change. New ids start
+  // closed. prevWaveSpawnIndices follows the same ids so a closing animation does
+  // not point at a recycled index.
+  resizeSpawnStatesById(previousSpawns: Array<{ id?: number }>, nextSpawns: Array<{ id?: number }>): void {
+    const previousIndexById = new Map<number, number>();
+    previousSpawns.forEach((spawn, index) => {
+      if (spawn.id !== undefined) previousIndexById.set(spawn.id, index);
+    });
+    this.spawnStates = nextSpawns.map((spawn) => {
+      const previousIndex = spawn.id !== undefined ? previousIndexById.get(spawn.id) : undefined;
+      if (previousIndex !== undefined && this.spawnStates[previousIndex]) return this.spawnStates[previousIndex]!;
+      return { visualState: "closed" as const, closeTransitionTimer: 0 };
+    });
+    const nextIndexById = new Map<number, number>();
+    nextSpawns.forEach((spawn, index) => {
+      if (spawn.id !== undefined) nextIndexById.set(spawn.id, index);
+    });
+    const remapped = new Set<number>();
+    for (const previousIndex of this.prevWaveSpawnIndices) {
+      const spawnId = previousSpawns[previousIndex]?.id;
+      if (spawnId === undefined) continue;
+      const nextIndex = nextIndexById.get(spawnId);
+      if (nextIndex !== undefined) remapped.add(nextIndex);
+    }
+    this.prevWaveSpawnIndices = remapped;
+  }
+
   closeAllSpawns(): void {
     for (const spawnIndex of this.prevWaveSpawnIndices) {
       this.spawnStates[spawnIndex]!.visualState = "closed";
@@ -235,6 +266,7 @@ export class WaveManager {
     onWaveExpired: ((wave: number) => void) | null = null,
   ) {
     this.updateSpawnTimers(dt);
+    if (this.advanceHeld) return;
 
     if (this.queue.length === 0 && !this.enemyManager.hasPendingEnemies() && this.enemyManager.enemies.length === 0) {
       for (let i = 0; i < this.spawnStates.length; i++) {
@@ -280,6 +312,12 @@ export class WaveManager {
       }
       const waveLeaving = this.currentWave;
       (onWaveExpired ?? onWaveCleared)?.(waveLeaving);
+      if (this.advanceHeld) {
+        this.betweenWaves = true;
+        this.countdownActive = false;
+        this.active = false;
+        return;
+      }
       this.saveActiveSpawns();
       this.transitionActiveSpawnsToTransition();
       this.startNextWave();
@@ -290,6 +328,12 @@ export class WaveManager {
     // Natural wave clear: only when everything is done
     if (!this.queue.length && !this.enemyManager.hasPendingEnemies() && this.enemyManager.enemies.length === 0) {
       if (onWaveCleared) onWaveCleared(this.currentWave);
+      if (this.advanceHeld) {
+        this.betweenWaves = true;
+        this.countdownActive = false;
+        this.active = false;
+        return;
+      }
       if (this.currentWave >= VICTORY_WAVE) {
         this.betweenWaves = true;
       } else {

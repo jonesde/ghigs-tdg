@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
-import { generateRandomMap, getMap, getMapDisplayName } from "@/sim/grid/Map.js";
+import { generateRandomMap } from "@/sim/grid/Map.js";
+import { resolveGeneratedMap } from "@/sim/grid/ProgressiveMap.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 
@@ -46,7 +47,7 @@ function replay() {
     gameStore.map = mapData;
     gameStore.randomMapParams = p;
   } else {
-    const mapData = getMap(latest.mapIndex);
+    const mapData = resolveGeneratedMap(latest.mapIndex);
     gameStore.mapIndex = latest.mapIndex;
     gameStore.map = mapData;
   }

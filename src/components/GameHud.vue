@@ -292,4 +292,30 @@ watch(
   from { opacity: 1; }
   to { opacity: 0.5; }
 }
+
+@media (max-width: 720px) {
+  .hud-bar {
+    height: auto;
+    flex-wrap: wrap;
+    row-gap: 4px;
+    padding: 4px 6px 6px;
+  }
+
+  .hud-left,
+  .hud-right {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .hud-right {
+    justify-content: flex-end;
+  }
+
+  .map-title {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
 </style>

@@ -89,6 +89,7 @@ interface GridRef {
   clearTowerGhost(x: number, y: number): void;
   getBase(): { x: number; y: number };
   tileToWorld(tx: number, ty: number): { x: number; y: number };
+  worldToTile(wx: number, wy: number): { x: number; y: number };
 }
 
 export class TowerManager {

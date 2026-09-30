@@ -48,12 +48,13 @@ describe("MapSelect", () => {
     setActivePinia(createPinia());
   });
 
-  it("renders 36 map buttons", () => {
+  it("renders 36 campaign maps and 12 progressive maps", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     const mapCards = wrapper.findAll(".map-card");
-    expect(mapCards.length).toBe(36);
+    expect(mapCards.length).toBe(48);
+    expect(wrapper.findAll(".progressive-header").length).toBe(3);
   });
 
   it("shows locked state for unlocked maps", () => {
@@ -86,7 +87,7 @@ describe("MapSelect", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    const regionHeaders = wrapper.findAll(".region-label");
+    const regionHeaders = wrapper.findAll(".region-header:not(.progressive-header) .region-label");
     expect(regionHeaders.length).toBe(3);
   });
 
@@ -98,6 +99,24 @@ describe("MapSelect", () => {
     await firstCard.trigger("click");
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(router.currentRoute.value.path).toBe("/game");
+  });
+
+  it("unlocks the 1-path progressive card and keeps the 2-path card locked", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    persistStore.highestUnlockedMap = 0;
+    await router.replace("/map-select");
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    const cards = wrapper.findAll(".map-card");
+    const onePath = cards.find((card) => card.text().includes("Verdant Marches Progressive 1"));
+    const twoPath = cards.find((card) => card.text().includes("Verdant Marches Progressive 2"));
+    expect(onePath).toBeTruthy();
+    expect(twoPath).toBeTruthy();
+    expect(onePath!.classes()).not.toContain("locked");
+    expect(twoPath!.classes()).toContain("locked");
+    await twoPath!.trigger("click");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(router.currentRoute.value.path).toBe("/map-select");
   });
 
   it("does not navigate when clicking locked map", async () => {
@@ -139,7 +158,7 @@ describe("MapSelect", () => {
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     const mapCards = wrapper.findAll(".map-card");
-    expect(mapCards.length).toBe(36);
+    expect(mapCards.length).toBe(48);
     for (const card of mapCards) {
       expect(card.attributes("tabindex")).toBe("0");
       expect(card.attributes("role")).toBe("button");

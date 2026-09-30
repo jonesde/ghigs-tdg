@@ -1,0 +1,117 @@
+<script setup lang="ts">
+import { computed } from "vue";
+import {
+  generateProgressiveCatalog,
+  localTile,
+  type PlacedBlock,
+  progressiveConfigForIndex,
+} from "@/sim/grid/ProgressiveMap.js";
+import { useGameStore } from "@/stores/game.js";
+
+const gameStore = useGameStore();
+
+const catalog = computed(() => {
+  const config = progressiveConfigForIndex(gameStore.mapIndex);
+  if (!config) return null;
+  return generateProgressiveCatalog(config.seed);
+});
+
+function previewCells(templateIndex: number): string {
+  const templates = catalog.value;
+  if (!templates) return "";
+  const block: PlacedBlock = {
+    kind: "catalog",
+    templateIndex,
+    rotation: gameStore.progressiveRotation,
+    blockX: 0,
+    blockY: 0,
+    fill: false,
+    entryEdges: [],
+    heightPattern: "flat",
+    flatHeight: 1,
+    peakCorner: 0,
+  };
+  let cells = "";
+  for (let localY = 0; localY < 5; localY++) {
+    for (let localX = 0; localX < 5; localX++) {
+      const tile = localTile(templates, block, localX, localY);
+      const fill = tile?.type === "path" ? "#d7b072" : "#2c3a32";
+      cells += `<rect x="${localX}" y="${localY}" width="1" height="1" fill="${fill}" />`;
+    }
+  }
+  return cells;
+}
+</script>
+
+<template>
+  <div v-if="gameStore.progressivePlacementHold" class="progressive-placement">
+    <div class="progressive-title">Place a block</div>
+    <div class="progressive-cards">
+      <button
+        v-for="(templateIndex, index) in gameStore.progressiveOffer"
+        :key="`${templateIndex}-${index}`"
+        type="button"
+        class="progressive-card"
+        :class="{ selected: index === gameStore.progressiveSelectedOffer }"
+        @click="gameStore.selectProgressiveOffer(index)"
+      >
+        <svg viewBox="0 0 5 5" width="72" height="72" aria-hidden="true" v-html="previewCells(templateIndex)"></svg>
+        <span>{{ index + 1 }}</span>
+      </button>
+    </div>
+    <div class="progressive-hint">R rotates. Click a highlighted site to place.</div>
+  </div>
+</template>
+
+<style scoped>
+.progressive-placement {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: rgba(20, 23, 33, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  color: var(--color-text);
+  max-width: calc(100vw - 24px);
+}
+
+.progressive-title {
+  font-size: var(--font-md);
+}
+
+.progressive-cards {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.progressive-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  background: #141721;
+  color: var(--color-text);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.progressive-card.selected {
+  border-color: #5fd0ff;
+}
+
+.progressive-hint {
+  font-size: var(--font-sm, 12px);
+  opacity: 0.8;
+}
+</style>

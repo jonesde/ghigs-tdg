@@ -2,6 +2,7 @@ import { computed } from "vue";
 import type { MapThemeData } from "@/render/themes/index.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import { mulberry32 } from "@/sim/grid/Map.js";
+import { progressiveTileRotation } from "@/sim/grid/ProgressiveMap.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 
 interface BaseSvgParams {
@@ -101,7 +102,7 @@ function renderBaseSvg(params: BaseSvgParams): string {
 }
 
 interface TileInfo {
-  type: "terrain" | "path" | "base" | "spawn";
+  type: "terrain" | "path" | "base" | "spawn" | "void";
   height: number;
 }
 
@@ -119,6 +120,9 @@ interface MapInfo {
   base: { x: number; y: number };
   regionId?: number;
   seed: number;
+  style?: string;
+  originTileX?: number;
+  originTileY?: number;
 }
 
 const TILE_SIZE = 36;
@@ -261,9 +265,9 @@ function getTileSvg(tile: TileInfo, x: number, y: number, regionId: number, rota
  * Renders the base structure as an SVG string with rounded corners,
  * gradient fill, gem decorations, and hexagonal emblem.
  */
-function renderBaseStructure(base: { x: number; y: number }, regionBaseSvg: string): string {
-  const translateX = (base.x - 1) * TILE_SIZE;
-  const translateY = (base.y - 1) * TILE_SIZE;
+function renderBaseStructure(base: { x: number; y: number }, regionBaseSvg: string, originX = 0, originY = 0): string {
+  const translateX = originX + (base.x - 1) * TILE_SIZE;
+  const translateY = originY + (base.y - 1) * TILE_SIZE;
   if (regionBaseSvg) {
     return `<g id="base-structure" transform="translate(${translateX}, ${translateY})">${stripSvgWrapper(regionBaseSvg)}</g>`;
   }
@@ -314,41 +318,69 @@ export function useSvgStaticContent(
     };
     let svg = "";
 
-    // Background rect
     const BACKGROUND_RGB = "40,40,40";
-    svg += `<rect x="0" y="0" width="${map.width * TILE_SIZE}" height="${map.height * TILE_SIZE}" fill="rgba(${BACKGROUND_RGB},1)" />`;
+    const originTileX = map.originTileX ?? 0;
+    const originTileY = map.originTileY ?? 0;
+    const originX = originTileX * TILE_SIZE;
+    const originY = originTileY * TILE_SIZE;
+    const progressive = map.style === "progressive";
+    const mapWidthPx = map.width * TILE_SIZE;
+    const mapHeightPx = map.height * TILE_SIZE;
+    svg += `<rect x="${originX}" y="${originY}" width="${mapWidthPx}" height="${mapHeightPx}" fill="rgba(${BACKGROUND_RGB},1)" />`;
 
-    // Tiles — iterate 2D array
-    const tileRng = mulberry32(map.seed);
+    const tileRng = progressive ? null : mulberry32(map.seed);
     for (let ty = 0; ty < map.height; ty++) {
       for (let tx = 0; tx < map.width; tx++) {
         const tile = map.tiles[ty]![tx] as TileInfo;
-        const rotation = Math.floor(tileRng() * 4) * 90;
-        svg += getTileSvg(tile, tx * TILE_SIZE, ty * TILE_SIZE, regionId, rotation);
+        if (tile.type === "void") continue;
+        const rotation = progressive
+          ? progressiveTileRotation(map.seed, originTileX + tx, originTileY + ty) * 90
+          : Math.floor(tileRng!() * 4) * 90;
+        svg += getTileSvg(tile, originX + tx * TILE_SIZE, originY + ty * TILE_SIZE, regionId, rotation);
       }
     }
 
-    // Grid lines — single <path> with full-height vertical + full-width horizontal lines
-    const gridMapW = map.width * TILE_SIZE;
-    const gridMapH = map.height * TILE_SIZE;
     let gridD = "";
-    for (let i = 0; i <= map.width; i++) {
-      gridD += `M${i * TILE_SIZE},0 L${i * TILE_SIZE},${gridMapH} `;
-    }
-    for (let j = 0; j <= map.height; j++) {
-      gridD += `M0,${j * TILE_SIZE} L${gridMapW},${j * TILE_SIZE} `;
+    if (progressive) {
+      const drawnEdges = new Set<string>();
+      const addEdge = (x1: number, y1: number, x2: number, y2: number) => {
+        const key = x1 < x2 || (x1 === x2 && y1 <= y2) ? `${x1},${y1},${x2},${y2}` : `${x2},${y2},${x1},${y1}`;
+        if (drawnEdges.has(key)) return;
+        drawnEdges.add(key);
+        gridD += `M${x1},${y1} L${x2},${y2} `;
+      };
+      for (let ty = 0; ty < map.height; ty++) {
+        for (let tx = 0; tx < map.width; tx++) {
+          if (map.tiles[ty]![tx]!.type === "void") continue;
+          const left = originX + tx * TILE_SIZE;
+          const top = originY + ty * TILE_SIZE;
+          const right = left + TILE_SIZE;
+          const bottom = top + TILE_SIZE;
+          addEdge(left, top, right, top);
+          addEdge(right, top, right, bottom);
+          addEdge(left, bottom, right, bottom);
+          addEdge(left, top, left, bottom);
+        }
+      }
+    } else {
+      for (let column = 0; column <= map.width; column++) {
+        gridD += `M${column * TILE_SIZE},0 L${column * TILE_SIZE},${mapHeightPx} `;
+      }
+      for (let row = 0; row <= map.height; row++) {
+        gridD += `M0,${row * TILE_SIZE} L${mapWidthPx},${row * TILE_SIZE} `;
+      }
     }
     svg += `<path d="${gridD}" fill="none" stroke="rgba(${BACKGROUND_RGB},0.8)" stroke-width="0.7" />`;
 
-    // Spawn markers
     for (let spawnIndex = 0; spawnIndex < map.spawns.length; spawnIndex++) {
       const spawn = map.spawns[spawnIndex]!;
-      svg += `<use id="spawn-${spawnIndex}" href="#spawn-closed" x="${spawn.x * TILE_SIZE}" y="${spawn.y * TILE_SIZE}" width="${TILE_SIZE}" height="${TILE_SIZE}"/>`;
+      const spawnX = originX + spawn.x * TILE_SIZE;
+      const spawnY = originY + spawn.y * TILE_SIZE;
+      svg += `<use id="spawn-${spawnIndex}" href="#spawn-closed" x="${spawnX}" y="${spawnY}" width="${TILE_SIZE}" height="${TILE_SIZE}"/>`;
     }
 
-    // Base structure (port of drawBase from Shapes.ts)
     if (map.base) {
-      svg += renderBaseStructure(map.base, region.base);
+      svg += renderBaseStructure(map.base, region.base, originX, originY);
     }
 
     // Red target-edge overlay: one <line> per exposed base-edge segment whose
