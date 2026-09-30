@@ -13,9 +13,10 @@
  * are set as input fixtures.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { computed, nextTick, watch } from "vue";
 import type { TowerSnapshot } from "@/sim/SimulationSnapshot.js";
+import { SNAPSHOT_SCHEMA_VERSION } from "@/sim/SimulationSnapshot.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import { SnapshotStore } from "@/sim/SnapshotStore.js";
 import { buildTestTower, createTestEngine, selectTestTower } from "../helpers/engine-snapshot";
@@ -125,5 +126,52 @@ describe("SnapshotStore selectedTower mirroring", () => {
     tower.waveDamage = 10;
     store.apply(buildSnapshot(engine, nextCommandId++));
     expect(selected()?.previousWaveDamage).toBe(50);
+  });
+
+  it("ignores a snapshot with a mismatched schemaVersion, keeps the previous, warns once", () => {
+    const gameStore = createTestGameStore();
+    const store = new SnapshotStore(gameStore as never);
+    const engine = createTestEngine();
+
+    const valid = buildSnapshot(engine, nextCommandId++);
+    store.apply(valid);
+    expect(store.get()).toBe(valid);
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const mismatched = { ...buildSnapshot(engine, nextCommandId++), schemaVersion: SNAPSHOT_SCHEMA_VERSION + 1 };
+      store.apply(mismatched);
+      store.apply(mismatched);
+      expect(store.get()).toBe(valid);
+      expect(gameStore.gold).toBe(valid.meta.gold);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("does not rewrite waveCountdown when remaining/nextWave are numerically unchanged", () => {
+    const gameStore = createTestGameStore();
+    const store = new SnapshotStore(gameStore as never);
+    const engine = createTestEngine();
+
+    engine.runState.waveCountdown = { remaining: 5, nextWave: 3 };
+    store.apply(buildSnapshot(engine, nextCommandId++));
+    const firstCountdown = gameStore.waveCountdown;
+    expect(firstCountdown).toEqual({ remaining: 5, nextWave: 3 });
+
+    // A fresh equal object each tick must not produce a reactive write.
+    engine.runState.waveCountdown = { remaining: 5, nextWave: 3 };
+    store.apply(buildSnapshot(engine, nextCommandId++));
+    expect(gameStore.waveCountdown).toBe(firstCountdown);
+
+    engine.runState.waveCountdown = { remaining: 4, nextWave: 3 };
+    store.apply(buildSnapshot(engine, nextCommandId++));
+    expect(gameStore.waveCountdown).not.toBe(firstCountdown);
+    expect(gameStore.waveCountdown).toEqual({ remaining: 4, nextWave: 3 });
+
+    engine.runState.waveCountdown = null;
+    store.apply(buildSnapshot(engine, nextCommandId++));
+    expect(gameStore.waveCountdown).toBeNull();
   });
 });

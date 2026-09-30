@@ -72,6 +72,40 @@ function resolveEffectiveBase(base: TowerBaseConfig, type: TowerId, variant: "A"
   return variantSettings ? { ...base, ...variantSettings } : base;
 }
 
+// Fixed-aim barrels look along one of four world directions. Module constant so
+// the vector table is not rebuilt per fixed-aim tower per tick.
+const FIXED_AIM_DIRECTION_VECTORS: Record<"N" | "E" | "S" | "W", [number, number]> = {
+  N: [0, -1],
+  E: [1, 0],
+  S: [0, 1],
+  W: [-1, 0],
+};
+
+// Same ordering as the old distToBase comparison in selectTarget: nav tile
+// distance when both sides have one, squared Euclidean when neither does, raw
+// numbers in the mixed case. True when the candidate strictly outranks the
+// best, preserving the reduce tie-break where equal distances keep the earlier
+// enemy. Module-level (not a method) so Tower stays structurally assignable.
+function baseDistanceRanksAhead(
+  candidateNavDistance: number,
+  candidateSquaredDistance: number,
+  bestNavDistance: number,
+  bestSquaredDistance: number,
+  preferFarther: boolean,
+): boolean {
+  let comparison: number;
+  if (candidateNavDistance >= 0 && bestNavDistance >= 0) {
+    comparison = candidateNavDistance - bestNavDistance;
+  } else if (candidateNavDistance < 0 && bestNavDistance < 0) {
+    comparison = candidateSquaredDistance - bestSquaredDistance;
+  } else if (candidateNavDistance >= 0) {
+    comparison = candidateNavDistance - Math.sqrt(bestSquaredDistance);
+  } else {
+    comparison = Math.sqrt(candidateSquaredDistance) - bestNavDistance;
+  }
+  return preferFarther ? comparison > 0 : comparison < 0;
+}
+
 interface EnemyManagerRef {
   enemies: {
     x: number;
@@ -278,6 +312,14 @@ export class Tower {
   save: PersistState | undefined;
   _statsCache: TowerStats | null;
   _statsCacheKey: string;
+  // Per-update stats snapshot for the aura callbacks. update() assigns it once;
+  // callbacks then read it instead of hitting the stats getter per enemy per tick
+  // (which recomputes when save == null and is not free even when cached).
+  // Optional-by-design: a required private member would break structural
+  // assignability of Pinia's unwrapped store state to Tower.
+  private frameStats?: TowerStats;
+  // Reused scan target list for update()'s standard targeting path.
+  private inRangeScratch?: { x: number; y: number; hp: number; maxHp?: number; id: number }[];
   terrainHeight: number;
   chargeShotCount: number;
   iceBurstTimer: number;
@@ -295,7 +337,8 @@ export class Tower {
   navDistanceToBase: ((tileX: number, tileY: number) => number) | null = null;
 
   private applyFrostAura?: (enemy: AuraTarget) => void = (enemy: AuraTarget): void => {
-    enemy.applySlow(this.stats.slowAmt * ICE_AURA_SLOW_MULT, ICE_AURA_DURATION);
+    const slowAmt = (this.frameStats ?? this.stats).slowAmt;
+    enemy.applySlow(slowAmt * ICE_AURA_SLOW_MULT, ICE_AURA_DURATION);
   };
   private applyStaticField?: (enemy: AuraTarget) => void = (enemy: AuraTarget): void => {
     enemy.applySlow(STATIC_FIELD_SLOW_AMT, STATIC_FIELD_SLOW_DUR);
@@ -304,13 +347,13 @@ export class Tower {
     if (enemy.applyStun) enemy.applyStun(ICE_BURST_STUN_DURATION);
   };
   private applyElectricFence?: (enemy: AuraTarget) => void = (enemy: AuraTarget): void => {
-    const fenceDamage = this.stats.fenceDamage;
-    const dealtDamage = enemy.takeDamage(fenceDamage) ?? fenceDamage;
+    const stats = this.frameStats ?? this.stats;
+    const dealtDamage = enemy.takeDamage(stats.fenceDamage) ?? stats.fenceDamage;
     if (typeof dealtDamage === "number" && dealtDamage > 0) {
       this.totalDamageDealt += dealtDamage;
       this.waveDamage += dealtDamage;
     }
-    if (enemy.applyStun) enemy.applyStun(this.stats.fenceStun);
+    if (enemy.applyStun) enemy.applyStun(stats.fenceStun);
   };
 
   constructor(
@@ -788,21 +831,48 @@ export class Tower {
     const base = this.grid.getBase();
     const baseWorld = this.grid.tileToWorld(base.x, base.y);
     const tileSize = this.grid.tileSize;
-    const distToBase = (enemy: { x: number; y: number }): number => {
-      const tileX = Math.floor(enemy.x / tileSize);
-      const tileY = Math.floor(enemy.y / tileSize);
-      const navDistance = this.navDistanceToBase?.(tileX, tileY);
-      if (navDistance !== undefined && navDistance >= 0) return navDistance;
-      return Math.hypot(enemy.x - baseWorld.x, enemy.y - baseWorld.y);
-    };
 
     switch (this.targeting) {
       case "first":
-        target = enemies.reduce((prevA, prevB) => (distToBase(prevA) <= distToBase(prevB) ? prevA : prevB));
+      case "last": {
+        // Single pass: one base-distance read per enemy, and squared Euclidean
+        // when neither side has a nav distance (no Math.hypot). The strict
+        // comparison preserves the old reduce tie-break (ties keep the first).
+        const preferFarther = this.targeting === "last";
+        let best = enemies[0]!;
+        const bestNav = this.navDistanceToBase?.(Math.floor(best.x / tileSize), Math.floor(best.y / tileSize));
+        let bestNavDistance = bestNav === undefined ? -1 : bestNav;
+        const bestBaseDeltaX = best.x - baseWorld.x;
+        const bestBaseDeltaY = best.y - baseWorld.y;
+        let bestSquaredDistance = bestBaseDeltaX * bestBaseDeltaX + bestBaseDeltaY * bestBaseDeltaY;
+        for (let index = 1; index < enemies.length; index++) {
+          const candidate = enemies[index]!;
+          const candidateNav = this.navDistanceToBase?.(
+            Math.floor(candidate.x / tileSize),
+            Math.floor(candidate.y / tileSize),
+          );
+          const candidateNavDistance = candidateNav === undefined ? -1 : candidateNav;
+          const candidateBaseDeltaX = candidate.x - baseWorld.x;
+          const candidateBaseDeltaY = candidate.y - baseWorld.y;
+          const candidateSquaredDistance =
+            candidateBaseDeltaX * candidateBaseDeltaX + candidateBaseDeltaY * candidateBaseDeltaY;
+          if (
+            baseDistanceRanksAhead(
+              candidateNavDistance,
+              candidateSquaredDistance,
+              bestNavDistance,
+              bestSquaredDistance,
+              preferFarther,
+            )
+          ) {
+            best = candidate;
+            bestNavDistance = candidateNavDistance;
+            bestSquaredDistance = candidateSquaredDistance;
+          }
+        }
+        target = best;
         break;
-      case "last":
-        target = enemies.reduce((prevA, prevB) => (distToBase(prevA) >= distToBase(prevB) ? prevA : prevB));
-        break;
+      }
       case "closest":
         target = enemies.reduce((prevA, prevB) => {
           const da = (prevA.x - this.x) ** 2 + (prevA.y - this.y) ** 2;
@@ -850,6 +920,7 @@ export class Tower {
     }
 
     const stats = this.stats;
+    this.frameStats = stats;
 
     // Data-driven frost aura (ice addon 0)
     if (stats.frostAura) {
@@ -894,13 +965,17 @@ export class Tower {
       }
     }
 
+    // SturdyWall-style towers carry range 0 and have no projectile path: the aura,
+    // burst, and fence blocks above already ran with their own ranges, so targeting
+    // here could only scan every enemy and fail each range check. Skip it.
+    if (stats.range <= 0) return;
+
     const tileSize = this.grid?.tileSize || 36;
     const rangePx = stats.range * tileSize;
     const rangeSquared = rangePx * rangePx;
 
     if (resolveEffectiveBase(this.base, this.type as TowerId, this.variant).fixedAim && this.fixedAimDir) {
-      const dirVectors = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] } as Record<string, [number, number]>;
-      const [ddx, ddy] = dirVectors[this.fixedAimDir]!;
+      const [ddx, ddy] = FIXED_AIM_DIRECTION_VECTORS[this.fixedAimDir];
       this.angle = Math.atan2(ddy, ddx);
 
       let targetEnemy: { x: number; y: number; id: number } | null = null;
@@ -918,18 +993,25 @@ export class Tower {
         }
       }
       if (!targetEnemy) {
-        for (const enemy of enemyManager.getEnemiesInRange(this.x, this.y, rangePx)) {
+        // A valid cached target returns above without scanning; the scan itself uses
+        // the visitor so no in-range array is allocated. Strict `<` on squared
+        // distance preserves the old first-found-wins tie-break. The holder object
+        // keeps the closure-side write visible to control-flow typing.
+        const scanResult: { target: { x: number; y: number; id: number } | null } = { target: null };
+        let bestSquaredDistance = Infinity;
+        enemyManager.forEachEnemyInRange(this.x, this.y, rangePx, (enemy) => {
           const edx = enemy.x - this.x;
           const edy = enemy.y - this.y;
-          const dist = Math.hypot(edx, edy);
-          if (dist === 0) continue;
+          const enemySquaredDistance = edx * edx + edy * edy;
+          if (enemySquaredDistance === 0) return;
+          const dist = Math.sqrt(enemySquaredDistance);
           const dot = (edx / dist) * ddx + (edy / dist) * ddy;
-          if (dot > 0.5) {
-            if (!targetEnemy || dist < Math.hypot(targetEnemy.x - this.x, targetEnemy.y - this.y)) {
-              targetEnemy = enemy;
-            }
+          if (dot > 0.5 && enemySquaredDistance < bestSquaredDistance) {
+            bestSquaredDistance = enemySquaredDistance;
+            scanResult.target = enemy;
           }
-        }
+        });
+        targetEnemy = scanResult.target;
         this.cachedTargetId = targetEnemy ? targetEnemy.id : null;
       }
       if (targetEnemy) {
@@ -956,8 +1038,16 @@ export class Tower {
       }
     }
     if (!target) {
-      const inRangeEnemies = enemyManager.getEnemiesInRange(this.x, this.y, rangePx);
-      target = this.selectTarget(inRangeEnemies);
+      // Visitor scan into a per-tower scratch array (allocated once) so the
+      // standard targeting path does not allocate a fresh in-range array per tick.
+      // Visitor order matches the array query order (both use one shape query).
+      if (!this.inRangeScratch) this.inRangeScratch = [];
+      const inRangeScratch = this.inRangeScratch;
+      inRangeScratch.length = 0;
+      enemyManager.forEachEnemyInRange(this.x, this.y, rangePx, (enemy) => {
+        inRangeScratch.push(enemy);
+      });
+      target = this.selectTarget(inRangeScratch);
       this.cachedTargetId = target ? target.id : null;
     }
     if (target) {

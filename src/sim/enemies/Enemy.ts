@@ -34,6 +34,11 @@ export interface AttackTarget {
   readonly isGhost: boolean;
 }
 
+// Slow strengths compare on a 4-decimal grid: many shooters compute the "same"
+// effective slow through different float paths, and exact equality fragmented
+// one logical stack into unbounded near-duplicate entries.
+const SLOW_STACK_QUANTIZATION = 1e4;
+
 interface SlowEntry {
   eff: number;
   remaining: number;
@@ -80,11 +85,47 @@ function isWalkableTile(grid: GridRef, tileX: number, tileY: number): boolean {
   return grid.isPath(tileX, tileY) || grid.isSpawn(tileX, tileY) || grid.isBase(tileX, tileY);
 }
 
+type WalkableTile = { readonly x: number; readonly y: number };
+
+// Walkability is tile-type only (path|spawn|base), so a tile's snap result is
+// static for the life of a map. Memoize per grid so the engagement-policy path
+// does not rescan the whole grid for each terrain tower tile every tick.
+// Keys are tileY * grid.width + tileX; entries are shared and frozen.
+const nearestWalkableCache = new WeakMap<GridRef, Map<number, WalkableTile | null>>();
+let nearestWalkableCacheHits = 0;
+let nearestWalkableCacheMisses = 0;
+
+export function resetNearestWalkableCacheForTests(): void {
+  nearestWalkableCacheHits = 0;
+  nearestWalkableCacheMisses = 0;
+}
+
+export function getNearestWalkableCacheStats(): { hits: number; misses: number } {
+  return { hits: nearestWalkableCacheHits, misses: nearestWalkableCacheMisses };
+}
+
 // Terrain nav distance is -1. Snap to the nearest path, spawn, or base tile so
 // strongestAhead sees the same distance the commander payload reports.
-function nearestWalkableTile(grid: GridRef, tileX: number, tileY: number): { x: number; y: number } | null {
-  if (isWalkableTile(grid, tileX, tileY)) return { x: tileX, y: tileY };
-  let bestTile: { x: number; y: number } | null = null;
+export function nearestWalkableTile(grid: GridRef, tileX: number, tileY: number): WalkableTile | null {
+  let gridCache = nearestWalkableCache.get(grid);
+  if (!gridCache) {
+    gridCache = new Map();
+    nearestWalkableCache.set(grid, gridCache);
+  }
+  const tileKey = tileY * grid.width + tileX;
+  if (gridCache.has(tileKey)) {
+    nearestWalkableCacheHits++;
+    return gridCache.get(tileKey) ?? null;
+  }
+  nearestWalkableCacheMisses++;
+  const snap = computeNearestWalkableTile(grid, tileX, tileY);
+  gridCache.set(tileKey, snap);
+  return snap;
+}
+
+function computeNearestWalkableTile(grid: GridRef, tileX: number, tileY: number): WalkableTile | null {
+  if (isWalkableTile(grid, tileX, tileY)) return Object.freeze({ x: tileX, y: tileY });
+  let bestTile: WalkableTile | null = null;
   let bestSquaredDistance = Infinity;
   for (let rowIndex = 0; rowIndex < grid.height; rowIndex++) {
     for (let columnIndex = 0; columnIndex < grid.width; columnIndex++) {
@@ -94,7 +135,7 @@ function nearestWalkableTile(grid: GridRef, tileX: number, tileY: number): { x: 
       const squaredDistance = deltaX * deltaX + deltaY * deltaY;
       if (squaredDistance < bestSquaredDistance) {
         bestSquaredDistance = squaredDistance;
-        bestTile = { x: columnIndex, y: rowIndex };
+        bestTile = Object.freeze({ x: columnIndex, y: rowIndex });
       }
     }
   }
@@ -289,13 +330,14 @@ export class Enemy {
   }
 
   applySlow(amount: number, duration: number) {
-    const eff = amount * (1 - this.slowResist);
-    if (eff <= 0) return;
-    const existing = this.slowStack.find((slowEntry) => slowEntry.eff === eff && slowEntry.remaining > 0);
+    const effectiveSlow = amount * (1 - this.slowResist);
+    if (effectiveSlow <= 0) return;
+    const quantizedSlow = Math.round(effectiveSlow * SLOW_STACK_QUANTIZATION) / SLOW_STACK_QUANTIZATION;
+    const existing = this.slowStack.find((slowEntry) => slowEntry.eff === quantizedSlow && slowEntry.remaining > 0);
     if (existing) {
       existing.remaining = Math.max(existing.remaining, duration);
     } else {
-      this.slowStack.push({ eff, remaining: duration });
+      this.slowStack.push({ eff: quantizedSlow, remaining: duration });
     }
     this.recalcSlow();
   }

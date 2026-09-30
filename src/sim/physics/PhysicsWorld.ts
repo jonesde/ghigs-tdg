@@ -207,15 +207,19 @@ export class PhysicsWorld {
     }
   }
 
-  forEachSensorHits(sensorId: string, callback: (enemy: Enemy) => void): void {
+  // True only when the sensor entry and its collider exist. Callers use the
+  // boolean to decide between sensor-authoritative hits and a spatial fallback,
+  // so a missing sensor must not read as "handled, zero hits".
+  forEachSensorHits(sensorId: string, callback: (enemy: Enemy) => void): boolean {
     const entry = this.auraSensors.get(sensorId);
-    if (!entry) return;
+    if (!entry) return false;
     const collider = entry.body.collider(0);
-    if (!collider) return;
+    if (!collider) return false;
     this.world.intersectionPairsWith(collider, (other) => {
       const enemy = this.enemyFromCollider(other);
       if (enemy) callback(enemy);
     });
+    return true;
   }
 
   // Density scales with radius so tanks resist push more than runners.

@@ -108,7 +108,7 @@ export class TextOverlayRenderer {
   private renderLightning(ctx: CanvasRenderingContext2D, snapshot: SimulationSnapshot, scale: TextRenderScale): void {
     ctx.strokeStyle = "#40a0ff";
     ctx.lineWidth = 1;
-    for (const bolt of snapshot.lightningEffects) {
+    for (const bolt of snapshot.lightningEffects ?? []) {
       ctx.beginPath();
       ctx.moveTo(bolt.x1 * scale.scaleX, bolt.y1 * scale.scaleY);
       ctx.lineTo(bolt.x2 * scale.scaleX, bolt.y2 * scale.scaleY);
@@ -120,7 +120,7 @@ export class TextOverlayRenderer {
     ctx.fillStyle = "#40a0ff";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    for (const stun of snapshot.stunEffects) {
+    for (const stun of snapshot.stunEffects ?? []) {
       const pixelX = stun.x * scale.scaleX;
       const pixelY = stun.y * scale.scaleY;
       ctx.fillText("*", pixelX, pixelY);

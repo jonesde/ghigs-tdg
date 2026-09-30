@@ -3,6 +3,8 @@
 import { describe, expect, it } from "vitest";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { GameEngine } from "@/sim/GameEngine.js";
+import { WorkerParticleSpawner } from "@/sim/ParticleSystem.js";
+import { SNAPSHOT_SCHEMA_VERSION } from "@/sim/SimulationSnapshot.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import {
   createTestPersistState,
@@ -17,6 +19,8 @@ function makeEngine() {
     createTestThemeBundle(mockDefaultTheme),
     new MockHostBindings(),
     0,
+    undefined,
+    new WorkerParticleSpawner(),
   );
   engine.loadMap(0);
   return engine;
@@ -74,10 +78,13 @@ describe("SnapshotSerializer (Phase 5)", () => {
     buildTowerOnValidTile(engine);
     const enemy = new Enemy("boss", 2, 0, grid, 1, 0, engine.themeBundle.active, null);
     engine.enemyManager.enemies.push(enemy);
+    // Drain the tower-placement particle burst so this tick is a quiet one; the
+    // sparse-effects contract is asserted by the dedicated tests below.
+    engine.particleSpawner.consumeSpawns();
 
     const snap = buildSnapshot(engine, 7);
 
-    expect(snap.schemaVersion).toBe(1);
+    expect(snap.schemaVersion).toBe(SNAPSHOT_SCHEMA_VERSION);
     expect(snap.lastAppliedCommandId).toBe(7);
     expect(snap.frameId).toBeGreaterThan(0);
     expect(snap.meta.gold).toBe(engine.runState.gold);
@@ -111,6 +118,11 @@ describe("SnapshotSerializer (Phase 5)", () => {
     expect(e.x).toBe(enemy.x);
     expect(e.angle).toBe(enemy.moveAngle);
     expect(e.statusEffects).toBeInstanceOf(Array);
+    // Animation shipping (Block D2): frame payloads are no longer serialized;
+    // the render resolves timing from the active theme by type.
+    expect(e.walking).toBeUndefined();
+    expect(e.hitReaction).toBeUndefined();
+    expect(e.attackAnimation).toBeUndefined();
 
     const t = snap.towers.find((tw) => tw.id === String(tower.id))!;
     expect(t.type).toBe("basic");
@@ -154,14 +166,15 @@ describe("SnapshotSerializer (Phase 5)", () => {
     expect(snap.meta.gold).toBe(originalGold);
   });
 
-  it("emits empty lightning/stun effects for a fresh (paused) engine", () => {
+  it("omits lightning/stun/particle effects entirely on a quiet tick", () => {
     const engine = makeEngine();
     const snap = buildSnapshot(engine, 0);
-    expect(snap.lightningEffects).toHaveLength(0);
-    expect(snap.stunEffects).toHaveLength(0);
+    expect(snap.lightningEffects).toBeUndefined();
+    expect(snap.stunEffects).toBeUndefined();
+    expect(snap.particleSpawns).toBeUndefined();
   });
 
-  it("consumes ephemeral lightning/stun effects so a paused tick does not replay them", () => {
+  it("includes lightning/stun/particle effects when the buffers are non-empty", () => {
     const engine = makeEngine();
     const enemy = engine.enemyManager.spawn("minion", 1, 0, 1);
     engine.projectileManager.fireLightning({
@@ -172,15 +185,67 @@ describe("SnapshotSerializer (Phase 5)", () => {
       targetId: enemy.id,
       stunDuration: 0.1,
     });
+    engine.particleSpawner.spawn(10, 20, "#ffffff", 3, { speed: 30, life: 0.2 });
 
+    const snap = buildSnapshot(engine, 0);
+    expect(snap.lightningEffects!.length).toBeGreaterThan(0);
+    expect(snap.stunEffects!.length).toBeGreaterThan(0);
+    expect(snap.particleSpawns!.length).toBeGreaterThan(0);
+  });
+
+  it("does not consume effects at build time; an explicit consume clears the buffers", () => {
+    const engine = makeEngine();
+    const enemy = engine.enemyManager.spawn("minion", 1, 0, 1);
+    engine.projectileManager.fireLightning({
+      originX: 100,
+      originY: 200,
+      damage: 4,
+      towerLevel: 1,
+      targetId: enemy.id,
+      stunDuration: 0.1,
+    });
+    engine.particleSpawner.spawn(10, 20, "#ffffff", 3, { speed: 30, life: 0.2 });
+
+    // Double build in one tick (terminal/test paths) must see identical effects:
+    // nothing is consumed until WorkerEntry consumes after a successful post.
     const first = buildSnapshot(engine, 0);
-    expect(first.lightningEffects.length).toBeGreaterThan(0);
-    expect(first.stunEffects.length).toBeGreaterThan(0);
-
-    // Without an intervening update(), the effects must be consumed and blank —
-    // this guards against perpetual lightning while the game is paused.
     const second = buildSnapshot(engine, 0);
-    expect(second.lightningEffects).toHaveLength(0);
-    expect(second.stunEffects).toHaveLength(0);
+    expect(second.lightningEffects).toEqual(first.lightningEffects);
+    expect(second.stunEffects).toEqual(first.stunEffects);
+    expect(second.particleSpawns).toEqual(first.particleSpawns);
+
+    // The explicit post-delivery consume (WorkerEntry.consumeDeliveredEffects)
+    // drains them; the next build ships nothing.
+    engine.projectileManager.consumeRenderVisualEffects();
+    expect(engine.particleSpawner.consumeSpawns()).not.toBeUndefined();
+
+    const third = buildSnapshot(engine, 0);
+    expect(third.lightningEffects).toBeUndefined();
+    expect(third.stunEffects).toBeUndefined();
+    expect(third.particleSpawns).toBeUndefined();
+  });
+
+  it("memoizes the gridLayout array per run and rebuilds it on the next run", () => {
+    const engine = makeEngine();
+    const first = buildSnapshot(engine, 0);
+    const second = buildSnapshot(engine, 0);
+    expect(first.gridLayout).toBeDefined();
+    // Same run: the exact same array reference is reused (no per-tick rebuild).
+    expect(second.gridLayout).toBe(first.gridLayout);
+
+    // A (re)load bumps runId; the cache is invalidated and rebuilt with equal content.
+    engine.loadMap(0);
+    const third = buildSnapshot(engine, 0);
+    expect(third.gridLayout).not.toBe(first.gridLayout);
+    expect(third.gridLayout).toEqual(first.gridLayout);
+  });
+
+  it("keeps the gridLayout gate: feed off ships nothing, re-enabling reuses the cache", () => {
+    const engine = makeEngine();
+    const first = buildSnapshot(engine, 0);
+    engine.gridLayoutEnabled = false;
+    expect(buildSnapshot(engine, 0).gridLayout).toBeUndefined();
+    engine.gridLayoutEnabled = true;
+    expect(buildSnapshot(engine, 0).gridLayout).toBe(first.gridLayout);
   });
 });

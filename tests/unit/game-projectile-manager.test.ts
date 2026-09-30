@@ -14,7 +14,7 @@ import {
 import { resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
-import { ProjectileManager } from "@/sim/ProjectileManager.js";
+import { MAX_PENDING_LIGHTNING_EFFECTS, MAX_PENDING_STUN_EFFECTS, ProjectileManager } from "@/sim/ProjectileManager.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../helpers/mock-grid.js";
 import { makeParticleSystem } from "../helpers/mock-managers.js";
@@ -1586,5 +1586,20 @@ describe("projectile hit reach uses the enemy radius", () => {
 
     shotManager.prePhysics(HIT_STEP_DT);
     expect(shotManager.getRenderData()).toHaveLength(0);
+  });
+});
+
+describe("pending visual-effect caps (Block D2)", () => {
+  it("caps lightning/stun buffers with a drop-oldest policy under a long stall", () => {
+    const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 1e9, maxHp: 1e9 });
+    const manager = new ProjectileManager(createMockEnemyManager([enemy]), createMockParticleSystem());
+
+    for (let call = 0; call < MAX_PENDING_LIGHTNING_EFFECTS + 20; call++) {
+      manager.fireLightning({ originX: 100, originY: 200, damage: 1, towerLevel: 1, targetId: 1, stunDuration: 0.1 });
+    }
+
+    const effects = manager.getRenderVisualEffects();
+    expect(effects.lightning).toHaveLength(MAX_PENDING_LIGHTNING_EFFECTS);
+    expect(effects.stuns).toHaveLength(MAX_PENDING_STUN_EFFECTS);
   });
 });

@@ -12,6 +12,7 @@ import type {
   TowerSnapshot,
   WaveGraphDot,
 } from "./SimulationSnapshot.js";
+import { SNAPSHOT_SCHEMA_VERSION } from "./SimulationSnapshot.js";
 
 let nextFrameId = 1;
 
@@ -33,7 +34,10 @@ export function buildSnapshot(
   const enemies = engine.enemyManager?.enemies ?? [];
   const towers = engine.towerManager?.towers ?? [];
   const persistState = engine.persistState;
-  const visualEffects = engine.projectileManager?.consumeRenderVisualEffects() ?? { lightning: [], stuns: [] };
+  // Pure peek: do NOT consume here. WorkerEntry consumes particle + render-visual
+  // buffers only after a successful postMessage, so effects produced on ticks the
+  // renderer never drained survive to the next post instead of being discarded.
+  const visualEffects = engine.projectileManager?.getRenderVisualEffects() ?? { lightning: [], stuns: [] };
 
   // The walkable navmesh corridor (`navMeshCorridor`) is shipped on a
   // pathVersion change, so a tower placement/sell re-ships the highlight.
@@ -69,12 +73,17 @@ export function buildSnapshot(
   // Commander grid-layout data feed: a constant map (0=terrain, 1=path, 2=base,
   // 3=spawn) built from engine.grid.tiles. Gated by gridLayoutEnabled so it ships
   // only until the worker caches it and toggles the feed off — keeping steady-state
-  // per-tick cost at zero. Terrain never changes mid-run, so no versioning needed.
+  // per-tick cost at zero. Terrain never changes mid-run, so the built array is
+  // memoized on the engine and reused (same reference) until runId changes.
   let gridLayout: number[][] | undefined;
   if (grid && engine.gridLayoutEnabled) {
-    gridLayout = grid.tiles.map((row) =>
-      row.map((tile) => (tile.type === "path" ? 1 : tile.type === "base" ? 2 : tile.type === "spawn" ? 3 : 0)),
-    );
+    if (engine.gridLayoutCache === null || engine.gridLayoutCacheRunId !== engine.runId) {
+      engine.gridLayoutCache = grid.tiles.map((row) =>
+        row.map((tile) => (tile.type === "path" ? 1 : tile.type === "base" ? 2 : tile.type === "spawn" ? 3 : 0)),
+      );
+      engine.gridLayoutCacheRunId = engine.runId;
+    }
+    gridLayout = engine.gridLayoutCache;
   }
 
   const selectedTowerId = engine.runState.selectedTowerId;
@@ -97,7 +106,7 @@ export function buildSnapshot(
   }
 
   return {
-    schemaVersion: 1,
+    schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     frameId: nextFrameId++,
     lastAppliedCommandId,
     lastFailedCommandId: lastFailedCommandId ?? receipt?.failedCommandId ?? 0,
@@ -110,16 +119,17 @@ export function buildSnapshot(
     projectiles: (engine.projectileManager?.getRenderData() ?? []) as ProjectileSnapshot[],
     // Particles are a render-only main-thread effect (see Optimize.md Finding 7):
     // the worker no longer simulates them. It only buffers sparse spawn requests
-    // and ships them when non-empty, so quiet ticks send nothing.
-    particleSpawns: engine.particleSpawner?.consumeSpawns?.() ?? undefined,
+    // and ships them when non-empty, so quiet ticks send nothing. Peeked (not
+    // consumed) here; WorkerEntry consumes after a successful post.
+    particleSpawns: engine.particleSpawner?.peekSpawns?.() ?? undefined,
     spawnStates: (engine.waveManager?.spawnStates ?? []).map((state, spawnIndex) => ({
       ...state,
       pendingCount: engine.enemyManager?.getPendingCountForSpawn(spawnIndex) ?? 0,
     })),
     navMeshCorridor,
     navField,
-    lightningEffects: visualEffects.lightning,
-    stunEffects: visualEffects.stuns,
+    lightningEffects: visualEffects.lightning.length > 0 ? visualEffects.lightning : undefined,
+    stunEffects: visualEffects.stuns.length > 0 ? visualEffects.stuns : undefined,
     debugPhysics:
       engine.debugPhysicsEnabled && engine.physicsWorld
         ? { vertices: engine.physicsWorld.debugRenderVertices() }
@@ -196,9 +206,6 @@ function snapshotEnemy(e: Enemy, engine?: GameEngine): EnemySnapshot {
     attackAnimTime: e.attackAnimTime,
     isBoss: e.type === "boss",
     statusEffects: buildEnemyStatusEffects(e, maxSlowRemaining, maxBurnRemaining, totalBurnDps),
-    walking: e.walking,
-    hitReaction: e.hitReaction,
-    attackAnimation: e.attackAnimation,
     routingMode: e.routingMode,
     wave: e.wave,
     spawnIndex: e.spawnIndex,

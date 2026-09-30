@@ -111,6 +111,15 @@ describe("TextOverlayRenderer", () => {
     expect(mockCtx.fillText).toHaveBeenCalledWith("*", 5, 5);
   });
 
+  it("treats sparse (undefined) lightning/stun effects as an empty frame", () => {
+    const ctx = makeCtx();
+    (mockCtx.fillText as ReturnType<typeof vi.fn>).mockClear();
+    const manager = new TextOverlayRenderer();
+    const snapshot = { enemies: [], projectiles: [], towers: [] } as never;
+    manager.render(ctx, snapshot, scale);
+    expect(mockCtx.fillText).not.toHaveBeenCalled();
+  });
+
   it("strokes Rapier debug segments when showPhysicsDebug is true", () => {
     const ctx = makeCtx();
     (mockCtx.moveTo as ReturnType<typeof vi.fn>).mockClear();

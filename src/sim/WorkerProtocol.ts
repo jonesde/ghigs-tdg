@@ -20,6 +20,8 @@ export type MainToWorkerMessage =
   | { type: "init"; persistState: PersistState; themeBundle: ThemeBundle; mapIndex: number; randomMapParams?: unknown }
   | { type: "command"; command: Command }
   | { type: "confirmResult"; requestId: number; confirmed: boolean }
-  | { type: "setTheme"; themeBundle: ThemeBundle } // defensive no-op in Phase 7 (mid-run theme switching out of scope)
   | { type: "dispose" }
-  | { type: "snapshotAck" }; // main thread consumed the latest snapshot; worker may post the next one
+  // Main thread consumed the snapshot with this frameId; the worker may post the
+  // next one. Stale acks (frameId < lastPostedFrameId, e.g. a duplicate render or
+  // an ack from before an init) are ignored.
+  | { type: "snapshotAck"; frameId: number };

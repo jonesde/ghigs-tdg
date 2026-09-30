@@ -241,14 +241,17 @@ export class EffectManager {
     return null;
   }
 
+  // Effects are sparse (undefined on quiet ticks), so both arrays are optional
+  // here: absence means "nothing new this frame", not "clear existing effects".
+  // The renderer's own pool ages and hides effects independently.
   syncVisualEffectsFromSnapshot(
-    lightningEffects: Array<{ x1: number; y1: number; x2: number; y2: number }>,
-    stunEffects: Array<{ x: number; y: number }>,
+    lightningEffects: Array<{ x1: number; y1: number; x2: number; y2: number }> | undefined,
+    stunEffects: Array<{ x: number; y: number }> | undefined,
   ): void {
-    for (const bolt of lightningEffects) {
+    for (const bolt of lightningEffects ?? []) {
       this.addLightningEffect(bolt.x1, bolt.y1, bolt.x2, bolt.y2);
     }
-    for (const stun of stunEffects) {
+    for (const stun of stunEffects ?? []) {
       this.addStunEffect(stun.x, stun.y, 0.3);
     }
   }

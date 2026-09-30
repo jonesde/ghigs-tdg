@@ -92,8 +92,14 @@ describe("worker round-trip", () => {
   // synchronously), so this equals "acks received by the worker" used by the
   // backpressure assertions below.
   let ackReceived = 0;
+  // Mirrors the real main thread: ack the frameId of the most recently posted
+  // snapshot — the one the rAF loop would just have rendered.
+  function latestPostedFrameId(): number {
+    const snapshots = snapshotMessages(posted);
+    return snapshots[snapshots.length - 1]?.snapshot.frameId ?? 0;
+  }
   function sendAck(): void {
-    mockSelf.onmessage!({ data: { type: "snapshotAck" } });
+    mockSelf.onmessage!({ data: { type: "snapshotAck", frameId: latestPostedFrameId() } });
     ackReceived++;
   }
   // Drives a fake main-thread rAF that posts one ack roughly every frame. Returns
@@ -353,6 +359,33 @@ describe("worker round-trip", () => {
     const acks = driver.acks();
     expect(postsAfterStart).toBeGreaterThanOrEqual(acks - 2);
     expect(postsAfterStart).toBeLessThanOrEqual(acks + 2);
+    sendDispose();
+  });
+
+  it("(P2-1b-frameId) ignores a stale ack; acks the last posted frame releases the gate", async () => {
+    gw.self = mockSelf;
+    posted.length = 0;
+    await import("@/sim/WorkerEntry.js");
+    sendInit();
+    await wait(40); // baseline posts (awaitingAck = true)
+    const baselineFrameId = latestPostedFrameId();
+
+    // Go running. togglePause is a forced post; afterwards awaitingAck is true and
+    // running-idle ticks must drop until a current-frame ack arrives.
+    sendCommand({ commandId: 1, type: "action:togglePause" });
+    await wait(40);
+    const postsAfterStart = snapshotCount();
+    expect(postsAfterStart).toBeGreaterThanOrEqual(2);
+
+    // Stale ack (the baseline frame, older than the last post) must NOT release.
+    mockSelf.onmessage!({ data: { type: "snapshotAck", frameId: baselineFrameId } });
+    await wait(120);
+    expect(snapshotCount()).toBe(postsAfterStart);
+
+    // Acking the last posted frame releases the gate; running ticks post again.
+    sendAck();
+    await wait(120);
+    expect(snapshotCount()).toBeGreaterThan(postsAfterStart);
     sendDispose();
   });
 

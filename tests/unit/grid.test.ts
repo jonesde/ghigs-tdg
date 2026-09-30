@@ -220,4 +220,88 @@ describe("Grid", () => {
       expect(grid.getHeight(5, 3)).toBe(1);
     });
   });
+
+  describe("registerTower / unregisterTower bounds guards", () => {
+    it("returns false for out-of-bounds coordinates without bumping pathVersion", () => {
+      const grid = new Grid(makeBastionMap());
+      const versionBefore = grid.pathVersion;
+      expect(grid.registerTower(-1, 0)).toBe(false);
+      expect(grid.registerTower(0, -1)).toBe(false);
+      expect(grid.registerTower(grid.width, 0)).toBe(false);
+      expect(grid.registerTower(0, grid.height)).toBe(false);
+      expect(grid.unregisterTower(-1, 0)).toBe(false);
+      expect(grid.unregisterTower(grid.width, grid.height)).toBe(false);
+      expect(grid.pathVersion).toBe(versionBefore);
+      expect(grid.blocked.size).toBe(0);
+      expect(grid.terrainTowers.size).toBe(0);
+    });
+  });
+
+  describe("batch ghost restore accounting", () => {
+    let grid: Grid;
+    beforeEach(() => {
+      grid = new Grid(makeBastionMap());
+    });
+
+    it("counts each path block exactly once across repeated batch clears", () => {
+      grid.registerTower(3, 3);
+      grid.registerTower(4, 3);
+      grid.setTowerGhost(3, 3);
+      expect(grid.blockCount).toBe(1);
+      grid.batchClearGhosts();
+      expect(grid.blocked.has("3,3")).toBe(true);
+      expect(grid.ghostTowers.size).toBe(0);
+      expect(grid.blockCount).toBe(2);
+      const versionAfterBatch = grid.pathVersion;
+      grid.batchClearGhosts();
+      expect(grid.blockCount).toBe(2);
+      expect(grid.pathVersion).toBe(versionAfterBatch + 1);
+    });
+
+    it("re-blocks a path tile idempotently when clearTowerGhost runs after a batch clear", () => {
+      grid.registerTower(3, 3);
+      grid.setTowerGhost(3, 3);
+      grid.batchClearGhosts();
+      expect(grid.blockCount).toBe(1);
+      grid.clearTowerGhost(3, 3);
+      expect(grid.blocked.has("3,3")).toBe(true);
+      expect(grid.blockCount).toBe(1);
+      grid.clearTowerGhost(3, 3);
+      expect(grid.blockCount).toBe(1);
+    });
+  });
+
+  describe("getBaseGoalTiles", () => {
+    it("returns only walkable base and perimeter tiles", () => {
+      const grid = new Grid(makeBastionMap());
+      // Flip one base-ring tile to terrain to prove the ring is filtered.
+      grid.tiles[3][6]!.type = "terrain";
+      const goalTiles = grid.getBaseGoalTiles();
+      expect(goalTiles).toContainEqual({ x: grid.base.x, y: grid.base.y });
+      expect(goalTiles).not.toContainEqual({ x: 6, y: 3 });
+      for (const tile of goalTiles) {
+        const walkable = grid.isPath(tile.x, tile.y) || grid.isSpawn(tile.x, tile.y) || grid.isBase(tile.x, tile.y);
+        expect(walkable, `goal ${tile.x},${tile.y} should be walkable`).toBe(true);
+      }
+    });
+
+    it("keeps walkable path ring tiles and drops terrain ones", () => {
+      const map = makeBastionMap();
+      // Override the generated 3x3 base blob ring so it mixes path and terrain.
+      for (const [tileX, tileY] of [
+        [6, 2],
+        [6, 3],
+        [6, 4],
+      ]) {
+        map.tiles[tileY]![tileX]!.type = "path";
+        map.tiles[tileY]![tileX]!.height = 1;
+      }
+      map.tiles[2]![7]!.type = "terrain";
+      const grid = new Grid(map);
+      const goalTiles = grid.getBaseGoalTiles();
+      expect(goalTiles).toContainEqual({ x: 6, y: 2 });
+      expect(goalTiles).toContainEqual({ x: 6, y: 3 });
+      expect(goalTiles).not.toContainEqual({ x: 7, y: 2 });
+    });
+  });
 });

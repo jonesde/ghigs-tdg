@@ -2,6 +2,7 @@ import { WAVE_GRAPH_DOT_SPACING, WAVE_GRAPH_WIDTH } from "@/sim/Constants.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import type { GameStore } from "@/stores/game.js";
 import type { SimulationSnapshot, WaveGraphDot } from "./SimulationSnapshot.js";
+import { SNAPSHOT_SCHEMA_VERSION } from "./SimulationSnapshot.js";
 
 // Module-level mirror of the latest snapshot so non-reactive Vue components
 // (e.g. StatsPanel) can read it without threading the SnapshotStore instance
@@ -27,13 +28,24 @@ export function getLatestSnapshot(): SimulationSnapshot | null {
 // Maximum accumulated dots: enough to fill a wide screen at the dot spacing.
 const WAVE_GRAPH_MAX_ACCUM = Math.ceil(WAVE_GRAPH_WIDTH / WAVE_GRAPH_DOT_SPACING);
 
+// Numeric dot fields are compared with this epsilon, not exact equality: the
+// worker re-sends an overlapping suffix window every time the dots generation
+// changes, and accumulated float values can drift in the last bits (different
+// summation order after a rebuild). Exact equality would then fail to detect the
+// overlap and append duplicates instead of merging.
+const WAVE_GRAPH_DOT_EPSILON = 1e-6;
+
+function numbersClose(a: number, b: number): boolean {
+  return Math.abs(a - b) <= WAVE_GRAPH_DOT_EPSILON;
+}
+
 function areDotsEqual(a: WaveGraphDot, b: WaveGraphDot): boolean {
   return (
-    a.damage === b.damage &&
-    a.peakEnemyHp === b.peakEnemyHp &&
-    a.gold === b.gold &&
-    a.gems === b.gems &&
-    a.baseHealth === b.baseHealth &&
+    numbersClose(a.damage, b.damage) &&
+    numbersClose(a.peakEnemyHp, b.peakEnemyHp) &&
+    numbersClose(a.gold, b.gold) &&
+    numbersClose(a.gems, b.gems) &&
+    numbersClose(a.baseHealth, b.baseHealth) &&
     a.baseHealthColor === b.baseHealthColor &&
     a.waveStart === b.waveStart
   );
@@ -89,6 +101,9 @@ export class SnapshotStore {
   // reads it on every frame (not only the single wave-start reset frame).
   private previousWaveDamageByTower = new Map<string, number>();
   private lastDamageMapsRunId: number | null = null;
+  // One-shot warning latch for an incompatible snapshot schema. Kept per store
+  // instance (not module-level) so each mount warns once about its own stream.
+  private schemaMismatchWarned = false;
 
   constructor(gameStore: GameStore) {
     this.gameStore = gameStore;
@@ -99,6 +114,19 @@ export class SnapshotStore {
   }
 
   apply(snapshot: SimulationSnapshot): void {
+    // Reject an incompatible producer rather than mirroring garbage into the
+    // reactive store. The previous snapshot is kept so the renderer freezes on
+    // the last good frame instead of tearing. Warned once per store instance.
+    if (snapshot.schemaVersion !== SNAPSHOT_SCHEMA_VERSION) {
+      if (!this.schemaMismatchWarned) {
+        console.warn(
+          `SnapshotStore ignoring snapshot schemaVersion ${snapshot.schemaVersion}; ` +
+            `expected ${SNAPSHOT_SCHEMA_VERSION}`,
+        );
+        this.schemaMismatchWarned = true;
+      }
+      return;
+    }
     this.current = snapshot;
     this.capturePreviousWaveDamage(snapshot);
     // The worker ships the wave-graph dots window only when its generation
@@ -186,7 +214,22 @@ export class SnapshotStore {
     if (gs.baseHealth !== meta.baseHealth) gs.baseHealth = meta.baseHealth;
     if (gs.maxBaseHealth !== meta.maxBaseHealth) gs.maxBaseHealth = meta.maxBaseHealth;
     if (gs.currentWave !== meta.currentWave) gs.currentWave = meta.currentWave;
-    if (gs.waveCountdown !== meta.waveCountdown) gs.waveCountdown = meta.waveCountdown;
+    // waveCountdown is a fresh { remaining, nextWave } object every tick, so an
+    // identity comparison would always write (a 60 Hz reactive update for a value
+    // that only changes once per second). Compare numerically and null-ness and
+    // only assign when it actually changed. The worker object is stored on change:
+    // it is a plain DTO owned by the snapshot, not shared mutable state.
+    const countdown = meta.waveCountdown;
+    const currentCountdown = gs.waveCountdown;
+    if (countdown === null) {
+      if (currentCountdown !== null) gs.waveCountdown = null;
+    } else if (
+      currentCountdown === null ||
+      currentCountdown.remaining !== countdown.remaining ||
+      currentCountdown.nextWave !== countdown.nextWave
+    ) {
+      gs.waveCountdown = countdown;
+    }
     if (gs.timeScale !== meta.timeScale) gs.timeScale = meta.timeScale;
     const commanderHold = meta.commanderHold === true;
     if (gs.commanderHold !== commanderHold) gs.commanderHold = commanderHold;

@@ -3,8 +3,12 @@ import type { ParticleSpawnRequest } from "@/sim/ParticleSystem.js";
 import type { ProjectileManager } from "@/sim/ProjectileManager.js";
 import type { GameRunState } from "./GameRunState.js";
 
+// Bump on incompatible schema changes. Builders stamp it; SnapshotStore.apply
+// rejects (warn once, keep previous) any snapshot stamped with another version.
+export const SNAPSHOT_SCHEMA_VERSION = 1;
+
 export interface SimulationSnapshot {
-  schemaVersion: number; // bump on incompatible schema changes; consumers reject mismatches
+  schemaVersion: number; // SNAPSHOT_SCHEMA_VERSION; consumers reject mismatches
   frameId: number; // monotonic per-tick counter
   lastAppliedCommandId: number; // host uses this to confirm command application
   lastFailedCommandId: number; // last rejected command (validation or apply failure)
@@ -42,11 +46,13 @@ export interface SimulationSnapshot {
   // the client has toggled the feed off (it caches the map and never needs it again).
   gridLayout?: number[][] | undefined;
   // Ephemeral visual effects generated this tick: lightning bolt segments and
-  // stun aura positions. Populated by the simulation during update() and
-  // consumed (cleared) when this snapshot is built, so the main thread renders
-  // each effect exactly once; effects from a paused/empty tick are blank.
-  lightningEffects: Array<{ x1: number; y1: number; x2: number; y2: number }>;
-  stunEffects: Array<{ x: number; y: number }>;
+  // stun aura positions. Populated by the simulation during update() and shipped
+  // sparsely: undefined when the corresponding buffer is empty (quiet ticks send
+  // nothing), exactly like particleSpawns. Cleared only after a successful
+  // postMessage (WorkerEntry consumes), never during build, so a snapshot that
+  // was built but not posted keeps its effects for the next build.
+  lightningEffects: Array<{ x1: number; y1: number; x2: number; y2: number }> | undefined;
+  stunEffects: Array<{ x: number; y: number }> | undefined;
   // Rapier debug-render line soup (flat 2D vertices: [x1,y1,x2,y2,...]). Always
   // shipped so the ASCII minimap can stroke collider outlines.
   debugPhysics: { vertices: number[] } | null;
@@ -191,10 +197,11 @@ export interface EnemySnapshot {
   attackAnimTime: number;
   isBoss: boolean;
   statusEffects: StatusEffectSnapshot[];
-  // Theme-derived visual config needed by the render proxy to compute frames.
-  walking: MapThemeAnimation | null;
-  hitReaction: MapThemeAnimation | null;
-  attackAnimation: MapThemeAnimation | null;
+  // NOTE: animation frame payloads (walking/hitReaction/attackAnimation theme
+  // objects with referenceImages SVG arrays) are intentionally NOT shipped. They
+  // are constant per enemy type and already present in the render's active theme
+  // defs, so the render proxy resolves frame timing by `type` from the theme it
+  // was initialized with. Shipping them cloned full SVG payloads every tick.
   // Full-physics routing state for commanders / debug.
   routingMode?: "default" | "hold" | "route" | "siege";
   wave?: number;

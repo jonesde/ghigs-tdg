@@ -410,25 +410,18 @@ export class EnemyManager {
     onEnemyKill: ((enemy: Enemy) => void) | null,
     onEnemyBeginAttackBase?: ((enemy: Enemy) => void) | null,
   ): void {
-    const handledEnemyIds = new Set<number>();
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
       if (!enemy) continue;
       if (enemy.removed) {
-        if (onEnemyKill && !handledEnemyIds.has(enemy.id)) {
-          onEnemyKill(enemy);
-          handledEnemyIds.add(enemy.id);
-        }
+        if (onEnemyKill) onEnemyKill(enemy);
         this.removeDeadEnemy(i);
         continue;
       }
       const wasAttackingBase = enemy.preStepAttackingBase;
       enemy.postPhysics(dt);
       if (enemy.removed) {
-        if (onEnemyKill && !handledEnemyIds.has(enemy.id)) {
-          onEnemyKill(enemy);
-          handledEnemyIds.add(enemy.id);
-        }
+        if (onEnemyKill) onEnemyKill(enemy);
         this.removeDeadEnemy(i);
         continue;
       }
@@ -440,8 +433,7 @@ export class EnemyManager {
 
   forEachSensorHits(sensorId: string, callback: (enemy: Enemy) => void): boolean {
     if (!this.physicsWorld) return false;
-    this.physicsWorld.forEachSensorHits(sensorId, callback);
-    return true;
+    return this.physicsWorld.forEachSensorHits(sensorId, callback);
   }
 
   forEachEnemyInRange(x: number, y: number, range: number, cb: (enemy: Enemy) => void): void {

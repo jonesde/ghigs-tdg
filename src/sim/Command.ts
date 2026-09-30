@@ -25,7 +25,6 @@ export type DebugKind =
 export type Command =
   // ---- Input events (low-level, from Input.ts and SvgGameRoot click handlers) ----
   | { commandId: number; type: "input:click"; worldX: number; worldY: number }
-  | { commandId: number; type: "input:key"; key: string; direction: "down" | "up" }
   // NOTE: hover is NOT a command — it's main-thread-only UI state (see §6.2 of ArchitecturePlan.md).
   // NOTE: selectBuildType IS a command (action:selectBuildType) — the main thread sets
   //   gameStore.selectedTowerType for the local build preview AND dispatches this command so the

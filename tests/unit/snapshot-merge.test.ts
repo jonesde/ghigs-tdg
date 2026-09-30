@@ -60,4 +60,19 @@ describe("mergeWaveGraphDots", () => {
     mergeWaveGraphDots(windowOf(0, 1, 2, 3, 4), incoming);
     expect(incoming).toEqual(windowOf(5, 6, 7));
   });
+
+  it("merges an overlapping window whose float values jitter within epsilon", () => {
+    const accum = windowOf(0, 1, 2, 3);
+    // Same dots as 1,2,3 plus the new dot 4, but with last-bit float drift.
+    const jittered = windowOf(1 + 1e-9, 2 - 1e-9, 3 + 1e-12, 4);
+    const merged = mergeWaveGraphDots(accum, jittered);
+    expect(merged).toEqual(windowOf(0, 1, 2, 3, 4));
+  });
+
+  it("does not merge values that differ beyond epsilon", () => {
+    const accum = windowOf(0, 1, 2, 3);
+    const shifted = windowOf(1.001, 2, 3, 4);
+    const merged = mergeWaveGraphDots(accum, shifted);
+    expect(merged).toEqual([...accum, ...shifted]);
+  });
 });

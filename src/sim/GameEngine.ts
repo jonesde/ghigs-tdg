@@ -137,6 +137,11 @@ export class GameEngine {
   // flips it off after caching the map to keep per-tick cost at zero. Reset per run
   // alongside lastPostedPathVersion so each engine starts with the feed enabled.
   gridLayoutEnabled: boolean = true;
+  // Memoized 2D grid layout for the serializer (terrain is constant per run), so
+  // the per-tick build reuses one array reference instead of rebuilding it. The
+  // runId stamp invalidates the cache on every (re)load.
+  gridLayoutCache: number[][] | null = null;
+  gridLayoutCacheRunId: number = -1;
   // Monotonic run identifier, bumped on every (re)load in _initMap. The commander
   // relay/worker key their gridLayout cache + one-shot feed-off toggle to it so a
   // stale layout from a previous run is never forwarded and the toggle re-arms on a

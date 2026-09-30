@@ -1,8 +1,22 @@
 import type { EnemySnapshot } from "../../sim/SimulationSnapshot.js";
+import type { EnemyVisualMeta, MapThemeAnimation, MapThemeData } from "../themes/index.js";
 import { ENEMY_POOL_SIZE, ENEMY_SCALED_SIZE, SVG_NS } from "./types.js";
 
 export class EnemyManager {
   private pool: EnemyRenderProxy[] = [];
+  // Active run theme + default-theme fallback, passed in by SvgGameRoot. The
+  // serializer no longer ships per-enemy animation payloads; frame timing is
+  // resolved by enemy.type from these same theme objects the <defs> symbols are
+  // built from, so sprite ids and frame progression stay identical to the
+  // pre-sparseness behavior.
+  private theme: MapThemeData | null;
+  private defaultEnemyVisuals: Record<string, EnemyVisualMeta>;
+
+  constructor(theme: MapThemeData | null = null, defaultEnemyVisuals: Record<string, EnemyVisualMeta> = {}) {
+    this.theme = theme;
+    this.defaultEnemyVisuals = defaultEnemyVisuals;
+  }
+
   init(layer: SVGGElement): void {
     for (let i = 0; i < ENEMY_POOL_SIZE; i++) {
       const el = document.createElementNS(SVG_NS, "use") as SVGUseElement;
@@ -21,13 +35,21 @@ export class EnemyManager {
       if (proxyIndex >= this.pool.length) break;
 
       const proxy = this.pool[proxyIndex]!;
-      proxy.sync(enemy);
+      proxy.sync(enemy, this.resolveEnemyVisual(enemy.type));
       proxyIndex++;
     }
 
     for (let i = proxyIndex; i < this.pool.length; i++) {
       this.pool[i]!.hide();
     }
+  }
+
+  // Mirrors the worker's spawn-time visual chain (Enemy constructor): the active
+  // theme's enemy visual first, else the default-theme visual. Only the animation
+  // timing fields are read here; the theme supplier is fixed per run, so the
+  // lookup is a plain record read with no allocation.
+  private resolveEnemyVisual(enemyType: string): EnemyVisualMeta | null {
+    return this.theme?.enemies[enemyType] ?? this.defaultEnemyVisuals[enemyType] ?? null;
   }
 
   dispose(): void {
@@ -41,12 +63,14 @@ export class EnemyManager {
   }
 }
 
-function computeEnemyFrame(enemy: EnemySnapshot, scaledElapsed: number): number {
-  const walking = enemy.walking;
+function animationFrameCount(animation: MapThemeAnimation | null): number {
+  return animation?.referenceImages.length || 1;
+}
+
+function computeEnemyFrame(enemy: EnemySnapshot, walking: MapThemeAnimation | null): number {
   if (!walking || walking.duration <= 0) return 0;
-  const refImages = walking.referenceImages;
-  const frameCount = refImages?.length || 1;
-  return Math.floor((scaledElapsed / walking.duration) * frameCount) % frameCount;
+  const frameCount = animationFrameCount(walking);
+  return Math.floor((enemy.gameSeconds / walking.duration) * frameCount) % frameCount;
 }
 
 class EnemyRenderProxy {
@@ -67,7 +91,7 @@ class EnemyRenderProxy {
     return this.el;
   }
 
-  sync(enemy: EnemySnapshot): void {
+  sync(enemy: EnemySnapshot, visual: EnemyVisualMeta | null): void {
     if (!this.active) {
       this.lastSpriteId = "";
     }
@@ -94,8 +118,8 @@ class EnemyRenderProxy {
       this.lastTransform = transform;
     }
 
-    const hitReaction = enemy.hitReaction;
-    const attackAnimation = enemy.attackAnimation;
+    const hitReaction = visual?.hitReaction ?? null;
+    const attackAnimation = visual?.attack ?? null;
     const gameSeconds = enemy.gameSeconds;
     const inHitReaction =
       hitReaction && enemy.hitAnimTime > 0 && gameSeconds - enemy.hitAnimTime < hitReaction.duration;
@@ -107,8 +131,7 @@ class EnemyRenderProxy {
 
     if (inHitReaction) {
       const elapsedInHit = gameSeconds - enemy.hitAnimTime;
-      const refImages = hitReaction!.referenceImages;
-      const frameCount = refImages?.length || 1;
+      const frameCount = animationFrameCount(hitReaction);
       const hitFrameIdx = Math.floor((elapsedInHit / hitReaction!.duration) * frameCount) % frameCount;
       const spriteId = `enemy-${enemy.type}-hit-f${hitFrameIdx}`;
       if (spriteId !== this.lastSpriteId) {
@@ -117,8 +140,7 @@ class EnemyRenderProxy {
       }
     } else if (inAttack) {
       const elapsedInAttack = gameSeconds - enemy.attackAnimTime;
-      const refImages = attackAnimation!.referenceImages;
-      const frameCount = refImages?.length || 1;
+      const frameCount = animationFrameCount(attackAnimation);
       const attackFrameIdx = Math.floor((elapsedInAttack / attackAnimation!.duration) * frameCount) % frameCount;
       const spriteId = `enemy-${enemy.type}-attack-f${attackFrameIdx}`;
       if (spriteId !== this.lastSpriteId) {
@@ -126,7 +148,7 @@ class EnemyRenderProxy {
         this.lastSpriteId = spriteId;
       }
     } else {
-      const frameIdx = computeEnemyFrame(enemy, gameSeconds);
+      const frameIdx = computeEnemyFrame(enemy, visual?.walking ?? null);
       const spriteId = `enemy-${enemy.type}-f${frameIdx}`;
       if (spriteId !== this.lastSpriteId) {
         this.el.setAttribute("href", `#${spriteId}`);

@@ -93,6 +93,7 @@ export class Grid {
   }
 
   registerTower(x: number, y: number): boolean {
+    if (!this.inBounds(x, y)) return false;
     const tileType = this.tiles[y]![x]!;
     if (tileType.type === "path") {
       const towerKey = `${x},${y}`;
@@ -115,6 +116,7 @@ export class Grid {
   }
 
   unregisterTower(x: number, y: number): boolean {
+    if (!this.inBounds(x, y)) return false;
     const tileType = this.tiles[y]![x]!;
     if (tileType.type === "path") {
       const towerKey = `${x},${y}`;
@@ -158,16 +160,17 @@ export class Grid {
 
   // A ghosted path tower is restored to a live blocking state: the key moves
   // back into `blocked` and the navmesh obstacle is re-added at update() time.
-  // A restore that is not in `ghostTowers` (a terrain tower) only bumps
-  // pathVersion so the cuboid comes back without joining the path-block set.
+  // A restore after a batch clear arrives with the key already out of
+  // ghostTowers, so a path tile always re-blocks idempotently here and the
+  // count only moves when the key was actually missing. Terrain towers never
+  // join `blocked`; the pathVersion bump still refreshes their cuboid.
   clearTowerGhost(x: number, y: number): void {
     const towerKey = `${x},${y}`;
-    if (!this.ghostTowers.delete(towerKey)) {
-      this.pathVersion++;
-      return;
+    this.ghostTowers.delete(towerKey);
+    if (this.isPath(x, y) && !this.blocked.has(towerKey)) {
+      this.blocked.add(towerKey);
+      this._blockCount++;
     }
-    this.blocked.add(towerKey);
-    this._blockCount++;
     this.pathVersion++;
   }
 
@@ -178,9 +181,12 @@ export class Grid {
   // towers are not in the set.
   batchClearGhosts(): void {
     for (const key of this.ghostTowers) {
+      // Set add is idempotent but the count is not: only count a key that was
+      // not already blocked (e.g. a re-ghosted tile after a prior batch clear).
+      if (this.blocked.has(key)) continue;
       this.blocked.add(key);
+      this._blockCount++;
     }
-    this._blockCount += this.ghostTowers.size;
     this.ghostTowers.clear();
     this.pathVersion++;
   }
@@ -211,7 +217,13 @@ export class Grid {
       { x: x + 1, y: y + 1 },
     ];
     for (const tile of ring) {
-      if (this.inBounds(tile.x, tile.y)) goalTiles.push(tile);
+      if (!this.inBounds(tile.x, tile.y)) continue;
+      // Walkable-only: goals steer crowds/paths, so a terrain ring tile would
+      // send a goal (and a path ending) onto a wall.
+      if (!(this.isPath(tile.x, tile.y) || this.isSpawn(tile.x, tile.y) || this.isBase(tile.x, tile.y))) {
+        continue;
+      }
+      goalTiles.push(tile);
     }
     return goalTiles;
   }

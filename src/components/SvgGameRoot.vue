@@ -406,10 +406,10 @@ function renderLoop(): void {
   spawnManager.sync(snapshot.spawnStates);
 
   // Backpressure handshake (P2-1): the main thread acks each rendered snapshot
-  // so the worker may build+post the next one. The early return at the top of
-  // this loop (no snapshot available yet) naturally defers acking until the
+  // (by frameId) so the worker may build+post the next one. The early return at the
+  // top of this loop (no snapshot available yet) naturally defers acking until the
   // worker's baseline snapshot arrives.
-  worker?.postMessage({ type: "snapshotAck" });
+  worker?.postMessage({ type: "snapshotAck", frameId: snapshot.frameId });
 
   renderFrameHandle = requestAnimationFrame(renderLoop);
 }
@@ -445,7 +445,10 @@ onMounted(async () => {
   const ef = effectLayer.value;
   if (!el || !uol || !pl || !ef) return;
 
-  enemyManager = new EnemyManager();
+  // The serializer no longer ships per-enemy animation payloads; the render
+  // EnemyManager resolves frame timing from the same active theme + default
+  // visual fallback the worker used at spawn.
+  enemyManager = new EnemyManager(themeBundle.active, themeBundle.defaultEnemyVisuals);
   towerManager = new TowerManager();
   projectileManager = new ProjectileManager();
   particleManager = new ParticleManager();

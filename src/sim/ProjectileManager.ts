@@ -20,6 +20,12 @@ import {
   TOWER_BASE,
 } from "./ConstantsTower.js";
 
+// Sub-range widening fractions for the nearest-enemy search. Index 0 scales by
+// tileSize (covers the local neighborhood before any range is applied), the
+// rest scale by the caller's range. Module constant so the array is not rebuilt
+// per search call.
+const NEAREST_SEARCH_FRACTIONS = [0.5, 0.25, 0.5, 1] as const;
+
 export interface ProjectileGame {
   id: number;
   x: number;
@@ -145,8 +151,12 @@ export interface EnemyManager {
       maxHp: number;
       removed: boolean;
       takeDamage(dmg: number, armorPiercing?: boolean): number | undefined;
+      applyBurn?(dps: number, duration: number): void;
       applySlow?(factor: number, duration: number): void;
       applyStun?(duration: number): void;
+      applyMarkTarget?(mult: number, duration: number): void;
+      applyAntiHeal?(duration: number): void;
+      applyKnockback?(amount: number): void;
     }) => void,
   ): void;
   getEnemyById(
@@ -199,6 +209,14 @@ export interface StunVisualEffect {
   y: number;
 }
 
+// Drop-oldest caps for the per-tick visual-effect buffers. Effects are only
+// cleared after a successful snapshot post, so a long stall (renderer not
+// draining) would otherwise grow them without bound. The render pools only draw
+// the 20 newest lightning bolts / 50 stun marks anyway, so older entries are
+// invisible and safe to evict.
+export const MAX_PENDING_LIGHTNING_EFFECTS = 256;
+export const MAX_PENDING_STUN_EFFECTS = 256;
+
 export class ProjectileManager {
   private projectiles: ProjectileGame[];
   private enemyManager: EnemyManager;
@@ -219,6 +237,31 @@ export class ProjectileManager {
   private rng: () => number = Math.random;
   // Projectile ids that already have a Rapier body this frame.
   private bodyIds = new Set<number>();
+  // Live projectile lookup by id for contact-event resolution. Mirrors
+  // `projectiles`, including inactive impact-frame retention entries (they stay
+  // until the next prePhysics splice), so a contact can never resolve the wrong
+  // projectile by position scan.
+  private projectilesById = new Map<number, ProjectileGame>();
+  // Reused scratch state for findNearestEnemy: the widening sub-range values and
+  // a stable visitor, so the chain/bounce/stormcall search allocates nothing.
+  private nearestSearchX: number = 0;
+  private nearestSearchY: number = 0;
+  private nearestSearchExcludeId: number | undefined;
+  private nearestSearchExcludeIds: Set<number> | undefined;
+  private nearestSearchBest: LightningTarget | null = null;
+  private nearestSearchBestDistSquared: number = Infinity;
+  private nearestSearchSubRanges: number[] = [0, 0, 0, 0];
+  private readonly nearestSearchVisitor = (enemy: LightningTarget): void => {
+    if (enemy.id === this.nearestSearchExcludeId) return;
+    if (this.nearestSearchExcludeIds?.has(enemy.id)) return;
+    const deltaX = enemy.x - this.nearestSearchX;
+    const deltaY = enemy.y - this.nearestSearchY;
+    const distSquared = deltaX * deltaX + deltaY * deltaY;
+    if (distSquared < this.nearestSearchBestDistSquared) {
+      this.nearestSearchBestDistSquared = distSquared;
+      this.nearestSearchBest = enemy;
+    }
+  };
 
   constructor(
     enemyManager: EnemyManager,
@@ -367,7 +410,15 @@ export class ProjectileManager {
     );
 
     this.projectiles.push(projectile);
+    this.projectilesById.set(projectile.id, projectile);
     this.ensureProjectileBody(projectile);
+  }
+
+  // Single removal point for the projectile list so the id index cannot drift.
+  private removeProjectileAt(index: number): void {
+    const projectile = this.projectiles[index];
+    if (projectile) this.projectilesById.delete(projectile.id);
+    this.projectiles.splice(index, 1);
   }
 
   private ensureProjectileBody(projectile: ProjectileGame): void {
@@ -444,20 +495,20 @@ export class ProjectileManager {
       if (!projectile) continue;
       if (!projectile.active) {
         this.destroyProjectileBody(projectile.id);
-        this.projectiles.splice(i, 1);
+        this.removeProjectileAt(i);
         continue;
       }
       projectile.age += dt;
       if (projectile.age > MAX_PROJECTILE_AGE) {
         this.removeProjectile(projectile, "expired");
         this.destroyProjectileBody(projectile.id);
-        this.projectiles.splice(i, 1);
+        this.removeProjectileAt(i);
         continue;
       }
       this.updateCircleProjectile(projectile, dt, false);
       if (!projectile.active) {
         this.destroyProjectileBody(projectile.id);
-        this.projectiles.splice(i, 1);
+        this.removeProjectileAt(i);
       }
     }
   }
@@ -469,14 +520,14 @@ export class ProjectileManager {
       if (!projectile) continue;
       if (!projectile.active) {
         this.destroyProjectileBody(projectile.id);
-        this.projectiles.splice(i, 1);
+        this.removeProjectileAt(i);
         continue;
       }
       projectile.age += dt;
       if (projectile.age > MAX_PROJECTILE_AGE) {
         this.removeProjectile(projectile, "expired");
         this.destroyProjectileBody(projectile.id);
-        this.projectiles.splice(i, 1);
+        this.removeProjectileAt(i);
         continue;
       }
       this.ensureProjectileBody(projectile);
@@ -503,9 +554,9 @@ export class ProjectileManager {
 
     const hitByContact = new Set<number>();
     for (const hit of contactHits) {
-      const projectile = this.projectiles.find((p) => p.id === hit.projectileId && p.active);
+      const projectile = this.projectilesById.get(hit.projectileId);
       const enemy = this.enemyManager.getEnemyById(hit.enemyId);
-      if (!projectile || !enemy || enemy.removed) continue;
+      if (!projectile?.active || !enemy || enemy.removed) continue;
       if (projectile.hitEnemyIds?.has(enemy.id)) continue;
       this.hitCircleProjectile(projectile, enemy);
       if (!projectile.hitEnemyIds) projectile.hitEnemyIds = new Set();
@@ -921,11 +972,13 @@ export class ProjectileManager {
 
     if (projectile.splashRadius > 0 && this.particles) {
       const splashRadiusPx = projectile.splashRadius * (this.grid?.tileSize ?? 1);
-      const splashEnemies = this.enemyManager.getEnemiesInRange(enemy.x, enemy.y, splashRadiusPx);
       const tileSize = this.grid?.tileSize ?? GRID_TILE_SIZE;
-      for (const splashEnemy of splashEnemies) {
-        if (splashEnemy.id === enemy.id) continue;
-        const splashDamage = scaledDamage * SPLASH_DAMAGE_RATIO;
+      const splashDamage = scaledDamage * SPLASH_DAMAGE_RATIO;
+      // Visitor scan: no per-hit in-range array. Visitor order matches
+      // getEnemiesInRange's array order (one shape query, same filter), so the
+      // damage application order to multiple splash targets is unchanged.
+      this.enemyManager.forEachEnemyInRange(enemy.x, enemy.y, splashRadiusPx, (splashEnemy) => {
+        if (splashEnemy.id === enemy.id) return;
         const dealtSplash = splashEnemy.takeDamage(splashDamage, projectile.armorPiercing || projectile.antiAir) ?? 0;
         this.recordDamage(projectile.towerId, dealtSplash);
 
@@ -950,7 +1003,7 @@ export class ProjectileManager {
         if (splashStunDuration > 0 && splashEnemy.applyStun) {
           splashEnemy.applyStun(splashStunDuration);
         }
-      }
+      });
     }
 
     // Bounce Shot: redirect projectile to 1 nearby enemy (max 1 bounce).
@@ -1039,7 +1092,7 @@ export class ProjectileManager {
       if (opts.burnCircuit && nextTarget.applyBurn) {
         nextTarget.applyBurn(chainDamage * BURN_CIRCUIT_DMG_MULT, BURN_CIRCUIT_DURATION);
       }
-      this.pendingLightning.push({ x1: current.x, y1: current.y, x2: nextTarget.x, y2: nextTarget.y });
+      this.bufferLightningEffect({ x1: current.x, y1: current.y, x2: nextTarget.x, y2: nextTarget.y });
       chainsUsed++;
       remainingChains--;
       current = nextTarget;
@@ -1065,16 +1118,16 @@ export class ProjectileManager {
         if (this.particles) {
           this.particles.spawn(stormTarget.x, stormTarget.y, opts.color ?? "#ffcf4d", 3, { speed: 30, life: 0.2 });
         }
-        this.pendingLightning.push({ x1: opts.originX, y1: opts.originY, x2: stormTarget.x, y2: stormTarget.y });
+        this.bufferLightningEffect({ x1: opts.originX, y1: opts.originY, x2: stormTarget.x, y2: stormTarget.y });
       }
     }
 
     if (opts.stunDuration > 0) {
       for (const target of chainTargets) {
         if (target.applyStun) target.applyStun(opts.stunDuration);
-        this.pendingStuns.push({ x: target.x, y: target.y });
+        this.bufferStunEffect({ x: target.x, y: target.y });
       }
-      this.pendingLightning.push({ x1: opts.originX, y1: opts.originY, x2: current.x, y2: current.y });
+      this.bufferLightningEffect({ x1: opts.originX, y1: opts.originY, x2: current.x, y2: current.y });
     }
 
     // Double Discharge: 10% chance to fire a second bolt to a different target
@@ -1097,7 +1150,7 @@ export class ProjectileManager {
         if (opts.stunDuration > 0 && secondTarget.applyStun) {
           secondTarget.applyStun(opts.stunDuration);
         }
-        this.pendingLightning.push({ x1: opts.originX, y1: opts.originY, x2: secondTarget.x, y2: secondTarget.y });
+        this.bufferLightningEffect({ x1: opts.originX, y1: opts.originY, x2: secondTarget.x, y2: secondTarget.y });
       }
     }
   }
@@ -1132,28 +1185,27 @@ export class ProjectileManager {
     // widening sub-ranges and stop at the first sub-range that yields a candidate
     // (any enemy found in a smaller sub-range is strictly closer than anything in
     // a larger one, so a later, wider scan cannot beat it). Strict `<` on squared
-    // distance preserves the original first-found-wins tie-break exactly (cell
+    // distance preserves the original first-found-wins tie-break exactly (visitor
     // iteration order is unchanged from getEnemiesInRange).
-    let best: LightningTarget | null = null;
-    let bestDistSquared = Infinity;
+    this.nearestSearchX = x;
+    this.nearestSearchY = y;
+    this.nearestSearchExcludeId = excludeId;
+    this.nearestSearchExcludeIds = excludeIds;
+    this.nearestSearchBest = null;
+    this.nearestSearchBestDistSquared = Infinity;
 
-    const tileSize = GRID_TILE_SIZE;
-    const subRanges = [0.5 * tileSize, 0.25 * range, 0.5 * range, range];
-    for (const subRange of subRanges) {
-      this.enemyManager.forEachEnemyInRange(x, y, subRange, (enemy) => {
-        if (enemy.id === excludeId) return;
-        if (excludeIds?.has(enemy.id)) return;
-        const deltaX = enemy.x - x;
-        const deltaY = enemy.y - y;
-        const distSquared = deltaX * deltaX + deltaY * deltaY;
-        if (distSquared < bestDistSquared) {
-          bestDistSquared = distSquared;
-          best = enemy;
-        }
-      });
-      if (best) return best;
+    // Grid tile size, not the render constant: a non-36px map's first sub-range
+    // must cover the same tile neighborhood the tower stats did.
+    const tileSize = this.grid?.tileSize ?? GRID_TILE_SIZE;
+    const subRanges = this.nearestSearchSubRanges;
+    for (let index = 0; index < NEAREST_SEARCH_FRACTIONS.length; index++) {
+      subRanges[index] = NEAREST_SEARCH_FRACTIONS[index]! * (index === 0 ? tileSize : range);
     }
-    return best;
+    for (const subRange of subRanges) {
+      this.enemyManager.forEachEnemyInRange(x, y, subRange, this.nearestSearchVisitor);
+      if (this.nearestSearchBest) return this.nearestSearchBest;
+    }
+    return this.nearestSearchBest;
   }
 
   private removeProjectile(projectile: ProjectileGame, _reason: string): void {
@@ -1183,6 +1235,22 @@ export class ProjectileManager {
     return { lightning: [...this.pendingLightning], stuns: [...this.pendingStuns] };
   }
 
+  // Bounded buffer writes: newest effects are the ones a fresh snapshot still
+  // draws, so evict the oldest when the cap is hit.
+  private bufferLightningEffect(effect: LightningVisualEffect): void {
+    if (this.pendingLightning.length >= MAX_PENDING_LIGHTNING_EFFECTS) {
+      this.pendingLightning.shift();
+    }
+    this.pendingLightning.push(effect);
+  }
+
+  private bufferStunEffect(effect: StunVisualEffect): void {
+    if (this.pendingStuns.length >= MAX_PENDING_STUN_EFFECTS) {
+      this.pendingStuns.shift();
+    }
+    this.pendingStuns.push(effect);
+  }
+
   consumeRenderVisualEffects(): { lightning: LightningVisualEffect[]; stuns: StunVisualEffect[] } {
     const effects = { lightning: [...this.pendingLightning], stuns: [...this.pendingStuns] };
     this.clearVisualEffects();
@@ -1200,6 +1268,7 @@ export class ProjectileManager {
     }
     this.bodyIds.clear();
     this.projectiles = [];
+    this.projectilesById.clear();
     this.pendingLightning = [];
     this.pendingStuns = [];
   }

@@ -61,10 +61,6 @@ export function applyCommand(engine: GameEngine, command: Command, enemyLookup?:
     case "input:click":
       engine.handleClick(command.worldX, command.worldY);
       return true;
-    case "input:key":
-      // Raw key events are not serialized — Input.ts maps keys to action:*
-      // commands locally. Reserved for the worker era if key intents move.
-      return false;
     case "action:togglePause":
       engine.togglePause();
       return true;
@@ -136,8 +132,7 @@ export function applyCommand(engine: GameEngine, command: Command, enemyLookup?:
       setGameState(engine.runState, command.victory === false ? GameState.GAME_OVER : GameState.VICTORY);
       return true;
     // NOTE: lifecycle:setTheme is intentionally absent — mid-run theme
-    // switching is out of scope per README.md. The WorkerEntry message handler
-    // retains a defensive no-op "setTheme" case for forward-compat.
+    // switching is out of scope per README.md.
     // LLM / enemy-commander commands (Phase 1 commander seam). These mutate enemy
     // routing state and so return true (force-post the snapshot) except the
     // gridLayout feed config flips, which return false (no visible state change).

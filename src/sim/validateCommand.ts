@@ -131,10 +131,6 @@ export function validateCommand(command: Command, grid?: CommandGridInfo | null)
   switch (command.type) {
     case "input:click":
       return clickReason(command.worldX, command.worldY, gridInfo);
-    case "input:key":
-      if (typeof command.key !== "string" || command.key.length === 0) return "input:key key must be non-empty";
-      if (command.direction !== "down" && command.direction !== "up") return "input:key direction must be down or up";
-      return null;
     case "action:togglePause":
     case "action:upgradeSelected":
     case "action:sellSelected":

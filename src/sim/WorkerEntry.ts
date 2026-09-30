@@ -60,6 +60,11 @@ let hasPostedSnapshot = false;
 // (acked) the previous snapshot. Set true when a snapshot is posted so the next
 // running-idle tick is dropped unless an ack (or a forced post) arrives.
 let awaitingAck = false;
+// FrameId of the most recently posted snapshot. An ack only releases the gate
+// when it carries a frameId >= this value, so a stale ack (a duplicate render of
+// an older snapshot, or an ack delivered across an init boundary) cannot unblock
+// the wrong generation.
+let lastPostedFrameId = 0;
 
 // Persist-flush throttling state: the worker tracks the last snapshot's wave,
 // state, and milestone-claim key count so it can flush to the host only on
@@ -120,9 +125,19 @@ function startLoop(): void {
   running = true;
   hasPostedSnapshot = false;
   awaitingAck = false;
+  lastPostedFrameId = 0;
   lastTime = 0; // re-anchored on first tick
   accumulator = 0;
   scheduleTick();
+}
+
+// Crosses the snapshot buffer ownership boundary: a post is the point where the
+// effects captured by that snapshot are considered delivered. Until this runs the
+// buffers stay intact, so a built-but-not-posted snapshot (double build, forced
+// re-post) re-ships the same effects instead of dropping them.
+function consumeDeliveredEffects(engineRef: GameEngine): void {
+  engineRef.particleSpawner?.consumeSpawns?.();
+  engineRef.projectileManager?.consumeRenderVisualEffects?.();
 }
 
 function scheduleTick(): void {
@@ -209,6 +224,8 @@ function tick(): void {
       );
       stampSnapshotGeneration(snapshot, workerGeneration);
       postMessage({ type: "snapshot", snapshot });
+      lastPostedFrameId = snapshot.frameId;
+      consumeDeliveredEffects(engine);
       hasPostedSnapshot = true;
       // Persist any pending dirty state now (the loop is stopping, and the
       // dispose flush may be delayed if the route is not unmounted promptly).
@@ -232,10 +249,8 @@ function tick(): void {
         // Running (no command, not baseline) but main hasn't acked the last
         // snapshot → drop build+post. awaitingAck stays true; next tick re-checks.
         // Persist-flush is skipped too (still fires on forced posts / 5s fallback / dispose).
-        // Drain particle + lightning/stun buffers so dropped ticks don't accumulate
-        // effects that would all burst onto the screen on the next posted snapshot.
-        engine.particleSpawner?.consumeSpawns?.();
-        engine.projectileManager?.consumeRenderVisualEffects?.();
+        // Particle/lightning/stun buffers are deliberately NOT consumed here: effects
+        // generated on a dropped tick survive and ship with the next posted snapshot.
       } else {
         const snapshot = buildSnapshot(
           engine,
@@ -250,6 +265,8 @@ function tick(): void {
         );
         stampSnapshotGeneration(snapshot, workerGeneration);
         postMessage({ type: "snapshot", snapshot });
+        lastPostedFrameId = snapshot.frameId;
+        consumeDeliveredEffects(engine);
         hasPostedSnapshot = true;
         // baseline       → true  (establish gate from first frame)
         // pausedMutation → false (so a *next* forced post isn't swallowed)
@@ -313,9 +330,13 @@ function stopLoop(): void {
   }
 }
 
-// Build the persist slice the host needs to persist. Covers
-// every field the worker can mutate (Phase 9). After posting, callers clear
-// engine.persistDirty so the next flush only happens on a fresh mutation.
+// Build the persist slice the host needs to persist. PersistStateSlice is a
+// Pick<PersistState, ...> (see HostBindings), so this literal must cover exactly
+// those fields — adding a picked field without copying it here is a compile
+// error instead of silent drift. Copied collections are shallow-cloned so the
+// postMessage structured clone is independent of live engine mutation. After
+// posting, callers clear engine.persistDirty so the next flush only happens on
+// a fresh mutation.
 function buildPersistSlice(engineRef: GameEngine): PersistStateSlice {
   const persistState = engineRef.persistState;
   return {
@@ -351,6 +372,7 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
       }
       commandQueue.length = 0;
       awaitingAck = false;
+      lastPostedFrameId = 0;
       lastAppliedCommandId = 0;
       lastFailedCommandId = 0;
       lastAppliedCount = 0;
@@ -417,15 +439,14 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
       host.resolveConfirm(msg.requestId, msg.confirmed);
       break;
     }
-    case "setTheme": {
-      // Defensive no-op — mid-run theme switching is out of scope per README.md.
-      // The MainToWorkerMessage type still includes setTheme for forward-compat.
-      break;
-    }
     case "snapshotAck": {
-      // Main thread consumed the latest snapshot; clear the backpressure gate so
-      // the next post-eligible tick may build+post the current state.
-      awaitingAck = false;
+      // Main thread consumed the snapshot with this frameId; release the gate only
+      // when the ack is for the last posted frame (or newer). A stale ack — a
+      // duplicate render of an older snapshot, or an ack in flight across an init
+      // boundary — must not unblock the wrong generation.
+      if (msg.frameId >= lastPostedFrameId) {
+        awaitingAck = false;
+      }
       break;
     }
     case "dispose": {
@@ -449,6 +470,7 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
       lastFailedCommandId = receipt.lastFailedCommandId;
       commandQueue.length = 0;
       awaitingAck = false;
+      lastPostedFrameId = 0;
       // Retire this run's generation so any command still in flight after teardown
       // can never be mistaken for the next run's.
       workerGeneration++;

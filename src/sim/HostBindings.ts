@@ -1,6 +1,7 @@
 import type { EnemyVisualMeta, MapThemeData, TowerVisualMeta } from "@/render/themes/index.js";
 import type { TowerId } from "@/sim/ConstantsTower.js";
 import type { EndScreenPayload } from "./GameRunState.js";
+import type { PersistState } from "./PersistState.js";
 
 // Canonical sound-name type — replaces the module-private declaration in SoundManager.ts.
 // Uses a template-literal for tower shoot sounds to give compile-time safety against typos.
@@ -25,23 +26,20 @@ export interface ConfirmPayload {
 }
 
 // Subset of PersistState the host needs to write to localStorage.
-// Full PersistState is defined in Phase 1. Must cover every field the worker
-// can mutate so a batched flush fully replaces the persisted slice.
+// Must cover every field the worker can mutate so a batched flush fully
+// replaces the persisted slice. Derived from PersistState via Pick (rather than
+// restating the field list) so adding a worker-mutable field to PersistState and
+// this slice is caught by the compiler in buildPersistSlice instead of drifting.
 //
 // NOTE: `unlocked` and `generalAddons` are intentionally EXCLUDED — they are
 // main-thread-owned (mutated only by the skill tree via persistStore). The
 // worker runs off a snapshot taken at init and would otherwise clobber
 // mid-run unlocks/addon changes when it flushes its (stale) copy back. They
 // reach the worker via action:syncPersist instead.
-export interface PersistStateSlice {
-  gems: number;
-  highestUnlockedMap: number;
-  bestWaves: Record<string, number>;
-  activeWaves: Record<string, number>;
-  firstTimeMilestones: Record<string, boolean>;
-  firstClears: Record<string, boolean>;
-  runHistory: unknown[];
-}
+export type PersistStateSlice = Pick<
+  PersistState,
+  "gems" | "highestUnlockedMap" | "bestWaves" | "activeWaves" | "firstTimeMilestones" | "firstClears" | "runHistory"
+>;
 
 // Narrow interface for TowerManager/Tower — they only need playSound, not the full HostBindings.
 export interface SoundPlayer {

@@ -31,7 +31,6 @@ export class WaveGraphTracker {
   private _prevTotalDamage: number = 0;
   private _prevGems: number = 0;
   private _intervalDamage: number = 0;
-  private _intervalPeakEnemyHp: number = 0;
   private _intervalGold: number = 0;
   private _intervalGems: number = 0;
   private _intervalMinBaseHealth: number = 0;
@@ -74,13 +73,6 @@ export class WaveGraphTracker {
       this._intervalMinBaseHealth = this.runState.baseHealth;
     }
 
-    // Track the running max enemy-HP sum across the whole interval, not just the
-    // sum at flush time, so the recorded peak reflects any peak reached earlier.
-    const currentEnemyHpSum = this._sumEnemyHp();
-    if (currentEnemyHpSum > this._intervalPeakEnemyHp) {
-      this._intervalPeakEnemyHp = currentEnemyHpSum;
-    }
-
     if (this._gameTimeAccum >= WAVE_GRAPH_INTERVAL_SECONDS) {
       this._flushInterval();
     }
@@ -102,11 +94,15 @@ export class WaveGraphTracker {
     const newMaxDots = Math.ceil(width / WAVE_GRAPH_DOT_SPACING);
     if (newMaxDots < this._maxDots) {
       this._dots.splice(0, this._dots.length - newMaxDots);
+      // Trim changed the dot array shape; without a bump the delta serializer
+      // would not ship the shortened window.
+      this._generation++;
     }
     this._maxDots = newMaxDots;
   }
 
-  getDots(): WaveGraphDot[] {
+  // Read-only type-level view of the live dots array; callers must not mutate.
+  getDots(): readonly WaveGraphDot[] {
     return this._dots;
   }
 
@@ -125,10 +121,14 @@ export class WaveGraphTracker {
     this._prevTotalDamage = currentDamage;
 
     const baseHealthColor = this._computeBaseHealthColor(this._intervalMinBaseHealth);
+    // Enemy-HP sum is sampled once at flush time. A mid-interval peak that decays
+    // before the flush is not recorded, which is acceptable for a 5s dot curve and
+    // keeps per-tick update cost O(towers) instead of O(towers + enemies).
+    const intervalPeakEnemyHp = this._sumEnemyHp();
 
     const dot: WaveGraphDot = {
       damage: Math.round(this._intervalDamage),
-      peakEnemyHp: Math.round(this._intervalPeakEnemyHp),
+      peakEnemyHp: Math.round(intervalPeakEnemyHp),
       gold: Math.round(this._intervalGold),
       gems: Math.round(this._intervalGems),
       baseHealth: this._intervalMinBaseHealth,
@@ -141,9 +141,10 @@ export class WaveGraphTracker {
       this._dots.splice(0, this._dots.length - this._maxDots);
     }
     this._generation++;
-    this._gameTimeAccum = 0;
+    // Subtract one interval (not reset) so the leftover fraction keeps the dot
+    // grid anchored to elapsed sim time instead of drifting by the flush frame.
+    this._gameTimeAccum -= WAVE_GRAPH_INTERVAL_SECONDS;
     this._intervalDamage = 0;
-    this._intervalPeakEnemyHp = 0;
     this._intervalGold = 0;
     this._intervalGems = 0;
     this._intervalMinBaseHealth = this.runState.baseHealth;
