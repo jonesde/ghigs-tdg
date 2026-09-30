@@ -1,4 +1,3 @@
-import { ENEMY_POOL_SIZE } from "@/render/svg/types.js";
 import type { MapThemeData, SpawnState } from "@/render/themes/index.js";
 import type { DebugKind } from "@/sim/Command.js";
 import { ICE_AURA_RANGE, STATIC_FIELD_RANGE } from "@/sim/ConstantsTower.js";
@@ -21,7 +20,7 @@ import {
 } from "@/sim/GameRunState.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
-import { generateRandomMap, getMap } from "@/sim/grid/Map.js";
+import { forkRunSeed, generateRandomMap, getMap, mulberry32 } from "@/sim/grid/Map.js";
 import type { HostBindings, ThemeBundle } from "@/sim/HostBindings.js";
 import { CrowdManager, restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdManager.js";
 import { toRecast } from "@/sim/navmesh/coords.js";
@@ -41,6 +40,7 @@ import {
   markFirstTimeMilestone as persistMarkFirstTimeMilestone,
   maybeUnlockNextMap as persistMaybeUnlockNextMap,
   updateBestWave as persistUpdateBestWave,
+  WORKER_RUN_DATE_SENTINEL,
 } from "@/sim/PersistState.js";
 import { ProjectileManager } from "@/sim/ProjectileManager.js";
 import { ContactProcessor } from "@/sim/physics/ContactProcessor.js";
@@ -55,6 +55,8 @@ import {
   BETWEEN_WAVES_TIMER,
   BONUS_GEM_BASE,
   DIFFICULTY_MULT_GEM_BASE,
+  FIXED_DT,
+  GAMEPLAY_ENEMY_CAP,
   GameState,
   MAP_GEM_MULTIPLIERS,
   MILESTONE_GEMS,
@@ -85,6 +87,7 @@ interface WaveManagerRef {
     dt: number,
     onWaveCleared: ((wave: number) => void) | null,
     onWaveStart: ((wave: number) => void) | null,
+    onWaveExpired: ((wave: number) => void) | null,
   ): void;
   startNextWave(): void;
   debugJumpToWave(wave: number): void;
@@ -114,6 +117,13 @@ export class GameEngine {
   totalHealingReceived: number;
   maxBaseHealth: number;
   simSeconds: number;
+  // Sim seconds silently discarded when the fixed-step accumulator caps under
+  // overload (see computeStepBudget in WorkerEntry). Exposed in snapshot meta so
+  // replays/load can tell "ran slow" apart from "ran fine".
+  droppedSimSeconds: number = 0;
+  // Per-run seeded combat-roll source, forked from (map seed, runId). Injected
+  // into ProjectileManager/ParticleSystem so replays of the same run are bit-identical.
+  simRng: () => number = Math.random;
   waveTopTowers: Array<{ towerId: string; rank: number; damage: number; simSeconds: number }> | null;
   debugPhysicsEnabled: boolean;
   lastScaledDt: number = 0;
@@ -261,6 +271,11 @@ export class GameEngine {
       this.themeBundle.defaultTowerVisuals,
     );
     this.projectileManager.setTowerLookup((towerId) => this.towerManager?.getTowerById(towerId) ?? null);
+    // Fork the per-run combat-roll source from (map seed, runId) and hand it to
+    // every sim roller, so the same run replays identically and distinct runs diverge.
+    this.simRng = mulberry32(forkRunSeed(mapData.seed, this.runId));
+    this.projectileManager.setRng(this.simRng);
+    this.particleSpawner.setRng?.(this.simRng);
     this.enemyManager.setTowerManager(this.towerManager);
     // Tear down prior physics/crowd/navmesh before rebuild (same order as dispose).
     this.crowdManager?.destroy();
@@ -288,7 +303,7 @@ export class GameEngine {
       this.navMeshBuilder = null;
       throw new Error(`Navmesh build failed: ${buildError}`);
     }
-    this.crowdManager = new CrowdManager(navBuilder.getNavMesh()!, this.grid.tileSize, ENEMY_POOL_SIZE);
+    this.crowdManager = new CrowdManager(navBuilder.getNavMesh()!, this.grid.tileSize, GAMEPLAY_ENEMY_CAP);
     this.crowdManager.setForceFieldSystem(this.forceFieldSystem);
     this.enemyManager.setCrowdManager(this.crowdManager);
     this.physicsWorld.setEnemyEnemyCollisions(false);
@@ -324,6 +339,7 @@ export class GameEngine {
     this.totalGoldEarned = 0;
     this.totalHealingReceived = 0;
     this.simSeconds = 0;
+    this.droppedSimSeconds = 0;
     this.waveTopTowers = null;
     this.debugPhysicsEnabled = false;
   }
@@ -382,7 +398,13 @@ export class GameEngine {
       dt,
       (wave) => this.onWaveCleared(wave),
       (wave) => this.onWaveStart(wave),
+      (wave) => this.onWaveExpired(wave),
     );
+
+    // Per-tick backlog drain (not only on death): releases queued enemies whenever
+    // the live count is under the gameplay cap, so immortal base-attackers can
+    // never pin the pending queue. Runs pre-step so released enemies join this tick.
+    this.enemyManager.drainPendingQueues();
 
     const wm = this.waveManager;
     if (wm.countdownActive) {
@@ -404,6 +426,8 @@ export class GameEngine {
         // second distance-field refresh and re-request crowd corridors instead of
         // routing on a half-applied obstacle set.
         this.navDistanceField?.ensureUpToDate(true);
+        // Reuses the Block B cached move targets (no recompute): reissuing the last
+        // target per enemy is what keeps 8x-16x step bursts from compounding lag.
         if (this.crowdManager && this.enemyManager) {
           this.crowdManager.reissueMoveTargets(this.enemyManager.enemies);
         }
@@ -435,7 +459,9 @@ export class GameEngine {
     this.forceFieldSystem.apply(dt, this.enemyManager.enemies, this.physicsWorld);
     // Homing projectiles set kinematic velocities before the physics step.
     this.projectileManager?.prePhysics(dt);
-    this.physicsWorld!.step();
+    // FIXED_DT is passed explicitly: PhysicsWorld.step asserts it, so a variable-dt
+    // caller fails loudly instead of silently desyncing the fixed-step sim.
+    this.physicsWorld!.step(FIXED_DT);
     // PhysicsWorld.step already projected contact flags onto enemies; drain the
     // projectile hit queue for postPhysics resolution.
     const projectileHits = this.contactProcessor?.drainProjectileHits() ?? [];
@@ -444,10 +470,16 @@ export class GameEngine {
     this.projectileManager?.postPhysics(dt, projectileHits);
     this.clampBallisticEnemiesToNavMesh();
 
+    // Known one-tick gap (documented, behavior-identical by design): towers fire
+    // after projectiles resolved, so a shot born this tick has no body until next
+    // tick's prePhysics — it is drawn bodiless for exactly one tick. The tick is NOT
+    // reordered: moving tower fire earlier showed no perf win and would shift every
+    // combat roll by a tick.
     this.towerManager.update(dt, this.enemyManager);
 
-    // Resolve any towers that died this frame: spawn the ghost explosion, drop
-    // the block so enemies may route through the tile, and recompute paths.
+    // Known one-tick gap: a tower ghosted this frame drops its block now (visuals
+    // resolve here) but enemies route through the tile only after next tick's
+    // pathVersion rebuild — ghost-to-block is visible one tick later by design.
     if (this.grid) {
       for (const tower of this.towerManager.towers) {
         if (tower.pendingGhostEffect) {
@@ -479,6 +511,9 @@ export class GameEngine {
   }
 
   private syncAuraSensors(): void {
+    // Known one-tick gap (documented, behavior-identical by design): sensor bodies
+    // are moved here pre-step but their overlaps are queried post-step, so auras
+    // and heals observe positions one step old.
     if (!this.physicsWorld || !this.towerManager || !this.enemyManager || !this.grid) return;
     const tileSize = this.grid.tileSize;
     const specs: { sensorId: string; x: number; y: number; radius: number }[] = [];
@@ -537,6 +572,15 @@ export class GameEngine {
   }
 
   onWaveCleared(wave: number): void {
+    setWave(this.runState, wave);
+    this.applyWaveProgressRewards(wave);
+  }
+
+  // Timer-expiry seam, distinct from the killed path above. Expiry currently pays
+  // the same progress rewards (see WaveManager.update: milestones/best-wave/unlock
+  // track waves survived, not kills); the separate method exists so a future
+  // economy change can price expiry differently with a one-method edit.
+  onWaveExpired(wave: number): void {
     setWave(this.runState, wave);
     this.applyWaveProgressRewards(wave);
   }
@@ -722,7 +766,10 @@ export class GameEngine {
       bossesKilled: this.runState.bossesKilledThisRun,
       bossesReachedBase: this.runState.bossesReachedBaseThisRun,
       gemBreakdown: this.runState.gemBreakdown,
-      date: Date.now(),
+      // Sentinel: the worker never calls Date.now() (wall-clock would poison
+      // deterministic replay). The host stamps the real date on receipt in
+      // MainThreadHostBindings.schedulePersistSave via stampRunHistoryDate.
+      date: WORKER_RUN_DATE_SENTINEL,
     };
 
     if (this.runState.mapIndex === -1 && this.runState.randomMapParams) {

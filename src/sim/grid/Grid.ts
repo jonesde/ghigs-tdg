@@ -30,8 +30,10 @@ export class Grid {
   terrainTowers: Set<string>;
   ghostTowers: Set<string>;
   regionId: number = 0;
-  // Bumped on every tower build/sell/ghost/restore so Rapier tower colliders and
-  // navmesh TileCache obstacles rebuild. Corridor walls are static per map.
+  // Bumped on every tower build/sell/ghost/restore, terrain included, so Rapier
+  // tower colliders and navmesh TileCache obstacles rebuild and the EnemyManager
+  // live-tower cache (keyed on this value) refreshes. Corridor walls are static
+  // per map.
   pathVersion: number = 0;
   private _blockCount: number = 0;
 
@@ -103,6 +105,11 @@ export class Grid {
       const towerKey = `${x},${y}`;
       if (this.terrainTowers.has(towerKey)) return false;
       this.terrainTowers.add(towerKey);
+      // Terrain towers do not enter `blocked` (findChokeTile treats every blocked
+      // neighbor as a maze choke), but this is still a tower-membership change:
+      // bump so the physics/navmesh rebuild gate and the EnemyManager live-tower
+      // cache both refresh on this terrain build.
+      this.pathVersion++;
       return true;
     }
   }
@@ -124,6 +131,10 @@ export class Grid {
       const towerKey = `${x},${y}`;
       if (!this.terrainTowers.has(towerKey)) return false;
       this.terrainTowers.delete(towerKey);
+      // Same terrain-membership reasoning as registerTower: not a path block, but
+      // the physics/navmesh rebuild gate and the EnemyManager live-tower cache
+      // must both refresh on this terrain sell.
+      this.pathVersion++;
       return true;
     }
   }

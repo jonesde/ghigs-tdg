@@ -1,5 +1,5 @@
-import { ENEMY_POOL_SIZE } from "@/render/svg/types.js";
 import type { EnemyVisualMeta, MapThemeData } from "@/render/themes/index.js";
+import { GAMEPLAY_ENEMY_CAP, MAX_PENDING_PER_SPAWN } from "@/sim/Constants.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
 import type { BlockedApproach } from "@/sim/navmesh/NavDistanceField.js";
@@ -42,6 +42,20 @@ export class EnemyManager {
   private distanceToBaseLookup: ((tileX: number, tileY: number) => number) | null = null;
   private idToEnemy: Map<number, Enemy>;
   private pendingQueues: Map<number, PendingEnemyEntry[]>;
+  // Overflow evictions since run start. Bounded queues must stay lossless-visible:
+  // the counter lets tests and the snapshot tell "merged away" apart from "never emitted".
+  private pendingOverflowDropped: number = 0;
+  // Once-per-tick live-tower list. Revalidated on every read by grid.pathVersion
+  // (covers every tower-membership change, terrain build/sell included), tower
+  // count, and a ghost/health scan, so a mid-tick death or ghost restore is never
+  // served stale.
+  private cachedLiveTowers: Tower[] | null = null;
+  private cachedTowerCount: number = -1;
+  private cachedPathVersion: number = -1;
+  // Per-spawn live counts, rebuilt lazily. Spawn/death are the only writers of
+  // spawnIndex membership, so invalidating on those two paths is exact.
+  private cachedSpawnCounts: Map<number, number> = new Map();
+  private spawnCountsDirty: boolean = true;
   private defaultSpawnOrder: SpawnOrder | null = null;
   private spawnOrdersByIndex = new Map<number, SpawnOrder>();
 
@@ -66,6 +80,8 @@ export class EnemyManager {
   // Engine wires the live TowerManager here after both managers are constructed.
   setTowerManager(towerManager: TowerManager | null): void {
     this.towerManager = towerManager;
+    this.cachedLiveTowers = null;
+    this.cachedPathVersion = -1;
   }
 
   // Wires the Rapier physics world (unconditionally). Enemies spawned
@@ -99,10 +115,29 @@ export class EnemyManager {
 
   liveTowers(): Tower[] {
     if (!this.towerManager) return [];
+    const towers = this.towerManager.towers;
+    const cached = this.cachedLiveTowers;
+    // Revalidate without allocating: a build/sell (pathVersion + length change),
+    // a ghost/restore (pathVersion), or a mid-tick death (scan) invalidates the
+    // cache on the spot, so callers keep the exact semantics of the old
+    // recompute-every-call version.
+    if (cached && this.cachedTowerCount === towers.length && this.cachedPathVersion === this.grid.pathVersion) {
+      let stale = false;
+      for (const tower of cached) {
+        if (tower.isGhost || tower.health <= 0) {
+          stale = true;
+          break;
+        }
+      }
+      if (!stale) return cached;
+    }
     const live: Tower[] = [];
-    for (const tower of this.towerManager.towers) {
+    for (const tower of towers) {
       if (!tower.isGhost && tower.health > 0) live.push(tower);
     }
+    this.cachedLiveTowers = live;
+    this.cachedTowerCount = towers.length;
+    this.cachedPathVersion = this.grid.pathVersion;
     return live;
   }
 
@@ -118,6 +153,15 @@ export class EnemyManager {
     this.enemies = [];
     this.idToEnemy.clear();
     this.pendingQueues.clear();
+    // pendingOverflowDropped is deliberately NOT reset here: it is per-run
+    // telemetry, and clear() runs on endGame and debug killAll. A fresh
+    // EnemyManager is constructed per map load in GameEngine._initMap, which is
+    // where the per-run reset happens.
+    this.cachedLiveTowers = null;
+    this.cachedTowerCount = -1;
+    this.cachedPathVersion = -1;
+    this.cachedSpawnCounts.clear();
+    this.spawnCountsDirty = true;
     this.defaultSpawnOrder = null;
     this.spawnOrdersByIndex.clear();
     resetEnemyId();
@@ -205,26 +249,100 @@ export class EnemyManager {
       this.crowdManager.setBaseTarget(enemy, this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y));
     }
     this.applySpawnOrder(enemy);
+    this.spawnCountsDirty = true;
     return enemy;
   }
 
   enqueueOrSpawn(type: string, level: number, spawnIndex: number, wave: number): void {
-    if (this.enemies.length < ENEMY_POOL_SIZE) {
+    if (this.enemies.length < GAMEPLAY_ENEMY_CAP) {
       this.spawn(type, level, spawnIndex, wave);
       return;
     }
-    if (!this.pendingQueues.has(spawnIndex)) {
-      this.pendingQueues.set(spawnIndex, []);
+    this.enqueuePending(type, level, spawnIndex, wave);
+  }
+
+  // Bounded-queue policy: spill to the least-pending spawn first (merges the
+  // oldest backlogs across spawn points instead of growing one queue without
+  // bound), and only when every queue is full evict the oldest lowest-level
+  // non-boss entry — bosses are never merged away. Evictions are counted, never silent.
+  private enqueuePending(type: string, level: number, spawnIndex: number, wave: number): void {
+    let targetIndex = spawnIndex;
+    const targetQueue = this.pendingQueues.get(spawnIndex);
+    if (targetQueue && targetQueue.length >= MAX_PENDING_PER_SPAWN) {
+      targetIndex = this.findLeastPendingSpawn(spawnIndex);
     }
-    this.pendingQueues.get(spawnIndex)!.push({ type, level, wave });
+    let queue = this.pendingQueues.get(targetIndex);
+    if (!queue) {
+      queue = [];
+      this.pendingQueues.set(targetIndex, queue);
+    }
+    if (queue.length >= MAX_PENDING_PER_SPAWN) {
+      if (!this.evictOverflowEntry(targetIndex)) {
+        this.pendingOverflowDropped++;
+        return;
+      }
+    }
+    queue.push({ type, level, wave });
+  }
+
+  private findLeastPendingSpawn(preferredIndex: number): number {
+    let bestIndex = preferredIndex;
+    let bestCount = this.getPendingCountForSpawn(preferredIndex);
+    for (const [spawnIndex, queue] of this.pendingQueues) {
+      if (queue.length < bestCount) {
+        bestCount = queue.length;
+        bestIndex = spawnIndex;
+      }
+    }
+    return bestIndex;
+  }
+
+  private evictOverflowEntry(spawnIndex: number): boolean {
+    const queue = this.pendingQueues.get(spawnIndex);
+    if (!queue || queue.length === 0) return true;
+    let evictPosition = -1;
+    let evictLevel = Infinity;
+    for (let position = 0; position < queue.length; position++) {
+      const entry = queue[position]!;
+      if (entry.type === "boss") continue;
+      if (entry.level < evictLevel) {
+        evictLevel = entry.level;
+        evictPosition = position;
+      }
+    }
+    if (evictPosition < 0) return false;
+    queue.splice(evictPosition, 1);
+    this.pendingOverflowDropped++;
+    return true;
   }
 
   releaseOnePending(spawnIndex: number): void {
     const queue = this.pendingQueues.get(spawnIndex);
     if (!queue || queue.length === 0) return;
-    if (this.enemies.length >= ENEMY_POOL_SIZE) return;
+    if (this.enemies.length >= GAMEPLAY_ENEMY_CAP) return;
     const entry = queue.shift()!;
     this.spawn(entry.type, entry.level, spawnIndex, entry.wave);
+  }
+
+  // Per-tick drain: releases backlog whenever the live count is under the cap,
+  // most-backlogged spawn first. The old death-only release let immortal
+  // base-attackers pin the queue forever (nothing ever died on their spawn);
+  // GameEngine.update calls this every tick so the queue always makes progress.
+  drainPendingQueues(): void {
+    while (this.enemies.length < GAMEPLAY_ENEMY_CAP) {
+      let bestIndex = -1;
+      let bestCount = 0;
+      for (const [spawnIndex, queue] of this.pendingQueues) {
+        if (queue.length > bestCount) {
+          bestCount = queue.length;
+          bestIndex = spawnIndex;
+        }
+      }
+      if (bestIndex < 0) return;
+      const queue = this.pendingQueues.get(bestIndex)!;
+      const entry = queue.shift()!;
+      this.spawn(entry.type, entry.level, bestIndex, entry.wave);
+    }
   }
 
   removeDeadEnemy(i: number): void {
@@ -235,6 +353,7 @@ export class EnemyManager {
     this.idToEnemy.delete(enemy.id);
     const removedSpawnIndex = enemy.spawnIndex;
     this.enemies.splice(i, 1);
+    this.spawnCountsDirty = true;
     this.releaseOnePending(removedSpawnIndex);
   }
 
@@ -245,17 +364,32 @@ export class EnemyManager {
     return false;
   }
 
+  getTotalPendingCount(): number {
+    let total = 0;
+    for (const queue of this.pendingQueues.values()) {
+      total += queue.length;
+    }
+    return total;
+  }
+
+  getPendingOverflowDroppedCount(): number {
+    return this.pendingOverflowDropped;
+  }
+
   getPendingCountForSpawn(spawnIndex: number): number {
     const queue = this.pendingQueues.get(spawnIndex);
     return queue ? queue.length : 0;
   }
 
   getActiveEnemyCountForSpawn(spawnIndex: number): number {
-    let count = 0;
-    for (const enemy of this.enemies) {
-      if (enemy.spawnIndex === spawnIndex) count++;
+    if (this.spawnCountsDirty) {
+      this.cachedSpawnCounts.clear();
+      for (const enemy of this.enemies) {
+        this.cachedSpawnCounts.set(enemy.spawnIndex, (this.cachedSpawnCounts.get(enemy.spawnIndex) ?? 0) + 1);
+      }
+      this.spawnCountsDirty = false;
     }
-    return count;
+    return this.cachedSpawnCounts.get(spawnIndex) ?? 0;
   }
 
   // Pre-step intent pass: computeIntent per enemy, capturing preStepAttackingBase

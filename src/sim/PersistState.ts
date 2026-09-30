@@ -133,15 +133,33 @@ export function addRunToHistory(state: PersistState, entry: unknown): boolean {
   return true;
 }
 
+// Sentinel date the worker stamps on runHistory entries. The worker never calls
+// Date.now() (wall-clock would poison deterministic replay); the host replaces
+// the sentinel with the real receipt time in stampRunHistoryDate.
+export const WORKER_RUN_DATE_SENTINEL = 0;
+
+// Host-side receipt stamp: replaces sentinel/missing dates with the host's
+// wall-clock. Runs on the main-thread persist-flush path, never in the worker.
+export function stampRunHistoryDate(entry: unknown, nowMillis: number): void {
+  if (typeof entry !== "object" || entry === null) return;
+  const record = entry as Record<string, unknown>;
+  if (record.date === WORKER_RUN_DATE_SENTINEL || record.date === undefined) {
+    record.date = nowMillis;
+  }
+}
+
 export function clearActiveWave(state: PersistState, mapIndex: number): boolean {
   delete state.activeWaves[String(mapIndex)];
   return true;
 }
 
 // difficultyMultiplier getter (currently a Pinia getter at persist.ts):
+// Clamped at both ends: a corrupt/negative tick (e.g. a hand-edited save) must
+// never invert scaling below 1x, and NaN must never propagate into gem math.
 export function difficultyMultiplier(state: PersistState): number {
-  const tick = state.difficulty?.multiplierTick ?? 0;
-  return tick * 0.25 + 1;
+  const rawTick = state.difficulty?.multiplierTick ?? 0;
+  const safeTick = Number.isFinite(rawTick) ? Math.max(0, rawTick) : 0;
+  return Math.max(1, safeTick * 0.25 + 1);
 }
 
 export function getDifficultyTick(state: PersistState): number {

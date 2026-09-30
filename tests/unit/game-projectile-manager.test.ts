@@ -577,20 +577,16 @@ describe("ProjectileManager", () => {
       enemy1.takeDamage = takeDamage1;
       enemy2.takeDamage = takeDamage2;
       enemyManager = createMockEnemyManager([enemy1, enemy2]);
-      manager = new ProjectileManager(enemyManager, particles, null, {
-        width: 10,
-        height: 10,
-        tileSize: 36,
-        tiles: [],
-        blocked: new Set(),
-      });
-
-      // Force non-crit so damage values are deterministic
-      const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
+      // Force non-crit so damage values are deterministic (injected rng, not Math.random)
+      manager = new ProjectileManager(
+        enemyManager,
+        particles,
+        null,
+        { width: 10, height: 10, tileSize: 36, tiles: [], blocked: new Set() },
+        () => 0.99,
+      );
 
       manager.fireLightning({ originX: 100, originY: 200, damage: 20, towerLevel: 1, targetId: 1, stunDuration: 0.1 });
-
-      randomSpy.mockRestore();
 
       // enemy1: initial target, full damage (no ping-pong re-hit)
       expect(takeDamage1).toHaveBeenCalledWith(20);
@@ -1191,9 +1187,9 @@ describe("ProjectileManager", () => {
       const takeDamage = vi.fn();
       enemy.takeDamage = takeDamage;
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles);
+      // Force the trueShot roll to succeed via injected rng (not Math.random)
+      manager = new ProjectileManager(enemyManager, particles, null, null, () => 0);
 
-      const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
       manager.spawn({
         x: 100,
         y: 200,
@@ -1206,7 +1202,6 @@ describe("ProjectileManager", () => {
         trueShot: 1,
       });
       manager.update(0.5);
-      randomSpy.mockRestore();
 
       expect(takeDamage).toHaveBeenCalledWith(51, true);
     });
@@ -1216,9 +1211,9 @@ describe("ProjectileManager", () => {
       const takeDamage = vi.fn();
       enemy.takeDamage = takeDamage;
       enemyManager = createMockEnemyManager([enemy]);
-      manager = new ProjectileManager(enemyManager, particles);
+      // Force the marksman roll to succeed via injected rng (not Math.random)
+      manager = new ProjectileManager(enemyManager, particles, null, null, () => 0);
 
-      const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
       manager.spawn({
         x: 100,
         y: 200,
@@ -1231,7 +1226,6 @@ describe("ProjectileManager", () => {
         marksman: true,
       });
       manager.update(0.5);
-      randomSpy.mockRestore();
 
       expect(takeDamage).toHaveBeenCalledWith(51, true);
     });
@@ -1301,15 +1295,14 @@ describe("ProjectileManager", () => {
       });
 
       enemyManager = createMockEnemyManager(enemies);
-      manager = new ProjectileManager(enemyManager, particles, null, {
-        width: 10,
-        height: 10,
-        tileSize: 36,
-        tiles: [],
-        blocked: new Set(),
-      });
+      manager = new ProjectileManager(
+        enemyManager,
+        particles,
+        null,
+        { width: 10, height: 10, tileSize: 36, tiles: [], blocked: new Set() },
+        () => 0.99,
+      );
 
-      const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
       // chain:1 -> a single chain hop that must target the nearest (enemy2)
       manager.fireLightning({
         originX: 100,
@@ -1320,7 +1313,6 @@ describe("ProjectileManager", () => {
         stunDuration: 0,
         chain: 1,
       });
-      randomSpy.mockRestore();
 
       expect(takeDamageNear).toHaveBeenCalledWith(20 * CHAIN_DAMAGE_FALLOFF);
       expect(takeDamageFar).not.toHaveBeenCalled();
@@ -1366,15 +1358,14 @@ describe("ProjectileManager", () => {
       wideEnemy.applyStun = applyStunWide;
 
       enemyManager = createMockEnemyManager([target, chainEnemy, wideEnemy]);
-      manager = new ProjectileManager(enemyManager, particles, null, {
-        width: 10,
-        height: 10,
-        tileSize: 36,
-        tiles: [],
-        blocked: new Set(),
-      });
+      manager = new ProjectileManager(
+        enemyManager,
+        particles,
+        null,
+        { width: 10, height: 10, tileSize: 36, tiles: [], blocked: new Set() },
+        () => 0.99,
+      );
 
-      const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
       manager.fireLightning({
         originX: 100,
         originY: 200,
@@ -1384,7 +1375,6 @@ describe("ProjectileManager", () => {
         stunDuration: 0.1,
         stormcall: true,
       });
-      randomSpy.mockRestore();
 
       // wideEnemy is outside chain range (CHAIN_RANGE*36 = 72px) but within the
       // stormcall wide range (3*72 = 216px), so it must be struck.
@@ -1467,7 +1457,8 @@ describe("ProjectileManager", () => {
       const expected = expectedNearest(target.x, target.y, chainRangePx(), target.id);
       expect(expected?.id).toBe(near.id);
 
-      const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
+      // Force non-crit via injected rng (not Math.random)
+      manager.setRng(() => 0.99);
       manager.fireLightning({
         originX: origin.x,
         originY: origin.y,
@@ -1477,7 +1468,6 @@ describe("ProjectileManager", () => {
         stunDuration: 0,
         chain: 1,
       });
-      randomSpy.mockRestore();
 
       expect(near.takeDamage).toHaveBeenCalledWith(16);
       expect(far.takeDamage).not.toHaveBeenCalled();
@@ -1494,7 +1484,8 @@ describe("ProjectileManager", () => {
       // First-found in spatial-hash order wins; the reference reduce must agree.
       expect(expected?.id).toBe(left.id);
 
-      const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
+      // Force non-crit via injected rng (not Math.random)
+      manager.setRng(() => 0.99);
       manager.fireLightning({
         originX: origin.x,
         originY: origin.y,
@@ -1504,7 +1495,6 @@ describe("ProjectileManager", () => {
         stunDuration: 0,
         chain: 1,
       });
-      randomSpy.mockRestore();
 
       expect(left.takeDamage).toHaveBeenCalledWith(16);
       expect(right.takeDamage).not.toHaveBeenCalled();

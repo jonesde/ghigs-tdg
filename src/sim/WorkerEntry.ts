@@ -1,4 +1,4 @@
-import { FIXED_DT, GameState, MAX_ACCUM, MAX_STEPS_PER_FRAME } from "@/sim/Constants.js";
+import { FIXED_DT, GameState, MAX_ACCUM } from "@/sim/Constants.js";
 import { GameEngine } from "@/sim/GameEngine.js";
 import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { WorkerParticleSpawner } from "@/sim/ParticleSystem.js";
@@ -7,6 +7,7 @@ import type { Command } from "./Command.js";
 import { drainCommandQueue } from "./commandDrain.js";
 import type { PersistStateSlice } from "./HostBindings.js";
 import { buildSnapshot } from "./SnapshotSerializer.js";
+import { computeStepBudget, type StepBudget } from "./stepBudget.js";
 import { WorkerHostBindings } from "./WorkerHostBindings.js";
 import type { MainToWorkerMessage, WorkerToMainMessage } from "./WorkerProtocol.js";
 
@@ -91,6 +92,11 @@ export function splitGenerationCommands(
   return { current, droppedStale };
 }
 
+export type { StepBudget } from "./stepBudget.js";
+// Fixed-step budget lives in stepBudget.ts (pure, node-importable for tests);
+// re-exported here so worker-adjacent importers keep a single source.
+export { computeStepBudget } from "./stepBudget.js";
+
 // Stamps the worker generation onto a built snapshot so the main thread can tell
 // which run produced it. Pure: exported for tests.
 export function stampSnapshotGeneration(snapshot: { meta: { workerGeneration?: number } }, generation: number): void {
@@ -155,6 +161,10 @@ function tick(): void {
   // commands may have updated. Step budget scales with timeScale so 8×/16× do
   // not permanently discard sim time under steady load; hard-capped to avoid
   // spiral-of-death freezes.
+  // Error-path accounting locals: how many of this tick's budgeted steps actually
+  // ran. Declared outside try so the catch can count the skipped ones.
+  let stepBudget: StepBudget | null = null;
+  let stepsExecuted = 0;
   try {
     // commanderHold is not GameState.PAUSED. PAUSED makes the commander worker skip
     // decide, which would cancel the request this hold exists to wait for.
@@ -162,12 +172,15 @@ function tick(): void {
       engine.runState.state === GameState.PAUSED || engine.runState.commanderHold ? 0 : engine.runState.timeScale;
     const scaledDt = rawDt * timeScale;
     engine.lastScaledDt = scaledDt;
-    accumulator += scaledDt;
-    const maxSteps = Math.min(64, Math.ceil(MAX_STEPS_PER_FRAME * Math.max(1, timeScale)));
-    accumulator = Math.min(accumulator, FIXED_DT * maxSteps);
-    while (accumulator >= FIXED_DT) {
+    // Step budget scales with timeScale so 8×/16× do not permanently discard sim
+    // time under steady load; hard-capped to avoid spiral-of-death freezes. The
+    // capped-away remainder is counted (not silently dropped) in droppedSimSeconds.
+    stepBudget = computeStepBudget(accumulator, scaledDt, timeScale);
+    accumulator = stepBudget.accumulator;
+    engine.droppedSimSeconds += stepBudget.droppedSeconds;
+    for (let stepIndex = 0; stepIndex < stepBudget.steps; stepIndex++) {
       engine.update(FIXED_DT);
-      accumulator -= FIXED_DT;
+      stepsExecuted++;
     }
 
     const state = engine.runState.state;
@@ -269,6 +282,9 @@ function tick(): void {
     // The accumulator is deliberately DISCARDED here rather than preserved: the
     // failure came from stepping this exact sim state, so preserving would re-run
     // the same throwing step every tick (error spam + frozen sim, never progress).
+    // The discarded remainder plus any budgeted steps the throw skipped is counted
+    // in droppedSimSeconds like a cap discard, so error-induced time loss is
+    // visible in the snapshot rather than silent.
     const errorMessage = `Tick failed: ${(err as Error).message}`;
     const errorStack = (err as Error).stack;
     postMessage(
@@ -276,6 +292,10 @@ function tick(): void {
         ? { type: "workerError", message: errorMessage, stack: errorStack }
         : { type: "workerError", message: errorMessage },
     );
+    if (engine) {
+      const unsimulatedSteps = stepBudget ? stepBudget.steps - stepsExecuted : 0;
+      engine.droppedSimSeconds += unsimulatedSteps * FIXED_DT + accumulator;
+    }
     accumulator = 0;
   } finally {
     // Schedule next tick only while the loop is still running. stopLoop() (terminal

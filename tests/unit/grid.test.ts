@@ -128,6 +128,20 @@ describe("Grid", () => {
       grid.unregisterTower(0, 0);
       expect(grid.terrainTowers.has("0,0")).toBe(false);
     });
+
+    it("bumps pathVersion when registering and unregistering a terrain tower", () => {
+      const versionBefore = grid.pathVersion;
+      expect(grid.registerTower(0, 0)).toBe(true);
+      expect(grid.pathVersion).toBe(versionBefore + 1);
+      expect(grid.registerTower(0, 0)).toBe(false);
+      expect(grid.pathVersion).toBe(versionBefore + 1);
+      expect(grid.terrainTowers.has("0,0")).toBe(true);
+
+      expect(grid.unregisterTower(0, 0)).toBe(true);
+      expect(grid.pathVersion).toBe(versionBefore + 2);
+      expect(grid.unregisterTower(0, 0)).toBe(false);
+      expect(grid.pathVersion).toBe(versionBefore + 2);
+    });
   });
 
   describe("ghost path blocks", () => {

@@ -34,7 +34,9 @@ export interface ParticleSpawnRequest {
 // Shared spawner contract. `consumeSpawns` is optional: the main-thread
 // ParticleSystem acts as its own spawner (spawns land directly in it) and has
 // no buffer to drain, while the worker spawner buffers requests and drains
-// them into the snapshot.
+// them into the snapshot. `setRng` is optional: only spawners that roll (the
+// visual ParticleSystem below) need it; the worker buffer records requests
+// without randomness.
 export interface ParticleSpawner {
   spawn(
     x: number,
@@ -44,6 +46,7 @@ export interface ParticleSpawner {
     opts: { speed?: number; life?: number; size?: number },
   ): void;
   consumeSpawns?(): ParticleSpawnRequest[] | undefined;
+  setRng?(rng: () => number): void;
 }
 
 // Default no-op spawner so `new GameEngine(...)` call sites that do not supply
@@ -87,10 +90,20 @@ const MAX_PARTICLES = 400;
 export class ParticleSystem implements ParticleSpawner {
   particles: ParticleGame[];
   private nextParticleId: number;
+  // Seeded roll source. The worker never constructs this class (it buffers
+  // requests via WorkerParticleSpawner), so the default only governs main-thread
+  // visual scatter; sim-side constructions inject the engine's per-run fork.
+  private rng: () => number = Math.random;
 
-  constructor() {
+  constructor(rng: (() => number) | null = null) {
     this.particles = [];
     this.nextParticleId = 1;
+    if (rng) this.rng = rng;
+  }
+
+  // Cross-module: GameEngine injects its per-run seeded fork here after construct.
+  setRng(rng: () => number): void {
+    this.rng = rng;
   }
 
   spawn(
@@ -105,8 +118,8 @@ export class ParticleSystem implements ParticleSpawner {
     const size = opts.size || 3;
 
     for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const particleSpeed = speed * (0.5 + Math.random() * 0.8);
+      const angle = this.rng() * Math.PI * 2;
+      const particleSpeed = speed * (0.5 + this.rng() * 0.8);
       this.particles.push({
         id: this.nextParticleId++,
         ox: x,

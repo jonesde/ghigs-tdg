@@ -17,6 +17,7 @@ interface EnemyManagerRef {
   enqueueOrSpawn(type: string, level: number, spawnIndex: number, wave: number): void;
   releaseOnePending(spawnIndex: number): void;
   hasPendingEnemies(): boolean;
+  getTotalPendingCount(): number;
   getPendingCountForSpawn(spawnIndex: number): number;
   getActiveEnemyCountForSpawn(spawnIndex: number): number;
   getEnemiesInRange(x: number, y: number, range: number): unknown[];
@@ -142,11 +143,11 @@ export class WaveManager {
     this.prevWaveSpawnIndices.clear();
   }
 
-  // Count of enemies still scheduled to spawn this wave (the remaining queue). This
-  // is the authoritative "entire wave emerged" signal — unlike the overflow-only
-  // pending count — because it includes every enemy the wave will still produce.
+  // Count of enemies this wave will still produce: the unsent queue PLUS the
+  // EnemyManager overflow backlog. Queue-only undercounted while the gameplay
+  // cap held enemies back (commanders rushed on a "wave emerged" lie).
   getRemainingScheduledSpawns(): number {
-    return this.queue.length;
+    return this.queue.length + this.enemyManager.getTotalPendingCount();
   }
 
   saveActiveSpawns(): void {
@@ -224,7 +225,12 @@ export class WaveManager {
     return out;
   }
 
-  update(dt: number, onWaveCleared: ((wave: number) => void) | null, onWaveStart: ((wave: number) => void) | null) {
+  update(
+    dt: number,
+    onWaveCleared: ((wave: number) => void) | null,
+    onWaveStart: ((wave: number) => void) | null,
+    onWaveExpired: ((wave: number) => void) | null = null,
+  ) {
     this.updateSpawnTimers(dt);
 
     if (this.queue.length === 0 && !this.enemyManager.hasPendingEnemies() && this.enemyManager.enemies.length === 0) {
@@ -259,14 +265,18 @@ export class WaveManager {
     this._waveGameTime += dt;
 
     // Timer expiry: force next wave without clearing (enemies accumulate).
-    // Still award clear rewards for the wave being left (milestones, best-wave, map unlock).
+    // Routes through onWaveExpired (falling back to onWaveCleared), NOT the
+    // killed path below, so a future economy change can price expiry
+    // differently without touching this call site. Today expiry pays the same
+    // progress rewards (milestones, best-wave, map unlock track waves survived,
+    // not kills), which is why GameEngine.onWaveExpired shares that path.
     if (this._waveGameTime >= PRE_EMPTIVE_WAVE_TIMER) {
       if (this.currentWave >= VICTORY_WAVE) {
         this.betweenWaves = true;
         return;
       }
       const waveLeaving = this.currentWave;
-      if (onWaveCleared) onWaveCleared(waveLeaving);
+      (onWaveExpired ?? onWaveCleared)?.(waveLeaving);
       this.saveActiveSpawns();
       this.transitionActiveSpawnsToTransition();
       this.startNextWave();
@@ -295,7 +305,17 @@ export class WaveManager {
       if (!next || !ENEMY_TYPES[next.type]) {
         return;
       }
-      const spawnIdx = Math.floor(this.rng() * this.map.spawns.length);
+      // Backlog-weighted spawn choice: sample two candidates and emit at the
+      // least-pending one (ties keep the first draw), so a uniform draw cannot
+      // keep piling onto an already-choked spawn while others drain. Draws come
+      // from the seeded wave rng, so emission stays deterministic per map seed.
+      const firstCandidate = Math.floor(this.rng() * this.map.spawns.length);
+      const secondCandidate = Math.floor(this.rng() * this.map.spawns.length);
+      const spawnIdx =
+        this.enemyManager.getPendingCountForSpawn(secondCandidate) <
+        this.enemyManager.getPendingCountForSpawn(firstCandidate)
+          ? secondCandidate
+          : firstCandidate;
       this.markSpawnUsed(spawnIdx);
       this.enemyManager.enqueueOrSpawn(next.type, next.level, spawnIdx, this.currentWave);
       this.waveComposition[next.type] = (this.waveComposition[next.type] || 0) - 1;

@@ -213,6 +213,10 @@ export class ProjectileManager {
   private pendingStuns: StunVisualEffect[];
   private renderDataBuffer: Array<{ id: number; x: number; y: number; radius: number; color: string; icon: string }> =
     [];
+  // Seeded combat-roll source, forked per run by GameEngine from (map seed, runId).
+  // Defaults to Math.random only so render-side / legacy test constructions keep
+  // working; the sim hot path always runs on the injected fork for replay determinism.
+  private rng: () => number = Math.random;
   // Projectile ids that already have a Rapier body this frame.
   private bodyIds = new Set<number>();
 
@@ -221,6 +225,7 @@ export class ProjectileManager {
     particles: ParticleSpawner | null,
     towerLookup: ((towerId: string) => Tower | null) | null = null,
     grid: GridRef | null = null,
+    rng: (() => number) | null = null,
   ) {
     this.projectiles = [];
     this.enemyManager = enemyManager;
@@ -232,6 +237,12 @@ export class ProjectileManager {
     this.towerLookup = towerLookup;
     this.pendingLightning = [];
     this.pendingStuns = [];
+    if (rng) this.rng = rng;
+  }
+
+  // Cross-module: GameEngine injects its per-run seeded fork here after construct.
+  setRng(rng: () => number): void {
+    this.rng = rng;
   }
 
   setPhysicsWorld(physicsWorld: PhysicsWorld | null): void {
@@ -335,7 +346,7 @@ export class ProjectileManager {
     };
 
     // Roll crit only if tower has crit ability
-    if (projectile.critChance > 0 && Math.random() < projectile.critChance) {
+    if (projectile.critChance > 0 && this.rng() < projectile.critChance) {
       projectile.isCrit = true;
     }
 
@@ -416,7 +427,7 @@ export class ProjectileManager {
     }
 
     if (marksman) {
-      projectile.marksman = Math.random() < MARKSMAN_CHANCE;
+      projectile.marksman = this.rng() < MARKSMAN_CHANCE;
     }
 
     // Piercer: pierce through N enemies means N hits (not N-1).
@@ -527,6 +538,8 @@ export class ProjectileManager {
 
   private setProjectileBodyVelocity(projectile: ProjectileGame, _dt: number): void {
     if (!this.physicsWorld || !this.bodyIds.has(projectile.id)) return;
+    // Known one-tick gap (documented, behavior-identical by design): homing aims
+    // at the enemy's pre-step x/y because this runs before world.step moves bodies.
     let dirX = 0;
     let dirY = 0;
     if (projectile.targetId === 0) {
@@ -811,7 +824,7 @@ export class ProjectileManager {
     const scaledDamage = finalDamage * falloff ** projectile.hitCount;
 
     // True Shot: 20% chance to instant-kill non-boss enemies
-    if (projectile.trueShot > 0 && enemy.type !== "boss" && Math.random() < projectile.trueShot) {
+    if (projectile.trueShot > 0 && enemy.type !== "boss" && this.rng() < projectile.trueShot) {
       const instantKillDamage = enemy.hp + 1;
       const dealtDamage = enemy.takeDamage(instantKillDamage, true) ?? instantKillDamage;
       this.recordDamage(projectile.towerId, dealtDamage);
@@ -988,7 +1001,7 @@ export class ProjectileManager {
     const tier = Math.max(0, opts.towerLevel - 4);
     let remainingChains = opts.chain ?? 2 + tier;
     const critChance = opts.critChance ?? 0;
-    const isCrit = critChance > 0 && Math.random() < critChance;
+    const isCrit = critChance > 0 && this.rng() < critChance;
     const finalDamage = isCrit ? opts.damage * 2 : opts.damage;
 
     // Lightning strikes instantly: the initial target takes full damage, each
@@ -1043,7 +1056,7 @@ export class ProjectileManager {
         .getEnemiesInRange(opts.originX, opts.originY, wideRangePx)
         .filter((enemy) => !stormcallChainedIds.has(enemy.id));
       for (let strike = 0; strike < stormcallCount && wideEnemies.length > 0; strike++) {
-        const pickIndex = Math.floor(Math.random() * wideEnemies.length);
+        const pickIndex = Math.floor(this.rng() * wideEnemies.length);
         const stormTarget = wideEnemies.splice(pickIndex, 1)[0]!;
         const stormDamage = finalDamage * CHAIN_DAMAGE_FALLOFF;
         const stormDealt = stormTarget.takeDamage(stormDamage) ?? stormDamage;
@@ -1065,7 +1078,7 @@ export class ProjectileManager {
     }
 
     // Double Discharge: 10% chance to fire a second bolt to a different target
-    if (opts.doubleDischarge && opts.doubleDischarge > 0 && Math.random() < opts.doubleDischarge) {
+    if (opts.doubleDischarge && opts.doubleDischarge > 0 && this.rng() < opts.doubleDischarge) {
       const secondTarget = this.findNearestEnemy(
         opts.originX,
         opts.originY,
@@ -1073,7 +1086,7 @@ export class ProjectileManager {
         opts.targetId,
       );
       if (secondTarget) {
-        const secondIsCrit = critChance > 0 && Math.random() < critChance;
+        const secondIsCrit = critChance > 0 && this.rng() < critChance;
         const secondDamage = finalDamage * 0.5 * (secondIsCrit ? 2 : 1);
         const secondDealt = secondTarget.takeDamage(secondDamage) ?? secondDamage;
         this.recordDamage(opts.towerId, secondDealt);

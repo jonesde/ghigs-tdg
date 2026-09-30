@@ -94,6 +94,12 @@ export interface SnapshotMeta {
   // camera is excluded — main-thread-only UI state, read from gameStore.camera directly
   lastScaledDt: number; // renderer uses this for animation interpolation
   simSeconds?: number;
+  // Sim seconds discarded by the accumulator cap / tick-error path (see
+  // GameEngine.droppedSimSeconds). Optional so hand-built test metas can omit it.
+  droppedSimSeconds?: number;
+  // Enemies evicted from (or refused entry to) bounded pending queues since run
+  // start, so overflow is never silent in the UI/tests. Optional like the field above.
+  pendingOverflowDropped?: number;
   waveTopTowers?: WaveTopTowerSnapshot[] | null;
   totalGoldEarned?: number;
   totalHealingReceived?: number;

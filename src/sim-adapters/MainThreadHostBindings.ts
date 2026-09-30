@@ -1,5 +1,6 @@
 import type { EndScreenPayload } from "@/sim/GameRunState.js";
 import type { ConfirmPayload, HostBindings, PersistStateSlice, SoundName, UiEvent } from "@/sim/HostBindings.js";
+import { stampRunHistoryDate } from "@/sim/PersistState.js";
 import type { SoundManager } from "@/sound/SoundManager.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
@@ -47,6 +48,11 @@ export class MainThreadHostBindings implements HostBindings {
     persistStore.activeWaves = { ...state.activeWaves };
     persistStore.firstTimeMilestones = { ...state.firstTimeMilestones };
     persistStore.firstClears = { ...state.firstClears };
+    // Host-side wall-clock stamp: the worker stores WORKER_RUN_DATE_SENTINEL so
+    // replays stay deterministic; the real date is applied here on receipt.
+    for (const entry of state.runHistory) {
+      stampRunHistoryDate(entry, Date.now());
+    }
     // unlocked + generalAddons are main-thread-owned (skill tree) and are NOT
     // overwritten here — the worker never mutates them and would otherwise
     // clobber mid-run unlocks/addon changes with its stale init-time copy.

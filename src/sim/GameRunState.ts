@@ -153,7 +153,13 @@ export function initRunState(state: GameRunState, mapIndex: number, mapData: Gen
   state.grid = grid;
   state.baseHealth = STARTING_BASE_HEALTH;
   state.maxBaseHealth = STARTING_BASE_HEALTH;
-  state.gold = StartingGold[mapData.regionId]!;
+  // Reject unknown region ids loudly: the old `StartingGold[regionId]!` threw an
+  // obscure undefined-gold bug downstream instead of naming the bad input.
+  const startingGold = StartingGold[mapData.regionId];
+  if (startingGold === undefined) {
+    throw new RangeError(`initRunState rejected unknown regionId ${mapData.regionId}`);
+  }
+  state.gold = startingGold;
   state.currentWave = 0;
   state.waveCountdown = null;
   state.timeScale = 1;

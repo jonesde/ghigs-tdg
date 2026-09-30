@@ -476,7 +476,14 @@ export class PhysicsWorld {
     return enemy.body ? enemy.body.translation() : null;
   }
 
-  step(): void {
+  step(fixedDt: number = FIXED_DT): void {
+    // The sim runs on a fixed timestep: every production step must carry exactly
+    // FIXED_DT (GameEngine.update passes it explicitly). The default keeps
+    // variable-dt-free test call sites green; anything else is a caller bug.
+    if (fixedDt !== FIXED_DT) {
+      throw new Error(`PhysicsWorld.step expects FIXED_DT (${FIXED_DT}), got ${fixedDt}`);
+    }
+    this.world.timestep = fixedDt;
     this.world.step(this.eventQueue);
     this.eventQueue.drainCollisionEvents((handle1, handle2, started) => {
       const collider1 = this.world.getCollider(handle1);

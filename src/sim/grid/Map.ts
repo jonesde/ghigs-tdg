@@ -499,6 +499,15 @@ export function mulberry32(seed: number) {
   };
 }
 
+// Derives a per-run sim seed from the map seed and the engine runId, so two
+// runs of the same map draw different combat rolls while the same (map, runId)
+// pair replays identically. Consumed by GameEngine for its ProjectileManager /
+// ParticleSystem RNG forks (WaveManager keeps its own map-seed stream so wave
+// composition stays stable across runs of the same map).
+export function forkRunSeed(mapSeed: number, runId: number): number {
+  return (mapSeed ^ Math.imul(runId + 1, 0x9e3779b1)) >>> 0;
+}
+
 export function generateRandomMap(
   width: number,
   height: number,

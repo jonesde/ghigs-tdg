@@ -149,6 +149,8 @@ function buildMeta(engine: GameEngine, receipt: SnapshotCommandReceipt): Snapsho
     bossesReachedBaseThisRun: rs.bossesReachedBaseThisRun,
     lastScaledDt: engine.lastScaledDt,
     simSeconds: engine.simSeconds,
+    droppedSimSeconds: engine.droppedSimSeconds ?? 0,
+    pendingOverflowDropped: engine.enemyManager?.getPendingOverflowDroppedCount() ?? 0,
     waveTopTowers: engine.waveTopTowers,
     totalGoldEarned: engine.totalGoldEarned,
     totalHealingReceived: engine.totalHealingReceived,

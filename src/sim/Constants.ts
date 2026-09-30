@@ -93,6 +93,15 @@ export {
 // ===== Engine loop (not content) =====
 
 export const FIXED_DT = 1 / 60;
+// Gameplay live-enemy cap, owned by the sim. Deliberately NOT the render
+// ENEMY_POOL_SIZE from render/svg/types.js: the render pool sizes a DOM pool
+// and must never throttle gameplay (coupling them let immortal base-attackers
+// pin an unbounded pending queue while the sim thought it was "full").
+export const GAMEPLAY_ENEMY_CAP = 100;
+// Per-spawn pending-queue bound. Overflow spills to the least-pending spawn
+// first and only then evicts (see EnemyManager.enqueueOrSpawn), so memory stays
+// bounded no matter how far PRE_EMPTIVE_WAVE_TIMER piles waves up.
+export const MAX_PENDING_PER_SPAWN = 200;
 // Numerical slack on the projectile glyph when testing a hit. Not an enemy radius.
 export const PROJECTILE_HIT_SLOP = 1;
 export const MAX_PROJECTILE_AGE = 12;
