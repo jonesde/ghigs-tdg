@@ -1,6 +1,7 @@
 /** @vitest-environment node */
-import { describe, expect, it } from "vitest";
-import { MAP_GEM_MULTIPLIERS } from "@/sim/Constants.js";
+import { describe, expect, it, vi } from "vitest";
+import { MAP_GEM_MULTIPLIERS, TOTAL_MAPS } from "@/sim/Constants.js";
+import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
 import {
@@ -12,6 +13,7 @@ import {
   gemMultiplierForMap,
   generateProgressiveCatalog,
   generateProgressiveMap,
+  generateProgressiveMapByIndex,
   legalSites,
   type PlacedBlock,
   type ProgressiveBoard,
@@ -312,6 +314,31 @@ describe("progressive world positions", () => {
     expect(grid.worldToTile(90, 90)).toEqual({ x: 2, y: 2 });
     expect(grid.tileToWorld(2, 2)).toEqual({ x: 2 * 36 + 18, y: 2 * 36 + 18 });
     expect(map.tiles.some((row) => row.some((tile) => tile.type === "void"))).toBe(false);
+  });
+
+  it("keeps every spawn enemy at its spawn tile on a negative-origin board", () => {
+    const map = generateProgressiveMapByIndex(TOTAL_MAPS)!;
+    const grid = new Grid(map);
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    resetEnemyId();
+    try {
+      for (let spawnIndex = 0; spawnIndex < map.spawns.length; spawnIndex++) {
+        const enemy = new Enemy("minion", 1, spawnIndex, grid, 1);
+        const spawn = map.spawns[spawnIndex]!;
+        const expected = grid.tileToWorld(spawn.x, spawn.y);
+        enemy.postPhysics(1 / 60);
+        expect(enemy.x).toBe(expected.x);
+        expect(enemy.y).toBe(expected.y);
+      }
+      expect(warned).not.toHaveBeenCalledWith(
+        "Enemy escaped world bounds; clamping",
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      );
+    } finally {
+      warned.mockRestore();
+    }
   });
 });
 

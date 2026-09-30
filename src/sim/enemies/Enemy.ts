@@ -84,6 +84,8 @@ interface GridRef {
   tileSize: number;
   width: number;
   height: number;
+  worldOriginX?: number;
+  worldOriginY?: number;
   spawns: { x: number; y: number }[];
   tileToWorld(tx: number, ty: number): { x: number; y: number };
   worldToTile(wx: number, wy: number): { x: number; y: number };
@@ -808,9 +810,16 @@ export class Enemy {
       this.releaseToDefault();
     }
 
-    const worldWidth = this.grid.width * this.grid.tileSize;
-    const worldHeight = this.grid.height * this.grid.tileSize;
-    if (this.x < 0 || this.y < 0 || this.x > worldWidth || this.y > worldHeight) {
+    // Progressive maps keep their top-left tile at a negative world origin, so
+    // the map rectangle is not [0, size*tileSize] — anchoring on 0 teleports
+    // every enemy in the west/north quadrants to the map corner.
+    const originX = this.grid.worldOriginX ?? 0;
+    const originY = this.grid.worldOriginY ?? 0;
+    const minX = originX;
+    const maxX = originX + this.grid.width * this.grid.tileSize;
+    const minY = originY;
+    const maxY = originY + this.grid.height * this.grid.tileSize;
+    if (this.x < minX || this.y < minY || this.x > maxX || this.y > maxY) {
       // Corridor walls + navmesh should keep bodies inside; this firing means a
       // containment hole. Still clamp so the sim does not NaN, but report it once
       // per enemy id so a persistent hole does not spam the console every tick.
@@ -818,8 +827,8 @@ export class Enemy {
         warnedOutOfBoundsIds.add(this.id);
         console.warn("Enemy escaped world bounds; clamping", this.id, this.x, this.y);
       }
-      this.x = Math.max(0, Math.min(worldWidth, this.x));
-      this.y = Math.max(0, Math.min(worldHeight, this.y));
+      this.x = Math.max(minX, Math.min(maxX, this.x));
+      this.y = Math.max(minY, Math.min(maxY, this.y));
       this.centerX = this.x;
       this.centerY = this.y;
       if (this.body) {
