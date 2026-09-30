@@ -26,7 +26,29 @@ export interface ParsedSiegeTower {
   towerTile: TileCoordinate;
 }
 
-export type ParsedLlmCommand = ParsedRouteGroup | ParsedSetTargeting | ParsedSiegeTower;
+export interface ParsedSetSpawnOrder {
+  type: "llm:setSpawnOrder";
+  spawnIndex?: number;
+  clear?: boolean;
+  hold?: boolean;
+  holdTile?: TileCoordinate;
+  waypoints?: TileCoordinate[];
+  targetingMode?: string;
+  towerTile?: TileCoordinate;
+}
+
+export interface ParsedReleaseHeld {
+  type: "llm:releaseHeld";
+  wave?: number;
+  spawnIndex?: number;
+}
+
+export type ParsedLlmCommand =
+  | ParsedRouteGroup
+  | ParsedSetTargeting
+  | ParsedSiegeTower
+  | ParsedSetSpawnOrder
+  | ParsedReleaseHeld;
 
 export interface LlmResponseResult {
   commands: ParsedLlmCommand[];
@@ -34,9 +56,57 @@ export interface LlmResponseResult {
   error?: string | undefined;
 }
 
+function rejectSpawnOrder(command: {
+  clear?: boolean | undefined;
+  hold?: boolean | undefined;
+  holdTile?: TileCoordinate | undefined;
+  waypoints?: TileCoordinate[] | undefined;
+  targetingMode?: string | undefined;
+  towerTile?: TileCoordinate | undefined;
+}): string | null {
+  const hasOrderField =
+    command.hold !== undefined ||
+    command.holdTile !== undefined ||
+    command.waypoints !== undefined ||
+    command.targetingMode !== undefined ||
+    command.towerTile !== undefined;
+  if (command.clear) {
+    if (hasOrderField) return "setSpawnOrder clear combined with an order";
+    return null;
+  }
+  let movements = 0;
+  if (command.hold === true) movements += 1;
+  if (command.waypoints !== undefined) movements += 1;
+  if (command.towerTile !== undefined) movements += 1;
+  if (movements > 1) return "setSpawnOrder has more than one movement intent";
+  if (movements === 0 && command.targetingMode === undefined) return "setSpawnOrder is empty";
+  return null;
+}
+
+function toParsedSpawnOrder(command: {
+  spawnIndex?: number | undefined;
+  clear?: boolean | undefined;
+  hold?: boolean | undefined;
+  holdTile?: TileCoordinate | undefined;
+  waypoints?: TileCoordinate[] | undefined;
+  targetingMode?: string | undefined;
+  towerTile?: TileCoordinate | undefined;
+}): ParsedSetSpawnOrder {
+  const parsed: ParsedSetSpawnOrder = { type: "llm:setSpawnOrder" };
+  if (command.spawnIndex !== undefined) parsed.spawnIndex = command.spawnIndex;
+  if (command.clear) parsed.clear = true;
+  if (command.hold !== undefined) parsed.hold = command.hold;
+  if (command.holdTile) parsed.holdTile = command.holdTile;
+  if (command.waypoints) parsed.waypoints = command.waypoints;
+  if (command.targetingMode) parsed.targetingMode = command.targetingMode;
+  if (command.towerTile) parsed.towerTile = command.towerTile;
+  return parsed;
+}
+
 // Validates an LLM response into a strict command list. Accepts either a bare
 // array of command objects or an object wrapping `{ commands?, chat? }`. Only
-// `llm:routeGroup`, `llm:siegeTower`, and `llm:setTargeting` are permitted.
+// `llm:routeGroup`, `llm:siegeTower`, `llm:setTargeting`, `llm:setSpawnOrder`,
+// and `llm:releaseHeld` are permitted.
 // Soft-reject: bad entries are dropped with an error string; valid siblings keep.
 export function validateLlmResponse(raw: unknown, _config: LlmCommanderConfig): LlmResponseResult {
   const bodyResult = LlmResponseBodySchema.safeParse(raw);
@@ -68,7 +138,13 @@ export function validateLlmResponse(raw: unknown, _config: LlmCommanderConfig): 
     }
 
     const type = (entry as Record<string, unknown>).type;
-    if (type !== "llm:routeGroup" && type !== "llm:setTargeting" && type !== "llm:siegeTower") {
+    if (
+      type !== "llm:routeGroup" &&
+      type !== "llm:setTargeting" &&
+      type !== "llm:siegeTower" &&
+      type !== "llm:setSpawnOrder" &&
+      type !== "llm:releaseHeld"
+    ) {
       error = error ?? `rejected command type: ${String(type)}`;
       continue;
     }
@@ -79,11 +155,29 @@ export function validateLlmResponse(raw: unknown, _config: LlmCommanderConfig): 
         error = error ?? "siegeTower missing towerTile";
       } else if (type === "llm:setTargeting") {
         error = error ?? "setTargeting missing mode";
+      } else if (type === "llm:setSpawnOrder") {
+        error = error ?? "setSpawnOrder is invalid";
       }
       continue;
     }
 
     const command = parsed.data;
+    if (command.type === "llm:setSpawnOrder") {
+      const rejected = rejectSpawnOrder(command);
+      if (rejected) {
+        error = error ?? rejected;
+        continue;
+      }
+      commands.push(toParsedSpawnOrder(command));
+      continue;
+    }
+    if (command.type === "llm:releaseHeld") {
+      const release: ParsedReleaseHeld = { type: "llm:releaseHeld" };
+      if (command.wave !== undefined) release.wave = command.wave;
+      if (command.spawnIndex !== undefined) release.spawnIndex = command.spawnIndex;
+      commands.push(release);
+      continue;
+    }
     if (command.enemyIds.length === 0) continue;
 
     if (command.type === "llm:routeGroup") {

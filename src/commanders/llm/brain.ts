@@ -3,13 +3,20 @@ import type { CommanderBrain, CommanderMemory } from "../brain.js";
 import { nearestPathTileTo } from "../navTile.js";
 import type { CommanderObservation, ObservationEnemy, ObservationTower } from "../observation.js";
 import { type ApiClient, type ChatMessage, createApiClient } from "./apiClient.js";
+import { summarizeLlmCommands } from "./commandSummary.js";
 import { validateLlmResponse } from "./schema.js";
 import { buildSystemPrompt } from "./systemPrompt.js";
 import type { LlmCommanderConfig } from "./types.js";
 
+export interface LlmTraceEntry {
+  responseText: string;
+  commandSummary: string;
+}
+
 export interface LlmBrainCallbacks {
   onChat?: (text: string) => void;
   onNotify?: (message: string) => void;
+  onTrace?: (entry: LlmTraceEntry) => void;
   fetchFn?: typeof fetch;
 }
 
@@ -31,6 +38,8 @@ function serializeEnemy(enemy: ObservationEnemy): Record<string, unknown> {
     routingMode: enemy.routingMode ?? "default",
     distanceToBase: enemy.distanceToBase ?? -1,
   };
+  if (enemy.wave !== undefined) record.wave = enemy.wave;
+  if (enemy.spawnIndex !== undefined) record.spawnIndex = enemy.spawnIndex;
   if (enemy.type !== undefined) record.type = enemy.type;
   if (enemy.attackingBase !== undefined) record.attackingBase = enemy.attackingBase;
   if (enemy.blockedByTowerTile !== undefined) record.blockedByTowerTile = enemy.blockedByTowerTile;
@@ -80,6 +89,7 @@ function waveSummary(observation: CommanderObservation): unknown {
     baseHp: observation.wave.baseHealth,
     maxBaseHp: observation.wave.maxBaseHealth,
     countdownSeconds,
+    spawnOrders: observation.wave.spawnOrders ?? [],
   };
 }
 
@@ -87,6 +97,7 @@ function buildFullSnapshotMessage(observation: CommanderObservation): string {
   return JSON.stringify({
     kind: "snapshot",
     map: observation.map,
+    spawns: observation.spawns ?? [],
     enemies: observation.enemies.map(serializeEnemy),
     towers: liveTowers(observation).map((tower) => serializeTower(tower, observation)),
     wave: waveSummary(observation),
@@ -246,10 +257,15 @@ export function createLlmBrain(config: LlmCommanderConfig, callbacks: LlmBrainCa
   const apiClient: ApiClient = createApiClient(callbacks.fetchFn ?? globalThis.fetch);
   let lastNotifiedFailure: string | null = null;
 
-  function notifyFailure(message: string): void {
-    if (message === lastNotifiedFailure) return;
+  function noteFailure(message: string, notify: boolean): boolean {
+    if (message === lastNotifiedFailure) return false;
     lastNotifiedFailure = message;
-    callbacks.onNotify?.(message);
+    if (notify) callbacks.onNotify?.(message);
+    return true;
+  }
+
+  function trace(responseText: string, commandSummary: string): void {
+    callbacks.onTrace?.({ responseText, commandSummary });
   }
 
   function translateCommand(parsed: ReturnType<typeof validateLlmResponse>["commands"][number]): Command {
@@ -266,6 +282,23 @@ export function createLlmBrain(config: LlmCommanderConfig, callbacks: LlmBrainCa
     }
     if (parsed.type === "llm:siegeTower") {
       return { commandId: 0, type: "llm:siegeTower", enemyIds: parsed.enemyIds, towerTile: parsed.towerTile };
+    }
+    if (parsed.type === "llm:setSpawnOrder") {
+      const spawnOrder: Command = { commandId: 0, type: "llm:setSpawnOrder" };
+      if (parsed.spawnIndex !== undefined) spawnOrder.spawnIndex = parsed.spawnIndex;
+      if (parsed.clear) spawnOrder.clear = true;
+      if (parsed.hold !== undefined) spawnOrder.hold = parsed.hold;
+      if (parsed.holdTile) spawnOrder.holdTile = parsed.holdTile;
+      if (parsed.waypoints) spawnOrder.waypoints = parsed.waypoints;
+      if (parsed.targetingMode) spawnOrder.targetingMode = parsed.targetingMode;
+      if (parsed.towerTile) spawnOrder.towerTile = parsed.towerTile;
+      return spawnOrder;
+    }
+    if (parsed.type === "llm:releaseHeld") {
+      const release: Command = { commandId: 0, type: "llm:releaseHeld" };
+      if (parsed.wave !== undefined) release.wave = parsed.wave;
+      if (parsed.spawnIndex !== undefined) release.spawnIndex = parsed.spawnIndex;
+      return release;
     }
     return { commandId: 0, type: "llm:setTargeting", enemyIds: parsed.enemyIds, mode: parsed.mode };
   }
@@ -312,7 +345,9 @@ export function createLlmBrain(config: LlmCommanderConfig, callbacks: LlmBrainCa
 
       if ("empty" in result || "error" in result) {
         restoreTurn();
-        if ("error" in result) notifyFailure(`LLM request failed: ${result.error}`);
+        const reason = "error" in result ? result.error : "empty response";
+        noteFailure(`LLM request failed: ${reason}`, "error" in result);
+        trace("", `request failed: ${reason}`);
         return [];
       }
 
@@ -323,7 +358,8 @@ export function createLlmBrain(config: LlmCommanderConfig, callbacks: LlmBrainCa
         restoreTurn();
         const rejectionReason = "LLM response was not valid JSON";
         memory.rejectionNote = rejectionReason;
-        notifyFailure(rejectionReason);
+        noteFailure(rejectionReason, true);
+        trace(result.content, `rejected: ${rejectionReason}`);
         return [];
       }
 
@@ -332,14 +368,16 @@ export function createLlmBrain(config: LlmCommanderConfig, callbacks: LlmBrainCa
         restoreTurn();
         const rejectionReason = `LLM response rejected: ${parsed.error}`;
         memory.rejectionNote = rejectionReason;
-        notifyFailure(rejectionReason);
+        noteFailure(rejectionReason, true);
+        trace(result.content, `rejected: ${rejectionReason}`);
         return [];
       }
 
       memory.conversation.push({ role: "assistant", content: result.content });
       memory.rejectionNote = null;
       lastNotifiedFailure = null;
-      if (parsed.error) notifyFailure(`LLM response rejected: ${parsed.error}`);
+      if (parsed.error) noteFailure(`LLM response rejected: ${parsed.error}`, true);
+      trace(result.content, summarizeLlmCommands(parsed.commands, parsed.error));
       if (parsed.chat) callbacks.onChat?.(parsed.chat);
 
       const tokenCount = result.promptTokens > 0 ? result.promptTokens : estimateTokens(systemPrompt, transcript);

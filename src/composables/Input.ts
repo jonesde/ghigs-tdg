@@ -49,6 +49,9 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
   const handle = (event: KeyboardEvent) => {
     const gs = gameStore;
     if (gs.state === GameState.MENU || gs.state === GameState.GAME_OVER || gs.state === GameState.VICTORY) return;
+    // This listener is on window, so it also sees keys typed into the commander panel.
+    // Space is cancelled for pause and would never be inserted into the field.
+    if (isTextEntryTarget(event)) return;
 
     switch (event.key) {
       case " ":
@@ -212,6 +215,13 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
     window.removeEventListener("keydown", handleDown);
     window.removeEventListener("keyup", handleUp);
   });
+}
+
+function isTextEntryTarget(event: KeyboardEvent): boolean {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  return target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
 }
 
 function handleSpecializeKey(

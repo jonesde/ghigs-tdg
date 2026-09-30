@@ -61,6 +61,7 @@ describe("CommandersScreen", () => {
       systemPrompt: "sys",
       requestTimeoutMs: 30000,
       pauseForCommander: false,
+      decisionIntervalMs: 1000,
     });
     const wrapper = mount(CommandersScreen, { global: { plugins: [router, pinia] } });
     expect(wrapper.text()).toContain("My LLM");
@@ -87,6 +88,7 @@ describe("CommandersScreen", () => {
     expect(persistStore.llmCommanders[0].name).toBe("Fresh Commander");
     expect(persistStore.llmCommanders[0].endpointUrl).toBe("http://localhost:1234/v1");
     expect(persistStore.llmCommanders[0].pauseForCommander).toBe(false);
+    expect(persistStore.llmCommanders[0].decisionIntervalMs).toBe(1000);
   });
 
   it("activates a built-in commander via setEnemyCommander", async () => {
@@ -120,6 +122,7 @@ describe("CommandersScreen", () => {
       systemPrompt: "sys",
       requestTimeoutMs: 30000,
       pauseForCommander: false,
+      decisionIntervalMs: 1000,
     });
   }
 
@@ -195,6 +198,38 @@ describe("CommandersScreen", () => {
     saveButton.click();
     await Promise.resolve();
     expect(persistStore.llmCommanders[0].pauseForCommander).toBe(true);
+  });
+
+  it("keeps decisionIntervalMs when an edit is saved", async () => {
+    persistStore.addLlmCommander({
+      id: "l_1",
+      name: "My LLM",
+      endpointUrl: "http://localhost:11434/v1",
+      token: "",
+      modelName: "",
+      contextLimit: 32768,
+      commanderInstructions: "",
+      systemPrompt: "sys",
+      requestTimeoutMs: 30000,
+      pauseForCommander: true,
+      decisionIntervalMs: 4000,
+      reasoningEnabled: true,
+    });
+    const wrapper = mount(CommandersScreen, { global: { plugins: [router, pinia] } });
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Edit")!
+      .trigger("click");
+    const nameInput = document.body.querySelectorAll("input.form-input")[0] as HTMLInputElement;
+    nameInput.value = "Renamed";
+    nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    const saveButton = document.body.querySelector("button.form-btn.confirm") as HTMLButtonElement;
+    saveButton.click();
+    await Promise.resolve();
+    expect(persistStore.llmCommanders[0].name).toBe("Renamed");
+    expect(persistStore.llmCommanders[0].decisionIntervalMs).toBe(4000);
+    expect(persistStore.llmCommanders[0].pauseForCommander).toBe(true);
+    expect(persistStore.llmCommanders[0].reasoningEnabled).toBe(true);
   });
 
   it("tests the endpoint without adding a commander", async () => {

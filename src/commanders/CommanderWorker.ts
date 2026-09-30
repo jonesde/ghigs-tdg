@@ -3,7 +3,7 @@ import { GameState } from "@/sim/Constants.js";
 import type { CommanderBrain, CommanderMemory } from "./brain.js";
 import { createBrain } from "./brain.js";
 import { createLlmBrain } from "./llm/brain.js";
-import type { LlmCommanderConfig } from "./llm/types.js";
+import { DEFAULT_DECISION_INTERVAL_MS, type LlmCommanderConfig, normalizeDecisionIntervalMs } from "./llm/types.js";
 import type { CommanderObservation } from "./observation.js";
 import { buildObservation } from "./observation.js";
 import type {
@@ -43,13 +43,14 @@ let gridLayoutToggleSent = false;
 // engine's freshly re-enabled feed is turned back off after the new map is cached.
 let lastRunId: number | null = null;
 
-// LLM-brain cadence + in-flight guard. The relay polls at ~4 Hz but we only call
-// the API about once per second; an in-flight decide is skipped (its tick dropped).
+// LLM-brain cadence + in-flight guard. The relay polls at ~4 Hz. A new decide waits
+// until decisionIntervalMs after the previous one finished. An in-flight decide drops its tick.
 let deciding = false;
 let lastDecisionTimeMs = 0;
-const LLM_DECISION_INTERVAL_MS = 1000;
+let decisionIntervalMs = DEFAULT_DECISION_INTERVAL_MS;
 let pausedForBrain = false;
 let pauseForCommander = false;
+let activeLlmConfig: LlmCommanderConfig | null = null;
 let latestObservation: CommanderObservation | null = null;
 
 function postToMain(message: CommanderToMainMessage): void {
@@ -77,15 +78,14 @@ function resetMemory(): void {
   latestObservation = null;
 }
 
-// Issues an async decide for the LLM brain with an in-flight guard + ~1 Hz
-// cadence throttle + pause skip. Backoff is awaited before the observation is
+// Issues an async decide for the LLM brain with an in-flight guard, a gap after the
+// previous decide, and a pause skip. Backoff is awaited before the observation is
 // sampled. A thrown decide notifies and does not kill the worker.
 async function decideLlm(): Promise<void> {
   if (!brain || deciding || pausedForBrain) return;
   const now = Date.now();
-  if (now - lastDecisionTimeMs < LLM_DECISION_INTERVAL_MS) return;
+  if (now - lastDecisionTimeMs < decisionIntervalMs) return;
   deciding = true;
-  lastDecisionTimeMs = now;
   // Hold stops the sim clock without GameState.PAUSED. PAUSED makes this worker
   // skip decide, which would drop the request the hold is waiting on.
   const holding = pauseForCommander;
@@ -99,6 +99,10 @@ async function decideLlm(): Promise<void> {
     const errorMessage = error instanceof Error ? error.message : String(error);
     postToMain({ type: "notify", message: `Commander error: ${errorMessage}` });
   } finally {
+    // Stamp after the request. pauseForCommander stops the sim clock for the whole
+    // call, so a start stamp lets the request consume the gap and the next observation
+    // re-pauses immediately.
+    lastDecisionTimeMs = Date.now();
     if (holding) postToMain({ type: "hold", hold: false });
     deciding = false;
   }
@@ -121,12 +125,14 @@ async function dispatchCommanderMessage(message: MainToCommanderMessage): Promis
   switch (message.type) {
     case "start": {
       brainKind = message.kind;
+      const llmConfig: LlmCommanderConfig | undefined = message.config;
       if (brainKind === "llm") {
-        const llmConfig: LlmCommanderConfig | undefined = message.config;
         brain = llmConfig
           ? createLlmBrain(llmConfig, {
               onChat: (text) => postToMain({ type: "chat", text, from: "commander" }),
               onNotify: (messageText) => postToMain({ type: "notify", message: messageText }),
+              onTrace: (entry) =>
+                postToMain({ type: "trace", responseText: entry.responseText, commandSummary: entry.commandSummary }),
               fetchFn: globalThis.fetch,
             })
           : null;
@@ -134,12 +140,22 @@ async function dispatchCommanderMessage(message: MainToCommanderMessage): Promis
         brain = createBrain(message.kind);
       }
       resetMemory();
-      // Config, not run memory. resetMemory runs on every start and must not clear this.
+      // Config, not run memory. resetMemory runs on every start and must not clear these.
       pauseForCommander = brainKind === "llm" && message.config?.pauseForCommander === true;
+      decisionIntervalMs =
+        brainKind === "llm"
+          ? normalizeDecisionIntervalMs(message.config?.decisionIntervalMs)
+          : DEFAULT_DECISION_INTERVAL_MS;
+      // The brain closes over this object. Later call-settings updates mutate it so
+      // the next complete() sends the new reasoning fields. The in-flight body is
+      // already serialized.
+      activeLlmConfig = brainKind === "llm" && llmConfig ? llmConfig : null;
+      if (activeLlmConfig) activeLlmConfig.reasoningEnabled = activeLlmConfig.reasoningEnabled === true;
       break;
     }
     case "stop": {
       brain = null;
+      activeLlmConfig = null;
       break;
     }
     case "chat": {
@@ -150,6 +166,13 @@ async function dispatchCommanderMessage(message: MainToCommanderMessage): Promis
       if (message.text === memory.commanderInstructions) break;
       memory.commanderInstructions = message.text;
       memory.isCompressing = true;
+      break;
+    }
+    case "updateCallSettings": {
+      if (brainKind !== "llm") break;
+      pauseForCommander = message.pauseForCommander === true;
+      decisionIntervalMs = normalizeDecisionIntervalMs(message.decisionIntervalMs);
+      if (activeLlmConfig) activeLlmConfig.reasoningEnabled = message.reasoningEnabled === true;
       break;
     }
     case "observation": {

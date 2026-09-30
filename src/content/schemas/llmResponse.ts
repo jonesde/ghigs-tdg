@@ -44,7 +44,39 @@ const SiegeTowerSchema = z.object({
   towerTile: TileCoordinateSchema,
 });
 
-export const LlmCommandSchema = z.discriminatedUnion("type", [RouteGroupSchema, SetTargetingSchema, SiegeTowerSchema]);
+const PresentWaypointsSchema = z.array(z.unknown()).transform((entries) => {
+  const result: { x: number; y: number }[] = [];
+  for (const entry of entries) {
+    const parsed = TileCoordinateSchema.safeParse(entry);
+    if (parsed.success) result.push(parsed.data);
+  }
+  return result;
+});
+
+const SetSpawnOrderSchema = z.object({
+  type: z.literal("llm:setSpawnOrder"),
+  spawnIndex: z.number().int().optional(),
+  clear: z.boolean().optional(),
+  hold: z.boolean().optional(),
+  holdTile: TileCoordinateSchema.optional(),
+  waypoints: PresentWaypointsSchema.optional(),
+  targetingMode: z.string().min(1).optional(),
+  towerTile: TileCoordinateSchema.optional(),
+});
+
+const ReleaseHeldSchema = z.object({
+  type: z.literal("llm:releaseHeld"),
+  wave: z.number().int().optional(),
+  spawnIndex: z.number().int().optional(),
+});
+
+export const LlmCommandSchema = z.discriminatedUnion("type", [
+  RouteGroupSchema,
+  SetTargetingSchema,
+  SiegeTowerSchema,
+  SetSpawnOrderSchema,
+  ReleaseHeldSchema,
+]);
 
 export const LlmResponseBodySchema = z.union([
   z.array(z.unknown()),

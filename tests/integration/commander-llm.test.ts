@@ -28,6 +28,8 @@ function makeConfig(): LlmCommanderConfig {
     systemPrompt: DEFAULT_LLM_SYSTEM_PROMPT,
     requestTimeoutMs: 30000,
     pauseForCommander: false,
+    decisionIntervalMs: 1000,
+    reasoningEnabled: false,
   };
 }
 
@@ -227,6 +229,8 @@ describe("Integration: LLM commander worker pause + relay", () => {
 
     vi.advanceTimersByTime(1000);
     await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    // Finish the request at this timestamp. The next gap is measured from the reply.
+    await vi.advanceTimersByTimeAsync(0);
     expect(fetchFn).toHaveBeenCalledTimes(1);
     const firstMessages = messagesFromCall(fetchFn, 0);
     expect(firstMessages[0]?.content).toContain("alpha");
@@ -236,6 +240,7 @@ describe("Integration: LLM commander worker pause + relay", () => {
     vi.advanceTimersByTime(1000);
     await deliver({ type: "updateInstructions", text: "alpha" });
     await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
     expect(fetchFn).toHaveBeenCalledTimes(2);
     const secondUsers = messagesFromCall(fetchFn, 1).filter((message) => message.role === "user");
     expect(secondUsers[secondUsers.length - 1]?.content).toContain('"kind":"delta"');
@@ -243,6 +248,7 @@ describe("Integration: LLM commander worker pause + relay", () => {
     vi.advanceTimersByTime(1000);
     await deliver({ type: "updateInstructions", text: "beta" });
     await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
     expect(fetchFn).toHaveBeenCalledTimes(3);
     const thirdMessages = messagesFromCall(fetchFn, 2);
     expect(thirdMessages[0]?.content).toContain("beta");
@@ -266,6 +272,262 @@ describe("Integration: LLM commander worker pause + relay", () => {
     posted.length = 0;
     await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
     expect(posted.some((message) => message.type === "commands")).toBe(true);
+  });
+
+  it("waits the decision interval after a paused request finishes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    let resolveFetch: (value: unknown) => void = () => {};
+    const fetchFn = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+    ) as unknown as typeof fetch;
+    gw.fetch = fetchFn;
+    gw.self = mockSelf;
+    await import("@/commanders/CommanderWorker.js");
+    await deliver({
+      type: "start",
+      kind: "llm",
+      config: { ...makeConfig(), pauseForCommander: true, decisionIntervalMs: 1000 },
+    });
+    setup();
+    posted.length = 0;
+
+    vi.advanceTimersByTime(1000);
+    const playing = deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(posted.filter((message) => message.type === "hold")).toEqual([{ type: "hold", hold: true }]);
+
+    vi.advanceTimersByTime(5000);
+    resolveFetch({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ choices: [{ message: { content: "[]" } }] }),
+    });
+    await playing;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+
+    await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(999);
+    await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(1);
+    const nextPlaying = deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(posted.filter((message) => message.type === "hold")).toEqual([
+      { type: "hold", hold: true },
+      { type: "hold", hold: false },
+      { type: "hold", hold: true },
+    ]);
+    resolveFetch({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ choices: [{ message: { content: "[]" } }] }),
+    });
+    await nextPlaying;
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
+  it("applies pause and the call delay from updateCallSettings without restarting", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const fetchFn = vi.fn(async () => responseWithContent("[]")) as unknown as typeof fetch;
+    gw.fetch = fetchFn;
+    gw.self = mockSelf;
+    await import("@/commanders/CommanderWorker.js");
+    await deliver({ type: "start", kind: "llm", config: makeConfig() });
+    setup();
+    posted.length = 0;
+
+    vi.advanceTimersByTime(1000);
+    await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(posted.some((message) => message.type === "hold")).toBe(false);
+
+    await deliver({
+      type: "updateCallSettings",
+      pauseForCommander: true,
+      decisionIntervalMs: 1000,
+      reasoningEnabled: false,
+    });
+    vi.advanceTimersByTime(1000);
+    posted.length = 0;
+    await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(posted.filter((message) => message.type === "hold")).toEqual([
+      { type: "hold", hold: true },
+      { type: "hold", hold: false },
+    ]);
+
+    await deliver({
+      type: "updateCallSettings",
+      pauseForCommander: true,
+      decisionIntervalMs: 5000,
+      reasoningEnabled: false,
+    });
+    await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+
+    vi.advanceTimersByTime(4999);
+    await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+
+    vi.advanceTimersByTime(1);
+    await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+    expect(posted.filter((message) => message.type === "hold")).toEqual([
+      { type: "hold", hold: true },
+      { type: "hold", hold: false },
+      { type: "hold", hold: true },
+      { type: "hold", hold: false },
+    ]);
+  });
+
+  it("sends the reasoning fields from updateCallSettings on the next request", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const fetchFn = vi.fn(async () => responseWithContent("[]")) as unknown as typeof fetch;
+    gw.fetch = fetchFn;
+    gw.self = mockSelf;
+    await import("@/commanders/CommanderWorker.js");
+    await deliver({ type: "start", kind: "llm", config: makeConfig() });
+    setup();
+
+    vi.advanceTimersByTime(1000);
+    await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
+    const calls = (fetchFn as unknown as { mock: { calls: Array<[string, { body?: string }]> } }).mock.calls;
+    const firstBody = JSON.parse(String(calls[0]?.[1].body)) as { reasoning_effort?: string };
+    expect(firstBody.reasoning_effort).toBe("none");
+
+    await deliver({
+      type: "updateCallSettings",
+      pauseForCommander: false,
+      decisionIntervalMs: 1000,
+      reasoningEnabled: true,
+    });
+    vi.advanceTimersByTime(1000);
+    await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
+    const secondBody = JSON.parse(String(calls[1]?.[1].body)) as {
+      reasoning_effort?: string;
+      enable_thinking?: boolean;
+      thinking?: { type: string };
+    };
+    expect(secondBody.reasoning_effort).toBe("medium");
+    expect(secondBody.enable_thinking).toBe(true);
+    expect(secondBody.thinking).toEqual({ type: "enabled" });
+  });
+
+  function traceMessages(): { responseText: string; commandSummary: string }[] {
+    return posted.flatMap((message) =>
+      message.type === "trace" ? [{ responseText: message.responseText, commandSummary: message.commandSummary }] : [],
+    );
+  }
+
+  it("posts the raw model body and a command summary", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const raw = JSON.stringify([
+      { type: "llm:routeGroup", enemyIds: [1, 2], hold: true, holdTile: { x: 3, y: 4 }, waypoints: [] },
+    ]);
+    const fetchFn = vi.fn(async () => responseWithContent(raw));
+    gw.fetch = fetchFn as unknown as typeof fetch;
+    gw.self = mockSelf;
+    await import("@/commanders/CommanderWorker.js");
+    await deliver({ type: "start", kind: "llm", config: makeConfig() });
+    setup();
+    posted.length = 0;
+
+    vi.advanceTimersByTime(1000);
+    await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(traceMessages()).toEqual([{ responseText: raw, commandSummary: "hold 1, 2 at (3, 4)" }]);
+  });
+
+  it("keeps the chat sentence in the chat log and the raw body in the trace", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const raw = JSON.stringify({
+      commands: [{ type: "llm:routeGroup", enemyIds: [1], hold: true, waypoints: [] }],
+      chat: "moving",
+    });
+    const fetchFn = vi.fn(async () => responseWithContent(raw));
+    gw.fetch = fetchFn as unknown as typeof fetch;
+    gw.self = mockSelf;
+    await import("@/commanders/CommanderWorker.js");
+    await deliver({ type: "start", kind: "llm", config: makeConfig() });
+    setup();
+    posted.length = 0;
+
+    vi.advanceTimersByTime(1000);
+    await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(posted.some((message) => message.type === "chat" && message.text === "moving")).toBe(true);
+    expect(traceMessages()[0]?.responseText).toBe(raw);
+    expect(traceMessages()[0]?.commandSummary).toBe("hold 1");
+  });
+
+  it("traces a non-JSON body and does not apply commander commands", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const fetchFn = vi.fn(async () => responseWithContent("this is not json"));
+    gw.fetch = fetchFn as unknown as typeof fetch;
+    gw.self = mockSelf;
+    await import("@/commanders/CommanderWorker.js");
+    await deliver({ type: "start", kind: "llm", config: makeConfig() });
+    setup();
+    posted.length = 0;
+
+    vi.advanceTimersByTime(1000);
+    await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
+    const applied = posted.flatMap((message) => (message.type === "commands" ? message.commands : []));
+    expect(applied.every((command) => command.type === "llm:gridLayoutToggle")).toBe(true);
+    expect(traceMessages()[0]?.responseText).toBe("this is not json");
+    expect(traceMessages()[0]?.commandSummary).toContain("rejected:");
+  });
+
+  it("traces a repeated transport failure without a second toast", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const fetchFn = vi.fn(async () => ({ ok: false, status: 500, text: async () => "" }));
+    gw.fetch = fetchFn as unknown as typeof fetch;
+    gw.self = mockSelf;
+    await import("@/commanders/CommanderWorker.js");
+    await deliver({ type: "start", kind: "llm", config: makeConfig() });
+    setup();
+    posted.length = 0;
+
+    vi.advanceTimersByTime(1000);
+    await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(traceMessages()).toEqual([{ responseText: "", commandSummary: "request failed: status 500" }]);
+
+    vi.advanceTimersByTime(1000);
+    await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(traceMessages()).toEqual([
+      { responseText: "", commandSummary: "request failed: status 500" },
+      { responseText: "", commandSummary: "request failed: status 500" },
+    ]);
+    expect(posted.filter((message) => message.type === "notify")).toHaveLength(1);
   });
 });
 
@@ -485,15 +747,30 @@ describe("Unit: LLM brain round-trip + malformed", () => {
     fetchFn.mockResolvedValueOnce(responseWithContent("[]"));
     fetchFn.mockResolvedValueOnce(responseWithContent("nope"));
     const notify = vi.fn();
-    const brain = createLlmBrain(makeConfig(), { fetchFn: fetchFn as unknown as typeof fetch, onNotify: notify });
+    const trace = vi.fn();
+    const brain = createLlmBrain(makeConfig(), {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      onNotify: notify,
+      onTrace: trace,
+    });
     const memory = makeMemory();
     await brain.decide(makeObservation(), memory);
     expect(notify).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledWith("LLM response was not valid JSON");
+    expect(trace).toHaveBeenCalledTimes(1);
+    expect(trace).toHaveBeenCalledWith({
+      responseText: "not json at all",
+      commandSummary: "rejected: LLM response was not valid JSON",
+    });
     expect(memory.conversation).toEqual([]);
 
     await brain.decide(makeObservation(), memory);
     expect(notify).toHaveBeenCalledTimes(1);
+    expect(trace).toHaveBeenCalledTimes(2);
+    expect(trace).toHaveBeenLastCalledWith({
+      responseText: "still not json",
+      commandSummary: "rejected: LLM response was not valid JSON",
+    });
     const secondMessages = messagesFromCall(fetchFn, 1);
     const userMessage = secondMessages[secondMessages.length - 1]?.content ?? "";
     expect(userMessage).toContain("Previous reply was rejected: LLM response was not valid JSON");

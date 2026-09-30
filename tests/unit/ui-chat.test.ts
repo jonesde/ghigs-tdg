@@ -47,6 +47,23 @@ describe("UiStore chat log", () => {
     expect(store.chatLog).toEqual([]);
   });
 
+  it("appendLlmTrace caps at the most recent 50 entries and trims a long response", () => {
+    store.appendLlmTrace({ responseText: "x".repeat(8001), commandSummary: "no commands" });
+    expect(store.llmTraceLog[0].responseText).toBe(`${"x".repeat(8000)}…`);
+    for (let index = 0; index < 50; index++) {
+      store.appendLlmTrace({ responseText: `r${index}`, commandSummary: "no commands" });
+    }
+    expect(store.llmTraceLog.length).toBe(50);
+    expect(store.llmTraceLog[0].responseText).toBe("r0");
+    expect(store.llmTraceLog[49].responseText).toBe("r49");
+  });
+
+  it("setEnemyCommander clears the llm trace log", () => {
+    store.appendLlmTrace({ responseText: "[]", commandSummary: "no commands" });
+    store.setEnemyCommander("none");
+    expect(store.llmTraceLog).toEqual([]);
+  });
+
   it("activeCommanderIsLlm is false for none", () => {
     store.enemyCommander = "none";
     expect(store.activeCommanderIsLlm).toBe(false);

@@ -16,6 +16,8 @@ function makeConfig(): LlmCommanderConfig {
     systemPrompt: DEFAULT_LLM_SYSTEM_PROMPT,
     requestTimeoutMs: 30000,
     pauseForCommander: false,
+    decisionIntervalMs: 1000,
+    reasoningEnabled: false,
   };
 }
 
@@ -31,6 +33,9 @@ describe("buildSystemPrompt", () => {
     expect(prompt).not.toContain("BFS");
     expect(prompt).toContain("llm:siegeTower");
     expect(prompt).toContain("llm:setTargeting");
+    expect(prompt).toContain("llm:setSpawnOrder");
+    expect(prompt).toContain("llm:releaseHeld");
+    expect(prompt).toContain("spawnOrders");
     expect(prompt).toContain("override any shorter command list");
     expect(prompt).toContain("distanceToBase");
     expect(prompt).toContain("baseHp");

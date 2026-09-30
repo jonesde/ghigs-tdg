@@ -32,6 +32,40 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+interface AssistantMessage {
+  content?: unknown;
+  reasoning_content?: unknown;
+  reasoning?: unknown;
+}
+
+function textField(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+export function applyReasoningFields(body: Record<string, unknown>, reasoningEnabled: boolean): void {
+  if (reasoningEnabled) {
+    body.reasoning_effort = "medium";
+    body.enable_thinking = true;
+    body.chat_template_kwargs = { enable_thinking: true, thinking: true };
+    body.thinking = { type: "enabled" };
+    body.reasoning = { enabled: true, effort: "medium" };
+    return;
+  }
+  body.reasoning_effort = "none";
+  body.enable_thinking = false;
+  body.chat_template_kwargs = { enable_thinking: false, thinking: false };
+  body.thinking = { type: "disabled" };
+  body.reasoning = { enabled: false, effort: "none" };
+}
+
+function assistantText(message: AssistantMessage | undefined): string {
+  const content = textField(message?.content);
+  if (content.length > 0) return content;
+  const reasoningContent = textField(message?.reasoning_content);
+  if (reasoningContent.length > 0) return reasoningContent;
+  return textField(message?.reasoning);
+}
+
 export function createApiClient(fetchFn: typeof fetch = globalThis.fetch): ApiClient {
   let nextBackoffMs = 0;
   let lastAttemptTimeMs = 0;
@@ -62,6 +96,7 @@ export function createApiClient(fetchFn: typeof fetch = globalThis.fetch): ApiCl
         temperature: REQUEST_TEMPERATURE,
         stream: false,
       };
+      applyReasoningFields(body, config.reasoningEnabled === true);
       if (config.modelName) body.model = config.modelName;
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (config.token) headers.Authorization = `Bearer ${config.token}`;
@@ -100,9 +135,9 @@ export function createApiClient(fetchFn: typeof fetch = globalThis.fetch): ApiCl
           return { error: "invalid json" };
         }
 
-        const content = (parsed as { choices?: Array<{ message?: { content?: unknown } }> }).choices?.[0]?.message
-          ?.content;
-        if (typeof content !== "string" || content.length === 0) {
+        const message = (parsed as { choices?: Array<{ message?: AssistantMessage }> }).choices?.[0]?.message;
+        const content = assistantText(message);
+        if (content.length === 0) {
           escalateBackoff();
           return { empty: true };
         }

@@ -135,6 +135,8 @@ export class Enemy {
   heal: number;
   healRange: number;
   spawnIndex: number;
+  // Wave number passed to the constructor. Spawn orders and releaseHeld filter on it.
+  wave: number;
   grid: GridRef;
   x!: number;
   y!: number;
@@ -254,6 +256,7 @@ export class Enemy {
     this.baseTarget = baseTarget;
 
     this.spawnIndex = spawnIndex;
+    this.wave = wave;
     this.grid = grid;
     this.slowFactor = 1;
     this.slowStack = [];

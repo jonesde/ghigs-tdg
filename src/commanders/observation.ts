@@ -1,4 +1,9 @@
-import type { NavFieldSnapshotData, SpawnStateSnapshot } from "@/sim/SimulationSnapshot.js";
+import type {
+  NavFieldSnapshotData,
+  SpawnOrderView,
+  SpawnPointSnapshot,
+  SpawnStateSnapshot,
+} from "@/sim/SimulationSnapshot.js";
 import type { CommanderSnapshotSlice } from "./protocol.js";
 
 export interface ObservationEnemy {
@@ -14,6 +19,8 @@ export interface ObservationEnemy {
   blockedByTowerTile?: { x: number; y: number } | null;
   distanceToBase?: number;
   targetingMode?: string | null;
+  wave?: number;
+  spawnIndex?: number;
 }
 
 export interface ObservationTower {
@@ -34,6 +41,7 @@ export interface ObservationWave {
   baseHealth: number;
   maxBaseHealth: number;
   countdownRemaining: number | null;
+  spawnOrders?: SpawnOrderView[];
 }
 
 export interface ObservationNav {
@@ -46,6 +54,7 @@ export interface ObservationNav {
 // stable for LLM commanders.
 export interface CommanderObservation {
   map: number[][] | undefined;
+  spawns?: SpawnPointSnapshot[];
   enemies: ObservationEnemy[];
   towers: ObservationTower[];
   wave: ObservationWave;
@@ -80,6 +89,8 @@ export function buildObservation(slice: CommanderSnapshotSlice): CommanderObserv
       observationEnemy.blockedByTowerTile = enemy.blockedByTowerTile;
     }
     if (enemy.targetingMode !== undefined) observationEnemy.targetingMode = enemy.targetingMode;
+    if (enemy.wave !== undefined) observationEnemy.wave = enemy.wave;
+    if (enemy.spawnIndex !== undefined) observationEnemy.spawnIndex = enemy.spawnIndex;
     return observationEnemy;
   });
   const towers: ObservationTower[] = slice.towers.map((tower) => {
@@ -103,8 +114,15 @@ export function buildObservation(slice: CommanderSnapshotSlice): CommanderObserv
     baseHealth: slice.meta.baseHealth,
     maxBaseHealth: slice.meta.maxBaseHealth,
     countdownRemaining: slice.meta.waveCountdown?.remaining ?? null,
+    spawnOrders: slice.meta.spawnOrders ?? [],
   };
-  const observation: CommanderObservation = { map: slice.gridLayout, enemies, towers, wave };
+  const observation: CommanderObservation = {
+    map: slice.gridLayout,
+    spawns: slice.meta.spawns ?? [],
+    enemies,
+    towers,
+    wave,
+  };
   if (navField) {
     observation.nav = {
       pathVersion: navField.pathVersion,

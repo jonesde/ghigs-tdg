@@ -207,8 +207,16 @@ function handleCommanderChange(event: Event) {
   font-size: var(--font-md);
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.08);
+  background-color: #141721;
   color: var(--color-text);
   cursor: pointer;
+  /* Chrome paints the opened list from color-scheme, not from the page background.
+     Dark scheme keeps that popup dark so the light option text stays readable. */
+  color-scheme: dark;
+}
+
+.commander-select option {
+  background-color: #141721;
+  color: var(--color-text);
 }
 </style>

@@ -75,12 +75,13 @@ Enemies spawn from a QUEUE. Between waves there is a ${BETWEEN_WAVES_TIMER}s int
 
 # Data stream
 
-Each request resends the transcript. The first user message (and the first message after a context rebuild) is a FULL snapshot. Later user messages are DELTAS against that transcript. The map is only in a full snapshot.
+Each request resends the transcript. The first user message (and the first message after a context rebuild) is a FULL snapshot. Later user messages are DELTAS against that transcript. The map and the spawns list are only in a full snapshot. spawns is [{ spawnIndex, x, y }] using the same index as setSpawnOrder.
 
-- Enemy fields: id, type, x, y, level, hp, maxHp, routingMode (default | hold | route | siege), attackingBase, blockedByTowerTile, distanceToBase, targetingMode (null when unset, otherwise one of the setTargeting modes).
+- Enemy fields: id, type, x, y, level, hp, maxHp, wave, spawnIndex, routingMode (default | hold | route | siege), attackingBase, blockedByTowerTile, distanceToBase, targetingMode (null when unset, otherwise one of the setTargeting modes).
 - Tower fields: type, x, y, level, hp, maxHp, distanceToBase. distanceToBase is the nav distance of the nearest path, spawn, or base tile; a terrain tower is snapped to that tile. -1 means no walkable tile. Towers with hp <= 0 are omitted. A tower that drops to 0 hp is listed in removedTowers.
 - A delta contains newEnemies (full entry), changedEnemies (same fields; emitted when tile, hp, maxHp, routingMode, attackingBase, blockedByTowerTile, targetingMode, or distanceToBase changed), removedEnemyIds, newTowers, changedTowers (hp, maxHp, level, or distanceToBase), removedTowers ({x, y}), and the wave summary.
-- Wave summary fields: currentWave, pendingEnemyCount, remainingScheduledSpawns, active, baseHp, maxBaseHp, countdownSeconds (inter-wave seconds remaining, or null while a wave is spawning).
+- Wave summary fields: currentWave, pendingEnemyCount, remainingScheduledSpawns, active, baseHp, maxBaseHp, countdownSeconds (inter-wave seconds remaining, or null while a wave is spawning), spawnOrders.
+- spawnOrders lists the latched standing orders. An entry with no spawnIndex is the default. hold true without holdTile means park on that unit's own spawn tile. An empty array means nothing is latched.
 - Your own prior replies stay in the transcript as assistant messages until a context rebuild replaces the transcript with a new full snapshot.
 
 # Commands
@@ -105,6 +106,19 @@ You may emit ONLY the following commands as a JSON array (or { "commands": [...]
    - weakest: siege the live tower with the lowest current health (ties use the nearest rule).
    - strongestAhead: siege the highest-health live tower whose snapped distanceToBase is strictly smaller than the enemy's. The snap is the nearest path, spawn, or base tile. -1 means no walkable tile, and that tower is not ahead. If none qualify, behave as base.
    - Any other mode string is stored and does not change engagement.
+4. setSpawnOrder — standing order applied to each enemy as it emerges:
+   { "type": "llm:setSpawnOrder", "spawnIndex": number, "clear": boolean, "hold": boolean, "holdTile": { "x": number, "y": number }, "waypoints": [ { "x": number, "y": number } ], "targetingMode": string, "towerTile": { "x": number, "y": number } }
+   - Omit spawnIndex to set the default for every spawn that has no order of its own. A spawnIndex replaces the whole default for that spawn.
+   - Exactly one movement: hold true (park; omit holdTile to use that unit's own spawn tile), or waypoints (route through them to the base; an empty waypoints array emerges on default pathing), or towerTile (siege that tower if it is live). targetingMode may accompany that one movement, or stand alone.
+   - hold false is not a hold. Two movements, or no movement and no targetingMode, are rejected. clear combined with any other order field is rejected.
+   - targetingMode on a hold or a route is stored and does nothing until the enemy is released. A towerTile order clears targeting at spawn. A missing tower leaves that unit on default pathing; the order stays for the next unit.
+   - The order does not move enemies already alive. Use routeGroup for those.
+   - clear true with spawnIndex drops that spawn's order. clear true with no spawnIndex drops the default and every spawn order.
+   - Commands in one array apply before that tick's spawns. A release then a still-active order releases enemies already holding; units that emerge later in the tick still receive the order. Clear the order after the release to stop the next emergents from holding.
+5. releaseHeld — release living enemies that are held:
+   { "type": "llm:releaseHeld", "wave": number, "spawnIndex": number }
+   - Omit wave to release every holder. Omit spawnIndex to ignore spawn. A targeting mode set by the spawn order stays and resumes after release.
+   - Pass wave from the wave summary so a later wave that is already holding stays parked.
 
 Return ONLY the JSON command block (optionally with a "chat" field for a short message to the player).`;
 

@@ -38,6 +38,9 @@ export function stopEnemyCommander(): void {
       // next intent does not re-siege under a commander that did not set it.
       dispatchCommand({ commandId: 0, type: "llm:setTargeting", enemyIds, mode: "default" });
     }
+    // The spawn order lives on the engine, not on the live enemies. Leaving it
+    // latched would park the next wave after this commander is gone.
+    dispatchCommand({ commandId: 0, type: "llm:setSpawnOrder", clear: true });
   }
   stopRelay();
 }

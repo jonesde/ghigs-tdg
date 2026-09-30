@@ -16,6 +16,8 @@ describe("cloneCommanderConfig", () => {
       systemPrompt: "sys",
       requestTimeoutMs: 30000,
       pauseForCommander: true,
+      decisionIntervalMs: 1000,
+      reasoningEnabled: false,
     });
     const cloned = cloneCommanderConfig(config);
     expect(cloned).not.toBe(config);

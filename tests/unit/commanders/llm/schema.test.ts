@@ -13,6 +13,8 @@ const config: LlmCommanderConfig = {
   systemPrompt: DEFAULT_LLM_SYSTEM_PROMPT,
   requestTimeoutMs: 30000,
   pauseForCommander: false,
+  decisionIntervalMs: 1000,
+  reasoningEnabled: false,
 };
 
 describe("validateLlmResponse", () => {
@@ -82,6 +84,36 @@ describe("validateLlmResponse", () => {
     if (command?.type === "llm:routeGroup") {
       expect(command.hold).toBe(true);
       expect(command.holdTile).toEqual({ x: 2, y: 3 });
+    }
+  });
+
+  it("accepts a spawn order and a release, and soft-rejects an empty or mixed order", () => {
+    const result = validateLlmResponse(
+      [
+        { type: "llm:setSpawnOrder", hold: true, targetingMode: "base" },
+        { type: "llm:setSpawnOrder" },
+        { type: "llm:setSpawnOrder", clear: true, hold: true },
+        { type: "llm:setSpawnOrder", hold: true, waypoints: [{ x: 1, y: 1 }] },
+        { type: "llm:releaseHeld", wave: 4, spawnIndex: 0 },
+        { type: "llm:routeGroup", enemyIds: [9], waypoints: [] },
+      ],
+      config,
+    );
+    expect(result.commands.map((command) => command.type)).toEqual([
+      "llm:setSpawnOrder",
+      "llm:releaseHeld",
+      "llm:routeGroup",
+    ]);
+    expect(result.error).toBe("setSpawnOrder is empty");
+    const spawnOrder = result.commands[0];
+    if (spawnOrder?.type === "llm:setSpawnOrder") {
+      expect(spawnOrder.hold).toBe(true);
+      expect(spawnOrder.targetingMode).toBe("base");
+    }
+    const release = result.commands[1];
+    if (release?.type === "llm:releaseHeld") {
+      expect(release.wave).toBe(4);
+      expect(release.spawnIndex).toBe(0);
     }
   });
 });

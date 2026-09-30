@@ -105,4 +105,32 @@ describe("PersistStore save migration pauseForCommander backfill", () => {
     expect(result.saveVersion).toBe(4);
     expect(result.llmCommanders.map((entry) => entry.pauseForCommander)).toEqual([false, true, false]);
   });
+
+  it("fills a missing reasoningEnabled as false and keeps an explicit true", () => {
+    const result = migrateToCurrent({
+      saveVersion: 4,
+      llmCommanders: [
+        commander("missing"),
+        commander("enabled", { reasoningEnabled: true }),
+        commander("garbage", { reasoningEnabled: "yes" }),
+      ],
+    });
+    expect(result.saveVersion).toBe(4);
+    expect(result.llmCommanders.map((entry) => entry.reasoningEnabled)).toEqual([false, true, false]);
+  });
+
+  it("fills a missing decisionIntervalMs as 1000 and rejects values outside 1s–10s", () => {
+    const result = migrateToCurrent({
+      saveVersion: 4,
+      llmCommanders: [
+        commander("missing"),
+        commander("kept", { decisionIntervalMs: 5000 }),
+        commander("low", { decisionIntervalMs: 500 }),
+        commander("high", { decisionIntervalMs: 20000 }),
+        commander("fraction", { decisionIntervalMs: 1.5 }),
+      ],
+    });
+    expect(result.saveVersion).toBe(4);
+    expect(result.llmCommanders.map((entry) => entry.decisionIntervalMs)).toEqual([1000, 5000, 1000, 1000, 1000]);
+  });
 });

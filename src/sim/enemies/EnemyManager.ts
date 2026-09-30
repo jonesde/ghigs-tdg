@@ -5,6 +5,7 @@ import type { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
 import type { BlockedApproach } from "@/sim/navmesh/NavDistanceField.js";
 import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
 import type { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import type { SpawnOrderView } from "@/sim/SimulationSnapshot.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
 import type { AttackTarget } from "./Enemy.js";
@@ -14,6 +15,16 @@ interface PendingEnemyEntry {
   type: string;
   level: number;
   wave: number;
+}
+
+// One emerge order. Null fields mean that part of the order is unset.
+// holdTile null with hold parks on the emerging unit's own spawn tile.
+export interface SpawnOrder {
+  hold: boolean;
+  holdTile: { x: number; y: number } | null;
+  waypoints: { x: number; y: number }[] | null;
+  targetingMode: string | null;
+  towerTile: { x: number; y: number } | null;
 }
 
 export class EnemyManager {
@@ -31,6 +42,8 @@ export class EnemyManager {
   private distanceToBaseLookup: ((tileX: number, tileY: number) => number) | null = null;
   private idToEnemy: Map<number, Enemy>;
   private pendingQueues: Map<number, PendingEnemyEntry[]>;
+  private defaultSpawnOrder: SpawnOrder | null = null;
+  private spawnOrdersByIndex = new Map<number, SpawnOrder>();
 
   constructor(
     grid: Grid,
@@ -105,7 +118,71 @@ export class EnemyManager {
     this.enemies = [];
     this.idToEnemy.clear();
     this.pendingQueues.clear();
+    this.defaultSpawnOrder = null;
+    this.spawnOrdersByIndex.clear();
     resetEnemyId();
+  }
+
+  setSpawnOrder(spawnIndex: number | undefined, order: SpawnOrder): void {
+    if (spawnIndex === undefined) this.defaultSpawnOrder = order;
+    else this.spawnOrdersByIndex.set(spawnIndex, order);
+  }
+
+  // Omitted spawnIndex drops the default and every per-spawn slot.
+  clearSpawnOrders(spawnIndex?: number): void {
+    if (spawnIndex === undefined) {
+      this.defaultSpawnOrder = null;
+      this.spawnOrdersByIndex.clear();
+      return;
+    }
+    this.spawnOrdersByIndex.delete(spawnIndex);
+  }
+
+  listSpawnOrders(): SpawnOrderView[] {
+    const views: SpawnOrderView[] = [];
+    if (this.defaultSpawnOrder) views.push(this.viewSpawnOrder(this.defaultSpawnOrder));
+    for (const [spawnIndex, order] of this.spawnOrdersByIndex) {
+      views.push(this.viewSpawnOrder(order, spawnIndex));
+    }
+    return views;
+  }
+
+  private viewSpawnOrder(order: SpawnOrder, spawnIndex?: number): SpawnOrderView {
+    const view: SpawnOrderView = {};
+    if (spawnIndex !== undefined) view.spawnIndex = spawnIndex;
+    if (order.hold) {
+      view.hold = true;
+      if (order.holdTile) view.holdTile = { x: order.holdTile.x, y: order.holdTile.y };
+    }
+    if (order.waypoints) view.waypoints = order.waypoints.map((tile) => ({ x: tile.x, y: tile.y }));
+    if (order.targetingMode) view.targetingMode = order.targetingMode;
+    if (order.towerTile) view.towerTile = { x: order.towerTile.x, y: order.towerTile.y };
+    return view;
+  }
+
+  // The crowd agent already exists. applyRoute no-ops its move request without one,
+  // so this has to run after addAgent or the hold never reaches the crowd.
+  private applySpawnOrder(enemy: Enemy): void {
+    const order = this.spawnOrdersByIndex.get(enemy.spawnIndex) ?? this.defaultSpawnOrder;
+    if (!order) return;
+    if (order.targetingMode) enemy.targetingMode = order.targetingMode;
+    if (order.towerTile) {
+      const tower = this.towerAt(order.towerTile.x, order.towerTile.y);
+      if (tower && !tower.isGhost) {
+        enemy.applySiege(tower);
+        enemy.targetingMode = null;
+      }
+      return;
+    }
+    if (order.hold) {
+      const holdTile = order.holdTile ?? this.grid.spawns[enemy.spawnIndex];
+      if (holdTile) enemy.applyRoute([holdTile], "hold");
+      return;
+    }
+    if (order.waypoints) {
+      if (order.waypoints.length === 0) enemy.releaseToDefault();
+      else enemy.applyRoute([...order.waypoints, this.grid.base], "route");
+    }
   }
 
   spawn(type: string, level: number, spawnIndex: number, wave: number): Enemy | null {
@@ -127,6 +204,7 @@ export class EnemyManager {
       this.crowdManager.addAgent(enemy);
       this.crowdManager.setBaseTarget(enemy, this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y));
     }
+    this.applySpawnOrder(enemy);
     return enemy;
   }
 

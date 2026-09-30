@@ -142,6 +142,8 @@ function buildMeta(engine: GameEngine): SnapshotMeta {
     waveActive: engine.waveManager?.active ?? false,
     remainingScheduledSpawns: engine.waveManager?.getRemainingScheduledSpawns() ?? 0,
     runId: engine.runId,
+    spawns: (engine.grid?.spawns ?? []).map((spawn, spawnIndex) => ({ spawnIndex, x: spawn.x, y: spawn.y })),
+    spawnOrders: engine.enemyManager?.listSpawnOrders() ?? [],
   };
 }
 
@@ -176,6 +178,8 @@ function snapshotEnemy(e: Enemy, engine?: GameEngine): EnemySnapshot {
     hitReaction: e.hitReaction,
     attackAnimation: e.attackAnimation,
     routingMode: e.routingMode,
+    wave: e.wave,
+    spawnIndex: e.spawnIndex,
     attackingBase: e.attackingBase,
     blockedByTowerTile: e.blockedByTower ? { x: e.blockedByTower.tileX, y: e.blockedByTower.tileY } : null,
     distanceToBase,

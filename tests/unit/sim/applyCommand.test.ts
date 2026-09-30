@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyCommand } from "@/sim/applyCommand.js";
 import { GameEngine } from "@/sim/GameEngine.js";
+import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import {
   createTestMapThemeStore,
   createTestPersistState,
@@ -281,5 +282,106 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
     expect(result).toBe(true);
     expect(enemy.routingMode).toBe("route");
     expect(enemy.routeWorld).not.toBeNull();
+  });
+
+  function spawnFresh(spawnIndex: number, wave: number) {
+    const enemy = engine.enemyManager!.spawn("minion", 1, spawnIndex, wave);
+    expect(enemy).not.toBeNull();
+    return enemy!;
+  }
+
+  it("llm:setSpawnOrder holds the next spawn on its own tile and leaves enemies already alive", () => {
+    const living = engine.enemyManager!.enemies[0]!;
+    const livingMode = living.routingMode;
+    applyCommand(engine, { commandId: 0, type: "llm:setSpawnOrder", hold: true });
+    expect(living.routingMode).toBe(livingMode);
+    const enemy = spawnFresh(0, 4);
+    const spawn = engine.grid!.spawns[0]!;
+    expect(enemy.wave).toBe(4);
+    expect(enemy.spawnIndex).toBe(0);
+    expect(enemy.routingMode).toBe("hold");
+    expect(enemy.holdWorld).toEqual(engine.grid!.tileToWorld(spawn.x, spawn.y));
+    const snapshot = buildSnapshot(engine, 0);
+    expect(snapshot.meta.spawnOrders).toEqual([{ hold: true }]);
+    expect(snapshot.meta.spawns?.[0]).toEqual({ spawnIndex: 0, x: spawn.x, y: spawn.y });
+    expect(snapshot.enemies.find((entry) => entry.id === enemy.id)?.wave).toBe(4);
+  });
+
+  it("a per-spawn slot replaces the default and does not apply to another index", () => {
+    const spawn = engine.grid!.spawns[0]!;
+    applyCommand(engine, { commandId: 0, type: "llm:setSpawnOrder", hold: true, targetingMode: "base" });
+    applyCommand(engine, {
+      commandId: 0,
+      type: "llm:setSpawnOrder",
+      spawnIndex: 0,
+      hold: true,
+      holdTile: { x: spawn.x, y: spawn.y },
+    });
+    const onZero = spawnFresh(0, 2);
+    expect(onZero.routingMode).toBe("hold");
+    expect(onZero.targetingMode).toBeNull();
+    expect(onZero.holdWorld).toEqual(engine.grid!.tileToWorld(spawn.x, spawn.y));
+    applyCommand(engine, {
+      commandId: 0,
+      type: "llm:setSpawnOrder",
+      spawnIndex: 7,
+      hold: true,
+      holdTile: { x: spawn.x + 3, y: spawn.y + 3 },
+    });
+    expect(engine.enemyManager!.listSpawnOrders()).toEqual([
+      { hold: true, targetingMode: "base" },
+      { spawnIndex: 0, hold: true, holdTile: { x: spawn.x, y: spawn.y } },
+      { spawnIndex: 7, hold: true, holdTile: { x: spawn.x + 3, y: spawn.y + 3 } },
+    ]);
+    if (engine.grid!.spawns.length > 1) {
+      const onOther = spawnFresh(1, 2);
+      const otherSpawn = engine.grid!.spawns[1]!;
+      expect(onOther.routingMode).toBe("hold");
+      expect(onOther.targetingMode).toBe("base");
+      expect(onOther.holdWorld).toEqual(engine.grid!.tileToWorld(otherSpawn.x, otherSpawn.y));
+    }
+  });
+
+  it("keeps targetingMode after releaseHeld and filters by wave and spawnIndex", () => {
+    applyCommand(engine, { commandId: 0, type: "llm:setSpawnOrder", hold: true, targetingMode: "base" });
+    const waveThree = spawnFresh(0, 3);
+    const waveFour = spawnFresh(0, 4);
+    waveFour.spawnIndex = 1;
+    expect(waveThree.targetingMode).toBe("base");
+    applyCommand(engine, { commandId: 0, type: "llm:releaseHeld", wave: 3 });
+    expect(waveThree.routingMode).toBe("default");
+    expect(waveThree.targetingMode).toBe("base");
+    expect(waveFour.routingMode).toBe("hold");
+    applyCommand(engine, { commandId: 0, type: "llm:releaseHeld", spawnIndex: 1 });
+    expect(waveFour.routingMode).toBe("default");
+    expect(waveFour.targetingMode).toBe("base");
+  });
+
+  it("sieges a live tower from the spawn order and leaves default pathing when the tower is gone", () => {
+    const tower = buildTowerOnValidTile();
+    applyCommand(engine, {
+      commandId: 0,
+      type: "llm:setSpawnOrder",
+      towerTile: { x: tower.tileX, y: tower.tileY },
+      targetingMode: "strongest",
+    });
+    const sieging = spawnFresh(0, 1);
+    expect(sieging.routingMode).toBe("siege");
+    expect(sieging.siegeTower).toBe(tower);
+    expect(sieging.targetingMode).toBeNull();
+    applyCommand(engine, { commandId: 0, type: "llm:setSpawnOrder", clear: true });
+    applyCommand(engine, { commandId: 0, type: "llm:setSpawnOrder", towerTile: { x: -1, y: -1 } });
+    const walking = spawnFresh(0, 1);
+    expect(walking.routingMode).toBe("default");
+    expect(engine.enemyManager!.listSpawnOrders()).toEqual([{ towerTile: { x: -1, y: -1 } }]);
+  });
+
+  it("clear drops the default and every per-spawn slot before the next spawn", () => {
+    applyCommand(engine, { commandId: 0, type: "llm:setSpawnOrder", hold: true });
+    applyCommand(engine, { commandId: 0, type: "llm:setSpawnOrder", spawnIndex: 0, hold: true });
+    applyCommand(engine, { commandId: 0, type: "llm:setSpawnOrder", clear: true });
+    const enemy = spawnFresh(0, 1);
+    expect(enemy.routingMode).toBe("default");
+    expect(engine.enemyManager!.listSpawnOrders()).toEqual([]);
   });
 });

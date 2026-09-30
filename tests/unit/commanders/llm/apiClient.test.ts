@@ -14,6 +14,8 @@ function makeConfig(overrides: Partial<LlmCommanderConfig> = {}): LlmCommanderCo
     systemPrompt: "system",
     requestTimeoutMs: 30000,
     pauseForCommander: false,
+    decisionIntervalMs: 1000,
+    reasoningEnabled: false,
     ...overrides,
   };
 }
@@ -61,6 +63,28 @@ describe("createApiClient.complete", () => {
     const body = JSON.parse(capturedInit!.body as string);
     expect(body.model).toBeUndefined();
     expect(body.temperature).toBe(0.2);
+    expect(body.reasoning_effort).toBe("none");
+    expect(body.enable_thinking).toBe(false);
+    expect(body.chat_template_kwargs).toEqual({ enable_thinking: false, thinking: false });
+    expect(body.thinking).toEqual({ type: "disabled" });
+    expect(body.reasoning).toEqual({ enabled: false, effort: "none" });
+  });
+
+  it("sends the enable set when reasoningEnabled is true", async () => {
+    let capturedInit: RequestInit | undefined;
+    const fetchFn = vi.fn(async (_url: string, init?: RequestInit) => {
+      capturedInit = init;
+      return okResponse({ choices: [{ message: { content: "hi" } }] });
+    });
+    const client = createApiClient(fetchFn as unknown as typeof fetch);
+    await client.complete("sys", [], makeConfig({ reasoningEnabled: true }));
+    const body = JSON.parse(capturedInit!.body as string);
+    expect(body.reasoning_effort).toBe("medium");
+    expect(body.enable_thinking).toBe(true);
+    expect(body.chat_template_kwargs).toEqual({ enable_thinking: true, thinking: true });
+    expect(body.thinking).toEqual({ type: "enabled" });
+    expect(body.reasoning).toEqual({ enabled: true, effort: "medium" });
+    expect(body.temperature).toBe(0.2);
   });
 
   it("omits model when empty and sends Bearer token when set", async () => {
@@ -80,6 +104,33 @@ describe("createApiClient.complete", () => {
     const fetchFn = vi.fn(async () => ({ ok: true, status: 200, text: async () => "" }) as unknown as Response);
     const client = createApiClient(fetchFn);
     expect(await client.complete("sys", [], makeConfig())).toEqual({ empty: true });
+  });
+
+  it("uses reasoning_content when content is empty and ignores it when content is present", async () => {
+    const reasoningFetch = vi.fn(async () =>
+      okResponse({ choices: [{ message: { content: "", reasoning_content: "thought then []" } }] }),
+    );
+    const reasoningClient = createApiClient(reasoningFetch as unknown as typeof fetch);
+    expect(await reasoningClient.complete("sys", [], makeConfig())).toEqual({
+      content: "thought then []",
+      promptTokens: 0,
+    });
+
+    const contentFetch = vi.fn(async () =>
+      okResponse({ choices: [{ message: { content: "[]", reasoning_content: "thought" } }] }),
+    );
+    const contentClient = createApiClient(contentFetch as unknown as typeof fetch);
+    expect(await contentClient.complete("sys", [], makeConfig())).toEqual({ content: "[]", promptTokens: 0 });
+
+    const emptyFetch = vi.fn(async () => okResponse({ choices: [{ message: { content: "" } }] }));
+    const emptyClient = createApiClient(emptyFetch as unknown as typeof fetch);
+    expect(await emptyClient.complete("sys", [], makeConfig())).toEqual({ empty: true });
+  });
+
+  it("uses reasoning when reasoning_content is absent", async () => {
+    const fetchFn = vi.fn(async () => okResponse({ choices: [{ message: { reasoning: "only reasoning" } }] }));
+    const client = createApiClient(fetchFn as unknown as typeof fetch);
+    expect(await client.complete("sys", [], makeConfig())).toEqual({ content: "only reasoning", promptTokens: 0 });
   });
 
   it("returns {error} on non-2xx", async () => {

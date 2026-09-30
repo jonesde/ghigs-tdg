@@ -130,6 +130,25 @@ describe("useInput", () => {
       expect(dispatched("action:togglePause")).toBe(true);
     });
 
+    it("does not take space while a text field is focused", () => {
+      gameStore.setState(GameState.PLAYING);
+      let capturedHandler: ((event: KeyboardEvent) => void) | null = null;
+      const originalAddEventListener = window.addEventListener;
+      window.addEventListener = vi.fn((event: string, handler: (keyboardEvent: KeyboardEvent) => void) => {
+        if (event === "keydown") capturedHandler = handler;
+        originalAddEventListener.call(window, event, handler as unknown as EventListener);
+      }) as never;
+      useInput(gameStore, dispatcher, uiStore);
+      window.addEventListener = originalAddEventListener;
+      const textarea = document.createElement("textarea");
+      const testEvent = makeEvent(" ");
+      Object.defineProperty(testEvent, "target", { value: textarea });
+      testEvent.preventDefault = vi.fn();
+      (capturedHandler as ((event: KeyboardEvent) => void) | null)?.(testEvent);
+      expect(dispatched("action:togglePause")).toBe(false);
+      expect(testEvent.preventDefault).not.toHaveBeenCalled();
+    });
+
     it("calls preventDefault", () => {
       gameStore.setState(GameState.PLAYING);
       let capturedHandler: ((event: KeyboardEvent) => void) | null = null;

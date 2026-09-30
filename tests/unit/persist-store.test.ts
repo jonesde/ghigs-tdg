@@ -330,6 +330,7 @@ describe("PersistStore", () => {
       store.load();
       expect(store.saveVersion).toBe(4);
       expect(store.llmCommanders[0]?.requestTimeoutMs).toBe(30000);
+      expect(store.llmCommanders[0]?.decisionIntervalMs).toBe(1000);
       expect(store.llmCommanders[0]?.name).toBe("Old");
     });
 
@@ -659,6 +660,8 @@ describe("PersistStore", () => {
         systemPrompt: "sys",
         requestTimeoutMs: 30000,
         pauseForCommander: false,
+        decisionIntervalMs: 1000,
+        reasoningEnabled: false,
         ...overrides,
       };
     }

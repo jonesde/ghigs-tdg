@@ -3,6 +3,7 @@ import type { TowerId } from "@/sim/ConstantsTower.js";
 import type { GameEngine } from "@/sim/GameEngine.js";
 import { setGameState } from "@/sim/GameRunState.js";
 import type { Command } from "./Command.js";
+import type { SpawnOrder } from "./enemies/EnemyManager.js";
 
 // This is the single switch that maps Command → engine method. It is shared by
 // the worker (WorkerEntry) and both command dispatchers (WorkerCommandDispatcher
@@ -12,6 +13,24 @@ import type { Command } from "./Command.js";
 // runState/persistState (so the worker knows it must post a snapshot even while
 // paused), false for pure no-ops. Every command that touches runState/persistState
 // returns true; only reserved/forward-compat stubs return false.
+function spawnOrderFromCommand(command: Extract<Command, { type: "llm:setSpawnOrder" }>): SpawnOrder {
+  const towerTile = command.towerTile ? { x: command.towerTile.x, y: command.towerTile.y } : null;
+  const hold = command.hold === true && !towerTile;
+  const waypoints =
+    command.waypoints !== undefined && !hold && !towerTile
+      ? command.waypoints.map((tile) => ({ x: tile.x, y: tile.y }))
+      : null;
+  const targetingMode =
+    !towerTile && command.targetingMode && command.targetingMode !== "default" ? command.targetingMode : null;
+  return {
+    hold,
+    holdTile: hold && command.holdTile ? { x: command.holdTile.x, y: command.holdTile.y } : null,
+    waypoints,
+    targetingMode,
+    towerTile,
+  };
+}
+
 export function applyCommand(engine: GameEngine, command: Command): boolean {
   switch (command.type) {
     case "input:click":
@@ -128,6 +147,26 @@ export function applyCommand(engine: GameEngine, command: Command): boolean {
       const enemies = engine.getEnemiesByIds(command.enemyIds);
       for (const enemy of enemies) {
         enemy.targetingMode = command.mode === "default" ? null : command.mode;
+      }
+      return true;
+    }
+    case "llm:setSpawnOrder": {
+      const manager = engine.enemyManager;
+      if (!manager) return false;
+      if (command.clear) {
+        manager.clearSpawnOrders(command.spawnIndex);
+        return true;
+      }
+      manager.setSpawnOrder(command.spawnIndex, spawnOrderFromCommand(command));
+      return true;
+    }
+    case "llm:releaseHeld": {
+      const enemies = engine.enemyManager?.enemies ?? [];
+      for (const enemy of enemies) {
+        if (enemy.routingMode !== "hold") continue;
+        if (command.wave !== undefined && enemy.wave !== command.wave) continue;
+        if (command.spawnIndex !== undefined && enemy.spawnIndex !== command.spawnIndex) continue;
+        enemy.releaseToDefault();
       }
       return true;
     }

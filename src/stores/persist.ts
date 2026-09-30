@@ -4,6 +4,7 @@ import {
   type LlmCommanderConfig,
   MAX_REQUEST_TIMEOUT_MS,
   MIN_REQUEST_TIMEOUT_MS,
+  normalizeDecisionIntervalMs,
 } from "@/commanders/llm/types.js";
 import { PersistStateSchema } from "@/content/schemas/persist.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -159,7 +160,9 @@ function fillCommanderTimeouts(commanders: unknown): LlmCommanderConfig[] {
         ? timeout
         : DEFAULT_REQUEST_TIMEOUT_MS;
     const pauseForCommander = commander.pauseForCommander === true;
-    filled.push({ ...commander, requestTimeoutMs, pauseForCommander });
+    const decisionIntervalMs = normalizeDecisionIntervalMs(commander.decisionIntervalMs);
+    const reasoningEnabled = commander.reasoningEnabled === true;
+    filled.push({ ...commander, requestTimeoutMs, pauseForCommander, decisionIntervalMs, reasoningEnabled });
   }
   return filled;
 }

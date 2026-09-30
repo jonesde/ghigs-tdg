@@ -109,6 +109,10 @@ export interface SnapshotMeta {
   // gridLayout is never forwarded and the one-shot feed-off toggle re-arms. Optional
   // so existing hand-built test literals need not list it.
   runId?: number;
+  // Spawn tiles in WaveManager's index order, and the latched emerge orders.
+  // Optional so hand-built test metas can omit them. The serializer always sets both.
+  spawns?: SpawnPointSnapshot[];
+  spawnOrders?: SpawnOrderView[];
   // NOTE: gemBreakdown and milestoneRewardsClaimed are intentionally NOT mirrored
   // into the snapshot. `gemBreakdown` is delivered to the UI via
   // `endScreenData` (set on triggerEnd), and `milestoneRewardsClaimed` is only
@@ -131,6 +135,22 @@ export interface NavFieldSnapshotData {
     chokeTile?: { x: number; y: number };
   }>;
   spawnPaths?: Array<Array<{ x: number; y: number }>>;
+}
+
+export interface SpawnPointSnapshot {
+  spawnIndex: number;
+  x: number;
+  y: number;
+}
+
+// One latched emerge order. No spawnIndex means the default slot.
+export interface SpawnOrderView {
+  spawnIndex?: number;
+  hold?: boolean;
+  holdTile?: { x: number; y: number };
+  waypoints?: Array<{ x: number; y: number }>;
+  targetingMode?: string;
+  towerTile?: { x: number; y: number };
 }
 
 export interface EnemySnapshot {
@@ -160,6 +180,8 @@ export interface EnemySnapshot {
   attackAnimation: MapThemeAnimation | null;
   // Full-physics routing state for commanders / debug.
   routingMode?: "default" | "hold" | "route" | "siege";
+  wave?: number;
+  spawnIndex?: number;
   attackingBase?: boolean;
   blockedByTowerTile?: { x: number; y: number } | null;
   distanceToBase?: number;

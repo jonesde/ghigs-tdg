@@ -5,6 +5,10 @@ import { dispatchCommand } from "@/sim/commandBus.js";
 import { useGameStore } from "./game";
 
 export type ChatLogEntry = { from: "player" | "commander"; text: string };
+export type LlmTraceEntry = { responseText: string; commandSummary: string };
+
+const LLM_TRACE_LIMIT = 50;
+const LLM_TRACE_TEXT_LIMIT = 8000;
 
 export interface UiStoreLike {
   showPauseMenu: boolean;
@@ -24,6 +28,9 @@ export interface UiStoreLike {
   chatLog: ChatLogEntry[];
   appendChatLog: (entry: ChatLogEntry) => void;
   clearChatLog: () => void;
+  llmTraceLog: LlmTraceEntry[];
+  appendLlmTrace: (entry: LlmTraceEntry) => void;
+  clearLlmTrace: () => void;
   activeCommanderIsLlm: boolean;
 }
 
@@ -62,6 +69,7 @@ interface UiStateShape {
   randomMapPanelVisible: boolean;
   enemyCommander: string | "none";
   chatLog: ChatLogEntry[];
+  llmTraceLog: LlmTraceEntry[];
   wasPlayingWhenPauseOpened: boolean;
   wasPlayingWhenSkillTreeOpened: boolean;
   wasPlayingWhenHelpOpened: boolean;
@@ -80,6 +88,7 @@ function defaultUiState(): UiStateShape {
     randomMapPanelVisible: false,
     enemyCommander: "none",
     chatLog: [],
+    llmTraceLog: [],
     wasPlayingWhenPauseOpened: false,
     wasPlayingWhenSkillTreeOpened: false,
     wasPlayingWhenHelpOpened: false,
@@ -197,6 +206,7 @@ export const useUiStore = defineStore("ui", {
 
     setEnemyCommander(id: string | "none") {
       this.clearChatLog();
+      this.clearLlmTrace();
       this.enemyCommander = id;
       startEnemyCommander(id);
     },
@@ -210,6 +220,21 @@ export const useUiStore = defineStore("ui", {
 
     clearChatLog() {
       this.chatLog = [];
+    },
+
+    appendLlmTrace(entry: LlmTraceEntry) {
+      const responseText =
+        entry.responseText.length > LLM_TRACE_TEXT_LIMIT
+          ? `${entry.responseText.slice(0, LLM_TRACE_TEXT_LIMIT)}…`
+          : entry.responseText;
+      this.llmTraceLog.push({ responseText, commandSummary: entry.commandSummary });
+      if (this.llmTraceLog.length > LLM_TRACE_LIMIT) {
+        this.llmTraceLog.splice(0, this.llmTraceLog.length - LLM_TRACE_LIMIT);
+      }
+    },
+
+    clearLlmTrace() {
+      this.llmTraceLog = [];
     },
 
     closeHelpDialog() {

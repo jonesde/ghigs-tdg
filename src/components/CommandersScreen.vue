@@ -4,11 +4,13 @@ import { useRouter } from "vue-router";
 import { BUILTIN_STUBBS, BUILTIN_STUBBY } from "@/commanders/index.js";
 import { createApiClient, normalizeEndpointUrl } from "@/commanders/llm/apiClient.js";
 import {
+  DEFAULT_DECISION_INTERVAL_MS,
   DEFAULT_LLM_SYSTEM_PROMPT,
   DEFAULT_REQUEST_TIMEOUT_MS,
   type LlmCommanderConfig,
   MAX_REQUEST_TIMEOUT_MS,
   MIN_REQUEST_TIMEOUT_MS,
+  normalizeDecisionIntervalMs,
 } from "@/commanders/llm/types.js";
 import { postUpdateInstructions } from "@/commanders/relay.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -122,6 +124,8 @@ function saveForm() {
     systemPrompt: formSystemPrompt.value.trim(),
     requestTimeoutMs: requestTimeoutMsFromSeconds(formRequestTimeoutSeconds.value),
     pauseForCommander: formPauseForCommander.value,
+    decisionIntervalMs: normalizeDecisionIntervalMs(previous?.decisionIntervalMs ?? DEFAULT_DECISION_INTERVAL_MS),
+    reasoningEnabled: previous?.reasoningEnabled === true,
   };
   if (editingId.value) {
     persistStore.updateLlmCommander(config);
@@ -151,6 +155,10 @@ async function testEndpoint(): Promise<void> {
     systemPrompt: probeText,
     requestTimeoutMs: requestTimeoutMsFromSeconds(formRequestTimeoutSeconds.value),
     pauseForCommander: formPauseForCommander.value,
+    decisionIntervalMs: DEFAULT_DECISION_INTERVAL_MS,
+    reasoningEnabled: editingId.value
+      ? persistStore.llmCommanders.find((entry) => entry.id === editingId.value)?.reasoningEnabled === true
+      : false,
   };
   // Ornith/Qwen chat templates reject a system-only body. The probe needs a user turn.
   const result = await createApiClient().complete(config.systemPrompt, [{ role: "user", content: probeText }], config);

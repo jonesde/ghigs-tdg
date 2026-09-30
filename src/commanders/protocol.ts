@@ -29,10 +29,12 @@ export type MainToCommanderMessage =
   | { type: "stop" }
   | { type: "observation"; slice: CommanderSnapshotSlice }
   | { type: "chat"; text: string }
-  | { type: "updateInstructions"; text: string };
+  | { type: "updateInstructions"; text: string }
+  | { type: "updateCallSettings"; pauseForCommander: boolean; decisionIntervalMs: number; reasoningEnabled: boolean };
 
 export type CommanderToMainMessage =
   | { type: "commands"; commands: Command[] }
   | { type: "notify"; message: string }
   | { type: "chat"; text: string; from: "commander" }
-  | { type: "hold"; hold: boolean };
+  | { type: "hold"; hold: boolean }
+  | { type: "trace"; responseText: string; commandSummary: string };

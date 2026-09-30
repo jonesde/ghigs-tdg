@@ -98,4 +98,19 @@ export type Command =
     }
   | { commandId: number; type: "llm:siegeTower"; enemyIds: number[]; towerTile: { x: number; y: number } }
   | { commandId: number; type: "llm:setTargeting"; enemyIds: number[]; mode: string }
+  // Standing order for enemies that have not spawned yet. Omitted spawnIndex is the
+  // default slot. clear drops that slot, or every slot when spawnIndex is omitted.
+  | {
+      commandId: number;
+      type: "llm:setSpawnOrder";
+      spawnIndex?: number;
+      clear?: boolean;
+      hold?: boolean;
+      holdTile?: { x: number; y: number };
+      waypoints?: Array<{ x: number; y: number }>;
+      targetingMode?: string;
+      towerTile?: { x: number; y: number };
+    }
+  // Releases living enemies whose routingMode is hold. Filters are optional.
+  | { commandId: number; type: "llm:releaseHeld"; wave?: number; spawnIndex?: number }
   | { commandId: number; type: "llm:gridLayoutToggle" };

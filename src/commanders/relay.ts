@@ -41,6 +41,8 @@ export function startRelay(kind: CommanderKind, config?: LlmCommanderConfig): vo
       useUiStore().showNotification(message.message);
     } else if (message.type === "chat") {
       useUiStore().appendChatLog({ from: "commander", text: message.text });
+    } else if (message.type === "trace") {
+      useUiStore().appendLlmTrace({ responseText: message.responseText, commandSummary: message.commandSummary });
     } else if (message.type === "hold") {
       // Clock stop for an in-flight request. Not action:togglePause: that enters
       // GameState.PAUSED and the commander worker would skip the decide the hold waits on.
@@ -101,6 +103,21 @@ export function postChatToCommander(text: string): void {
 export function postUpdateInstructions(text: string): void {
   if (commanderWorker) {
     commanderWorker.postMessage({ type: "updateInstructions", text } satisfies MainToCommanderMessage);
+  }
+}
+
+export function postUpdateCallSettings(
+  pauseForCommander: boolean,
+  decisionIntervalMs: number,
+  reasoningEnabled: boolean,
+): void {
+  if (commanderWorker) {
+    commanderWorker.postMessage({
+      type: "updateCallSettings",
+      pauseForCommander,
+      decisionIntervalMs,
+      reasoningEnabled,
+    } satisfies MainToCommanderMessage);
   }
 }
 
