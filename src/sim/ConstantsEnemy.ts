@@ -13,9 +13,10 @@ export interface EnemyMeta {
   slowResist?: number;
   attackDamage: number;
   attackSpeed: number;
+  flyingHeight?: number;
 }
 
-export type EnemyType = "minion" | "runner" | "tank" | "shielded" | "healer" | "boss";
+export type EnemyType = "minion" | "runner" | "tank" | "shielded" | "healer" | "boss" | "flyer" | "jet" | "aegis";
 
 const enemies = getGameContent().enemies;
 

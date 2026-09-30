@@ -4,6 +4,7 @@ import { ICE_AURA_RANGE, STATIC_FIELD_RANGE } from "@/sim/ConstantsTower.js";
 import type { AttackTarget, Enemy } from "@/sim/enemies/Enemy.js";
 import { resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
+import { writeFlightVelocities } from "@/sim/enemies/flyingSteer.js";
 import type { GameRunState } from "@/sim/GameRunState.js";
 import {
   addGold,
@@ -24,6 +25,7 @@ import { forkRunSeed, generateRandomMap, getMap, mulberry32 } from "@/sim/grid/M
 import type { HostBindings, ThemeBundle } from "@/sim/HostBindings.js";
 import { CrowdManager, restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdManager.js";
 import { toRecast } from "@/sim/navmesh/coords.js";
+import { FlightDistanceField } from "@/sim/navmesh/FlightDistanceField.js";
 import { NavDistanceField } from "@/sim/navmesh/NavDistanceField.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
@@ -108,6 +110,7 @@ export class GameEngine {
   forceFieldSystem: ForceFieldSystem = new ForceFieldSystem();
   contactProcessor: ContactProcessor | null = null;
   navDistanceField: NavDistanceField | null = null;
+  flightDistanceField: FlightDistanceField | null = null;
   // Last grid.pathVersion we rebuilt tower/corridor colliders + nav field for.
   private lastPathVersion = -1;
   waveManager: WaveManagerRef | null;
@@ -143,6 +146,9 @@ export class GameEngine {
   // runId stamp invalidates the cache on every (re)load.
   gridLayoutCache: number[][] | null = null;
   gridLayoutCacheRunId: number = -1;
+  // Stored tile heights, shipped in the same one-shot feed as gridLayout.
+  gridHeightsCache: number[][] | null = null;
+  gridHeightsCacheRunId: number = -1;
   // Monotonic run identifier, bumped on every (re)load in _initMap. The commander
   // relay/worker key their gridLayout cache + one-shot feed-off toggle to it so a
   // stale layout from a previous run is never forwarded and the toggle re-arms on a
@@ -296,6 +302,7 @@ export class GameEngine {
     this.forceFieldSystem.clear();
     this.contactProcessor = null;
     this.navDistanceField = null;
+    this.flightDistanceField = null;
     this.physicsWorld?.dispose();
     this.physicsWorld = new PhysicsWorld(this.grid);
     this.enemyManager.setPhysicsWorld(this.physicsWorld);
@@ -319,14 +326,20 @@ export class GameEngine {
     this.physicsWorld.setEnemyEnemyCollisions(false);
     this.navDistanceField = new NavDistanceField(this.grid, this.navMeshBuilder);
     this.navDistanceField.rebuild();
-    this.towerManager.setNavDistanceToBase(
-      (tileX, tileY) => this.navDistanceField?.getDistanceToBase(tileX, tileY) ?? -1,
-    );
+    this.flightDistanceField = new FlightDistanceField(this.grid);
+    this.flightDistanceField.rebuild(this.liveTowerAt, this.grid.pathVersion);
+    this.towerManager.setNavDistanceToBase((tileX, tileY, flyingHeight = 0) => {
+      if (flyingHeight > 0) return this.flightDistanceField?.getDistanceToBase(tileX, tileY, flyingHeight) ?? -1;
+      return this.navDistanceField?.getDistanceToBase(tileX, tileY) ?? -1;
+    });
     this.enemyManager.setBlockedApproachLookup(
       (tileX, tileY) => this.navDistanceField?.getBlockedApproach(tileX, tileY) ?? null,
     );
     this.enemyManager.setDistanceToBaseLookup(
       (tileX, tileY) => this.navDistanceField?.getDistanceToBase(tileX, tileY) ?? -1,
+    );
+    this.enemyManager.setFlightDistanceLookup(
+      (tileX, tileY, flyingHeight) => this.flightDistanceField?.getDistanceToBase(tileX, tileY, flyingHeight) ?? -1,
     );
     this.physicsWorld.rebuildTowers(this.towerManager);
     this.enemyManager.baseTarget = new BaseTarget(this);
@@ -398,6 +411,13 @@ export class GameEngine {
     this.host.playSound("boss_die");
   }
 
+  // A live tower is a non-ghost tower on the tile. Path ghosts leave `blocked`;
+  // terrain ghosts stay in `terrainTowers`, so the tower flag is the check.
+  private liveTowerAt = (tileX: number, tileY: number): boolean => {
+    const tower = this.towerManager?.towerAt(tileX, tileY) ?? null;
+    return tower !== null && !tower.isGhost;
+  };
+
   update(dt: number): void {
     if (!this.waveManager || !this.enemyManager || !this.towerManager) return;
     if (this.runState.state === GameState.VICTORY || this.runState.state === GameState.GAME_OVER) return;
@@ -431,6 +451,10 @@ export class GameEngine {
       this.physicsWorld!.rebuildTowers(this.towerManager!);
       const towersConverged = this.navMeshBuilder?.syncTowers(this.towerManager!.towers) ?? true;
       this.navDistanceField?.ensureUpToDate(true);
+      this.flightDistanceField?.ensureUpToDate(this.liveTowerAt, this.grid!.pathVersion);
+      for (const enemy of this.enemyManager.enemies) {
+        if (enemy.flyingHeight > 0) enemy.clearFlightPolyline();
+      }
       if (!towersConverged) {
         // Obstacle sync did not converge (add failed or update queue stuck): force a
         // second distance-field refresh and re-request crowd corridors instead of
@@ -466,6 +490,7 @@ export class GameEngine {
     this.syncAuraSensors();
     this.enemyManager.preStep(dt);
     this.crowdManager?.update(dt, this.enemyManager.enemies);
+    writeFlightVelocities(this.enemyManager.enemies, this.grid!, dt, this.forceFieldSystem);
     this.forceFieldSystem.apply(dt, this.enemyManager.enemies, this.physicsWorld);
     // Homing projectiles set kinematic velocities before the physics step.
     this.projectileManager?.prePhysics(dt);
@@ -550,7 +575,7 @@ export class GameEngine {
     if (!builder || !this.enemyManager || !this.grid) return;
     const tileSize = this.grid.tileSize;
     for (const enemy of this.enemyManager.enemies) {
-      if (enemy.removed || enemy.ballisticTimer <= 0) continue;
+      if (enemy.removed || enemy.flyingHeight > 0 || enemy.ballisticTimer <= 0) continue;
       const nearest = builder.nearestWalkableWorld({ x: enemy.x, y: enemy.y });
       if (!nearest) continue;
       const drift = Math.hypot(nearest.x - enemy.x, nearest.y - enemy.y);
@@ -1232,6 +1257,7 @@ export class GameEngine {
     this.contactProcessor?.clear();
     this.contactProcessor = null;
     this.navDistanceField = null;
+    this.flightDistanceField = null;
     if (this.physicsWorld) {
       this.physicsWorld.dispose();
       this.physicsWorld = null;

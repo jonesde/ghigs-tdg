@@ -45,6 +45,9 @@ export interface SimulationSnapshot {
   // gridLayoutEnabled data-feed toggle: present only while enabled, undefined once
   // the client has toggled the feed off (it caches the map and never needs it again).
   gridLayout?: number[][] | undefined;
+  // Stored tile height, same dimensions as gridLayout. Shipped in the same
+  // one-shot feed. A live tower adds 1; that bonus is not baked into this array.
+  heights?: number[][] | undefined;
   // Ephemeral visual effects generated this tick: lightning bolt segments and
   // stun aura positions. Populated by the simulation during update() and shipped
   // sparsely: undefined when the corresponding buffer is empty (quiet ticks send
@@ -209,6 +212,7 @@ export interface EnemySnapshot {
   attackingBase?: boolean;
   blockedByTowerTile?: { x: number; y: number } | null;
   distanceToBase?: number;
+  flyingHeight?: number;
   nextCorner?: { x: number; y: number } | null;
   targetingMode?: string | null;
 }

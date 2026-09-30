@@ -287,6 +287,48 @@ describe("worker observationId echo + hold-during-backoff", () => {
     expect(batches[0]?.observationId).toBe(9);
   });
 
+  it("keeps cached heights on a later observation after the layout feed turns off", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const fetchFn = vi.fn(async () => responseWithContent("[]"));
+    gw.fetch = fetchFn as unknown as typeof fetch;
+    gw.self = mockSelf;
+    await import("@/commanders/CommanderWorker.js");
+    await deliver({ type: "start", kind: "llm", config: makeConfig() });
+    vi.advanceTimersByTime(1000);
+    const heights = [
+      [1, 4],
+      [2, 3],
+    ];
+    await deliver({
+      type: "observation",
+      slice: {
+        ...makeSlice(3),
+        gridLayout: [
+          [0, 1],
+          [1, 2],
+        ],
+        heights,
+      },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    vi.advanceTimersByTime(1000);
+    await deliver({ type: "observation", slice: makeSlice(4) });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const heightsFromCall = (callIndex: number): number[][] | null => {
+      const calls = fetchFn.mock.calls as unknown as unknown[][];
+      const init = calls[callIndex]?.[1] as { body?: string } | undefined;
+      const body = JSON.parse(String(init?.body)) as { messages: { role: string; content: string }[] };
+      const userMessages = body.messages.filter((message) => message.role === "user");
+      const userMessage = userMessages[userMessages.length - 1];
+      const payload = JSON.parse(userMessage?.content ?? "{}") as { heights?: number[][] | null };
+      return payload.heights ?? null;
+    };
+    expect(heightsFromCall(0)).toEqual(heights);
+    expect(heightsFromCall(1)).toEqual(heights);
+  });
+
   it("withholds hold until the backoff wait elapses", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);

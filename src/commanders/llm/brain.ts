@@ -38,6 +38,7 @@ function serializeEnemy(enemy: ObservationEnemy): Record<string, unknown> {
     maxHp: enemy.maxHp,
     routingMode: enemy.routingMode ?? "default",
     distanceToBase: enemy.distanceToBase ?? -1,
+    flyingHeight: enemy.flyingHeight ?? 0,
   };
   if (enemy.wave !== undefined) record.wave = enemy.wave;
   if (enemy.spawnIndex !== undefined) record.spawnIndex = enemy.spawnIndex;
@@ -99,6 +100,7 @@ function buildFullSnapshotMessage(observation: CommanderObservation): string {
   return JSON.stringify({
     kind: "snapshot",
     map: observation.map,
+    heights: observation.heights ?? null,
     spawns: observation.spawns ?? [],
     enemies: observation.enemies.map(serializeEnemy),
     towers: liveTowers(observation).map((tower) => serializeTower(tower, observation)),
@@ -174,6 +176,7 @@ function buildDeltaMessage(observation: CommanderObservation, last: CommanderObs
 
   return JSON.stringify({
     kind: "delta",
+    heights: observation.heights ?? null,
     newEnemies,
     changedEnemies,
     removedEnemyIds,

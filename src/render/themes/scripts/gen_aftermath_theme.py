@@ -657,12 +657,17 @@ class Pose:
         return amount
 
 
-def enemy_frame(pose: Pose, body: str) -> str:
-    moved = svg_group(body, f"translate({num(pose.shift_x)} {num(pose.bob)})")
+def enemy_frame(pose: Pose, body: str, airborne: bool = False) -> str:
+    # A flyer sits above a small shadow so the same frame reads as off the ground.
+    lift = -0.12 if airborne else 0.0
+    moved = svg_group(body, f"translate({num(pose.shift_x)} {num(pose.bob + lift)})")
     flash = ""
     if pose.action == "hit" and pose.action_phase == 0:
-        flash = circle(pose.shift_x + 0.08, pose.bob, 0.09, "#fff", opacity=0.7)
-    shadow = ellipse(0, 0.18, 0.46, 0.12, "#120e0c", opacity=0.4)
+        flash = circle(pose.shift_x + 0.08, pose.bob + lift, 0.09, "#fff", opacity=0.7)
+    if airborne:
+        shadow = ellipse(0, 0.55, 0.22, 0.05, "#120e0c", opacity=0.28)
+    else:
+        shadow = ellipse(0, 0.18, 0.46, 0.12, "#120e0c", opacity=0.4)
     return enemy_svg(shadow + moved + flash)
 
 
@@ -942,6 +947,101 @@ def rex_head(reach: float) -> str:
     return skull + mouth + upper + lower + teeth + eye
 
 
+def wing_span(pose: Pose, raised: float, tucked: float) -> float:
+    if pose.action == "hit":
+        return tucked
+    if pose.action != "walk":
+        return (raised + tucked) * 0.5
+    table = (
+        raised,
+        (raised + tucked) * 0.55,
+        tucked,
+        (raised + tucked) * 0.7,
+        raised,
+        (raised + tucked) * 0.4,
+        tucked,
+        (raised + tucked) * 0.85,
+    )
+    return table[pose.phase % 8]
+
+
+def ash_moth(pose: Pose) -> str:
+    span = wing_span(pose, 0.48, 0.16)
+    reach = max(pose.reach, 0)
+    wings = []
+    for side in (-1, 1):
+        tip_y = side * span
+        wings.append(
+            polygon(
+                [(-0.04, side * 0.05), (0.16, side * 0.02), (0.02, tip_y), (-0.24, side * span * 0.7)],
+                "#c4b45a",
+                "#6a5828",
+                0.03,
+            )
+        )
+        wings.append(circle(-0.04, side * span * 0.45, 0.035, "#8a7840"))
+    body = volume_ellipse(0.02, 0, 0.22, 0.09, "#b8a45a", "#6a5428", "#efe0a4", INK, 0.035, "enemy")
+    head = volume_ellipse(0.22 + reach * 0.05, 0, 0.08, 0.055, "#d0bc72", "#7a6834", "#f6ecc0", INK, 0.03, "enemy")
+    antenna = path_shape(
+        f"M0.28 {num(-0.02)} Q{num(0.4 + reach * 0.04)} -0.12 {num(0.46 + reach * 0.06)} -0.16",
+        "none",
+        "#3a3018",
+        0.025,
+    )
+    eye = circle(0.26, -0.015, 0.016, "#2a2010")
+    return "".join(wings) + body + head + antenna + eye
+
+
+def bottle_rocket(pose: Pose) -> str:
+    reach = max(pose.reach, 0)
+    flicker = 0.0 if pose.action != "walk" else (0.08 if pose.phase % 2 == 0 else 0.02)
+    nose = polygon(
+        [(0.16, -0.07), (0.5 + reach * 0.08, 0), (0.16, 0.07)],
+        "#e07040",
+        "#8a3018",
+        0.03,
+    )
+    bottle = volume_ellipse(-0.02, 0, 0.26, 0.08, "#c45830", "#6a2814", "#f0a078", INK, 0.035, "enemy")
+    fin_upper = polygon([(-0.06, -0.05), (-0.26, -0.2), (-0.12, -0.04)], "#a84828", "#5a2010", 0.025)
+    fin_lower = polygon([(-0.06, 0.05), (-0.26, 0.2), (-0.12, 0.04)], "#a84828", "#5a2010", 0.025)
+    notch = polygon([(-0.26, -0.045), (-0.36, 0), (-0.26, 0.045), (-0.2, 0)], "#3a140c")
+    exhaust = polygon(
+        [(-0.32, -0.028), (-0.46 - flicker, 0), (-0.32, 0.028)],
+        "#e2c044",
+    )
+    return fin_upper + fin_lower + exhaust + bottle + notch + nose
+
+
+def tin_canopy(pose: Pose) -> str:
+    span = wing_span(pose, 0.28, 0.12)
+    reach = max(pose.reach, 0)
+    ring_dark = path_shape("M0.3 -0.2 A0.42 0.42 0 1 0 0.3 0.2", "none", "#3a545c", 0.09)
+    ring = path_shape("M0.3 -0.2 A0.42 0.42 0 1 0 0.3 0.2", "none", "#8ec8d8", 0.05)
+    rivets = (
+        circle(-0.32, -0.18, 0.028, "#d8eef2", "#3a545c", 0.015)
+        + circle(-0.38, 0.02, 0.028, "#d8eef2", "#3a545c", 0.015)
+        + circle(-0.22, 0.28, 0.028, "#d8eef2", "#3a545c", 0.015)
+    )
+    wings = []
+    for side in (-1, 1):
+        wings.append(
+            polygon(
+                [(0.02, side * 0.04), (0.14, side * 0.02), (-0.02, side * span)],
+                "#7eb4c4",
+                "#3a545c",
+                0.025,
+            )
+        )
+    body = volume_ellipse(0.0, 0.02, 0.16, 0.1, "#9ed0dc", "#4a6870", "#e4f6f8", INK, 0.03, "enemy")
+    nose = polygon(
+        [(0.12, -0.05), (0.28 + reach * 0.06, 0), (0.12, 0.05)],
+        "#b8e0e8",
+        "#3a545c",
+        0.025,
+    )
+    return ring_dark + ring + rivets + "".join(wings) + body + nose
+
+
 ENEMY_DRAW: dict[str, Callable[[Pose], str]] = {
     "minion": bad_bug,
     "runner": mantis,
@@ -949,6 +1049,9 @@ ENEMY_DRAW: dict[str, Callable[[Pose], str]] = {
     "shielded": shell_shocked,
     "healer": mole_mender,
     "boss": death_draw,
+    "flyer": ash_moth,
+    "jet": bottle_rocket,
+    "aegis": tin_canopy,
 }
 
 ENEMY_META = [
@@ -958,22 +1061,27 @@ ENEMY_META = [
     ("shielded", "Shell Shocked", "#99aabb", "◇", 0.7, 0.3, 0.2),
     ("healer", "Mole Mender", "#bb77aa", "▲", 0.9, 0.3, 0.2),
     ("boss", "Death Draw", "#cc6600", "★", 1.2, 0.4, 0.2),
+    ("flyer", "Ash Moth", "#c4b45a", "◆", 0.7, 0.3, 0.2),
+    ("jet", "Bottle Rocket", "#e07040", "▸", 0.45, 0.3, 0.2),
+    ("aegis", "Tin Canopy", "#8ec8d8", "◈", 0.9, 0.3, 0.2),
 ]
 
+AIRBORNE_ENEMY_IDS = {"flyer", "jet", "aegis"}
 
-def build_enemy_animations(draw: Callable[[Pose], str]) -> dict[str, dict]:
+
+def build_enemy_animations(draw: Callable[[Pose], str], airborne: bool = False) -> dict[str, dict]:
     walking = []
     for phase in range(8):
         pose = Pose(phase, WALK_BOB[phase], "walk", 0)
-        walking.append(enemy_frame(pose, draw(pose)))
+        walking.append(enemy_frame(pose, draw(pose), airborne))
     hit = []
     for action_phase in range(3):
         pose = Pose(0, 0.0, "hit", action_phase)
-        hit.append(enemy_frame(pose, draw(pose)))
+        hit.append(enemy_frame(pose, draw(pose), airborne))
     attack = []
     for action_phase in range(3):
         pose = Pose(0, 0.0, "attack", action_phase)
-        attack.append(enemy_frame(pose, draw(pose)))
+        attack.append(enemy_frame(pose, draw(pose), airborne))
     return {"walking": walking, "hit": hit, "attack": attack}
 
 
@@ -1209,7 +1317,7 @@ def build_theme() -> dict:
         }
     enemies = {}
     for enemy_id, name, color, shape, walk_duration, hit_duration, attack_duration in ENEMY_META:
-        animations = build_enemy_animations(ENEMY_DRAW[enemy_id])
+        animations = build_enemy_animations(ENEMY_DRAW[enemy_id], enemy_id in AIRBORNE_ENEMY_IDS)
         enemies[enemy_id] = {
             "name": name,
             "color": color,

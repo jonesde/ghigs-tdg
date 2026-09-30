@@ -322,7 +322,7 @@ export class Tower {
   // assignability of Pinia's unwrapped store state to Tower.
   private frameStats?: TowerStats;
   // Reused scan target list for update()'s standard targeting path.
-  private inRangeScratch?: { x: number; y: number; hp: number; maxHp?: number; id: number }[];
+  private inRangeScratch?: { x: number; y: number; hp: number; maxHp?: number; id: number; flyingHeight?: number }[];
   terrainHeight: number;
   chargeShotCount: number;
   iceBurstTimer: number;
@@ -337,7 +337,7 @@ export class Tower {
   // not a path block, so the overlap must not damage it or count as a siege.
   enemyAttackImmune: boolean = false;
   // Tile nav-distance to base (−1 unreachable). Null → Euclidean fallback.
-  navDistanceToBase: ((tileX: number, tileY: number) => number) | null = null;
+  navDistanceToBase: ((tileX: number, tileY: number, flyingHeight?: number) => number) | null = null;
 
   private applyFrostAura?: (enemy: AuraTarget) => void = (enemy: AuraTarget): void => {
     const slowAmt = (this.frameStats ?? this.stats).slowAmt;
@@ -838,8 +838,8 @@ export class Tower {
   }
 
   selectTarget(
-    enemies: { x: number; y: number; hp: number; maxHp?: number; id: number }[],
-  ): { x: number; y: number; hp: number; maxHp?: number; id: number } | null {
+    enemies: { x: number; y: number; hp: number; maxHp?: number; id: number; flyingHeight?: number }[],
+  ): { x: number; y: number; hp: number; maxHp?: number; id: number; flyingHeight?: number } | null {
     if (enemies.length === 0) return null;
     let target: { x: number; y: number; hp: number; maxHp?: number; id: number } | null = null;
 
@@ -857,7 +857,11 @@ export class Tower {
         // comparison preserves the old reduce tie-break (ties keep the first).
         const preferFarther = this.targeting === "last";
         let best = enemies[0]!;
-        const bestNav = this.navDistanceToBase?.(Math.floor(best.x / tileSize), Math.floor(best.y / tileSize));
+        const bestNav = this.navDistanceToBase?.(
+          Math.floor(best.x / tileSize),
+          Math.floor(best.y / tileSize),
+          best.flyingHeight ?? 0,
+        );
         let bestNavDistance = bestNav === undefined ? -1 : bestNav;
         const bestBaseDeltaX = best.x - baseWorld.x;
         const bestBaseDeltaY = best.y - baseWorld.y;
@@ -867,6 +871,7 @@ export class Tower {
           const candidateNav = this.navDistanceToBase?.(
             Math.floor(candidate.x / tileSize),
             Math.floor(candidate.y / tileSize),
+            candidate.flyingHeight ?? 0,
           );
           const candidateNavDistance = candidateNav === undefined ? -1 : candidateNav;
           const candidateBaseDeltaX = candidate.x - baseWorld.x;

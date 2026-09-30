@@ -567,6 +567,192 @@
           }
         ]
       }
+    },
+    "flyer": {
+      "name": "Flyer",
+      "color": "#5ec8e8",
+      "shape": "diamond",
+      "walking": {
+        "duration": 0.7,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.06,-0.05 0.14,-0.02 -0.02,-0.43\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.06,0.05 0.14,0.02 -0.02,0.43\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><ellipse cx=\"0\" cy=\"0\" rx=\"0.2\" ry=\"0.12\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.06,-0.05 0.14,-0.02 -0.02,-0.295\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.06,0.05 0.14,0.02 -0.02,0.295\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><ellipse cx=\"0\" cy=\"0\" rx=\"0.2\" ry=\"0.12\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.06,-0.05 0.14,-0.02 -0.02,-0.184\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.06,0.05 0.14,0.02 -0.02,0.184\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><ellipse cx=\"0\" cy=\"0\" rx=\"0.2\" ry=\"0.12\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.06,-0.05 0.14,-0.02 -0.02,-0.265\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.06,0.05 0.14,0.02 -0.02,0.265\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><ellipse cx=\"0\" cy=\"0\" rx=\"0.2\" ry=\"0.12\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.06,-0.05 0.14,-0.02 -0.02,-0.445\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.06,0.05 0.14,0.02 -0.02,0.445\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><ellipse cx=\"0\" cy=\"0\" rx=\"0.2\" ry=\"0.12\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.06,-0.05 0.14,-0.02 -0.02,-0.325\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.06,0.05 0.14,0.02 -0.02,0.325\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><ellipse cx=\"0\" cy=\"0\" rx=\"0.2\" ry=\"0.12\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.06,-0.05 0.14,-0.02 -0.02,-0.196\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.06,0.05 0.14,0.02 -0.02,0.196\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><ellipse cx=\"0\" cy=\"0\" rx=\"0.2\" ry=\"0.12\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.06,-0.05 0.14,-0.02 -0.02,-0.37\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.06,0.05 0.14,0.02 -0.02,0.37\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><ellipse cx=\"0\" cy=\"0\" rx=\"0.2\" ry=\"0.12\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      },
+      "hitReaction": {
+        "duration": 0.12,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.06,-0.05 0.14,-0.02 -0.02,-0.205\" fill=\"#9ee7f7\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.06,0.05 0.14,0.02 -0.02,0.205\" fill=\"#9ee7f7\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><ellipse cx=\"0\" cy=\"0\" rx=\"0.2\" ry=\"0.12\" fill=\"#9ee7f7\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.06,-0.05 0.14,-0.02 -0.02,-0.175\" fill=\"#9ee7f7\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.06,0.05 0.14,0.02 -0.02,0.175\" fill=\"#9ee7f7\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><ellipse cx=\"0\" cy=\"0\" rx=\"0.2\" ry=\"0.12\" fill=\"#9ee7f7\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.06,-0.05 0.14,-0.02 -0.02,-0.175\" fill=\"#9ee7f7\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.06,0.05 0.14,0.02 -0.02,0.175\" fill=\"#9ee7f7\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><ellipse cx=\"0\" cy=\"0\" rx=\"0.2\" ry=\"0.12\" fill=\"#9ee7f7\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      },
+      "attack": {
+        "duration": 0.2,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.06,-0.05 0.14,-0.02 -0.02,-0.28\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.06,0.05 0.14,0.02 -0.02,0.28\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><ellipse cx=\"0\" cy=\"0\" rx=\"0.2\" ry=\"0.12\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.22,-0.05 0.5,0 0.22,0.05\" fill=\"#5ec8e8\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.06,-0.05 0.14,-0.02 -0.02,-0.28\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.06,0.05 0.14,0.02 -0.02,0.28\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><ellipse cx=\"0\" cy=\"0\" rx=\"0.2\" ry=\"0.12\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.22,-0.05 0.64,0 0.22,0.05\" fill=\"#5ec8e8\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"-0.06,-0.05 0.14,-0.02 -0.02,-0.28\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.06,0.05 0.14,0.02 -0.02,0.28\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><ellipse cx=\"0\" cy=\"0\" rx=\"0.2\" ry=\"0.12\" fill=\"#5ec8e8\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.22,-0.05 0.5,0 0.22,0.05\" fill=\"#5ec8e8\"/></svg>"
+          }
+        ]
+      }
+    },
+    "jet": {
+      "name": "Jet",
+      "color": "#ff7a3c",
+      "shape": "chevron",
+      "walking": {
+        "duration": 0.45,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.02,-0.07 -0.16,-0.2 -0.04,-0.04\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.02,0.07 -0.16,0.2 -0.04,0.04\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.46,0 0.08,-0.1 -0.2,-0.07 -0.34,-0.16 -0.24,0 -0.34,0.16 -0.2,0.07 0.08,0.1\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.02,-0.09 -0.16,-0.22 -0.04,-0.06\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.02,0.05 -0.16,0.18 -0.04,0.02\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.46,-0.02 0.08,-0.12 -0.2,-0.09 -0.34,-0.18 -0.24,-0.02 -0.34,0.14 -0.2,0.05 0.08,0.08\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.02,-0.11 -0.16,-0.24 -0.04,-0.08\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.02,0.03 -0.16,0.16 -0.04,0\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.46,-0.04 0.08,-0.14 -0.2,-0.11 -0.34,-0.2 -0.24,-0.04 -0.34,0.12 -0.2,0.03 0.08,0.06\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.02,-0.09 -0.16,-0.22 -0.04,-0.06\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.02,0.05 -0.16,0.18 -0.04,0.02\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.46,-0.02 0.08,-0.12 -0.2,-0.09 -0.34,-0.18 -0.24,-0.02 -0.34,0.14 -0.2,0.05 0.08,0.08\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.02,-0.07 -0.16,-0.2 -0.04,-0.04\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.02,0.07 -0.16,0.2 -0.04,0.04\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.46,0 0.08,-0.1 -0.2,-0.07 -0.34,-0.16 -0.24,0 -0.34,0.16 -0.2,0.07 0.08,0.1\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.02,-0.05 -0.16,-0.18 -0.04,-0.02\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.02,0.09 -0.16,0.22 -0.04,0.06\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.46,0.02 0.08,-0.08 -0.2,-0.05 -0.34,-0.14 -0.24,0.02 -0.34,0.18 -0.2,0.09 0.08,0.12\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.02,-0.03 -0.16,-0.16 -0.04,0\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.02,0.11 -0.16,0.24 -0.04,0.08\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.46,0.04 0.08,-0.06 -0.2,-0.03 -0.34,-0.12 -0.24,0.04 -0.34,0.2 -0.2,0.11 0.08,0.14\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.02,-0.05 -0.16,-0.18 -0.04,-0.02\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.02,0.09 -0.16,0.22 -0.04,0.06\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.46,0.02 0.08,-0.08 -0.2,-0.05 -0.34,-0.14 -0.24,0.02 -0.34,0.18 -0.2,0.09 0.08,0.12\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      },
+      "hitReaction": {
+        "duration": 0.12,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.02,0.08 -0.16,-0.05 -0.04,0.11\" fill=\"#ffb088\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.02,0.22 -0.16,0.35 -0.04,0.19\" fill=\"#ffb088\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.46,0.15 0.08,0.05 -0.2,0.08 -0.34,-0.01 -0.24,0.15 -0.34,0.31 -0.2,0.22 0.08,0.25\" fill=\"#ffb088\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.02,-0.02 -0.16,-0.15 -0.04,0.01\" fill=\"#ffb088\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.02,0.12 -0.16,0.25 -0.04,0.09\" fill=\"#ffb088\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.46,0.05 0.08,-0.05 -0.2,-0.02 -0.34,-0.11 -0.24,0.05 -0.34,0.21 -0.2,0.12 0.08,0.15\" fill=\"#ffb088\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.02,-0.02 -0.16,-0.15 -0.04,0.01\" fill=\"#ffb088\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.02,0.12 -0.16,0.25 -0.04,0.09\" fill=\"#ffb088\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.46,0.05 0.08,-0.05 -0.2,-0.02 -0.34,-0.11 -0.24,0.05 -0.34,0.21 -0.2,0.12 0.08,0.15\" fill=\"#ffb088\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      },
+      "attack": {
+        "duration": 0.2,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.02,0.33 -0.16,0.2 -0.04,0.36\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.02,0.47 -0.16,0.6 -0.04,0.44\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.46,0.4 0.08,0.3 -0.2,0.33 -0.34,0.24 -0.24,0.4 -0.34,0.56 -0.2,0.47 0.08,0.5\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.22,-0.05 0.5,0 0.22,0.05\" fill=\"#ff7a3c\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.02,0.33 -0.16,0.2 -0.04,0.36\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.02,0.47 -0.16,0.6 -0.04,0.44\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.46,0.4 0.08,0.3 -0.2,0.33 -0.34,0.24 -0.24,0.4 -0.34,0.56 -0.2,0.47 0.08,0.5\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.22,-0.05 0.64,0 0.22,0.05\" fill=\"#ff7a3c\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><polygon points=\"0.02,0.33 -0.16,0.2 -0.04,0.36\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.02,0.47 -0.16,0.6 -0.04,0.44\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.46,0.4 0.08,0.3 -0.2,0.33 -0.34,0.24 -0.24,0.4 -0.34,0.56 -0.2,0.47 0.08,0.5\" fill=\"#ff7a3c\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.22,-0.05 0.5,0 0.22,0.05\" fill=\"#ff7a3c\"/></svg>"
+          }
+        ]
+      }
+    },
+    "aegis": {
+      "name": "Aegis",
+      "color": "#8ea2ff",
+      "shape": "kite",
+      "walking": {
+        "duration": 0.9,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0.26,-0.2 A0.4,0.4 0 1 0 0.26,0.2\" fill=\"none\" stroke=\"#8ea2ff\" stroke-width=\"0.07\"/><polygon points=\"-0.02,-0.04 0.1,-0.02 -0.04,-0.264\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.02,0.04 0.1,0.02 -0.04,0.264\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.2,0 0,-0.13 -0.18,0 0,0.13\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0.26,-0.2 A0.4,0.4 0 1 0 0.26,0.2\" fill=\"none\" stroke=\"#8ea2ff\" stroke-width=\"0.07\"/><polygon points=\"-0.02,-0.04 0.1,-0.02 -0.04,-0.192\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.02,0.04 0.1,0.02 -0.04,0.192\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.2,0 0,-0.13 -0.18,0 0,0.13\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0.26,-0.2 A0.4,0.4 0 1 0 0.26,0.2\" fill=\"none\" stroke=\"#8ea2ff\" stroke-width=\"0.07\"/><polygon points=\"-0.02,-0.04 0.1,-0.02 -0.04,-0.133\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.02,0.04 0.1,0.02 -0.04,0.133\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.2,0 0,-0.13 -0.18,0 0,0.13\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0.26,-0.2 A0.4,0.4 0 1 0 0.26,0.2\" fill=\"none\" stroke=\"#8ea2ff\" stroke-width=\"0.07\"/><polygon points=\"-0.02,-0.04 0.1,-0.02 -0.04,-0.176\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.02,0.04 0.1,0.02 -0.04,0.176\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.2,0 0,-0.13 -0.18,0 0,0.13\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0.26,-0.2 A0.4,0.4 0 1 0 0.26,0.2\" fill=\"none\" stroke=\"#8ea2ff\" stroke-width=\"0.07\"/><polygon points=\"-0.02,-0.04 0.1,-0.02 -0.04,-0.272\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.02,0.04 0.1,0.02 -0.04,0.272\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.2,0 0,-0.13 -0.18,0 0,0.13\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0.26,-0.2 A0.4,0.4 0 1 0 0.26,0.2\" fill=\"none\" stroke=\"#8ea2ff\" stroke-width=\"0.07\"/><polygon points=\"-0.02,-0.04 0.1,-0.02 -0.04,-0.208\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.02,0.04 0.1,0.02 -0.04,0.208\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.2,0 0,-0.13 -0.18,0 0,0.13\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0.26,-0.2 A0.4,0.4 0 1 0 0.26,0.2\" fill=\"none\" stroke=\"#8ea2ff\" stroke-width=\"0.07\"/><polygon points=\"-0.02,-0.04 0.1,-0.02 -0.04,-0.139\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.02,0.04 0.1,0.02 -0.04,0.139\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.2,0 0,-0.13 -0.18,0 0,0.13\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0.26,-0.2 A0.4,0.4 0 1 0 0.26,0.2\" fill=\"none\" stroke=\"#8ea2ff\" stroke-width=\"0.07\"/><polygon points=\"-0.02,-0.04 0.1,-0.02 -0.04,-0.232\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.02,0.04 0.1,0.02 -0.04,0.232\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.2,0 0,-0.13 -0.18,0 0,0.13\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      },
+      "hitReaction": {
+        "duration": 0.12,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0.26,-0.2 A0.4,0.4 0 1 0 0.26,0.2\" fill=\"none\" stroke=\"#d0d8ff\" stroke-width=\"0.07\"/><polygon points=\"-0.02,-0.04 0.1,-0.02 -0.04,-0.144\" fill=\"#d0d8ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.02,0.04 0.1,0.02 -0.04,0.144\" fill=\"#d0d8ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.2,0 0,-0.13 -0.18,0 0,0.13\" fill=\"#d0d8ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0.26,-0.2 A0.4,0.4 0 1 0 0.26,0.2\" fill=\"none\" stroke=\"#d0d8ff\" stroke-width=\"0.07\"/><polygon points=\"-0.02,-0.04 0.1,-0.02 -0.04,-0.128\" fill=\"#d0d8ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.02,0.04 0.1,0.02 -0.04,0.128\" fill=\"#d0d8ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.2,0 0,-0.13 -0.18,0 0,0.13\" fill=\"#d0d8ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0.26,-0.2 A0.4,0.4 0 1 0 0.26,0.2\" fill=\"none\" stroke=\"#d0d8ff\" stroke-width=\"0.07\"/><polygon points=\"-0.02,-0.04 0.1,-0.02 -0.04,-0.128\" fill=\"#d0d8ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.02,0.04 0.1,0.02 -0.04,0.128\" fill=\"#d0d8ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.2,0 0,-0.13 -0.18,0 0,0.13\" fill=\"#d0d8ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/></svg>"
+          }
+        ]
+      },
+      "attack": {
+        "duration": 0.2,
+        "frames": [
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0.26,-0.2 A0.4,0.4 0 1 0 0.26,0.2\" fill=\"none\" stroke=\"#8ea2ff\" stroke-width=\"0.07\"/><polygon points=\"-0.02,-0.04 0.1,-0.02 -0.04,-0.184\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.02,0.04 0.1,0.02 -0.04,0.184\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.2,0 0,-0.13 -0.18,0 0,0.13\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.22,-0.05 0.5,0 0.22,0.05\" fill=\"#8ea2ff\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0.26,-0.2 A0.4,0.4 0 1 0 0.26,0.2\" fill=\"none\" stroke=\"#8ea2ff\" stroke-width=\"0.07\"/><polygon points=\"-0.02,-0.04 0.1,-0.02 -0.04,-0.184\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.02,0.04 0.1,0.02 -0.04,0.184\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.2,0 0,-0.13 -0.18,0 0,0.13\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.22,-0.05 0.64,0 0.22,0.05\" fill=\"#8ea2ff\"/></svg>"
+          },
+          {
+            "image": "<svg viewBox=\"-1 -1 2 2\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0.26,-0.2 A0.4,0.4 0 1 0 0.26,0.2\" fill=\"none\" stroke=\"#8ea2ff\" stroke-width=\"0.07\"/><polygon points=\"-0.02,-0.04 0.1,-0.02 -0.04,-0.184\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"-0.02,0.04 0.1,0.02 -0.04,0.184\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.2,0 0,-0.13 -0.18,0 0,0.13\" fill=\"#8ea2ff\" stroke=\"rgba(0,0,0,0.5)\" stroke-width=\"0.04\"/><polygon points=\"0.22,-0.05 0.5,0 0.22,0.05\" fill=\"#8ea2ff\"/></svg>"
+          }
+        ]
+      }
     }
   },
   "regions": [

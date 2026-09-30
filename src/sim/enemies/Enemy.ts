@@ -17,6 +17,15 @@ import { restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdManager.js";
 import { fromRecast, toRecast } from "@/sim/navmesh/coords.js";
 import { launchEnemy } from "@/sim/physics/launchEnemy.js";
 import type { Tower } from "@/sim/towers/Tower.js";
+import {
+  canTraverseTile,
+  type LiveTowerAt,
+  nearestTraversableNeighbor,
+  nearestTraversableTile,
+  planFlightRoute,
+  readFlyingHeight,
+  type TilePoint,
+} from "./flightGrid.js";
 import { isEngagementPolicy, selectTargetingTower } from "./targeting.js";
 
 let nextId = 1;
@@ -68,6 +77,7 @@ interface EnemyMetaRef {
   healRange?: number;
   attackDamage: number;
   attackSpeed: number;
+  flyingHeight?: number;
 }
 
 interface GridRef {
@@ -82,6 +92,7 @@ interface GridRef {
   isSpawn(x: number, y: number): boolean;
   isTerrain(x: number, y: number): boolean;
   inBounds(x: number, y: number): boolean;
+  getHeight(x: number, y: number): number;
   blocked: Set<string>;
   pathVersion: number;
 }
@@ -155,6 +166,7 @@ interface EnemyManagerRef {
   blockedApproach?(tileX: number, tileY: number): { approachWorld: { x: number; y: number } } | null;
   liveTowers?(): Tower[];
   distanceToBase?(tileX: number, tileY: number): number;
+  flightDistanceToBase?(tileX: number, tileY: number, flyingHeight: number): number;
   // Cross-module: burn ticks route their dealt damage here so the inflicting
   // tower's totalDamageDealt/waveDamage (DPS graph, milestones) include it.
   creditDamage?(towerId: string, amount: number): void;
@@ -244,6 +256,18 @@ export class Enemy {
   motionLock: "none" | "park" = "none";
   // Cached last crowd move target so requestMoveTarget is not spammed every tick.
   lastMoveTargetWorld: { x: number; y: number } | null = null;
+  flyingHeight: number = 0;
+  // World points of the current flight polyline. Empty until computeIntent plans one.
+  flightPoints: { x: number; y: number }[] = [];
+  flightCursor: number = 0;
+  flightBuiltPathVersion: number = -1;
+  // Waypoints kept for this flyer, including the appended base. Re-filtered when the polyline rebuilds.
+  routeTiles: TilePoint[] = [];
+  strafeOccupancyKey: string | null = null;
+  // Cross-module: EnemyManager points these at the live tower list. A missing
+  // manager (unit constructions) treats every tile as tower-free.
+  liveTowerAt: LiveTowerAt = () => false;
+  towerAt: (tileX: number, tileY: number) => Tower | null = () => null;
   lastMoveTargetMode: string | null = null;
   // Progress tracking for auto-siege when stuck on a choke.
   stuckTimer: number = 0;
@@ -276,6 +300,7 @@ export class Enemy {
     this.type = type;
     this.level = level;
     this.meta = meta;
+    this.flyingHeight = readFlyingHeight(meta);
     this.theme = theme;
     const enemyVisual = (theme?.enemies[type] ?? null) as EnemyVisualMeta | null;
     this.color = enemyVisual?.color || defaultVisual?.color || "#e85a6a";
@@ -445,6 +470,10 @@ export class Enemy {
   }
 
   nextCornerWorld(): { x: number; y: number } | null {
+    if (this.flyingHeight > 0) {
+      const point = this.flightPoints[this.flightCursor];
+      return point ? { x: point.x, y: point.y } : null;
+    }
     if (!this.agent) return null;
     const corners = this.agent.corners();
     if (corners.length === 0) return null;
@@ -461,6 +490,10 @@ export class Enemy {
     if (this.attackingBase) return;
     if (!routePath || routePath.length === 0) {
       this.releaseToDefault();
+      return;
+    }
+    if (this.flyingHeight > 0) {
+      this.applyFlightOrder(routePath, mode);
       return;
     }
     this.routingMode = mode;
@@ -488,6 +521,10 @@ export class Enemy {
     this.arrived = false;
     this.motionLock = "none";
     this.clearMoveTargetCache();
+    if (this.flyingHeight > 0) {
+      this.rebuildFlightPolyline();
+      return;
+    }
     const targetWorld = this.grid.tileToWorld(tower.tileX, tower.tileY);
     this.requestMoveTargetCached(targetWorld, "siege");
   }
@@ -501,8 +538,15 @@ export class Enemy {
     this.siegeTower = null;
     this.blockedByTower = null;
     this.motionLock = "none";
+    this.routeTiles = [];
+    this.strafeOccupancyKey = null;
     this.clearMoveTargetCache();
+    this.clearFlightPolyline();
     const baseWorld = this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y);
+    if (this.flyingHeight > 0) {
+      this.rebuildFlightPolyline();
+      return;
+    }
     this.requestMoveTargetCached(baseWorld, "default");
   }
 
@@ -512,7 +556,6 @@ export class Enemy {
   }
 
   private requestMoveTargetCached(targetWorld: { x: number; y: number }, mode: string): void {
-    if (!this.agent) return;
     const previous = this.lastMoveTargetWorld;
     if (
       previous &&
@@ -521,9 +564,9 @@ export class Enemy {
     ) {
       return;
     }
-    this.agent.requestMoveTarget(toRecast(targetWorld));
     this.lastMoveTargetWorld = { x: targetWorld.x, y: targetWorld.y };
     this.lastMoveTargetMode = mode;
+    this.agent?.requestMoveTarget(toRecast(targetWorld));
   }
 
   // Status timers: slow/burn/mark/anti-heal bookkeeping plus the heal aura.
@@ -605,6 +648,11 @@ export class Enemy {
       if (!this.siegeTower || this.siegeTower.isGhost) {
         this.releaseToDefault();
       }
+    }
+
+    if (this.flyingHeight > 0) {
+      this.computeFlightIntent(enemyManager);
+      return;
     }
 
     // Engagement policy replaces stuck auto-siege. hold/route keep their explicit target;
@@ -740,7 +788,9 @@ export class Enemy {
       }
     }
 
-    if (!this.attackingBase && this.blockedByTower && !this.blockedByTower.isGhost && this.stunTimer <= 0) {
+    if (this.flyingHeight > 0) {
+      this.applyFlightAttack(dt);
+    } else if (!this.attackingBase && this.blockedByTower && !this.blockedByTower.isGhost && this.stunTimer <= 0) {
       this.attackTimer -= dt;
       if (this.attackTimer <= 0) {
         this.blockedByTower.takeDamage(this.attackDamage, this);
@@ -799,5 +849,182 @@ export class Enemy {
     this.centerX = this.x;
     this.centerY = this.y;
     this.moveAngle = Math.atan2(directionY, directionX);
+  }
+
+  clearFlightPolyline(): void {
+    this.flightPoints = [];
+    this.flightCursor = 0;
+    this.flightBuiltPathVersion = -1;
+  }
+
+  private applyFlightOrder(routePath: { x: number; y: number }[], mode: "hold" | "route"): void {
+    if (mode === "hold") {
+      const holdTile = routePath[0]!;
+      if (!canTraverseTile(this.grid, holdTile.x, holdTile.y, this.flyingHeight, this.liveTowerAt)) return;
+      this.routingMode = "hold";
+      this.arrived = false;
+      this.siegeTower = null;
+      this.motionLock = "none";
+      this.clearMoveTargetCache();
+      this.holdWorld = this.grid.tileToWorld(holdTile.x, holdTile.y);
+      this.routeTiles = [{ x: holdTile.x, y: holdTile.y }];
+      this.strafeOccupancyKey = null;
+      this.rebuildFlightPolyline();
+      return;
+    }
+    const kept = routePath.filter((tile) =>
+      canTraverseTile(this.grid, tile.x, tile.y, this.flyingHeight, this.liveTowerAt),
+    );
+    this.routingMode = "route";
+    this.arrived = false;
+    this.siegeTower = null;
+    this.motionLock = "none";
+    this.clearMoveTargetCache();
+    this.routeTiles = kept.map((tile) => ({ x: tile.x, y: tile.y }));
+    const lastTile = kept[kept.length - 1];
+    this.routeWorld = lastTile ? this.grid.tileToWorld(lastTile.x, lastTile.y) : null;
+    this.strafeOccupancyKey = null;
+    this.rebuildFlightPolyline();
+  }
+
+  private computeFlightIntent(enemyManager: EnemyManagerRef | null): void {
+    this.applyFlightEngagement(enemyManager);
+    if (this.flightPoints.length === 0 || this.flightBuiltPathVersion !== this.grid.pathVersion) {
+      this.rebuildFlightPolyline();
+    }
+    this.advanceFlightCursor();
+    const point = this.flightPoints[this.flightCursor];
+    if (!point) return;
+    this.lastMoveTargetWorld = { x: point.x, y: point.y };
+    this.lastMoveTargetMode = this.routingMode;
+  }
+
+  private applyFlightEngagement(enemyManager: EnemyManagerRef | null): void {
+    const policyActive =
+      this.routingMode !== "hold" && this.routingMode !== "route" && isEngagementPolicy(this.targetingMode);
+    const liveTowers = enemyManager?.liveTowers?.();
+    if (!policyActive || !liveTowers || !enemyManager?.flightDistanceToBase) return;
+    const distanceAt = (tileX: number, tileY: number) =>
+      enemyManager.flightDistanceToBase?.(tileX, tileY, this.flyingHeight) ?? -1;
+    const tile = this.currentTile();
+    const chosen = selectTargetingTower(
+      this.targetingMode,
+      tile.x,
+      tile.y,
+      distanceAt(tile.x, tile.y),
+      liveTowers,
+      distanceAt,
+    );
+    if (chosen) {
+      if (!(this.routingMode === "siege" && this.siegeTower === chosen)) this.applySiege(chosen);
+    } else if (this.routingMode === "siege") {
+      this.releaseToDefault();
+    }
+  }
+
+  private advanceFlightCursor(): void {
+    const arrivalRadius = this.grid.tileSize * 0.45;
+    while (this.flightCursor < this.flightPoints.length - 1) {
+      const point = this.flightPoints[this.flightCursor]!;
+      if (Math.hypot(this.x - point.x, this.y - point.y) > arrivalRadius) break;
+      this.flightCursor++;
+    }
+  }
+
+  private rebuildFlightPolyline(): void {
+    const height = this.flyingHeight;
+    const liveTowerAt = this.liveTowerAt;
+    const start = this.currentTile();
+    let goals: TilePoint[] = [];
+    if (this.routingMode === "hold" && this.holdWorld) {
+      const holdTile = {
+        x: Math.floor(this.holdWorld.x / this.grid.tileSize),
+        y: Math.floor(this.holdWorld.y / this.grid.tileSize),
+      };
+      if (canTraverseTile(this.grid, holdTile.x, holdTile.y, height, liveTowerAt)) goals = [holdTile];
+      else {
+        const neighbor = nearestTraversableNeighbor(this.grid, holdTile.x, holdTile.y, height, liveTowerAt, start);
+        goals = neighbor ? [neighbor] : [];
+      }
+    } else if (this.routingMode === "route") {
+      goals = this.routeTiles.filter((tile) => canTraverseTile(this.grid, tile.x, tile.y, height, liveTowerAt));
+    } else if (this.routingMode === "siege" && this.siegeTower && !this.siegeTower.isGhost) {
+      const tower = this.siegeTower;
+      if (canTraverseTile(this.grid, tower.tileX, tower.tileY, height, liveTowerAt)) {
+        goals = [{ x: tower.tileX, y: tower.tileY }];
+      } else {
+        const neighbor = nearestTraversableNeighbor(this.grid, tower.tileX, tower.tileY, height, liveTowerAt, start);
+        if (!neighbor) {
+          this.releaseToDefault();
+          return;
+        }
+        goals = [neighbor];
+      }
+    } else {
+      const base = this.grid.getBase();
+      goals = [{ x: base.x, y: base.y }];
+    }
+
+    const recovering = !canTraverseTile(this.grid, start.x, start.y, height, liveTowerAt);
+    let planStart = start;
+    const recoveryPoints: { x: number; y: number }[] = [];
+    if (recovering) {
+      const recover = nearestTraversableTile(this.grid, start.x, start.y, height, liveTowerAt);
+      if (!recover) {
+        this.flightPoints = [];
+        this.flightCursor = 0;
+        this.flightBuiltPathVersion = this.grid.pathVersion;
+        return;
+      }
+      recoveryPoints.push(this.grid.tileToWorld(recover.x, recover.y));
+      planStart = recover;
+    }
+    const route = planFlightRoute(this.grid, planStart, goals, height, liveTowerAt);
+    this.flightPoints = recovering ? recoveryPoints.concat(route.slice(1)) : route;
+    this.flightCursor = 0;
+    this.flightBuiltPathVersion = this.grid.pathVersion;
+    const current = this.flightPoints[0];
+    if (!current) return;
+    this.lastMoveTargetWorld = { x: current.x, y: current.y };
+    this.lastMoveTargetMode = this.routingMode;
+  }
+
+  private applyFlightAttack(deltaSeconds: number): void {
+    if (this.routingMode === "siege") {
+      const tower = this.siegeTower;
+      if (!tower || tower.isGhost) {
+        this.releaseToDefault();
+        return;
+      }
+      if (this.motionLock !== "park" || this.stunTimer > 0 || this.attackingBase || tower.enemyAttackImmune) return;
+      this.attackTimer -= deltaSeconds;
+      if (this.attackTimer <= 0) {
+        tower.takeDamage(this.attackDamage, this);
+        this.attackAnimTime = this._gameSeconds;
+        this.attackTimer = 1 / (this.attackSpeed * this.slowFactor);
+      }
+      return;
+    }
+    if (this.routingMode !== "default" && this.routingMode !== "route") return;
+    if (this.attackingBase || this.stunTimer > 0) return;
+    const tile = this.currentTile();
+    const occupancyKey = `${tile.x},${tile.y}`;
+    const tower = this.towerAt(tile.x, tile.y);
+    const liveTarget = !!tower && !tower.isGhost && !tower.enemyAttackImmune;
+    if (occupancyKey !== this.strafeOccupancyKey) {
+      this.strafeOccupancyKey = occupancyKey;
+      if (liveTarget && tower) {
+        tower.takeDamage(this.attackDamage, this);
+        this.attackAnimTime = this._gameSeconds;
+        this.attackTimer = 1 / (this.attackSpeed * this.slowFactor);
+      }
+      return;
+    }
+    this.attackTimer -= deltaSeconds;
+    if (liveTarget && tower && this.attackTimer <= 0) {
+      tower.takeDamage(this.attackDamage, this);
+      this.attackAnimTime = this._gameSeconds;
+      this.attackTimer = 1 / (this.attackSpeed * this.slowFactor);
+    }
   }
 }

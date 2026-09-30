@@ -40,6 +40,7 @@ export class EnemyManager {
   crowdManager: CrowdManager | null = null;
   private blockedApproachLookup: ((tileX: number, tileY: number) => BlockedApproach | null) | null = null;
   private distanceToBaseLookup: ((tileX: number, tileY: number) => number) | null = null;
+  private flightDistanceLookup: ((tileX: number, tileY: number, flyingHeight: number) => number) | null = null;
   // Cross-module: GameEngine wires this to the ProjectileManager so burn ticks
   // (applied inside Enemy.updateStatusTimers) credit the inflicting tower's
   // totalDamageDealt/waveDamage like direct hits do.
@@ -115,6 +116,14 @@ export class EnemyManager {
 
   distanceToBase(tileX: number, tileY: number): number {
     return this.distanceToBaseLookup?.(tileX, tileY) ?? -1;
+  }
+
+  setFlightDistanceLookup(lookup: ((tileX: number, tileY: number, flyingHeight: number) => number) | null): void {
+    this.flightDistanceLookup = lookup;
+  }
+
+  flightDistanceToBase(tileX: number, tileY: number, flyingHeight: number): number {
+    return this.flightDistanceLookup?.(tileX, tileY, flyingHeight) ?? -1;
   }
 
   setDamageCreditSink(sink: ((towerId: string, amount: number) => void) | null): void {
@@ -217,8 +226,8 @@ export class EnemyManager {
     return view;
   }
 
-  // The crowd agent already exists. applyRoute no-ops its move request without one,
-  // so this has to run after addAgent or the hold never reaches the crowd.
+  // Ground applyRoute writes the crowd target, so the agent has to exist first.
+  // Flyers have no agent; their polyline is planned from the same order.
   private applySpawnOrder(enemy: Enemy): void {
     const order = this.spawnOrdersByIndex.get(enemy.spawnIndex) ?? this.defaultSpawnOrder;
     if (!order) return;
@@ -257,10 +266,17 @@ export class EnemyManager {
     this.enemies.push(enemy);
     this.idToEnemy.set(enemy.id, enemy);
     this.physicsWorld?.addEnemy(enemy);
-    if (this.crowdManager) {
+    // Flying enemies steer by linvel along a height polyline. A crowd agent would
+    // pull them back onto the path navmesh.
+    if (this.crowdManager && enemy.flyingHeight <= 0) {
       this.crowdManager.addAgent(enemy);
       this.crowdManager.setBaseTarget(enemy, this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y));
     }
+    enemy.towerAt = (tileX, tileY) => this.towerAt(tileX, tileY) ?? null;
+    enemy.liveTowerAt = (tileX, tileY) => {
+      const tower = this.towerAt(tileX, tileY);
+      return tower !== null && !tower.isGhost;
+    };
     this.applySpawnOrder(enemy);
     this.spawnCountsDirty = true;
     return enemy;

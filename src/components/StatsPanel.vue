@@ -24,7 +24,7 @@ const waveComposition = computed(() => {
   const entries = Object.entries(comp)
     .filter(([, count]) => count > 0)
     .sort((entryA, entryB) => {
-      const order = ["minion", "runner", "tank", "shielded", "healer", "boss"];
+      const order = ["minion", "runner", "tank", "shielded", "healer", "flyer", "jet", "aegis", "boss"];
       return order.indexOf(entryA[0]) - order.indexOf(entryB[0]);
     });
   return entries;

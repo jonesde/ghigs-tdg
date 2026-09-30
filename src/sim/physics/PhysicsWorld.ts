@@ -15,10 +15,15 @@ import { getRapier } from "./rapierContext.js";
 // Enemies: group 1, filter everything except other enemies when enemyEnemyCollisions is false.
 // Projectiles: group 2, filter only enemies (group 1).
 // Aura sensors: group 3, filter only enemies (group 1).
-// Static world (base/towers/walls): default (all groups).
+// Static world membership is explicit so a flyer filter can include the base and
+// exclude towers and corridor walls. Ground filters stay all-groups (or all
+// except enemies), which still match the new membership bits.
 const ENEMY_GROUP = 0x0001;
 const PROJECTILE_GROUP = 0x0002;
 const SENSOR_GROUP = 0x0004;
+const BASE_GROUP = 0x0008;
+const TOWER_GROUP = 0x0010;
+const CORRIDOR_GROUP = 0x0020;
 const ALL_GROUPS = 0xffff;
 
 // Query scratch Balls: one shared Ball per PhysicsWorld is reused across every
@@ -114,7 +119,9 @@ export class PhysicsWorld {
       .setTranslation(baseCenter.x, baseCenter.y)
       .setUserData({ kind: "base" } satisfies ColliderTag);
     this.baseBody = this.world.createRigidBody(bodyDesc);
-    const colliderDesc = RAPIER.ColliderDesc.cuboid(half, half).setActiveEvents(ActiveEvents.COLLISION_EVENTS);
+    const colliderDesc = RAPIER.ColliderDesc.cuboid(half, half)
+      .setActiveEvents(ActiveEvents.COLLISION_EVENTS)
+      .setCollisionGroups((BASE_GROUP << 16) | ALL_GROUPS);
     this.world.createCollider(colliderDesc, this.baseBody);
   }
 
@@ -136,7 +143,9 @@ export class PhysicsWorld {
       const body = this.world.createRigidBody(
         RAPIER.RigidBodyDesc.fixed().setTranslation(centerX, centerY).setUserData(tag),
       );
-      const colliderDesc = RAPIER.ColliderDesc.cuboid(half, half).setActiveEvents(ActiveEvents.COLLISION_EVENTS);
+      const colliderDesc = RAPIER.ColliderDesc.cuboid(half, half)
+        .setActiveEvents(ActiveEvents.COLLISION_EVENTS)
+        .setCollisionGroups((TOWER_GROUP << 16) | ALL_GROUPS);
       this.world.createCollider(colliderDesc, body);
       this.towerBodies.push(body);
     }
@@ -161,8 +170,9 @@ export class PhysicsWorld {
       );
       // Corridor walls emit collision events for the counter-only wall-pin metric in
       // ContactProcessor; they never park or damage (see Enemy.postPhysics drift resync).
-      const corridorCollider = RAPIER.ColliderDesc.cuboid(length / 2, halfThickness);
-      corridorCollider.setActiveEvents(ActiveEvents.COLLISION_EVENTS);
+      const corridorCollider = RAPIER.ColliderDesc.cuboid(length / 2, halfThickness)
+        .setActiveEvents(ActiveEvents.COLLISION_EVENTS)
+        .setCollisionGroups((CORRIDOR_GROUP << 16) | ALL_GROUPS);
       this.world.createCollider(corridorCollider, body);
       this.corridorBodies.push(body);
     }
@@ -247,10 +257,7 @@ export class PhysicsWorld {
     const colliderDesc = RAPIER.ColliderDesc.ball(enemy.radius).setRestitution(0).setDensity(this.enemyDensity(enemy));
     // ActiveEvents set after create so default solid collision path matches pre-plan behavior.
     colliderDesc.setActiveEvents(ActiveEvents.COLLISION_EVENTS);
-    if (!this.enemyEnemyCollisions) {
-      // Membership enemy group; filter all except enemy group.
-      colliderDesc.setCollisionGroups((ENEMY_GROUP << 16) | (ALL_GROUPS & ~ENEMY_GROUP));
-    }
+    colliderDesc.setCollisionGroups(this.collisionGroupsForEnemy(enemy));
     this.world.createCollider(colliderDesc, body);
     enemy.body = body;
     this.enemyByHandle.set(body.handle, enemy);
@@ -260,10 +267,24 @@ export class PhysicsWorld {
   // mid-run change takes effect immediately instead of applying only to spawns.
   setEnemyEnemyCollisions(enabled: boolean): void {
     this.enemyEnemyCollisions = enabled;
-    const groups = enabled ? ALL_GROUPS : (ENEMY_GROUP << 16) | (ALL_GROUPS & ~ENEMY_GROUP);
     for (const enemy of this.enemyByHandle.values()) {
-      enemy.body?.collider(0).setCollisionGroups(groups);
+      enemy.body?.collider(0).setCollisionGroups(this.collisionGroupsForEnemy(enemy));
     }
+  }
+
+  // Ground keeps an all-groups filter (minus enemies when the toggle is off).
+  // A flyer keeps base, projectile, and sensor, and drops tower and corridor so
+  // those cuboids cannot push it. A later toggle must not stamp the ground mask
+  // back onto a flyer.
+  private collisionGroupsForEnemy(enemy: Enemy): number {
+    const flyerFilter = BASE_GROUP | PROJECTILE_GROUP | SENSOR_GROUP;
+    const filter =
+      enemy.flyingHeight > 0
+        ? flyerFilter | (this.enemyEnemyCollisions ? ENEMY_GROUP : 0)
+        : this.enemyEnemyCollisions
+          ? ALL_GROUPS
+          : ALL_GROUPS & ~ENEMY_GROUP;
+    return (ENEMY_GROUP << 16) | filter;
   }
 
   removeEnemy(enemy: Enemy): void {

@@ -96,6 +96,9 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
     hexagon: "⬢",
     cross: "✚",
     star: "★",
+    diamond: "◆",
+    chevron: "▸",
+    kite: "◈",
   };
 
   function getEnemyGlyph(shape: string): string {

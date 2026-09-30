@@ -16,6 +16,8 @@ export type CommanderKind = "stubby" | "stubbs" | "llm";
 export interface CommanderSnapshotSlice {
   observationId: number;
   gridLayout: number[][] | undefined; // constant map (0=terrain,1=path,2=base,3=spawn)
+  // Stored tile height. Cached with gridLayout. A live tower adds 1 on top of this.
+  heights?: number[][] | undefined;
   enemies: EnemySnapshot[];
   towers: TowerSnapshot[];
   spawnStates: SpawnStateSnapshot[];

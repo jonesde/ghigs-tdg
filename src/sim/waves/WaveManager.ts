@@ -203,6 +203,9 @@ export class WaveManager {
       const rand = this.rng();
       let type = "minion";
       const tierThresholds = [
+        { minWave: 16, threshold: 0.04, type: "aegis" as const },
+        { minWave: 11, threshold: 0.05, type: "jet" as const },
+        { minWave: 7, threshold: 0.07, type: "flyer" as const },
         { minWave: 15, threshold: 0.08, type: "healer" as const },
         { minWave: 12, threshold: 0.1, type: "shielded" as const },
         { minWave: 8, threshold: 0.1, type: "tank" as const },

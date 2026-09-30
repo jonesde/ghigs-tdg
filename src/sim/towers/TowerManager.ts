@@ -102,7 +102,7 @@ export class TowerManager {
   private tileMap: Map<string, Tower> = new Map();
   theme: MapThemeData | null;
   defaultTowerVisuals: Record<string, TowerVisualMeta>;
-  navDistanceToBase: ((tileX: number, tileY: number) => number) | null = null;
+  navDistanceToBase: ((tileX: number, tileY: number, flyingHeight?: number) => number) | null = null;
 
   constructor(
     grid: GridRef,
@@ -121,7 +121,7 @@ export class TowerManager {
     this.towers = [];
   }
 
-  setNavDistanceToBase(lookup: ((tileX: number, tileY: number) => number) | null): void {
+  setNavDistanceToBase(lookup: ((tileX: number, tileY: number, flyingHeight?: number) => number) | null): void {
     this.navDistanceToBase = lookup;
     for (const tower of this.towers) {
       tower.navDistanceToBase = lookup;

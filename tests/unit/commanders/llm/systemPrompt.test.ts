@@ -48,6 +48,12 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("baseHp");
     expect(prompt).toContain("countdownSeconds");
     expect(prompt).toContain("snapped distanceToBase");
+    expect(prompt).toContain("flyingHeight=2");
+    expect(prompt).toContain("flyingHeight=3");
+    expect(prompt).toContain("flyingHeight=5");
+    expect(prompt).toContain("plus 1 when a live tower occupies that tile");
+    expect(prompt).toContain("straight segment");
+    expect(prompt).toContain("once on entry");
     for (const mode of ["default", "base", "nearest", "strongest", "weakest", "strongestAhead"]) {
       expect(prompt).toContain(mode);
     }

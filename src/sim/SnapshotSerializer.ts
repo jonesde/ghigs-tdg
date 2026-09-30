@@ -86,6 +86,15 @@ export function buildSnapshot(
     gridLayout = engine.gridLayoutCache;
   }
 
+  let heights: number[][] | undefined;
+  if (grid && engine.gridLayoutEnabled) {
+    if (engine.gridHeightsCache === null || engine.gridHeightsCacheRunId !== engine.runId) {
+      engine.gridHeightsCache = grid.tiles.map((row) => row.map((tile) => tile.height));
+      engine.gridHeightsCacheRunId = engine.runId;
+    }
+    heights = engine.gridHeightsCache;
+  }
+
   const selectedTowerId = engine.runState.selectedTowerId;
 
   // Wave-graph dots only change shape every WAVE_GRAPH_INTERVAL_SECONDS (a dot
@@ -137,6 +146,7 @@ export function buildSnapshot(
     waveGraphDots,
     waveGraphDotsGeneration,
     gridLayout,
+    heights,
   };
 }
 
@@ -184,7 +194,10 @@ function snapshotEnemy(e: Enemy, engine?: GameEngine): EnemySnapshot {
   const maxBurnRemaining = e.burnStack?.reduce((max, burnEntry) => Math.max(max, burnEntry.timer), 0) ?? 0;
   const totalBurnDps = e.burnStack?.reduce((sum, burnEntry) => sum + burnEntry.dps, 0) ?? 0;
   const tile = e.currentTile();
-  const distanceToBase = engine?.navDistanceField?.getDistanceToBase(tile.x, tile.y) ?? -1;
+  const distanceToBase =
+    e.flyingHeight > 0
+      ? (engine?.flightDistanceField?.getDistanceToBase(tile.x, tile.y, e.flyingHeight) ?? -1)
+      : (engine?.navDistanceField?.getDistanceToBase(tile.x, tile.y) ?? -1);
   return {
     id: e.id,
     type: e.type,
@@ -212,6 +225,7 @@ function snapshotEnemy(e: Enemy, engine?: GameEngine): EnemySnapshot {
     attackingBase: e.attackingBase,
     blockedByTowerTile: e.blockedByTower ? { x: e.blockedByTower.tileX, y: e.blockedByTower.tileY } : null,
     distanceToBase,
+    flyingHeight: e.flyingHeight,
     nextCorner: e.nextCornerWorld(),
     targetingMode: e.targetingMode,
   };

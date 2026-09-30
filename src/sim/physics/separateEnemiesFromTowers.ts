@@ -58,7 +58,7 @@ export function separateEnemiesFromTowers(
   const insideLimit = grid.tileSize / 2 - 0.5;
 
   for (const enemy of enemies) {
-    if (enemy.removed) continue;
+    if (enemy.removed || enemy.flyingHeight > 0) continue;
     const containing = liveTowers.find((tower) => insideSquare(enemy.x, enemy.y, tower.x, tower.y, insideLimit));
     if (!containing) continue;
     // Intentionally parked enemies (base attackers, siege contact) stay where the

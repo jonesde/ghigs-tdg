@@ -82,6 +82,9 @@ describe("getEnemyGlyph (theme store)", () => {
     expect(themeStore.getEnemyGlyph("hexagon")).toBe("⬢");
     expect(themeStore.getEnemyGlyph("cross")).toBe("✚");
     expect(themeStore.getEnemyGlyph("star")).toBe("★");
+    expect(themeStore.getEnemyGlyph("diamond")).toBe("◆");
+    expect(themeStore.getEnemyGlyph("chevron")).toBe("▸");
+    expect(themeStore.getEnemyGlyph("kite")).toBe("◈");
   });
 
   it("falls back to a dot for unknown shapes", () => {

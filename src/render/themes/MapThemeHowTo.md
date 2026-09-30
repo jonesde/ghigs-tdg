@@ -66,6 +66,9 @@ Each enemy type has a walking cycle, an optional hit reaction, and an optional a
 | `tank` | `enemies.tank.walking` | `enemies.tank.hitReaction` | `enemies.tank.attack` |
 | `shielded` | `enemies.shielded.walking` | `enemies.shielded.hitReaction` | `enemies.shielded.attack` |
 | `healer` | `enemies.healer.walking` | `enemies.healer.hitReaction` | `enemies.healer.attack` |
+| `flyer` | `enemies.flyer.walking` | `enemies.flyer.hitReaction` | `enemies.flyer.attack` |
+| `jet` | `enemies.jet.walking` | `enemies.jet.hitReaction` | `enemies.jet.attack` |
+| `aegis` | `enemies.aegis.walking` | `enemies.aegis.hitReaction` | `enemies.aegis.attack` |
 | `boss` | `enemies.boss.walking` | `enemies.boss.hitReaction` | `enemies.boss.attack` |
 
 Each enemy entry also requires `name` (string), `color` (CSS color), and `shape` (string — used for stats panel display).

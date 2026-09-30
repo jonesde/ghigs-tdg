@@ -1,10 +1,29 @@
 {
   "types": {
-    "minion": { "baseHp": 8, "speed": 1.0, "bounty": 1, "radius": 0.14, "attackDamage": 4, "attackSpeed": 0.5 },
-    "runner": { "baseHp": 8, "speed": 2.5, "bounty": 2, "radius": 0.1, "attackDamage": 2, "attackSpeed": 1.0 },
-    "tank": { "baseHp": 32, "speed": 0.4, "bounty": 3, "radius": 0.24, "knockResist": 0.3, "attackDamage": 10, "attackSpeed": 0.3 },
-    "shielded": { "baseHp": 16, "speed": 0.7, "bounty": 4, "radius": 0.16, "shield": 32, "attackDamage": 10, "attackSpeed": 0.5 },
-    "healer": { "baseHp": 16, "speed": 0.8, "bounty": 4, "radius": 0.16, "heal": 0.03, "healRange": 2.5, "attackDamage": 3, "attackSpeed": 0.5 },
+    "minion": { "baseHp": 8, "speed": 1.0, "bounty": 1, "radius": 0.14, "attackDamage": 4, "attackSpeed": 0.5, "flyingHeight": 0 },
+    "runner": { "baseHp": 8, "speed": 2.5, "bounty": 2, "radius": 0.1, "attackDamage": 2, "attackSpeed": 1.0, "flyingHeight": 0 },
+    "tank": {
+      "baseHp": 32,
+      "speed": 0.4,
+      "bounty": 3,
+      "radius": 0.24,
+      "knockResist": 0.3,
+      "attackDamage": 10,
+      "attackSpeed": 0.3,
+      "flyingHeight": 0
+    },
+    "shielded": { "baseHp": 16, "speed": 0.7, "bounty": 4, "radius": 0.16, "shield": 32, "attackDamage": 10, "attackSpeed": 0.5, "flyingHeight": 0 },
+    "healer": {
+      "baseHp": 16,
+      "speed": 0.8,
+      "bounty": 4,
+      "radius": 0.16,
+      "heal": 0.03,
+      "healRange": 2.5,
+      "attackDamage": 3,
+      "attackSpeed": 0.5,
+      "flyingHeight": 0
+    },
     "boss": {
       "baseHp": 192,
       "speed": 0.5,
@@ -14,8 +33,12 @@
       "slowResist": 0.8,
       "knockResist": 0.8,
       "attackDamage": 20,
-      "attackSpeed": 0.5
-    }
+      "attackSpeed": 0.5,
+      "flyingHeight": 0
+    },
+    "flyer": { "baseHp": 6, "speed": 0.9, "bounty": 2, "radius": 0.12, "attackDamage": 3, "attackSpeed": 0.5, "flyingHeight": 2 },
+    "jet": { "baseHp": 5, "speed": 1.8, "bounty": 3, "radius": 0.1, "attackDamage": 2, "attackSpeed": 0.8, "flyingHeight": 5 },
+    "aegis": { "baseHp": 10, "speed": 0.6, "bounty": 5, "radius": 0.16, "shield": 16, "attackDamage": 6, "attackSpeed": 0.4, "flyingHeight": 3 }
   },
   "levelHpMult": { "intercept": 1, "slopePerLevel": 0.6 },
   "waveDamageMult": 0.2,

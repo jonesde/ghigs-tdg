@@ -18,6 +18,7 @@ export interface ObservationEnemy {
   attackingBase?: boolean;
   blockedByTowerTile?: { x: number; y: number } | null;
   distanceToBase?: number;
+  flyingHeight?: number;
   targetingMode?: string | null;
   wave?: number;
   spawnIndex?: number;
@@ -56,6 +57,7 @@ export interface ObservationNav {
 export interface CommanderObservation {
   observationId?: number;
   map: number[][] | undefined;
+  heights?: number[][] | undefined;
   spawns?: SpawnPointSnapshot[];
   enemies: ObservationEnemy[];
   towers: ObservationTower[];
@@ -93,6 +95,7 @@ export function buildObservation(slice: CommanderSnapshotSlice): CommanderObserv
     if (enemy.targetingMode !== undefined) observationEnemy.targetingMode = enemy.targetingMode;
     if (enemy.wave !== undefined) observationEnemy.wave = enemy.wave;
     if (enemy.spawnIndex !== undefined) observationEnemy.spawnIndex = enemy.spawnIndex;
+    if (enemy.flyingHeight !== undefined) observationEnemy.flyingHeight = enemy.flyingHeight;
     return observationEnemy;
   });
   const towers: ObservationTower[] = slice.towers.map((tower) => {
@@ -134,6 +137,7 @@ export function buildObservation(slice: CommanderSnapshotSlice): CommanderObserv
   const observation: CommanderObservation = {
     observationId: slice.observationId,
     map: slice.gridLayout,
+    heights: slice.heights,
     spawns: slice.meta.spawns ?? [],
     enemies,
     towers,

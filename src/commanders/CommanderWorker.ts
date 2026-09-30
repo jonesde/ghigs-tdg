@@ -34,6 +34,7 @@ const memory: CommanderMemory = {
   lastRushWaveNumber: null,
   lastRoutedTowerSignature: "",
   gridLayout: undefined,
+  heights: undefined,
   conversation: [],
   tokenCount: 0,
   lastObservation: null,
@@ -76,6 +77,7 @@ function resetMemory(): void {
   memory.lastRushWaveNumber = null;
   memory.lastRoutedTowerSignature = "";
   memory.gridLayout = undefined;
+  memory.heights = undefined;
   memory.conversation = [];
   memory.tokenCount = 0;
   memory.lastObservation = null;
@@ -217,6 +219,7 @@ async function dispatchCommanderMessage(message: MainToCommanderMessage): Promis
       if ((slice.meta.runId ?? null) !== lastRunId) {
         lastRunId = slice.meta.runId ?? null;
         memory.gridLayout = undefined;
+        memory.heights = undefined;
         gridLayoutToggleSent = false;
         memory.phase = "idle";
         memory.seenByWave = new Map<number, Set<number>>();
@@ -233,8 +236,9 @@ async function dispatchCommanderMessage(message: MainToCommanderMessage): Promis
       }
       if (slice.gridLayout) {
         memory.gridLayout = slice.gridLayout;
+        if (slice.heights) memory.heights = slice.heights;
         // The map never changes mid-run; emit the feed-off set command exactly once so
-        // the engine stops shipping gridLayout (steady-state per-tick cost → zero).
+        // the engine stops shipping gridLayout and heights (steady-state per-tick cost → zero).
         if (!gridLayoutToggleSent) {
           gridLayoutToggleSent = true;
           commands.push({ commandId: 0, type: "llm:setGridLayoutFeed", enabled: false });
@@ -243,6 +247,7 @@ async function dispatchCommanderMessage(message: MainToCommanderMessage): Promis
       const observation: CommanderObservation = buildObservation({
         ...slice,
         gridLayout: memory.gridLayout ?? slice.gridLayout,
+        heights: memory.heights ?? slice.heights,
       });
       // The one-shot gridLayout feed-off command is posted on its own message so both the
       // stub and LLM paths share it, then each path posts its own command batch.

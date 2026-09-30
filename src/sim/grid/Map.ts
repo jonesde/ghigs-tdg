@@ -817,7 +817,12 @@ export function generateRandomMap(
     for (let deltaX = -1; deltaX <= 1; deltaX++) {
       const baseX = base.x + deltaX;
       const baseY = base.y + deltaY;
-      if (baseX >= 0 && baseY >= 0 && baseX < width && baseY < height) tiles[baseY]![baseX]!.type = "base";
+      if (baseX < 0 || baseY < 0 || baseX >= width || baseY >= height) continue;
+      const cell = tiles[baseY]![baseX]!;
+      cell.type = "base";
+      // Flight goals are this center. A stored height above a flyer's flyingHeight makes the goal
+      // illegal, so the center stays at 1 while the ring keeps its terrain height.
+      if (deltaX === 0 && deltaY === 0) cell.height = 1;
     }
   // Inset every spawn one tile from the map border. Styles could place a spawn on
   // row/column 0 (bastion, serpentine); the carve always passes through the

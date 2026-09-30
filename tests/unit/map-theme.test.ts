@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RawMapThemeSchema } from "@/content/schemas/theme.js";
 import { useSvgStaticContent } from "@/render/svg/useSvgStaticContent.js";
+import defaultTheme from "@/render/themes/data/default-map-theme.json";
 import aftermathTheme from "@/render/themes/data/the-aftermath.json";
 import { DEFAULT_THEME_ID, MAP_THEME_MANIFEST, type MapThemeData } from "@/render/themes/index.js";
 import { normalizeThemeImages } from "@/render/themes/normalize.js";
@@ -201,6 +202,9 @@ describe("Aftermath theme", () => {
     shielded: { name: "Shell Shocked", color: "#99aabb", shape: "◇", walk: 0.7, hit: 0.3 },
     healer: { name: "Mole Mender", color: "#bb77aa", shape: "▲", walk: 0.9, hit: 0.3 },
     boss: { name: "Death Draw", color: "#cc6600", shape: "★", walk: 1.2, hit: 0.4 },
+    flyer: { name: "Ash Moth", color: "#c4b45a", shape: "◆", walk: 0.7, hit: 0.3 },
+    jet: { name: "Bottle Rocket", color: "#e07040", shape: "▸", walk: 0.45, hit: 0.3 },
+    aegis: { name: "Tin Canopy", color: "#8ec8d8", shape: "◈", walk: 0.9, hit: 0.3 },
   };
 
   it("keeps the Aftermath identity and the frame contract", () => {
@@ -239,6 +243,20 @@ describe("Aftermath theme", () => {
     expect(theme.spawns?.closed.startsWith("<svg")).toBe(true);
     expect(theme.spawns?.open.startsWith("<svg")).toBe(true);
     expect(theme.spawns?.transition.startsWith("<svg")).toBe(true);
+  });
+
+  it("exposes flyer, jet, and aegis on the Polymath theme", () => {
+    const polymath = RawMapThemeSchema.parse(defaultTheme);
+    expect(polymath.enemies.flyer).toMatchObject({ name: "Flyer", color: "#5ec8e8", shape: "diamond" });
+    expect(polymath.enemies.jet).toMatchObject({ name: "Jet", color: "#ff7a3c", shape: "chevron" });
+    expect(polymath.enemies.aegis).toMatchObject({ name: "Aegis", color: "#8ea2ff", shape: "kite" });
+    for (const enemyId of ["flyer", "jet", "aegis"] as const) {
+      const enemy = polymath.enemies[enemyId];
+      expect(enemy?.walking.frames).toHaveLength(8);
+      expect(enemy?.hitReaction?.frames).toHaveLength(3);
+      expect(enemy?.attack?.frames).toHaveLength(3);
+      expect(enemy?.attack?.duration).toBe(0.2);
+    }
   });
 
   it("paints sprites without document-scoped paint servers", () => {

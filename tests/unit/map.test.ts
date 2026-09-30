@@ -20,6 +20,15 @@ describe("Map generation", () => {
       }
     });
 
+    it("keeps every base center at height 1 so a flyer can use it as a goal", () => {
+      for (let mapIndex = 0; mapIndex < TOTAL_MAPS; mapIndex++) {
+        const map = getMap(mapIndex);
+        const center = map.tiles[map.base.y][map.base.x];
+        expect(center.type, `map ${mapIndex}`).toBe("base");
+        expect(center.height, `map ${mapIndex}`).toBe(1);
+      }
+    });
+
     it("returns maps with valid spawn-to-base paths", () => {
       for (let i = 0; i < TOTAL_MAPS; i++) {
         const map = getMap(i);

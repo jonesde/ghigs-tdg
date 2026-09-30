@@ -13,6 +13,7 @@ export const EnemyMetaSchema = z.object({
   knockResist: z.number().optional(),
   attackDamage: z.number(),
   attackSpeed: z.number(),
+  flyingHeight: z.number().int().min(0),
 });
 
 export const EnemiesContentSchema = z.object({

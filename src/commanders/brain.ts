@@ -16,6 +16,7 @@ export interface CommanderMemory {
   lastRushWaveNumber: number | null;
   lastRoutedTowerSignature: string;
   gridLayout: number[][] | undefined;
+  heights?: number[][] | undefined;
   // LLM scratch state (used by the llm brain added in a later batch)
   conversation: { role: "user" | "assistant" | "system"; content: string }[];
   tokenCount: number;

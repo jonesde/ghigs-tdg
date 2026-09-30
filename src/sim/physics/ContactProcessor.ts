@@ -151,6 +151,11 @@ export class ContactProcessor {
         enemy.motionLock = "park";
       }
 
+      // Flyers are not pushed by tower cuboids. Assigning blockedByTower from a
+      // contact that is not there, or clearing a flight siege park when the set
+      // is empty, would drop both the strafe and the commanded siege.
+      if (enemy.flyingHeight > 0) continue;
+
       const tower = this.pickContactTower(enemy, this.enemyTowerContact.get(enemy.id));
       if (tower && !tower.isGhost) {
         enemy.blockedByTower = tower;

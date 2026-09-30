@@ -19,6 +19,7 @@ const RELAY_INTERVAL_MS = 250;
 let commanderWorker: Worker | null = null;
 let relayIntervalId: ReturnType<typeof setInterval> | null = null;
 let cachedGridLayout: number[][] | undefined;
+let cachedHeights: number[][] | undefined;
 let cachedNavField: NavFieldSnapshotData | undefined;
 let cachedRunId: number | null = null;
 let nextObservationId = 1;
@@ -114,6 +115,7 @@ function postObservation(): void {
   if ((snapshot.meta.runId ?? null) !== cachedRunId) {
     cachedRunId = snapshot.meta.runId ?? null;
     cachedGridLayout = undefined;
+    cachedHeights = undefined;
     cachedNavField = undefined;
     nextObservationId = 1;
     // Stale throttle baselines would suppress the new run's first decisions.
@@ -128,6 +130,9 @@ function postObservation(): void {
   }
   if (snapshot.gridLayout) {
     cachedGridLayout = snapshot.gridLayout;
+  }
+  if (snapshot.heights) {
+    cachedHeights = snapshot.heights;
   }
   if (snapshot.navField) {
     cachedNavField = snapshot.navField;
@@ -152,6 +157,7 @@ function postObservation(): void {
   const slice: CommanderSnapshotSlice = {
     observationId: nextObservationId++,
     gridLayout: cachedGridLayout,
+    heights: cachedHeights,
     enemies: snapshot.enemies,
     towers: snapshot.towers,
     spawnStates: snapshot.spawnStates,
@@ -196,6 +202,7 @@ function failCommanderWorker(message: string): void {
 
 export function resetRelayForTests(): void {
   cachedGridLayout = undefined;
+  cachedHeights = undefined;
   cachedNavField = undefined;
   cachedRunId = null;
   nextObservationId = 1;
