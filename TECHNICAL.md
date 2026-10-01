@@ -558,7 +558,7 @@ Declarative balance and copy live under `src/content/data/` as split JSON packs,
 
 | Pack | Contents |
 |---|---|
-| `towers.json` | meta/base stats, combat tuning scalars (`milestoneMaxTiers`, `ghostRestoreMinSeconds`, `terrainDamageBonusMaxMult`), variants (`settings` + `statOps`), addon effects. Dead knobs `deepFreezeSlowMult` and `cannonFragmentSplashTiers` were removed (the ice addon uses its inline `slowMult`, cannon-A its inline statOp tiers); lightning omits `base.projSpeed` (chain lightning is instant and the schema now allows it) |
+| `towers.json` | meta/base stats (incl. `groundOnly` — tower cannot target or hit flying enemies; the cannon Anti-Air addon clears it), combat tuning scalars (`milestoneMaxTiers`, `ghostRestoreMinSeconds`, `terrainDamageBonusMaxMult`), variants (`settings` + `statOps`), addon effects. Dead knobs `deepFreezeSlowMult` and `cannonFragmentSplashTiers` were removed (the ice addon uses its inline `slowMult`, cannon-A its inline statOp tiers); lightning omits `base.projSpeed` (chain lightning is instant and the schema now allows it) |
 | `enemies.json` | enemy type table (with optional `knockResist` per type), HP mult coeffs, wave/boss scalars, `bountyLevelGrowth`, `bountyFullThroughWave`, `laterWaveBountyMult` |
 | `economy.json` | gems, milestones, difficulty, general-addon costs/effect arrays, starting gold/health |
 | `maps.json` | MAP_LEVELS (36), map-gen scalars |

@@ -586,9 +586,10 @@ export class EnemyManager {
     maxDistance: number,
     maxHits: number,
     cb: (enemy: Enemy) => boolean,
+    groundOnly = false,
   ): void {
     if (this.physicsWorld) {
-      this.physicsWorld.castShapePierce(originX, originY, dirX, dirY, ballRadius, maxDistance, maxHits, cb);
+      this.physicsWorld.castShapePierce(originX, originY, dirX, dirY, ballRadius, maxDistance, maxHits, cb, groundOnly);
       return;
     }
     const length = Math.hypot(dirX, dirY) || 1;
@@ -597,6 +598,7 @@ export class EnemyManager {
     const candidates: { enemy: Enemy; projection: number }[] = [];
     for (const enemy of this.enemies) {
       if (enemy.removed) continue;
+      if (groundOnly && enemy.flyingHeight > 0) continue;
       const apx = enemy.x - originX;
       const apy = enemy.y - originY;
       const projection = Math.max(0, Math.min(maxDistance, apx * unitX + apy * unitY));

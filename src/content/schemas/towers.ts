@@ -15,6 +15,7 @@ export const TowerBaseSchema = z.object({
   chain: z.number().optional(),
   pierceFalloff: z.number().optional(),
   fixedAim: z.boolean().optional(),
+  groundOnly: z.boolean().optional(),
   health: z.number(),
   knockbackBase: z.number().optional(),
   knockbackScale: z.number().optional(),

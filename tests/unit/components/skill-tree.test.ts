@@ -50,6 +50,26 @@ describe("SkillTree", () => {
     expect(cols.length).toBe(8);
   });
 
+  it("labels each tower column Ground only or Air & Ground per its capability", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountSkillTree();
+    const wrapper = mount(SkillTree, { global: { plugins: [router, pinia] } });
+    const labels = wrapper.findAll(".skill-col-targets").map((element) => element.text().trim());
+    expect(labels.filter((label) => label === "Ground only")).toHaveLength(4);
+    expect(labels.filter((label) => label === "Air & Ground")).toHaveLength(4);
+    expect(wrapper.text()).toContain("Shots can target and hit flying enemies.");
+  });
+
+  it("flips the cannon column to Air & Ground when Anti-Air is unlocked", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountSkillTree();
+    persistStore.unlocked.cannon.addons = [false, false, true];
+    const wrapper = mount(SkillTree, { global: { plugins: [router, pinia] } });
+    const labels = wrapper.findAll(".skill-col-targets").map((element) => element.text().trim());
+    expect(labels.filter((label) => label === "Ground only")).toHaveLength(3);
+    expect(labels.filter((label) => label === "Air & Ground")).toHaveLength(5);
+  });
+
   it("shows tower level unlocks", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountSkillTree();

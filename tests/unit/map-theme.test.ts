@@ -434,6 +434,13 @@ describe("SVG Static Content Render Placement", () => {
 
       expect(svg).toContain('<use href="#tile-r0-terrain2"');
       expect(svg).toContain('<use href="#tile-r0-path"');
+      expect(svg).toContain('<svg x="0" y="0" width="36" height="36" viewBox="0 0 36 36" overflow="hidden">');
+      expect(svg).not.toContain("transform-box:fill-box");
+      const rotations = svg.match(/rotate\([^)]*\)/g) ?? [];
+      expect(rotations.length).toBeGreaterThan(0);
+      for (const rotation of rotations) {
+        expect(rotation).toMatch(/^rotate\((90|180|270) 18 18\)$/);
+      }
     });
   });
 

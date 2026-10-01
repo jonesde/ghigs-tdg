@@ -39,6 +39,16 @@ describe("PhysicsWorld swept casts", () => {
     return e;
   }
 
+  function addFlyerAt(x: number, y: number): Enemy {
+    const e = new Enemy("flyer", 1, 0, grid, 1);
+    e.x = x;
+    e.y = y;
+    e.centerX = x;
+    e.centerY = y;
+    pw.addEnemy(e);
+    return e;
+  }
+
   it("continuous cast catches an enemy a discrete check would tunnel past", () => {
     addAt(200, 200);
     pw.step();
@@ -75,6 +85,40 @@ describe("PhysicsWorld swept casts", () => {
     expect(hit!.enemy).toBe(e);
     // Excluding the enemy's collider leaves only the ignored tower -> null.
     expect(pw.castShapeFirstEnemy(100, 200, 1, 0, BALL, 300, hit!.collider)).toBeNull();
+  });
+
+  it("ground-only casts pass over a flyer without consuming a pierce slot", () => {
+    addFlyerAt(150, 200);
+    const ground = addAt(250, 200);
+    pw.step();
+    const hits: number[] = [];
+    pw.castShapePierce(
+      100,
+      200,
+      1,
+      0,
+      BALL,
+      300,
+      1,
+      (enemy) => {
+        hits.push(enemy.id);
+        return true;
+      },
+      true,
+    );
+    expect(hits).toEqual([ground.id]);
+  });
+
+  it("casts without ground-only still hit the flyer first", () => {
+    const flyer = addFlyerAt(150, 200);
+    addAt(250, 200);
+    pw.step();
+    const hits: number[] = [];
+    pw.castShapePierce(100, 200, 1, 0, BALL, 300, 1, (enemy) => {
+      hits.push(enemy.id);
+      return false;
+    });
+    expect(hits).toEqual([flyer.id]);
   });
 });
 
@@ -116,6 +160,37 @@ describe("EnemyManager cast delegate", () => {
       return true;
     });
     expect(hits).toHaveLength(2);
+  });
+
+  it("fallback casts without a physics world skip flyers for ground-only casts", () => {
+    const fallbackManager = new EnemyManager(grid, particles, 0);
+    const ground = fallbackManager.spawn("minion", 1, 0, 1)!;
+    const flyer = fallbackManager.spawn("flyer", 1, 0, 1)!;
+    for (const [enemy, x] of [
+      [flyer, 150],
+      [ground, 250],
+    ] as const) {
+      enemy.x = x;
+      enemy.y = 200;
+      enemy.centerX = x;
+      enemy.centerY = 200;
+    }
+    const hits: number[] = [];
+    fallbackManager.castShapePierce(
+      100,
+      200,
+      1,
+      0,
+      BALL,
+      300,
+      1,
+      (enemy) => {
+        hits.push(enemy.id);
+        return true;
+      },
+      true,
+    );
+    expect(hits).toEqual([ground.id]);
   });
 });
 

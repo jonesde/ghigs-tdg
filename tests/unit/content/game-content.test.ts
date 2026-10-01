@@ -6,7 +6,15 @@ import { loadGameContent } from "@/content/loadGameContent.js";
 import { GameContentSchema } from "@/content/schemas/gameContent.js";
 import { MAP_LEVELS, TOTAL_MAPS } from "@/sim/Constants.js";
 import { ENEMY_TYPES, ENEMY_WAVE_DAMAGE_MULT } from "@/sim/ConstantsEnemy.js";
-import { TOWER_BASE, TOWER_LEVEL_DMG_MULT, TOWER_META, TOWER_VARIANTS, TowerIds } from "@/sim/ConstantsTower.js";
+import {
+  TOWER_BASE,
+  TOWER_LEVEL_DMG_MULT,
+  TOWER_META,
+  TOWER_VARIANTS,
+  TowerIds,
+  targetsLabel,
+  towerGroundOnly,
+} from "@/sim/ConstantsTower.js";
 
 function blankStats() {
   return {
@@ -128,5 +136,32 @@ describe("game content packs", () => {
 
     const railB = applyVariantOps(blankStats(), TOWER_VARIANTS.railgun.B.statOps, 0);
     expect(railB.pierceFalloff).toBe(0);
+  });
+
+  it("keeps groundOnly on the base entries through the Zod parse", () => {
+    const content = getGameContent();
+    expect(content.towers.base.cannon?.groundOnly).toBe(true);
+    expect(content.towers.base.railgun?.groundOnly).toBe(true);
+    expect(content.towers.base.shotgunTank?.groundOnly).toBe(true);
+    expect(content.towers.base.sturdyWall?.groundOnly).toBe(true);
+    expect(content.towers.base.basic?.groundOnly).toBeUndefined();
+  });
+
+  it("reads ground-only capability per tower and lifts it with the cannon Anti-Air addon", () => {
+    expect(towerGroundOnly("cannon")).toBe(true);
+    expect(towerGroundOnly("railgun")).toBe(true);
+    expect(towerGroundOnly("shotgunTank")).toBe(true);
+    expect(towerGroundOnly("sturdyWall")).toBe(true);
+    expect(towerGroundOnly("basic")).toBe(false);
+    expect(towerGroundOnly("ice")).toBe(false);
+    expect(towerGroundOnly("sniper")).toBe(false);
+    expect(towerGroundOnly("lightning")).toBe(false);
+    expect(towerGroundOnly("cannon", [false, false, true])).toBe(false);
+    expect(towerGroundOnly("cannon", [false, false, false])).toBe(true);
+  });
+
+  it("labels the two targeting states", () => {
+    expect(targetsLabel(true)).toBe("Ground only");
+    expect(targetsLabel(false)).toBe("Air & Ground");
   });
 });

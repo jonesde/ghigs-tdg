@@ -238,25 +238,26 @@ function buildTileSymbols(activeTheme: MapThemeData | null): string {
  */
 function getTileSvg(tile: TileInfo, x: number, y: number, regionId: number, rotation: number): string {
   const size = TILE_SIZE;
+  const cellCenter = size / 2;
   const tileSymbolId =
     tile.type === "path" || tile.type === "spawn"
       ? `tile-r${regionId}-path`
       : `tile-r${regionId}-terrain${Math.min(4, Math.max(1, tile.height))}`;
 
+  // Theme ink may extend past the 36 viewBox. A fill-box rotation follows that ink and
+  // slides the cell off the grid. This viewport clips the overflow to the cell, and the
+  // rotation is around the cell center.
   let svg = `<g transform="translate(${x}, ${y})">`;
-
+  svg += `<svg x="0" y="0" width="${size}" height="${size}"`;
+  svg += ` viewBox="0 0 ${size} ${size}" overflow="hidden">`;
   if (rotation !== 0) {
-    svg += `<g style="transform-box:fill-box;transform-origin:center" transform="rotate(${rotation})">`;
+    svg += `<g transform="rotate(${rotation} ${cellCenter} ${cellCenter})">`;
   }
-
-  // Tile image (from theme, rendered at tile size via <use>)
   svg += `<use href="#${tileSymbolId}" width="${size}" height="${size}" />`;
-
   if (rotation !== 0) {
     svg += `</g>`;
   }
-
-  svg += `</g>`;
+  svg += `</svg></g>`;
   return svg;
 }
 

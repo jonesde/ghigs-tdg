@@ -70,7 +70,19 @@ function cameraFromFrame(frame: ViewRect, followsMap: boolean): CameraState {
   };
 }
 
-function readMapWorldRect(map: GeneratedMap | null, grid: Grid | null): ViewRect | null {
+// The grid fields read by the camera rect math. Deliberately structural, not
+// `Grid`: Pinia's reactive state typing (UnwrapRef) drops Grid's private members,
+// so the store-held grid cannot pass as `Grid` and these call sites would fail
+// the nominal private check.
+interface GridRectRef {
+  tileSize: number;
+  width: number;
+  height: number;
+  worldOriginX: number;
+  worldOriginY: number;
+}
+
+function readMapWorldRect(map: GeneratedMap | null, grid: GridRectRef | null): ViewRect | null {
   const tileSize = grid?.tileSize || TILE_SIZE;
   const widthTiles = map?.width ?? grid?.width;
   const heightTiles = map?.height ?? grid?.height;

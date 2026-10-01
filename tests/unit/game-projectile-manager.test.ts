@@ -34,6 +34,7 @@ interface MockEnemy {
   maxHp: number;
   radius?: number;
   removed: boolean;
+  flyingHeight?: number;
   takeDamage: (dmg: number) => void;
   applyBurn?: (dps: number, duration: number) => void;
   applySlow?: (factor: number, duration: number) => void;
@@ -55,6 +56,7 @@ interface MockEnemyManager {
     maxDistance: number,
     maxHits: number,
     cb: (enemy: MockEnemy) => boolean,
+    groundOnly?: boolean,
   ) => void;
 }
 
@@ -74,6 +76,7 @@ function createMockEnemy(
     maxHp: opts.maxHp,
     radius: opts.radius,
     removed: opts.removed ?? false,
+    flyingHeight: opts.flyingHeight,
     takeDamage: opts.takeDamage ?? vi.fn(),
     applyBurn: opts.applyBurn,
     applySlow: opts.applySlow,
@@ -103,13 +106,14 @@ function createMockEnemyManager(enemies: MockEnemy[]): MockEnemyManager {
     getEnemyById(id) {
       return enemies.find((e) => e.id === id) ?? null;
     },
-    castShapePierce(originX, originY, dirX, dirY, ballRadius, maxDistance, maxHits, cb) {
+    castShapePierce(originX, originY, dirX, dirY, ballRadius, maxDistance, maxHits, cb, groundOnly = false) {
       const length = Math.hypot(dirX, dirY) || 1;
       const unitX = dirX / length;
       const unitY = dirY / length;
       const candidates: { enemy: MockEnemy; projection: number }[] = [];
       for (const enemy of enemies) {
         if (enemy.removed) continue;
+        if (groundOnly && (enemy.flyingHeight ?? 0) > 0) continue;
         const apx = enemy.x - originX;
         const apy = enemy.y - originY;
         const projection = Math.max(0, Math.min(maxDistance, apx * unitX + apy * unitY));
@@ -1210,12 +1214,12 @@ describe("ProjectileManager", () => {
 
       expect(takeDamage1).toHaveBeenCalledWith(10, false);
       // splash radius = 1 * tileSize(36) = 36px; enemy2 at 30px away is within it.
-      // Splash damage must forward the projectile's armorPiercing flag (antiAir),
-      // which is false here — anti-air consistency with the primary target.
+      // Splash damage must forward the projectile's armorPiercing flag,
+      // which is false here — consistency with the primary target.
       expect(takeDamage2).toHaveBeenCalledWith(10 * SPLASH_DAMAGE_RATIO, false);
     });
 
-    it("forwards the antiAir armor-piercing flag to splash secondary targets", () => {
+    it("forwards the armorPiercing flag to splash secondary targets", () => {
       const enemy1 = createMockEnemy({ id: 1, x: 100, y: 200, hp: 100, maxHp: 100 });
       const enemy2 = createMockEnemy({ id: 2, x: 130, y: 200, hp: 100, maxHp: 100 });
       const takeDamage2 = vi.fn();
@@ -1239,13 +1243,166 @@ describe("ProjectileManager", () => {
         towerLevel: 1,
         targetId: 1,
         splash: 1,
-        antiAir: true,
+        armorPiercing: true,
       });
 
       manager.update(0.5);
 
       // Shielded/secondary enemies must have shields bypassed, matching the primary.
       expect(takeDamage2).toHaveBeenCalledWith(10 * SPLASH_DAMAGE_RATIO, true);
+    });
+  });
+
+  describe("ground-only projectiles (flying enemies)", () => {
+    const grid = { width: 10, height: 10, tileSize: 36, tiles: [], blocked: new Set() };
+
+    it("a ground-only projectile's contact hit passes over a flying enemy", () => {
+      const flyer = createMockEnemy({ id: 1, x: 100, y: 200, hp: 100, maxHp: 100, flyingHeight: 2 });
+      const takeDamage = vi.fn();
+      flyer.takeDamage = takeDamage;
+      enemyManager = createMockEnemyManager([flyer]);
+      manager = new ProjectileManager(enemyManager, particles, null, grid);
+
+      manager.spawn({
+        x: 90,
+        y: 200,
+        damage: 10,
+        speed: 1000,
+        range: 5,
+        towerType: "cannon",
+        towerLevel: 1,
+        targetId: 0,
+        targetX: 200,
+        targetY: 200,
+        groundOnly: true,
+      });
+      const projectileId = manager.getRenderData()[0].id;
+
+      manager.postPhysics(0.016, [{ projectileId, enemyId: flyer.id }]);
+
+      expect(takeDamage).not.toHaveBeenCalled();
+    });
+
+    it("an air-capable projectile's contact hit still damages a flying enemy", () => {
+      const flyer = createMockEnemy({ id: 1, x: 100, y: 200, hp: 100, maxHp: 100, flyingHeight: 2 });
+      const takeDamage = vi.fn();
+      flyer.takeDamage = takeDamage;
+      enemyManager = createMockEnemyManager([flyer]);
+      manager = new ProjectileManager(enemyManager, particles, null, grid);
+
+      manager.spawn({
+        x: 90,
+        y: 200,
+        damage: 10,
+        speed: 1000,
+        range: 5,
+        towerType: "basic",
+        towerLevel: 1,
+        targetId: 0,
+        targetX: 200,
+        targetY: 200,
+      });
+      const projectileId = manager.getRenderData()[0].id;
+
+      manager.postPhysics(0.016, [{ projectileId, enemyId: flyer.id }]);
+
+      expect(takeDamage).toHaveBeenCalled();
+    });
+
+    it("splash from a ground-only projectile skips a flying enemy in the radius", () => {
+      const ground = createMockEnemy({ id: 1, x: 100, y: 200, hp: 100, maxHp: 100, flyingHeight: 0 });
+      const takeDamage1 = vi.fn();
+      ground.takeDamage = takeDamage1;
+      const flyer = createMockEnemy({ id: 2, x: 130, y: 200, hp: 100, maxHp: 100, flyingHeight: 2 });
+      const takeDamage2 = vi.fn();
+      flyer.takeDamage = takeDamage2;
+      enemyManager = createMockEnemyManager([ground, flyer]);
+      manager = new ProjectileManager(enemyManager, particles, null, grid);
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 10,
+        speed: 1000,
+        range: 5,
+        towerType: "cannon",
+        towerLevel: 1,
+        targetId: 1,
+        splash: 1,
+        groundOnly: true,
+      });
+
+      manager.update(0.5);
+
+      expect(takeDamage1).toHaveBeenCalledWith(10, false);
+      expect(takeDamage2).not.toHaveBeenCalled();
+    });
+
+    it("pierce re-targeting skips a flying enemy and holds out for a ground enemy", () => {
+      const target = createMockEnemy({ id: 1, x: 105, y: 200, hp: 100, maxHp: 100, flyingHeight: 0 });
+      const flyer = createMockEnemy({ id: 2, x: 108, y: 200, hp: 100, maxHp: 100, flyingHeight: 5 });
+      const takeDamage2 = vi.fn();
+      flyer.takeDamage = takeDamage2;
+      const behind = createMockEnemy({ id: 3, x: 140, y: 200, hp: 100, maxHp: 100, flyingHeight: 0 });
+      const takeDamage3 = vi.fn();
+      behind.takeDamage = takeDamage3;
+      enemyManager = createMockEnemyManager([target, flyer, behind]);
+      manager = new ProjectileManager(enemyManager, particles, null, grid);
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 10,
+        speed: 100,
+        range: 50,
+        towerType: "railgun",
+        towerLevel: 1,
+        targetId: 1,
+        pierce: 1,
+        critChance: 0,
+        groundOnly: true,
+      });
+
+      manager.update(0.016);
+      for (let step = 0; step < 40 && manager.getRenderData().length > 0; step++) {
+        manager.update(0.016);
+      }
+
+      expect(takeDamage3).toHaveBeenCalled();
+      expect(takeDamage2).not.toHaveBeenCalled();
+    });
+
+    it("fixed-aim pierce spends every hit slot on ground enemies and skips flyers", () => {
+      const ground1 = createMockEnemy({ id: 1, x: 100, y: 200, hp: 100, maxHp: 100, flyingHeight: 0 });
+      const flyer = createMockEnemy({ id: 2, x: 140, y: 200, hp: 100, maxHp: 100, flyingHeight: 5 });
+      const takeDamage2 = vi.fn();
+      flyer.takeDamage = takeDamage2;
+      const ground2 = createMockEnemy({ id: 3, x: 180, y: 200, hp: 100, maxHp: 100, flyingHeight: 0 });
+      const takeDamage3 = vi.fn();
+      ground2.takeDamage = takeDamage3;
+      enemyManager = createMockEnemyManager([ground1, flyer, ground2]);
+      manager = new ProjectileManager(enemyManager, particles, null, grid);
+
+      manager.spawn({
+        x: 100,
+        y: 200,
+        damage: 20,
+        speed: 160,
+        range: 10,
+        towerType: "railgun",
+        towerLevel: 1,
+        targetId: 0,
+        targetX: 500,
+        targetY: 200,
+        pierce: 1,
+        groundOnly: true,
+      });
+
+      manager.update(0.5);
+
+      expect(ground1.takeDamage).toHaveBeenCalled();
+      expect(takeDamage3).toHaveBeenCalled();
+      expect(takeDamage2).not.toHaveBeenCalled();
     });
   });
 

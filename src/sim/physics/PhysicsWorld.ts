@@ -480,12 +480,19 @@ export class PhysicsWorld {
     maxDistance: number,
     maxHits: number,
     cb: (enemy: Enemy) => boolean,
+    groundOnly = false,
   ): void {
     const excluded = new Set<RAPIER.Collider>();
     let hits = 0;
     while (hits < maxHits) {
       const result = this.castShapeFirstEnemy(originX, originY, dirX, dirY, ballRadius, maxDistance, excluded);
       if (!result) break;
+      // Ground-only casts pass over flyers without consuming a pierce slot so
+      // maxHits still lands on hittable ground enemies behind them.
+      if (groundOnly && result.enemy.flyingHeight > 0) {
+        excluded.add(result.collider);
+        continue;
+      }
       hits++;
       const keepGoing = cb(result.enemy);
       if (!keepGoing) break;

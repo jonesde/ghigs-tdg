@@ -1096,35 +1096,97 @@ def pebble(center_x: float, center_y: float, radius: float, fill: str, opacity: 
     return circle(center_x, center_y, radius, fill, opacity=opacity)
 
 
+def smear(
+    center_x: float,
+    center_y: float,
+    radius_x: float,
+    radius_y: float,
+    fill: str,
+    opacity: float,
+) -> str:
+    return ellipse(center_x, center_y, radius_x, radius_y, fill, opacity=opacity)
+
+
+def stain(path_data: str, fill: str, opacity: float) -> str:
+    return path_shape(path_data, fill, opacity=opacity)
+
+
 def rustbloom_tiles() -> dict[str, str]:
+    # Edge shapes run a few pixels past the viewBox so the symbol clips a small arc.
     path_motifs = (
-        path_shape("M8 14 L14 18 L12 24", "none", "#4a3c34", 0.8)
-        + path_shape("M22 10 L27 16", "none", "#4a3c34", 0.7)
-        + pebble(16, 11, 1.3, "#c4a484", 0.7)
-        + pebble(24, 26, 1.0, "#8a5a32", 0.8)
+        smear(13, 20, 7, 6, "#302620", 0.55)
+        + smear(23, 15, 6, 5, "#1a1410", 0.5)
+        + stain(
+            "M16 22 C19 19, 25 20, 26 24 C27 28, 20 30, 15 27 C12 25, 13 23, 16 22 Z",
+            "#302620",
+            0.42,
+        )
+        + pebble(18, 11, 1.1, "#302620", 0.4)
+        + smear(2.5, 8, 5.5, 4, "#1a1410", 0.28)
+        + smear(33, 24, 6, 4.5, "#302620", 0.26)
+        + smear(12, 33.5, 6, 4, "#302620", 0.24)
     )
     terrain1 = (
-        pebble(10, 12, 1.4, "#a68464")
-        + pebble(24, 22, 1.1, "#b89878")
-        + pebble(16, 27, 0.9, "#8a6848", 0.7)
+        smear(18, 18, 11, 8, "#e0c4a4", 0.42)
+        + smear(12, 14, 6, 5, "#c4a888", 0.5)
+        + smear(25, 24, 5, 4, "#b89878", 0.48)
+        + stain(
+            "M20 11 C24 10, 28 14, 26 18 C24 21, 19 20, 18 16 C17 13, 17 11, 20 11 Z",
+            "#c4a888",
+            0.4,
+        )
+        + pebble(10, 26, 0.9, "#b89878", 0.4)
+        + smear(4, 1.5, 6, 4.5, "#e0c4a4", 0.26)
+        + smear(33.5, 12, 4.5, 6, "#b89878", 0.28)
+        + smear(1.5, 28, 5, 4, "#c4a888", 0.24)
     )
     terrain2 = (
-        pebble(9, 10, 1.6, "#7a5840")
-        + pebble(22, 16, 1.3, "#6a4834")
-        + path_shape("M12 22 L18 26 L16 30", "none", "#4a3020", 0.8)
-        + pebble(27, 27, 1.5, "#8a5a38")
+        smear(14, 13, 7, 6, "#c4a080", 0.5)
+        + smear(22, 20, 8, 6, "#a07858", 0.55)
+        + smear(12, 26, 6, 4, "#8f6c50", 0.48)
+        + stain(
+            "M15 15 C18 11, 24 12, 25 17 C26 22, 20 24, 16 21 C12 18, 12 16, 15 15 Z",
+            "#8f6c50",
+            0.45,
+        )
+        + smear(27, 11, 3.5, 4, "#c4a080", 0.4)
+        + pebble(20, 29, 1.0, "#8f6c50", 0.45)
+        + smear(30, 2, 5, 5, "#c4a080", 0.26)
+        + smear(2, 16, 5.5, 4, "#8f6c50", 0.28)
+        + smear(22, 33.5, 7, 3.5, "#a07858", 0.24)
     )
     terrain3 = (
-        circle(14, 16, 3.2, "#b87333", opacity=0.55)
-        + circle(16.5, 18, 1.6, "#8a4a22", opacity=0.8)
-        + pebble(26, 10, 1.5, "#5a3824")
-        + path_shape("M8 24 L14 28", "none", "#3a2418", 0.9)
+        smear(17, 17, 8, 7, "#9a6848", 0.58)
+        + smear(21, 19, 5.5, 4.5, "#7a5438", 0.62)
+        + smear(14, 20, 4.5, 3.5, "#a07858", 0.55)
+        + stain(
+            "M11 17 C11 12, 16 10, 21 13 C25 16, 24 23, 18 25 C13 27, 11 22, 11 17 Z",
+            "#7a5438",
+            0.5,
+        )
+        + smear(27, 12, 3.5, 4.5, "#7a5438", 0.42)
+        + smear(9, 12, 3.5, 4, "#a07858", 0.4)
+        + pebble(26, 27, 1.1, "#7a5438", 0.45)
+        + smear(8, 2, 5, 5, "#9a6848", 0.24)
+        + smear(33.5, 8, 5, 4.5, "#a07858", 0.26)
+        + smear(1.5, 24, 4.5, 6, "#7a5438", 0.28)
     )
     terrain4 = (
-        circle(12, 14, 4.2, "#a86428", opacity=0.7)
-        + circle(18, 20, 2.4, "#6a3818")
-        + circle(26, 24, 2.8, "#8a4c20", opacity=0.65)
-        + pebble(8, 26, 1.4, "#3a2418")
+        smear(20, 18, 8, 7, "#7a5438", 0.58)
+        + smear(16, 16, 5, 4.5, "#5a3c28", 0.65)
+        + smear(23, 22, 5, 4, "#806048", 0.55)
+        + stain(
+            "M14 12 C17 8, 24 9, 26 14 C28 19, 23 23, 17 21 C12 19, 11 15, 14 12 Z",
+            "#5a3c28",
+            0.5,
+        )
+        + smear(10, 20, 4, 5, "#5a3c28", 0.45)
+        + smear(28, 14, 3, 4, "#806048", 0.42)
+        + smear(12, 28, 5, 2.8, "#7a5438", 0.4)
+        + pebble(26, 29, 0.9, "#5a3c28", 0.48)
+        + smear(16, 1, 7, 4, "#806048", 0.26)
+        + smear(33, 28, 4.5, 5, "#5a3c28", 0.28)
+        + smear(6, 33.5, 6, 4, "#7a5438", 0.24)
     )
     return {
         "path": ground_tile("#241c18", path_motifs),
@@ -1137,30 +1199,79 @@ def rustbloom_tiles() -> dict[str, str]:
 
 def sand_tiles() -> dict[str, str]:
     path_motifs = (
-        path_shape("M10 20 L16 14 L22 22", "none", "#5a4c3c", 0.8)
-        + pebble(26, 12, 1.2, "#d8c8a0", 0.65)
-        + pebble(12, 28, 1.0, "#8a7a58", 0.6)
+        smear(18, 16, 11, 3.2, "#3a3428", 0.48)
+        + smear(14, 24, 7, 3, "#201c16", 0.55)
+        + stain(
+            "M22 10 C26 9, 30 12, 29 16 C28 19, 23 20, 21 17 C19 14, 19 11, 22 10 Z",
+            "#3a3428",
+            0.4,
+        )
+        + pebble(11, 12, 0.9, "#3a3428", 0.4)
+        + smear(2, 6, 5, 3.5, "#201c16", 0.28)
+        + smear(33, 10, 5, 4, "#3a3428", 0.26)
+        + smear(26, 33.8, 6, 3.2, "#3a3428", 0.24)
     )
     terrain1 = (
-        pebble(12, 14, 1.5, "#c4b08a", 0.7)
-        + pebble(24, 24, 1.2, "#b8a480", 0.65)
-        + pebble(18, 8, 0.8, "#a89878", 0.5)
+        smear(18, 14, 11, 3.2, "#efe0c4", 0.5)
+        + smear(16, 22, 10, 2.8, "#dcc8a4", 0.55)
+        + smear(26, 18, 3, 6.5, "#c8b48a", 0.4)
+        + stain(
+            "M9 26 C13 23, 22 23, 28 26 C30 28, 22 31, 12 30 C8 29, 6 28, 9 26 Z",
+            "#dcc8a4",
+            0.42,
+        )
+        + pebble(12, 10, 0.8, "#dcc8a4", 0.4)
+        + smear(10, 1, 7, 3.5, "#efe0c4", 0.28)
+        + smear(33.5, 20, 4, 6, "#c8b48a", 0.26)
+        + smear(2, 32, 5, 3, "#dcc8a4", 0.24)
     )
     terrain2 = (
-        pebble(10, 18, 1.7, "#a08860")
-        + path_shape("M20 10 L26 16 L22 22", "none", "#8a7048", 0.7)
-        + pebble(15, 28, 1.3, "#c2a878", 0.7)
+        smear(17, 12, 10, 2.8, "#d4c49a", 0.52)
+        + smear(19, 20, 11, 3, "#b8a47a", 0.58)
+        + smear(12, 26, 8, 2.6, "#b09a72", 0.48)
+        + smear(27, 16, 2.8, 6, "#d4c49a", 0.4)
+        + stain(
+            "M10 16 C14 13, 22 14, 24 17 C26 20, 18 22, 12 20 C8 18, 7 17, 10 16 Z",
+            "#b09a72",
+            0.45,
+        )
+        + pebble(22, 28, 1.0, "#b09a72", 0.42)
+        + smear(32, 2, 5, 3.2, "#d4c49a", 0.26)
+        + smear(1.5, 18, 4.5, 3, "#b09a72", 0.28)
+        + smear(14, 34, 8, 3, "#b8a47a", 0.24)
     )
     terrain3 = (
-        polygon([(10, 12), (16, 10), (18, 16), (12, 18)], "#dfe8c8", "#6a7848", 0.5, 0.55)
-        + polygon([(22, 20), (28, 18), (27, 26), (21, 25)], "#e8f0d4", "#5a6840", 0.45, 0.4)
-        + circle(16, 24, 1.15, "#7CFF6B", opacity=0.55)
+        smear(16, 15, 9, 4.5, "#9aa080", 0.55)
+        + smear(22, 18, 7, 4, "#a8b090", 0.5)
+        + smear(14, 22, 6, 3.5, "#7e8662", 0.6)
+        + stain(
+            "M12 12 C16 9, 24 10, 27 14 C29 17, 24 20, 16 19 C11 18, 9 15, 12 12 Z",
+            "#7e8662",
+            0.48,
+        )
+        + smear(26, 26, 4.5, 3, "#7e8662", 0.45)
+        + smear(9, 14, 3.5, 4, "#a8b090", 0.4)
+        + pebble(20, 28, 1.0, "#7e8662", 0.42)
+        + smear(3, 2, 6, 4, "#a8b090", 0.26)
+        + smear(33, 16, 4.5, 5, "#7e8662", 0.28)
+        + smear(20, 33.5, 6, 3.5, "#9aa080", 0.24)
     )
     terrain4 = (
-        polygon([(8, 10), (15, 8), (17, 15), (9, 16)], "#e4f0c0", "#3a4828", 0.55, 0.5)
-        + polygon([(20, 18), (29, 16), (28, 26), (18, 24)], "#d8e8b0", "#2e3c22", 0.5, 0.45)
-        + circle(14, 26, 1.4, "#7CFF6B", opacity=0.6)
-        + circle(25, 11, 1.0, "#b8ff9a", opacity=0.45)
+        smear(15, 14, 8, 5, "#6a7854", 0.55)
+        + smear(22, 17, 7, 4.5, "#7a8868", 0.5)
+        + smear(18, 23, 8, 4, "#4e5a3e", 0.62)
+        + stain(
+            "M11 11 C15 8, 23 9, 27 13 C30 16, 25 20, 16 19 C11 18, 8 15, 11 11 Z",
+            "#4e5a3e",
+            0.5,
+        )
+        + smear(10, 24, 4, 3.5, "#6a7854", 0.45)
+        + smear(27, 24, 3.5, 4, "#4e5a3e", 0.42)
+        + smear(20, 29, 6, 2.2, "#7a8868", 0.4)
+        + pebble(12, 12, 0.9, "#4e5a3e", 0.45)
+        + smear(2, 10, 5, 4, "#6a7854", 0.26)
+        + smear(28, 1.5, 6, 4, "#7a8868", 0.24)
+        + smear(33, 30, 4.5, 5, "#4e5a3e", 0.28)
     )
     return {
         "path": ground_tile("#2a241c", path_motifs),
@@ -1173,31 +1284,79 @@ def sand_tiles() -> dict[str, str]:
 
 def ash_tiles() -> dict[str, str]:
     path_motifs = (
-        path_shape("M9 12 L15 18 L11 26", "none", "#4a4a4a", 0.8)
-        + pebble(24, 14, 1.2, "#9a9690", 0.45)
-        + pebble(20, 27, 1.0, "#6a6660", 0.5)
+        smear(20, 18, 8, 6, "#2a2a2a", 0.55)
+        + smear(12, 22, 5, 4, "#1c1c1c", 0.58)
+        + stain(
+            "M14 11 C18 9, 24 11, 23 15 C22 18, 16 19, 14 16 C12 13, 11 12, 14 11 Z",
+            "#2a2a2a",
+            0.42,
+        )
+        + pebble(26, 27, 1.0, "#2a2a2a", 0.4)
+        + smear(3, 2.5, 5, 4.5, "#1c1c1c", 0.28)
+        + smear(33, 16, 4.5, 5, "#2a2a2a", 0.26)
+        + smear(12, 33.5, 6, 3.5, "#2a2a2a", 0.24)
     )
     terrain1 = (
-        pebble(11, 15, 1.6, "#a8a39c", 0.7)
-        + pebble(24, 22, 1.2, "#b4afa8", 0.55)
-        + pebble(16, 28, 0.9, "#8e8982", 0.5)
+        smear(18, 18, 11, 7, "#ddd8d2", 0.42)
+        + smear(12, 13, 5, 6, "#c4bfb8", 0.5)
+        + smear(25, 24, 6, 4, "#b8b3ac", 0.48)
+        + stain(
+            "M20 10 C24 9, 28 13, 26 17 C24 20, 18 19, 17 15 C16 12, 17 10, 20 10 Z",
+            "#c4bfb8",
+            0.4,
+        )
+        + pebble(10, 26, 0.9, "#b8b3ac", 0.4)
+        + smear(1.5, 14, 5, 6, "#c4bfb8", 0.26)
+        + smear(26, 1.5, 6, 4, "#ddd8d2", 0.28)
+        + smear(33, 31, 5, 4.5, "#b8b3ac", 0.24)
     )
     terrain2 = (
-        pebble(10, 12, 1.8, "#7a756e")
-        + path_shape("M18 20 L24 26", "none", "#5a564e", 0.8)
-        + pebble(28, 10, 1.1, "#6a6660")
+        smear(14, 16, 7, 8, "#b4afa8", 0.48)
+        + smear(24, 18, 6, 7, "#98948c", 0.55)
+        + smear(18, 27, 8, 3, "#8e8a82", 0.45)
+        + stain(
+            "M11 12 C14 8, 20 9, 21 14 C22 18, 16 20, 12 17 C9 15, 8 13, 11 12 Z",
+            "#8e8a82",
+            0.48,
+        )
+        + smear(28, 12, 3, 4, "#b4afa8", 0.4)
+        + pebble(22, 10, 0.9, "#8e8a82", 0.42)
+        + smear(8, 1.5, 5, 4.5, "#b4afa8", 0.26)
+        + smear(33, 22, 4.5, 6, "#98948c", 0.28)
+        + smear(16, 34, 7, 3.2, "#8e8a82", 0.24)
     )
     terrain3 = (
-        ellipse(12, 22, 4.2, 2.2, "#2e2e2e", opacity=0.55)
-        + ellipse(24, 12, 3.4, 1.8, "#242424", opacity=0.45)
-        + path_shape("M9 27 C13 22 15 18 14 13", "none", "#2a2a2a", 1.15)
-        + pebble(27, 26, 1.3, "#3a3a3a")
+        smear(14, 18, 6, 8, "#5a5650", 0.55)
+        + smear(22, 16, 8, 5, "#625e58", 0.5)
+        + smear(18, 22, 5.5, 5, "#7c7872", 0.48)
+        + stain(
+            "M9 18 C12 13, 20 12, 26 16 C30 19, 24 25, 15 25 C10 25, 6 22, 9 18 Z",
+            "#7c7872",
+            0.42,
+        )
+        + smear(26, 24, 4, 3.5, "#5a5650", 0.45)
+        + smear(11, 12, 4, 3.5, "#625e58", 0.4)
+        + pebble(24, 11, 1.0, "#625e58", 0.42)
+        + smear(3, 3, 5, 4, "#7c7872", 0.26)
+        + smear(33, 10, 4.5, 5, "#625e58", 0.24)
+        + smear(10, 33.5, 6, 4, "#5a5650", 0.28)
     )
     terrain4 = (
-        path_shape("M8 29 C12 20 11 14 9 8", "none", "#121212", 1.7)
-        + path_shape("M11 17 C16 13 19 16 26 11", "none", "#121212", 1.2)
-        + circle(25, 24, 3.1, "#141414", opacity=0.8)
-        + ellipse(14, 12, 3.6, 1.6, "#1c1c1c", opacity=0.55)
+        smear(15, 17, 6, 7, "#343434", 0.62)
+        + smear(23, 15, 7, 4.5, "#4a4a4a", 0.52)
+        + smear(18, 23, 5, 4.5, "#52524e", 0.55)
+        + stain(
+            "M8 14 C12 10, 22 10, 28 14 C31 17, 24 21, 14 20 C9 19, 6 17, 8 14 Z",
+            "#52524e",
+            0.48,
+        )
+        + smear(11, 26, 5, 3, "#4a4a4a", 0.45)
+        + smear(27, 25, 3.5, 4, "#343434", 0.5)
+        + smear(26, 11, 3.5, 3, "#52524e", 0.4)
+        + pebble(12, 12, 0.9, "#343434", 0.45)
+        + smear(2, 8, 5, 4, "#4a4a4a", 0.26)
+        + smear(30, 33.5, 6, 4, "#52524e", 0.24)
+        + smear(33, 18, 4.5, 6, "#343434", 0.28)
     )
     return {
         "path": ground_tile("#222222", path_motifs),
@@ -1438,16 +1597,17 @@ def contact_sheet(theme: dict) -> str:
                 )
                 parts.append(flipped)
             parts.append("</div>")
-    parts.append("<h2>Tiles. Magenta shows a seam. Rotated copies of terrain2, then the height row.</h2>")
+    parts.append("<h2>Tiles. Magenta shows a seam. Rotated copies, then the height row.</h2>")
     for region in theme["regions"]:
         parts.append(f'<h2>{region["name"]}</h2>')
-        parts.append('<div class="seam">')
-        for turn in (0, 90, 180, 270):
-            turned = region["tiles"]["terrain2"].replace(
-                "<svg ", f'<svg width="36" height="36" style="transform:rotate({turn}deg)" ', 1
-            )
-            parts.append(turned)
-        parts.append("</div>")
+        for tile_name in ("path", "terrain1", "terrain2", "terrain3", "terrain4"):
+            parts.append('<div class="seam">')
+            for turn in (0, 90, 180, 270):
+                turned = region["tiles"][tile_name].replace(
+                    "<svg ", f'<svg width="36" height="36" style="transform:rotate({turn}deg)" ', 1
+                )
+                parts.append(turned)
+            parts.append("</div>")
         parts.append('<div class="seam">')
         for tile_name in ("terrain1", "terrain2", "terrain3", "terrain4", "path"):
             parts.append(sheet_svg(region["tiles"][tile_name], 48))

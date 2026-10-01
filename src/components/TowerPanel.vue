@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, onUnmounted } from "vue";
 import { MILESTONE_THRESHOLD, UPGRADE_COST_REDUCTION_PCT } from "@/sim/Constants.js";
-import { CANCEL_BUILD_WINDOW_MS, SELL_VALUE_RATIO, TOWER_META } from "@/sim/ConstantsTower.js";
+import {
+  CANCEL_BUILD_WINDOW_MS,
+  SELL_VALUE_RATIO,
+  TOWER_META,
+  targetsLabel,
+  towerGroundOnly,
+} from "@/sim/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import type { TowerSnapshot } from "@/sim/SimulationSnapshot.js";
 import { VARIANT_INFO } from "@/sim/towers/SkillTree.js";
@@ -23,6 +29,12 @@ const sellValue = computed(() => tower.value?.sellValue ?? 0);
 function getTowerName(type: string): string {
   return themeStore.getTowerVisual(type)?.name || type;
 }
+
+const targetLabel = computed(() => {
+  const selectedTower = tower.value;
+  if (!selectedTower) return "";
+  return targetsLabel(selectedTower.stats?.groundOnly ?? towerGroundOnly(selectedTower.type));
+});
 
 // Reactive damage tracking
 // The selected tower is a reactive projection mirrored by SnapshotStore through
@@ -215,6 +227,7 @@ function handleFixedAim(dir: string | null) {
     <div v-else class="stat-row"><span>Health</span><span>{{ Math.ceil(tower.health) }} / {{ Math.round(tower.maxHealth) }}</span></div>
     <div class="stat-row"><span>Damage</span><span>{{ Math.round(tower.stats.damage) }}</span></div>
     <div class="stat-row"><span>Range</span><span>{{ tower.stats.range.toFixed(1) }}</span></div>
+    <div class="stat-row"><span>Targets</span><span>{{ targetLabel }}</span></div>
     <div class="stat-row"><span>Fire Rate</span><span>{{ tower.stats.fireRate < 1 ? (1 / tower.stats.fireRate).toFixed(2) + ' s/shot' : tower.stats.fireRate.toFixed(2) + '/s' }}</span></div>
     <div v-if="tower.stats.splash" class="stat-row"><span>Splash</span><span>{{ tower.stats.splash.toFixed(1) }}</span></div>
     <div v-if="tower.stats.chain" class="stat-row"><span>Chain</span><span>{{ tower.stats.chain }}</span></div>

@@ -2,7 +2,7 @@
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import type { TowerId } from "@/sim/ConstantsTower.js";
-import { TowerIds } from "@/sim/ConstantsTower.js";
+import { TowerIds, targetsLabel, towerGroundOnly } from "@/sim/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import {
   canRefund,
@@ -268,6 +268,9 @@ function showRefundAllConfirm() {
         <div class="skill-col-header" :style="{ color: themeStore.getDefaultTowerVisual(id)?.color }">
           {{ themeStore.getDefaultTowerVisual(id)?.icon }} {{ themeStore.getDefaultTowerVisual(id)?.name }}
         </div>
+        <div class="skill-col-targets">
+          {{ targetsLabel(towerGroundOnly(id, persistStore.unlocked[id]?.addons)) }}
+        </div>
 
         <!-- Levels -->
         <div class="skill-section">Levels</div>
@@ -530,6 +533,12 @@ function showRefundAllConfirm() {
 .skill-col-header {
   font-weight: bold;
   font-size: var(--font-md);
+  margin-bottom: 2px;
+}
+
+.skill-col-targets {
+  font-size: var(--font-sm);
+  color: var(--color-text-dim);
   margin-bottom: 10px;
 }
 

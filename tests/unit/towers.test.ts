@@ -353,11 +353,11 @@ describe("Tower", () => {
       expect(tower.stats.splashStun).toBe(0.3);
     });
 
-    it("cannon addon [2] (Anti-Air) sets antiAir flag", () => {
+    it("cannon addon [2] (Anti-Air) lifts the ground-only restriction", () => {
       const save = makeSave();
       save.unlocked.cannon.addons = [false, false, true];
       const tower = new Tower("cannon", 0, 0, save, makeMockGrid());
-      expect(tower.stats.antiAir).toBe(true);
+      expect(tower.stats.groundOnly).toBe(false);
     });
 
     it("lightning addon [0] (Static Field) sets staticField flag", () => {
@@ -972,6 +972,130 @@ describe("Tower", () => {
         tower.recomputeMaxHealth();
       }
       expect(tower.health).toBeCloseTo(expectedHealth, 6);
+    });
+  });
+
+  describe("ground-only targeting", () => {
+    function makeTargetEnemy(id: number, x: number, y: number, flyingHeight = 0) {
+      return { id, x, y, hp: 10, maxHp: 10, removed: false, flyingHeight, applySlow() {}, takeDamage: vi.fn() };
+    }
+
+    function makeScanEnemyManager(enemies: ReturnType<typeof makeTargetEnemy>[]) {
+      return {
+        enemies,
+        getEnemiesInRange: () => enemies,
+        forEachEnemyInRange: (
+          _x: number,
+          _y: number,
+          _range: number,
+          callback: (enemy: ReturnType<typeof makeTargetEnemy>) => void,
+        ) => {
+          for (const enemy of enemies) callback(enemy);
+        },
+        getEnemyById: (id: number) => enemies.find((enemy) => enemy.id === id) ?? null,
+        towerAt: () => null,
+      };
+    }
+
+    it("flags cannon, railgun, shotgunTank, and sturdyWall ground-only and the rest air-capable", () => {
+      for (const typeName of ["cannon", "railgun", "shotgunTank", "sturdyWall"]) {
+        const tower = new Tower(typeName, 2, 3, makeSave(), makeMockGrid());
+        expect(tower.stats.groundOnly).toBe(true);
+      }
+      for (const typeName of ["basic", "ice", "sniper", "lightning"]) {
+        const tower = new Tower(typeName, 2, 3, makeSave(), makeMockGrid());
+        expect(tower.stats.groundOnly).toBe(false);
+      }
+    });
+
+    it("does not fire at a flying enemy in range", () => {
+      const tower = new Tower("shotgunTank", 2, 3, makeSave(), makeMockGrid());
+      const spawn = vi.fn();
+      const flyer = makeTargetEnemy(1, 110, 126, 2);
+      tower.update(0.1, makeScanEnemyManager([flyer]), { spawn }, null);
+      expect(spawn).not.toHaveBeenCalled();
+    });
+
+    it("ignores the flying enemy and fires at the ground enemy beside it", () => {
+      const tower = new Tower("cannon", 2, 3, makeSave(), makeMockGrid());
+      const spawn = vi.fn();
+      const ground = makeTargetEnemy(1, 110, 126, 0);
+      const flyer = makeTargetEnemy(2, 112, 126, 2);
+      tower.update(0.1, makeScanEnemyManager([flyer, ground]), { spawn }, null);
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(spawn.mock.calls[0][0]).toMatchObject({ targetId: ground.id });
+    });
+
+    it("still fires at a flying enemy for air-capable towers", () => {
+      const tower = new Tower("basic", 2, 3, makeSave(), makeMockGrid());
+      const spawn = vi.fn();
+      const flyer = makeTargetEnemy(1, 110, 126, 2);
+      tower.update(0.1, makeScanEnemyManager([flyer]), { spawn }, null);
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(spawn.mock.calls[0][0]).toMatchObject({ targetId: flyer.id });
+    });
+
+    it("fixed-aim railgun does not fire along the cone when only a flyer is in it", () => {
+      const tower = new Tower("railgun", 2, 3, makeSave(), makeMockGrid());
+      tower.fixedAimDir = "E";
+      const spawn = vi.fn();
+      const flyer = makeTargetEnemy(1, 180, 126, 5);
+      tower.update(0.1, makeScanEnemyManager([flyer]), { spawn }, null);
+      expect(spawn).not.toHaveBeenCalled();
+    });
+
+    it("fixed-aim railgun fires along the cone with a ground enemy even beside a flyer", () => {
+      const tower = new Tower("railgun", 2, 3, makeSave(), makeMockGrid());
+      tower.fixedAimDir = "E";
+      const spawn = vi.fn();
+      const ground = makeTargetEnemy(1, 180, 126, 0);
+      const flyer = makeTargetEnemy(2, 182, 126, 5);
+      tower.update(0.1, makeScanEnemyManager([flyer, ground]), { spawn }, null);
+      expect(spawn).toHaveBeenCalledTimes(1);
+    });
+
+    it("sticky closest targeting will not hold a cached flying target", () => {
+      const tower = new Tower("shotgunTank", 2, 3, makeSave(), makeMockGrid());
+      tower.targeting = "closest";
+      const flyer = makeTargetEnemy(7, 110, 126, 2);
+      tower.cachedTargetId = flyer.id;
+      const spawn = vi.fn();
+      tower.update(0.1, makeScanEnemyManager([flyer]), { spawn }, null);
+      expect(spawn).not.toHaveBeenCalled();
+    });
+
+    it("cannon with Anti-Air addon fires at a flying enemy", () => {
+      const save = makeSave();
+      save.unlocked.cannon.addons = [false, false, true];
+      const tower = new Tower("cannon", 2, 3, save, makeMockGrid());
+      const spawn = vi.fn();
+      const flyer = makeTargetEnemy(1, 110, 126, 2);
+      tower.update(0.1, makeScanEnemyManager([flyer]), { spawn }, null);
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(spawn.mock.calls[0][0]).toMatchObject({ targetId: flyer.id });
+    });
+
+    it("electric fence zaps ground enemies and skips flying ones", () => {
+      const tower = new Tower("sturdyWall", 2, 3, makeSave(), makeMockGrid());
+      tower.level = 5;
+      tower.variant = "B";
+      const ground = makeTargetEnemy(1, 110, 126, 0);
+      const flyer = makeTargetEnemy(2, 112, 126, 2);
+      tower.update(1, makeScanEnemyManager([flyer, ground]), { spawn: vi.fn() }, null);
+      expect(ground.takeDamage).toHaveBeenCalled();
+      expect(flyer.takeDamage).not.toHaveBeenCalled();
+    });
+
+    it("thorn reflect skips flying attackers and still hits ground attackers", () => {
+      const tower = new Tower("sturdyWall", 2, 3, makeSave(), makeMockGrid());
+      tower.level = 5;
+      tower.variant = "A";
+      const flyer = makeTargetEnemy(1, 110, 126, 2);
+      tower.takeDamage(10, flyer);
+      expect(flyer.takeDamage).not.toHaveBeenCalled();
+      const ground = makeTargetEnemy(2, 110, 126, 0);
+      tower.takeDamage(10, ground);
+      expect(ground.takeDamage).toHaveBeenCalledTimes(1);
     });
   });
 

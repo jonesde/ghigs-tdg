@@ -317,6 +317,7 @@ function snapshotTower(t: Tower, persistState: PersistState, isSelected: boolean
       fireRate: t.stats.fireRate,
       splash: t.stats.splash,
       chain: t.stats.chain,
+      groundOnly: t.stats.groundOnly,
     },
   };
 }

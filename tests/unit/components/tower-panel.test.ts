@@ -18,6 +18,7 @@ interface TowerStatsSnapshot {
   fireRate: number;
   splash: number;
   chain: number;
+  groundOnly: boolean;
 }
 
 // The selected tower is the worker-projected TowerSnapshot (read-only plain
@@ -59,7 +60,7 @@ function makeMockTower(overrides: Partial<MockTower> = {}): MockTower {
     color: "#8fbc8f",
     targeting: "first",
     variant: null,
-    stats: { damage: 8, range: 3.5, fireRate: 1.2, splash: 0, chain: 0 },
+    stats: { damage: 8, range: 3.5, fireRate: 1.2, splash: 0, chain: 0, groundOnly: false },
     totalDamageDealt: 100,
     waveDamage: 50,
     canUpgrade: { ok: true, nextLevel: 2, cost: 20 },
@@ -157,6 +158,27 @@ describe("TowerPanel", () => {
     expect(wrapper.text()).toContain("Damage");
     expect(wrapper.text()).toContain("Range");
     expect(wrapper.text()).toContain("Fire Rate");
+  });
+
+  it("shows the Ground only targets label for a ground-only tower", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(
+      makeMockTower({
+        type: "cannon",
+        stats: { damage: 16, range: 3.2, fireRate: 0.55, splash: 0.5, chain: 0, groundOnly: true },
+      }),
+    );
+    const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
+    expect(wrapper.text()).toContain("Targets");
+    expect(wrapper.text()).toContain("Ground only");
+  });
+
+  it("shows the Air & Ground targets label for an air-capable tower", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(makeMockTower());
+    const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
+    expect(wrapper.text()).toContain("Targets");
+    expect(wrapper.text()).toContain("Air & Ground");
   });
 
   it("shows upgrade button with cost", () => {

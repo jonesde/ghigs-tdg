@@ -27,8 +27,8 @@
       "B": { "name": "Rail Lance", "desc": "Removes pierce falloff for consistent damage." }
     },
     "sturdyWall": {
-      "A": { "name": "Thorn Wall", "desc": "Reflects 30/60/100% of damage taken back at the attacker." },
-      "B": { "name": "Electric Fence", "desc": "Zaps touching enemies for damage and briefly stuns them." }
+      "A": { "name": "Thorn Wall", "desc": "Reflects 30/60/100% of damage taken back at a ground attacker." },
+      "B": { "name": "Electric Fence", "desc": "Zaps touching ground enemies for damage and briefly stuns them." }
     },
     "shotgunTank": {
       "A": { "name": "Reinforced", "desc": "Greatly increases tower health (1.5x/2x/3x per tier)." },
@@ -54,7 +54,7 @@
     "cannon": [
       { "name": "Wide Blast", "desc": "Increases splash radius by 50%." },
       { "name": "Stun Shell", "desc": "Splash damage applies a 0.3s stun effect." },
-      { "name": "Anti-Air", "desc": "Shots ignore enemy shields." }
+      { "name": "Anti-Air", "desc": "Shots can target and hit flying enemies." }
     ],
     "lightning": [
       { "name": "Static Field", "desc": "Tower emits a field that slows nearby enemies by 15%." },

@@ -34,6 +34,7 @@ export interface TowerBase {
   chain?: number;
   pierceFalloff?: number;
   fixedAim?: boolean;
+  groundOnly?: boolean;
   health: number;
   knockbackBase?: number;
   knockbackScale?: number;
@@ -148,3 +149,17 @@ export const TOWER_ADDON_EFFECTS: Record<TowerId, TowerAddonEffect[]> = towers.a
   TowerId,
   TowerAddonEffect[]
 >;
+
+export function towerGroundOnly(type: string, unlockedAddons?: readonly boolean[]): boolean {
+  if (!TOWER_BASE[type]?.groundOnly) return false;
+  const effects = TOWER_ADDON_EFFECTS[type as TowerId];
+  if (!effects || !unlockedAddons) return true;
+  for (let effectIndex = 0; effectIndex < effects.length; effectIndex++) {
+    if (effects[effectIndex]?.antiAir && unlockedAddons[effectIndex]) return false;
+  }
+  return true;
+}
+
+export function targetsLabel(groundOnly: boolean): string {
+  return groundOnly ? "Ground only" : "Air & Ground";
+}

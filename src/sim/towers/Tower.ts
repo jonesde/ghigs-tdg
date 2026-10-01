@@ -1,6 +1,7 @@
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 
 interface AuraTarget {
+  flyingHeight?: number;
   applySlow(amount: number, duration: number): void;
   applyStun?(duration: number): void;
   takeDamage(amount: number, armorPiercing?: boolean): number | undefined;
@@ -118,6 +119,7 @@ interface EnemyManagerRef {
     maxHp: number;
     hp: number;
     id: number;
+    flyingHeight?: number;
     applySlow(amount: number, duration: number): void;
     applyStun?(duration: number): void;
     takeDamage(amount: number, armorPiercing?: boolean): number | undefined;
@@ -133,6 +135,7 @@ interface EnemyManagerRef {
     maxHp: number;
     hp: number;
     id: number;
+    flyingHeight?: number;
     applySlow(amount: number, duration: number): void;
     applyStun?(duration: number): void;
     takeDamage(amount: number, armorPiercing?: boolean): number | undefined;
@@ -148,12 +151,15 @@ interface EnemyManagerRef {
       maxHp: number;
       hp: number;
       id: number;
+      flyingHeight?: number;
       applySlow(amount: number, duration: number): void;
       applyStun?(duration: number): void;
       takeDamage(amount: number, armorPiercing?: boolean): number | undefined;
     }) => void,
   ): void;
-  getEnemyById(id: number): { id: number; removed: boolean; x: number; y: number; hp: number } | null;
+  getEnemyById(
+    id: number,
+  ): { id: number; removed: boolean; x: number; y: number; hp: number; flyingHeight?: number } | null;
   towerAt(x: number, y: number): Tower | null;
   forEachSensorHits?(
     sensorId: string,
@@ -191,7 +197,7 @@ interface ProjectileManagerRef {
     goldOnCrit?: number;
     bounceShot?: boolean;
     splashStun?: number;
-    antiAir?: boolean;
+    groundOnly?: boolean;
     armorPiercing?: boolean;
     trueShot?: number;
     markTarget?: number;
@@ -210,7 +216,6 @@ interface ProjectileManagerRef {
     stunDuration: number;
     towerId?: string;
     doubleDischarge?: number;
-    antiAir?: boolean;
     burnCircuit?: boolean;
     critChance?: number;
     goldOnCrit?: number;
@@ -242,6 +247,7 @@ interface TowerStats {
   fenceStun: number;
   healthMult: number;
   armorPiercing: boolean;
+  groundOnly: boolean;
   // Addon-driven stat modifiers
   critChance: number;
   goldOnCrit: number;
@@ -250,7 +256,6 @@ interface TowerStats {
   staticField: boolean;
   iceBurst: boolean;
   splashStun: number;
-  antiAir: boolean;
   doubleDischarge: number;
   burnCircuit: boolean;
   trueShot: number;
@@ -289,6 +294,7 @@ export class Tower {
     slowDur?: number;
     projSpeed?: number;
     fixedAim?: boolean;
+    groundOnly?: boolean;
     health: number;
     knockbackBase?: number;
     knockbackScale?: number;
@@ -352,6 +358,7 @@ export class Tower {
   };
   private applyElectricFence?: (enemy: AuraTarget) => void = (enemy: AuraTarget): void => {
     const stats = this.frameStats ?? this.stats;
+    if (stats.groundOnly && (enemy.flyingHeight ?? 0) > 0) return;
     const dealtDamage = enemy.takeDamage(stats.fenceDamage) ?? stats.fenceDamage;
     this.creditDamage(dealtDamage);
     if (enemy.applyStun) enemy.applyStun(stats.fenceStun);
@@ -486,6 +493,7 @@ export class Tower {
     let fenceStun = 0;
     let healthMult = 1;
     let armorPiercing = false;
+    let groundOnly = effectiveBase.groundOnly ?? false;
 
     if (this.level >= 5 && this.variant === "A") {
       const variantA = TOWER_VARIANTS[this.type as TowerId]?.A;
@@ -608,7 +616,7 @@ export class Tower {
         if (effect.healthMult != null) healthMult *= effect.healthMult;
         if (effect.fireRateMult != null) fireRate *= effect.fireRateMult;
         if (effect.armorPiercing) armorPiercing = true;
-        if (effect.antiAir) armorPiercing = true;
+        if (effect.antiAir) groundOnly = false;
       }
     }
 
@@ -641,7 +649,6 @@ export class Tower {
     let staticField = false;
     let iceBurst = false;
     let splashStun = 0;
-    let antiAir = false;
     let doubleDischarge = 0;
     let burnCircuit = false;
     let trueShot = 0;
@@ -660,7 +667,6 @@ export class Tower {
         if (effect.staticField) staticField = true;
         if (effect.iceBurst) iceBurst = true;
         if (effect.splashStun != null) splashStun = effect.splashStun;
-        if (effect.antiAir) antiAir = true;
         if (effect.doubleDischarge != null) doubleDischarge = effect.doubleDischarge;
         if (effect.burnCircuit) burnCircuit = true;
         if (effect.trueShot != null) trueShot = effect.trueShot;
@@ -691,6 +697,7 @@ export class Tower {
       fenceStun,
       healthMult,
       armorPiercing,
+      groundOnly,
       critChance,
       goldOnCrit,
       bounceShot,
@@ -698,7 +705,6 @@ export class Tower {
       staticField,
       iceBurst,
       splashStun,
-      antiAir,
       doubleDischarge,
       burnCircuit,
       trueShot,
@@ -787,9 +793,11 @@ export class Tower {
 
   takeDamage(amount: number, attacker?: Enemy): void {
     if (this.enemyAttackImmune) return;
-    // Thorn reflect before ghosting so a lethal hit still reflects.
+    // Thorn reflect before ghosting so a lethal hit still reflects. Ground-only
+    // towers skip the reflect at flying attackers: they cannot engage air at all.
     const stats = this.stats;
-    if (stats.thornReflectPct > 0 && attacker && !this.isGhost) {
+    const attackerFlying = (attacker?.flyingHeight ?? 0) > 0;
+    if (stats.thornReflectPct > 0 && attacker && !this.isGhost && (!stats.groundOnly || !attackerFlying)) {
       const reflected = amount * stats.thornReflectPct;
       const dealtDamage = attacker.takeDamage(reflected) ?? reflected;
       this.creditDamage(dealtDamage);
@@ -1001,7 +1009,7 @@ export class Tower {
       let targetEnemy: { x: number; y: number; id: number } | null = null;
       if (this.cachedTargetId !== null) {
         const cached = enemyManager.getEnemyById(this.cachedTargetId);
-        if (cached && !cached.removed) {
+        if (cached && !cached.removed && !(stats.groundOnly && (cached.flyingHeight ?? 0) > 0)) {
           const edx = cached.x - this.x;
           const edy = cached.y - this.y;
           const distSq = edx * edx + edy * edy;
@@ -1020,6 +1028,7 @@ export class Tower {
         const scanResult: { target: { x: number; y: number; id: number } | null } = { target: null };
         let bestSquaredDistance = Infinity;
         enemyManager.forEachEnemyInRange(this.x, this.y, rangePx, (enemy) => {
+          if (stats.groundOnly && (enemy.flyingHeight ?? 0) > 0) return;
           const edx = enemy.x - this.x;
           const edy = enemy.y - this.y;
           const enemySquaredDistance = edx * edx + edy * edy;
@@ -1049,7 +1058,7 @@ export class Tower {
     const stickyTargeting = this.targeting === "closest";
     if (stickyTargeting && this.cachedTargetId !== null) {
       const cached = enemyManager.getEnemyById(this.cachedTargetId);
-      if (cached && !cached.removed) {
+      if (cached && !cached.removed && !(stats.groundOnly && (cached.flyingHeight ?? 0) > 0)) {
         const dx = cached.x - this.x;
         const dy = cached.y - this.y;
         if (dx * dx + dy * dy <= rangeSquared) {
@@ -1065,6 +1074,7 @@ export class Tower {
       const inRangeScratch = this.inRangeScratch;
       inRangeScratch.length = 0;
       enemyManager.forEachEnemyInRange(this.x, this.y, rangePx, (enemy) => {
+        if (stats.groundOnly && (enemy.flyingHeight ?? 0) > 0) return;
         inRangeScratch.push(enemy);
       });
       target = this.selectTarget(inRangeScratch);
@@ -1108,7 +1118,6 @@ export class Tower {
         stunDuration: stats.stun,
         towerId: this.id,
         doubleDischarge: stats.doubleDischarge,
-        antiAir: stats.antiAir,
         burnCircuit: stats.burnCircuit,
         critChance: stats.critChance,
         goldOnCrit: stats.goldOnCrit,
@@ -1149,8 +1158,8 @@ export class Tower {
       goldOnCrit: stats.goldOnCrit,
       bounceShot: stats.bounceShot,
       splashStun: stats.splashStun,
-      antiAir: stats.armorPiercing || stats.antiAir,
-      armorPiercing: stats.armorPiercing || stats.antiAir,
+      groundOnly: stats.groundOnly,
+      armorPiercing: stats.armorPiercing,
       trueShot: stats.trueShot,
       markTarget: stats.markTarget,
       antiHeal: stats.antiHeal,

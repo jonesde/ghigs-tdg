@@ -62,7 +62,7 @@ export interface ProjectileGame {
   bounceShot: boolean;
   bounceCount: number;
   splashStun: number;
-  antiAir: boolean;
+  groundOnly: boolean;
   armorPiercing: boolean;
   trueShot: number;
   markTarget: number;
@@ -103,6 +103,7 @@ interface LightningTarget {
   x: number;
   y: number;
   removed?: boolean;
+  flyingHeight?: number;
   takeDamage(dmg: number, armorPiercing?: boolean): number | undefined;
   applyStun?(duration: number): void;
   applyBurn?(dps: number, duration: number, sourceTowerId?: string): void;
@@ -126,6 +127,7 @@ type CastEnemy = {
   hp: number;
   maxHp: number;
   removed: boolean;
+  flyingHeight?: number;
   takeDamage(dmg: number, armorPiercing?: boolean): number | undefined;
   applyBurn?(dps: number, duration: number, sourceTowerId?: string): void;
   applySlow?(factor: number, duration: number): void;
@@ -147,6 +149,7 @@ export interface EnemyManager {
     y: number;
     hp: number;
     maxHp: number;
+    flyingHeight?: number;
     takeDamage(dmg: number, armorPiercing?: boolean): number | undefined;
     applyBurn?(dps: number, duration: number, sourceTowerId?: string): void;
     applySlow?(factor: number, duration: number): void;
@@ -167,6 +170,7 @@ export interface EnemyManager {
       hp: number;
       maxHp: number;
       removed: boolean;
+      flyingHeight?: number;
       takeDamage(dmg: number, armorPiercing?: boolean): number | undefined;
       applyBurn?(dps: number, duration: number, sourceTowerId?: string): void;
       applySlow?(factor: number, duration: number): void;
@@ -187,6 +191,7 @@ export interface EnemyManager {
     hp: number;
     maxHp: number;
     removed: boolean;
+    flyingHeight?: number;
     takeDamage(dmg: number, armorPiercing?: boolean): number | undefined;
   } | null;
   castShapePierce(
@@ -198,6 +203,7 @@ export interface EnemyManager {
     maxDistance: number,
     maxHits: number,
     cb: (enemy: CastEnemy) => boolean,
+    groundOnly?: boolean,
   ): void;
   enemies: {
     id: number;
@@ -207,6 +213,7 @@ export interface EnemyManager {
     hp: number;
     maxHp: number;
     removed: boolean;
+    flyingHeight?: number;
     takeDamage(dmg: number, armorPiercing?: boolean): number | undefined;
   }[];
 }
@@ -265,12 +272,14 @@ export class ProjectileManager {
   private nearestSearchY: number = 0;
   private nearestSearchExcludeId: number | undefined;
   private nearestSearchExcludeIds: Set<number> | undefined;
+  private nearestSearchGroundOnly: boolean = false;
   private nearestSearchBest: LightningTarget | null = null;
   private nearestSearchBestDistSquared: number = Infinity;
   private nearestSearchSubRanges: number[] = [0, 0, 0, 0];
   private readonly nearestSearchVisitor = (enemy: LightningTarget): void => {
     if (enemy.id === this.nearestSearchExcludeId) return;
     if (this.nearestSearchExcludeIds?.has(enemy.id)) return;
+    if (this.nearestSearchGroundOnly && (enemy.flyingHeight ?? 0) > 0) return;
     const deltaX = enemy.x - this.nearestSearchX;
     const deltaY = enemy.y - this.nearestSearchY;
     const distSquared = deltaX * deltaX + deltaY * deltaY;
@@ -346,7 +355,7 @@ export class ProjectileManager {
     goldOnCrit?: number;
     bounceShot?: boolean;
     splashStun?: number;
-    antiAir?: boolean;
+    groundOnly?: boolean;
     armorPiercing?: boolean;
     trueShot?: number;
     markTarget?: number;
@@ -391,8 +400,8 @@ export class ProjectileManager {
       bounceShot: opts.bounceShot ?? false,
       bounceCount: 0,
       splashStun: opts.splashStun ?? 0,
-      antiAir: opts.antiAir ?? false,
-      armorPiercing: opts.armorPiercing ?? opts.antiAir ?? false,
+      groundOnly: opts.groundOnly ?? false,
+      armorPiercing: opts.armorPiercing ?? false,
       trueShot: opts.trueShot ?? 0,
       markTarget: opts.markTarget ?? 0,
       antiHeal: opts.antiHeal ?? false,
@@ -574,6 +583,7 @@ export class ProjectileManager {
       const projectile = this.projectilesById.get(hit.projectileId);
       const enemy = this.enemyManager.getEnemyById(hit.enemyId);
       if (!projectile?.active || !enemy || enemy.removed) continue;
+      if (projectile.groundOnly && (enemy.flyingHeight ?? 0) > 0) continue;
       if (projectile.hitEnemyIds?.has(enemy.id)) continue;
       this.hitCircleProjectile(projectile, enemy);
       if (!projectile.hitEnemyIds) projectile.hitEnemyIds = new Set();
@@ -744,6 +754,7 @@ export class ProjectileManager {
           projectile.fixedAimHits = (projectile.fixedAimHits ?? 0) + 1;
           return projectile.active;
         },
+        projectile.groundOnly,
       );
       if (!projectile.active) return;
 
@@ -807,6 +818,7 @@ export class ProjectileManager {
         homingHits.push(candidate);
         return false;
       },
+      projectile.groundOnly,
     );
     const hitEnemy = homingHits[0] ?? null;
     if (hitEnemy) {
@@ -855,6 +867,7 @@ export class ProjectileManager {
         foundTargets.push(candidate);
         return false;
       },
+      projectile.groundOnly,
     );
 
     const nextTarget = foundTargets[0];
@@ -921,7 +934,7 @@ export class ProjectileManager {
     }
 
     // Damage first so a marking shot does not multiply its own hit; mark after.
-    const dealtDamage = enemy.takeDamage(scaledDamage, projectile.armorPiercing || projectile.antiAir) ?? 0;
+    const dealtDamage = enemy.takeDamage(scaledDamage, projectile.armorPiercing) ?? 0;
     this.recordDamage(projectile.towerId, dealtDamage);
 
     if (projectile.markTarget > 0 && enemy.applyMarkTarget) {
@@ -979,6 +992,8 @@ export class ProjectileManager {
           projectile.y,
           projectile.range * (this.grid?.tileSize ?? 36),
           enemy.id,
+          undefined,
+          projectile.groundOnly,
         );
         if (nextTarget) {
           projectile.targetId = nextTarget.id;
@@ -996,7 +1011,8 @@ export class ProjectileManager {
       // damage application order to multiple splash targets is unchanged.
       this.enemyManager.forEachEnemyInRange(enemy.x, enemy.y, splashRadiusPx, (splashEnemy) => {
         if (splashEnemy.id === enemy.id) return;
-        const dealtSplash = splashEnemy.takeDamage(splashDamage, projectile.armorPiercing || projectile.antiAir) ?? 0;
+        if (projectile.groundOnly && (splashEnemy.flyingHeight ?? 0) > 0) return;
+        const dealtSplash = splashEnemy.takeDamage(splashDamage, projectile.armorPiercing) ?? 0;
         this.recordDamage(projectile.towerId, dealtSplash);
 
         if (projectile.markTarget > 0 && splashEnemy.applyMarkTarget) {
@@ -1031,6 +1047,8 @@ export class ProjectileManager {
         projectile.y,
         projectile.range * (this.grid?.tileSize ?? 36),
         enemy.id,
+        undefined,
+        projectile.groundOnly,
       );
       if (bounceTarget) {
         projectile.targetId = bounceTarget.id;
@@ -1063,7 +1081,6 @@ export class ProjectileManager {
     stunDuration: number;
     towerId?: string;
     doubleDischarge?: number;
-    antiAir?: boolean;
     burnCircuit?: boolean;
     critChance?: number;
     goldOnCrit?: number;
@@ -1209,6 +1226,7 @@ export class ProjectileManager {
     range: number,
     excludeId?: number,
     excludeIds?: Set<number>,
+    groundOnly = false,
   ): LightningTarget | null {
     // Allocation-free nearest-enemy search via the spatial-hash visitor. The
     // original built (up to 4) enemy arrays per call; here we scan incrementally
@@ -1221,6 +1239,7 @@ export class ProjectileManager {
     this.nearestSearchY = y;
     this.nearestSearchExcludeId = excludeId;
     this.nearestSearchExcludeIds = excludeIds;
+    this.nearestSearchGroundOnly = groundOnly;
     this.nearestSearchBest = null;
     this.nearestSearchBestDistSquared = Infinity;
 

@@ -253,6 +253,7 @@ export interface TowerStatsSnapshot {
   fireRate: number;
   splash: number;
   chain: number;
+  groundOnly: boolean;
 }
 
 export interface TowerSnapshot {
