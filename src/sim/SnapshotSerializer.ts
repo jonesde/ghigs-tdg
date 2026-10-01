@@ -71,11 +71,10 @@ export function buildSnapshot(
   }
 
   // Commander grid-layout data feed: a constant map (0=terrain, 1=path, 2=base,
-  // 3=spawn) built from engine.grid.tiles. Gated by gridLayoutEnabled so it ships
-  // only until the worker caches it and toggles the feed off — keeping steady-state
-  // per-tick cost at zero. Terrain never changes mid-run, so the built array is
-  // memoized on the engine and reused until runId changes or the engine clears
-  // the cache after a progressive placement.
+  // 3=spawn) built from engine.grid.tiles, plus a matching height array. Gated by
+  // gridLayoutEnabled so it ships only until the commander caches it and toggles
+  // the feed off. A progressive placement clears gridLayoutCache and gridHeightsCache
+  // and turns the feed back on until the commander caches the new rectangle.
   let gridLayout: number[][] | undefined;
   if (grid && engine.gridLayoutEnabled) {
     if (engine.gridLayoutCache === null || engine.gridLayoutCacheRunId !== engine.runId) {

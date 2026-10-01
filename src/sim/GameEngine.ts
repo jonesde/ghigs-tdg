@@ -25,6 +25,7 @@ import { forkRunSeed, generateRandomMap, mulberry32 } from "@/sim/grid/Map.js";
 import {
   type BlockTemplate,
   boardToGeneratedMap,
+  boardWithPlayerStamp,
   commitPlacement,
   createProgressiveBoard,
   drawBlockOffer,
@@ -39,7 +40,7 @@ import { CrowdManager, restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdMana
 import { toRecast } from "@/sim/navmesh/coords.js";
 import { FlightDistanceField } from "@/sim/navmesh/FlightDistanceField.js";
 import { NavDistanceField } from "@/sim/navmesh/NavDistanceField.js";
-import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
+import { NavMeshBuilder, probeWalkMesh } from "@/sim/navmesh/NavMeshBuilder.js";
 import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
 import { NoopParticleSpawner } from "@/sim/ParticleSystem.js";
 import type { PersistState } from "@/sim/PersistState.js";
@@ -1366,12 +1367,31 @@ export class GameEngine {
     const config = progressiveConfigForIndex(this.runState.mapIndex);
     const grid = this.grid;
     const previousMap = this.runState.map;
-    if (!board || !catalog || !rng || !config || !grid || !previousMap || !this.waveManager || !this.enemyManager) {
+    if (
+      !board ||
+      !catalog ||
+      !rng ||
+      !config ||
+      !grid ||
+      !previousMap ||
+      !this.waveManager ||
+      !this.enemyManager ||
+      !this.towerManager ||
+      !this.physicsWorld
+    ) {
       return false;
     }
+    const stamped = boardWithPlayerStamp(board, catalog, templateIndex, rotation, blockX, blockY);
+    if (!stamped) return false;
+    const probeMap = boardToGeneratedMap(config, stamped, catalog);
+    const probe = probeWalkMesh(new Grid(probeMap));
+    if (!probe.ok) return this.refuseWalkMesh(probe.error);
+
     const committed = commitPlacement(board, catalog, templateIndex, rotation, blockX, blockY, rng);
     if (!committed) return false;
     const nextMap = boardToGeneratedMap(config, committed.board, catalog);
+    const stampCount = this.progressivePlacements.length;
+    const capturedLayout = grid.captureLayout();
     this.progressiveBoard = committed.board;
     for (const block of committed.added) {
       this.progressivePlacements.push({
@@ -1385,18 +1405,28 @@ export class GameEngine {
     const previousSpawns = previousMap.spawns;
     this.runState.map = nextMap;
     const shift = grid.replaceFromMap(nextMap);
-    if (this.towerManager) {
-      for (const tower of this.towerManager.towers) {
-        tower.tileX += shift.shiftX;
-        tower.tileY += shift.shiftY;
-      }
+    const keeper = new NavMeshBuilder(grid);
+    if (!keeper.isSuccess() || !keeper.getNavMesh()) {
+      const buildError = keeper.getError() ?? "unknown navmesh error";
+      keeper.destroy();
+      grid.restoreLayout(capturedLayout);
+      this.progressiveBoard = board;
+      this.progressivePlacements.length = stampCount;
+      this.runState.map = previousMap;
+      return this.refuseWalkMesh(buildError);
+    }
+    for (const tower of this.towerManager.towers) {
+      tower.tileX += shift.shiftX;
+      tower.tileY += shift.shiftY;
     }
     this.enemyManager.shiftLayoutIndices(shift.shiftX, shift.shiftY);
     this.enemyManager.reindexSpawns(previousSpawns, nextMap.spawns);
     this.waveManager.map = nextMap;
     this.waveManager.resizeSpawnStatesById(previousSpawns, nextMap.spawns);
     invalidateNearestWalkableCache(grid);
-    this.rebuildWalkGraph();
+    // Corridor and crowd swap run only after the keeper mesh exists. A failed
+    // build restored the grid above and must not replace the live corridor.
+    this.installWalkMesh(keeper);
     this.layoutGeneration += 1;
     this.gridLayoutCache = null;
     this.gridHeightsCache = null;
@@ -1405,6 +1435,17 @@ export class GameEngine {
     this.gridLayoutEnabled = true;
     this.resumeAfterPlacement();
     return true;
+  }
+
+  // Host toast only. The board, stamp log, and hold stay as they were, so the
+  // main thread still shows the pre-place sites and the player can pick another.
+  private refuseWalkMesh(buildError: string): false {
+    console.error("Navmesh build failed:", buildError);
+    this.host.notifyUi({
+      type: "showNotification",
+      message: "That block cannot be placed. The walk mesh failed to build.",
+    });
+    return false;
   }
 
   private isProgressiveHoldWave(wave: number): boolean {
@@ -1472,23 +1513,22 @@ export class GameEngine {
     };
   }
 
-  private rebuildWalkGraph(): void {
+  private installWalkMesh(builder: NavMeshBuilder): void {
     const grid = this.grid;
     const enemyManager = this.enemyManager;
     const towerManager = this.towerManager;
-    if (!grid || !enemyManager || !towerManager || !this.physicsWorld) return;
-    this.physicsWorld.rebuildCorridor();
-    const nextBuilder = new NavMeshBuilder(grid);
-    if (!nextBuilder.isSuccess() || !nextBuilder.getNavMesh()) {
-      const buildError = nextBuilder.getError() ?? "unknown navmesh error";
-      nextBuilder.destroy();
-      throw new Error(`Navmesh build failed: ${buildError}`);
+    const physicsWorld = this.physicsWorld;
+    const navMesh = builder.getNavMesh();
+    if (!grid || !enemyManager || !towerManager || !physicsWorld || !navMesh) {
+      builder.destroy();
+      return;
     }
+    physicsWorld.rebuildCorridor();
     for (const enemy of enemyManager.enemies) enemy.agent = null;
     this.crowdManager?.destroy();
     this.navMeshBuilder?.destroy();
-    this.navMeshBuilder = nextBuilder;
-    this.crowdManager = new CrowdManager(nextBuilder.getNavMesh()!, grid.tileSize, GAMEPLAY_ENEMY_CAP);
+    this.navMeshBuilder = builder;
+    this.crowdManager = new CrowdManager(navMesh, grid.tileSize, GAMEPLAY_ENEMY_CAP);
     this.crowdManager.setForceFieldSystem(this.forceFieldSystem);
     enemyManager.setCrowdManager(this.crowdManager);
     const base = grid.getBase();
@@ -1505,7 +1545,7 @@ export class GameEngine {
       if (enemy.removed || enemy.flyingHeight > 0 || !enemy.agent || enemy.lastMoveTargetWorld) continue;
       this.crowdManager.setBaseTarget(enemy, baseWorld);
     }
-    this.physicsWorld.rebuildTowers(towerManager);
+    physicsWorld.rebuildTowers(towerManager);
     this.navMeshBuilder.syncTowers(towerManager.towers);
     this.navDistanceField?.setNavMeshBuilder(this.navMeshBuilder);
     this.navDistanceField?.ensureUpToDate(true);

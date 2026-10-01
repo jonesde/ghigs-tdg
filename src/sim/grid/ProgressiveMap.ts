@@ -641,6 +641,22 @@ export function commitPlacement(
   return { board: next, added };
 }
 
+// Player stamp only. Hole fills are terrain and do not change the walkable
+// tiles, so a walk-mesh probe can use this board without advancing the placement RNG.
+export function boardWithPlayerStamp(
+  board: ProgressiveBoard,
+  catalog: BlockTemplate[],
+  templateIndex: number,
+  rotation: number,
+  blockX: number,
+  blockY: number,
+): ProgressiveBoard | null {
+  const next = cloneBoard(board);
+  const player = catalogBlock(templateIndex, rotation, blockX, blockY, false);
+  if (!applyPlayerStamp(next, catalog, player)) return null;
+  return next;
+}
+
 export function drawBlockOffer(
   board: ProgressiveBoard,
   catalog: BlockTemplate[],

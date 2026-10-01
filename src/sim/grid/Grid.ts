@@ -8,6 +8,21 @@ interface Point {
   y: number;
 }
 
+interface GridLayoutSnapshot {
+  width: number;
+  height: number;
+  tiles: Tile[][];
+  spawns: Point[];
+  base: Point;
+  blocked: Set<string>;
+  terrainTowers: Set<string>;
+  ghostTowers: Set<string>;
+  worldOriginX: number;
+  worldOriginY: number;
+  pathVersion: number;
+  blockCount: number;
+}
+
 interface MapData {
   regionId?: number;
   level?: number;
@@ -81,6 +96,43 @@ export class Grid {
     this.base = { x: map.base.x, y: map.base.y };
     this.pathVersion++;
     return { shiftX, shiftY };
+  }
+
+  // PhysicsWorld, NavDistanceField, and FlightDistanceField hold this grid.
+  // A failed progressive placement restores these fields in place so those
+  // owners keep the pre-place layout instead of a second grid instance.
+  captureLayout(): GridLayoutSnapshot {
+    return {
+      width: this.width,
+      height: this.height,
+      tiles: this.tiles,
+      spawns: this.spawns,
+      base: this.base,
+      blocked: this.blocked,
+      terrainTowers: this.terrainTowers,
+      ghostTowers: this.ghostTowers,
+      worldOriginX: this.worldOriginX,
+      worldOriginY: this.worldOriginY,
+      pathVersion: this.pathVersion,
+      blockCount: this._blockCount,
+    };
+  }
+
+  // Writes a captureLayout() snapshot back onto this instance. The physics
+  // world keeps this object, so a rejected placement must not replace it.
+  restoreLayout(snapshot: GridLayoutSnapshot): void {
+    this.width = snapshot.width;
+    this.height = snapshot.height;
+    this.tiles = snapshot.tiles;
+    this.spawns = snapshot.spawns;
+    this.base = snapshot.base;
+    this.blocked = snapshot.blocked;
+    this.terrainTowers = snapshot.terrainTowers;
+    this.ghostTowers = snapshot.ghostTowers;
+    this.worldOriginX = snapshot.worldOriginX;
+    this.worldOriginY = snapshot.worldOriginY;
+    this.pathVersion = snapshot.pathVersion;
+    this._blockCount = snapshot.blockCount;
   }
 
   get blockCount(): number {

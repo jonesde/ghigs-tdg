@@ -300,3 +300,16 @@ export class NavMeshBuilder {
     return this.applyTileCacheUpdates() && allAddsSucceeded;
   }
 }
+
+// Builds a mesh and frees it. The builder keeps the grid it was constructed
+// with, so a probe grid cannot be installed onto the live physics world.
+export function probeWalkMesh(grid: Grid): { ok: true } | { ok: false; error: string } {
+  const builder = new NavMeshBuilder(grid);
+  if (builder.isSuccess() && builder.getNavMesh()) {
+    builder.destroy();
+    return { ok: true };
+  }
+  const error = builder.getError() ?? "unknown navmesh error";
+  builder.destroy();
+  return { ok: false, error };
+}

@@ -1,7 +1,7 @@
 <template>
   <div class="svg-wrapper">
     <svg ref="svgRoot" class="game-svg" xmlns="http://www.w3.org/2000/svg"
-         :viewBox="mapViewBox" @mousemove="onMouseMove" @click="onClick" @mousedown="onMouseDown" @contextmenu.prevent>
+         :viewBox="displayedViewBox" @mousemove="onMouseMove" @click="onClick" @mousedown="onMouseDown" @contextmenu.prevent>
       <defs ref="defsLayer"></defs>
 
       <g ref="worldLayer" class="camera-wrapper">
@@ -27,6 +27,13 @@ import { SpawnManager } from "@/render/svg/SpawnManager.js";
 import { TowerManager } from "@/render/svg/TowerManager.js";
 import { UiOverlayManager } from "@/render/svg/UiOverlayManager.js";
 import { useSvgStaticContent } from "@/render/svg/useSvgStaticContent.js";
+import {
+  easeOutCubic,
+  formatViewRect,
+  interpolateViewRect,
+  VIEW_BOX_TWEEN_MS,
+  type ViewRect,
+} from "@/render/svg/viewBoxTween.js";
 import type { EnemyVisualMeta, TowerVisualMeta } from "@/render/themes/index.js";
 import { GameState, SELL_DISCOUNT_PCT } from "@/sim/Constants.js";
 import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
@@ -107,15 +114,7 @@ const buildPreviewColor = computed(() => {
 const viewSize = ref({ w: 800, h: 600 });
 
 const mapTileSize = 36;
-const mapViewBox = computed(() => {
-  const map = gameStore.map;
-  if (!map) return undefined;
-  const originX = (map.originTileX ?? 0) * mapTileSize;
-  const originY = (map.originTileY ?? 0) * mapTileSize;
-  const w = map.width * mapTileSize;
-  const h = map.height * mapTileSize;
-  return `${originX} ${originY} ${w} ${h}`;
-});
+const displayedViewBox = ref<string | undefined>(undefined);
 
 const progressiveGhost = computed(() => {
   if (!gameStore.progressivePlacementHold || !gameStore.map) return "";
@@ -163,13 +162,98 @@ let nextClickCommandId = 1;
 // Separate id source for sell-confirm-initiated executeSell commands (fix #7).
 let nextConfirmCommandId = 1;
 
-// Cached inverse CTM -- only recomputed when camera or view size changes
+// Cached inverse CTM -- only recomputed when camera, view size, or the fit rectangle changes
 let cachedInverseCtm: DOMMatrix | null = null;
 let cachedCameraX: number = 0;
 let cachedCameraY: number = 0;
 let cachedCameraZoom: number = 1;
 let cachedViewW: number = 0;
 let cachedViewH: number = 0;
+
+const targetViewRect = computed((): ViewRect | null => {
+  const map = gameStore.map;
+  if (!map) return null;
+  return {
+    originX: (map.originTileX ?? 0) * mapTileSize,
+    originY: (map.originTileY ?? 0) * mapTileSize,
+    width: map.width * mapTileSize,
+    height: map.height * mapTileSize,
+  };
+});
+
+let displayedRect: ViewRect | null = null;
+let viewBoxFrame: number | null = null;
+let tweenStartedAt = 0;
+let tweenFrom: ViewRect | null = null;
+let tweenTo: ViewRect | null = null;
+let snappedMapIndex: number | null = null;
+
+function assignDisplayedRect(rect: ViewRect): void {
+  displayedRect = rect;
+  displayedViewBox.value = formatViewRect(rect);
+  cachedInverseCtm = null;
+}
+
+function cancelViewBoxTween(): void {
+  if (viewBoxFrame !== null) cancelAnimationFrame(viewBoxFrame);
+  viewBoxFrame = null;
+  tweenFrom = null;
+  tweenTo = null;
+}
+
+function rectsEqual(left: ViewRect, right: ViewRect): boolean {
+  return (
+    left.originX === right.originX &&
+    left.originY === right.originY &&
+    left.width === right.width &&
+    left.height === right.height
+  );
+}
+
+function stepViewBoxTween(now: number): void {
+  if (!tweenFrom || !tweenTo) return;
+  const progress = Math.min(1, (now - tweenStartedAt) / VIEW_BOX_TWEEN_MS);
+  if (progress >= 1) {
+    const settled = tweenTo;
+    cancelViewBoxTween();
+    assignDisplayedRect(settled);
+    return;
+  }
+  assignDisplayedRect(interpolateViewRect(tweenFrom, tweenTo, easeOutCubic(progress)));
+  viewBoxFrame = requestAnimationFrame(stepViewBoxTween);
+}
+
+function startViewBoxTween(from: ViewRect, to: ViewRect): void {
+  cancelViewBoxTween();
+  tweenFrom = from;
+  tweenTo = to;
+  tweenStartedAt = performance.now();
+  viewBoxFrame = requestAnimationFrame(stepViewBoxTween);
+}
+
+watch(
+  () => ({ rect: targetViewRect.value, mapIndex: gameStore.mapIndex, style: gameStore.map?.style ?? null }),
+  (next) => {
+    if (!next.rect) {
+      cancelViewBoxTween();
+      displayedRect = null;
+      displayedViewBox.value = undefined;
+      snappedMapIndex = null;
+      cachedInverseCtm = null;
+      return;
+    }
+    const mapChanged = snappedMapIndex !== next.mapIndex;
+    const currentRect = displayedRect;
+    snappedMapIndex = next.mapIndex;
+    if (currentRect === null || mapChanged || next.style !== "progressive" || rectsEqual(currentRect, next.rect)) {
+      cancelViewBoxTween();
+      assignDisplayedRect(next.rect);
+      return;
+    }
+    startViewBoxTween(currentRect, next.rect);
+  },
+  { immediate: true },
+);
 
 // Mousedown/click deduplication — mousedown fires on button press (less likely to be dropped),
 // click fires on button release (can be dropped when the main thread is blocked at high speed).
@@ -603,6 +687,7 @@ watch(
 
 onUnmounted(() => {
   pendingHoverScheduled = false;
+  cancelViewBoxTween();
   disposed = true;
   if (renderFrameHandle !== null) {
     cancelAnimationFrame(renderFrameHandle);

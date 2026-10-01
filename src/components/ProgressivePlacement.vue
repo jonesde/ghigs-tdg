@@ -7,6 +7,7 @@ import {
   progressiveConfigForIndex,
 } from "@/sim/grid/ProgressiveMap.js";
 import { useGameStore } from "@/stores/game.js";
+import { progressivePreviewFill } from "./progressivePreview.js";
 
 const gameStore = useGameStore();
 
@@ -35,7 +36,7 @@ function previewCells(templateIndex: number): string {
   for (let localY = 0; localY < 5; localY++) {
     for (let localX = 0; localX < 5; localX++) {
       const tile = localTile(templates, block, localX, localY);
-      const fill = tile?.type === "path" ? "#d7b072" : "#2c3a32";
+      const fill = progressivePreviewFill(tile ?? { type: "terrain", height: 1 });
       cells += `<rect x="${localX}" y="${localY}" width="1" height="1" fill="${fill}" />`;
     }
   }
