@@ -97,6 +97,20 @@ describe("GameShop", () => {
     expect(gameStore.selectedTowerType).toBeNull();
   });
 
+  it("snaps the build hover to the selected tower tile", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore } = mountGameShop();
+    gameStore.gold = 1000;
+    gameStore.selectedTower = { tileX: 4, tileY: 7 };
+    gameStore.hoverTile = { tileX: 1, tileY: 1 };
+    const wrapper = mount(GameShop, { global: { plugins: [pinia] } });
+    await wrapper.findAll(".shop-tower")[0].trigger("click");
+    expect(gameStore.selectedTowerType).toBeTruthy();
+    expect(gameStore.hoverTile).toEqual({ tileX: 4, tileY: 7 });
+    expect(gameStore.buildHoverHeld).toBe(true);
+    expect(gameStore.selectedTower).toEqual({ tileX: 4, tileY: 7 });
+  });
+
   it("deselects when clicking already-selected affordable tower", async () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore } = mountGameShop();

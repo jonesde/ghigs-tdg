@@ -214,6 +214,7 @@ interface GameStateShape {
   gameShopPos: TowerPanelPos;
   minimapPanelPos: TowerPanelPos;
   hoverTile: HoverTile | null;
+  buildHoverHeld: boolean;
   hoverUpgradeBtn: boolean;
   frameId: number;
   runGemsEarned: number;
@@ -254,6 +255,7 @@ export const useGameStore = defineStore("game", {
     gameShopPos: { x: 0, y: 0 },
     minimapPanelPos: { x: 40, y: 80 },
     hoverTile: null,
+    buildHoverHeld: false,
     hoverUpgradeBtn: false,
     frameId: 0,
     runGemsEarned: 0,
@@ -323,7 +325,14 @@ export const useGameStore = defineStore("game", {
     },
 
     selectBuildType(type: TowerId | null) {
+      const enteringBuild = this.selectedTowerType == null && type != null;
       this.selectedTowerType = type;
+      if (enteringBuild && this.selectedTower) {
+        this.hoverTile = { tileX: this.selectedTower.tileX, tileY: this.selectedTower.tileY };
+        // SvgGameRoot.flushHover skips hover writes while this is set, so a pointer flush
+        // queued before this call does not replace the selected tower's tile.
+        this.buildHoverHeld = true;
+      }
     },
 
     setHoverTile(tile: HoverTile | null) {
@@ -369,6 +378,7 @@ export const useGameStore = defineStore("game", {
       this.gameShopPos = { x: 0, y: 0 };
       this.minimapPanelPos = { x: 40, y: 80 };
       this.hoverTile = null;
+      this.buildHoverHeld = false;
       this.endScreenData = null;
       this.camera = defaultCamera();
       this.progressivePlacementHold = false;
@@ -520,6 +530,7 @@ export const useGameStore = defineStore("game", {
       this.selectedTower = null;
       this.selectedTowerType = null;
       this.hoverTile = null;
+      this.buildHoverHeld = false;
       this.endScreenData = { victory: victoryFlag, ...data };
       this.state = victoryFlag ? GameState.VICTORY : GameState.GAME_OVER;
     },
@@ -545,6 +556,7 @@ export const useGameStore = defineStore("game", {
       this.gameShopPos = { x: 0, y: 0 };
       this.minimapPanelPos = { x: 40, y: 80 };
       this.hoverTile = null;
+      this.buildHoverHeld = false;
       this.hoverUpgradeBtn = false;
       this.runGemsEarned = 0;
       this.bossesKilledThisRun = 0;

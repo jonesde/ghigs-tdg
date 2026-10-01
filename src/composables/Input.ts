@@ -365,9 +365,6 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
           const towerIndex = (digit - 1) % towerIdList.length;
           const towerType = towerIdList[towerIndex]!;
           selectBuildType(gs, gs.selectedTowerType === towerType ? null : towerType);
-          if (gs.selectedTower && !gs.hoverTile) {
-            gs.setHoverTile({ tileX: gs.selectedTower.tileX, tileY: gs.selectedTower.tileY });
-          }
         }
         break;
       }

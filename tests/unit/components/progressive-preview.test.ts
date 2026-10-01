@@ -99,6 +99,25 @@ describe("ProgressivePlacement offer cards", () => {
     await reroll.trigger("click");
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "action:rerollProgressiveOffer" }));
   });
+
+  it("disables re-roll only when gold is below the printed wave cost", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const gameStore = useGameStore();
+    gameStore.progressivePlacementHold = true;
+    gameStore.currentWave = 3;
+    gameStore.gold = 8;
+    const wrapper = mount(ProgressivePlacement, { global: { plugins: [pinia] } });
+    const button = wrapper.get(".progressive-reroll").element as HTMLButtonElement;
+    expect(button.textContent).toContain("9");
+    expect(button.disabled).toBe(true);
+    gameStore.gold = 9;
+    await wrapper.vm.$nextTick();
+    expect(button.disabled).toBe(false);
+    gameStore.gold = 10;
+    await wrapper.vm.$nextTick();
+    expect(button.disabled).toBe(false);
+  });
 });
 
 describe("progressivePatternMarkup", () => {

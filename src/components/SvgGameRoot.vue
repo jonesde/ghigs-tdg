@@ -37,9 +37,14 @@ import {
   type ViewRect,
 } from "@/render/svg/viewBoxTween.js";
 import type { EnemyVisualMeta, TowerVisualMeta } from "@/render/themes/index.js";
-import { CUSTOM_PROGRESSIVE_MAP_INDEX, GameState, SELL_DISCOUNT_PCT } from "@/sim/Constants.js";
+import {
+  CUSTOM_PROGRESSIVE_MAP_INDEX,
+  GameState,
+  SELL_DISCOUNT_PCT,
+  TERRAIN_HEIGHT_RANGE_BONUS,
+} from "@/sim/Constants.js";
 import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
-import { TOWER_META, TowerIds } from "@/sim/ConstantsTower.js";
+import { TOWER_BASE, TOWER_META, TowerIds } from "@/sim/ConstantsTower.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
 import {
   blockCoordinateForTile,
@@ -112,6 +117,18 @@ const buildPreviewValid = computed(() => {
 const buildPreviewColor = computed(() => {
   if (!gameStore.selectedTowerType) return null;
   return themeStore.getTowerVisual(gameStore.selectedTowerType)?.color ?? null;
+});
+
+const buildRangeTiles = computed((): number | null => {
+  const towerType = gameStore.selectedTowerType;
+  const tile = buildPreviewTilePos.value;
+  if (!towerType || !tile) return null;
+  const baseRange = TOWER_BASE[towerType]?.range ?? 3.5;
+  const rangeTier = persistStore.generalAddons?.terrainHeightRangeBonus;
+  if (typeof rangeTier !== "number") return baseRange;
+  const terrainHeight = gameStore.grid?.getHeight(tile.tileX, tile.tileY) || 1;
+  const bonusPerHeight = TERRAIN_HEIGHT_RANGE_BONUS[rangeTier] || 0;
+  return baseRange + bonusPerHeight * terrainHeight;
 });
 
 const displayedViewBox = ref<string | undefined>(undefined);
@@ -392,6 +409,8 @@ const updateCachedCtm = (): void => {
 let pendingHoverX: number = 0;
 let pendingHoverY: number = 0;
 let pendingHoverScheduled: boolean = false;
+let lastPointerClientX = Number.NaN;
+let lastPointerClientY = Number.NaN;
 
 const scheduleHover = (clientX: number, clientY: number): void => {
   pendingHoverX = clientX;
@@ -406,6 +425,9 @@ const scheduleHover = (clientX: number, clientY: number): void => {
 // write it directly to gameStore (the worker echoes it back unchanged).
 const flushHover = (): void => {
   pendingHoverScheduled = false;
+  // selectBuildType sets buildHoverHeld so a flush queued before the key does not
+  // replace the selected tower's tile. onMouseMove clears the flag once the pointer moves.
+  if (gameStore.buildHoverHeld) return;
   if (!svgRoot.value) return;
   if (!cachedInverseCtm) updateCachedCtm();
   if (!cachedInverseCtm) return;
@@ -448,6 +470,12 @@ const computeHoverUpgradeBtn = (worldX: number, worldY: number): boolean => {
 
 const onMouseMove = (e: MouseEvent): void => {
   updateCachedCtm();
+  const pointerMoved = e.clientX !== lastPointerClientX || e.clientY !== lastPointerClientY;
+  lastPointerClientX = e.clientX;
+  lastPointerClientY = e.clientY;
+  // gameStore.selectBuildType sets buildHoverHeld. A repeat of the last pointer point
+  // must not release the snapped tile; only a real move hands hover back to the pointer.
+  if (gameStore.buildHoverHeld && pointerMoved) gameStore.buildHoverHeld = false;
   scheduleHover(e.clientX, e.clientY);
 };
 
@@ -713,6 +741,7 @@ function renderLoop(): void {
     buildPreviewValid.value,
     snapshot.meta.lastScaledDt,
     gameStore.grid,
+    buildRangeTiles.value,
   );
   uiOverlayManager.syncFromGameEngine(snapshot.enemies, selectedTower, snapshot.towers);
   uiOverlayManager.syncWaveTopTowers(snapshot.towers, snapshot.meta.waveTopTowers, snapshot.meta.simSeconds ?? 0);

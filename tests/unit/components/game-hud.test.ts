@@ -48,6 +48,17 @@ describe("GameHud", () => {
     expect(wrapper.text()).toContain("15");
   });
 
+  it("rounds fractional base health to an integer", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore } = mountGameHud();
+    gameStore.baseHealth = 14.6;
+    const wrapper = mount(GameHud, { global: { plugins: [pinia] } });
+    expect(wrapper.get(".base-health .hud-value").text()).toBe("15");
+    gameStore.baseHealth = 14.4;
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get(".base-health .hud-value").text()).toBe("14");
+  });
+
   it("displays current gold", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore } = mountGameHud();

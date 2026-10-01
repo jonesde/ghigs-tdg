@@ -94,6 +94,7 @@ interface GridRef {
   isPath(x: number, y: number): boolean;
   isSpawn(x: number, y: number): boolean;
   isTerrain(x: number, y: number): boolean;
+  isVoid(x: number, y: number): boolean;
   inBounds(x: number, y: number): boolean;
   getHeight(x: number, y: number): number;
   blocked: Set<string>;

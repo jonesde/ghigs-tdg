@@ -76,6 +76,8 @@ export class EffectManager {
   private lastBuildPreviewKey: string | null = null;
   private lastSelectedTowerId: string | null = null;
   private lastSelectedTowerLevel: number = 0;
+  private lastSelectedTowerRange: number = Number.NaN;
+  private buildSplashVisible = false;
 
   init(layer: SVGGElement): void {
     for (let i = 0; i < LIGHTNING_POOL_SIZE; i++) {
@@ -202,10 +204,11 @@ export class EffectManager {
     buildValid: boolean,
     dt: number,
     grid?: SplashGridQuery | null,
+    buildRangeTiles?: number | null,
   ): void {
     this.syncLightning(dt);
     this.syncStun(dt);
-    this.syncBuildPreview(buildTilePos, selectedTowerType, buildPreviewColor, buildValid, grid);
+    this.syncBuildPreview(buildTilePos, selectedTowerType, buildPreviewColor, buildValid, grid, buildRangeTiles);
     this.syncUpgradeButton(selectedTower, grid);
   }
 
@@ -441,11 +444,13 @@ export class EffectManager {
     buildPreviewColor: string | null,
     buildValid: boolean,
     grid?: SplashGridQuery | null,
+    buildRangeTiles?: number | null,
   ): void {
     const originX = grid?.worldOriginX ?? 0;
     const originY = grid?.worldOriginY ?? 0;
     const posKey = buildTilePos ? `${buildTilePos.tileX},${buildTilePos.tileY}` : "";
-    const signature = `${posKey}|${selectedTowerType ?? ""}|${buildValid ? 1 : 0}|${originX},${originY}`;
+    const rangeKey = buildRangeTiles == null ? "" : String(buildRangeTiles);
+    const signature = `${posKey}|${selectedTowerType ?? ""}|${buildValid ? 1 : 0}|${originX},${originY}|${rangeKey}`;
     if (signature === this.lastBuildPreviewKey) return;
     this.lastBuildPreviewKey = signature;
     if (selectedTowerType && buildTilePos) {
@@ -501,13 +506,14 @@ export class EffectManager {
         this.buildRangeCircleEl.setAttribute("transform", `translate(${centerX}, ${centerY})`);
 
         const towerBase = TOWER_BASE[selectedTowerType];
-        const rangeTiles = towerBase?.range ?? 3.5;
+        const rangeTiles = buildRangeTiles != null ? buildRangeTiles : (towerBase?.range ?? 3.5);
         const rangePx = rangeTiles * TILE_SIZE;
         this.buildRangeCircleEl.setAttribute("r", String(rangePx));
         this.buildRangeCircleEl.setAttribute("stroke", buildValid ? "rgba(0,255,0,0.6)" : "rgba(255,0,0,0.6)");
       }
 
       const splashTiles = this.computeSplashRadiusTiles(TOWER_BASE[selectedTowerType]?.splash ?? 0);
+      this.buildSplashVisible = splashTiles > 0;
       if (this.splashCircleEl) {
         if (splashTiles > 0) {
           this.splashCircleEl.style.visibility = "visible";
@@ -521,6 +527,7 @@ export class EffectManager {
         }
       }
     } else {
+      this.buildSplashVisible = false;
       if (this.buildPreviewEl) {
         this.buildPreviewEl.style.visibility = "hidden";
       }
@@ -548,15 +555,24 @@ export class EffectManager {
       id?: string;
       tileX: number;
       tileY: number;
-      stats?: { splash: number };
+      stats?: { splash: number; range?: number };
     } | null;
     if (tower) {
       const towerId = tower.id ?? null;
+      const statsRange = tower.stats?.range;
+      const rangeTiles =
+        typeof statsRange === "number"
+          ? statsRange
+          : (TOWER_BASE[tower.type]?.range ?? 3.5) * TOWER_LEVEL_RANGE_MULT ** (tower.level - 1);
       const cached =
-        towerId !== null && towerId === this.lastSelectedTowerId && tower.level === this.lastSelectedTowerLevel;
+        towerId !== null &&
+        towerId === this.lastSelectedTowerId &&
+        tower.level === this.lastSelectedTowerLevel &&
+        rangeTiles === this.lastSelectedTowerRange;
       if (!cached) {
         this.lastSelectedTowerId = towerId;
         this.lastSelectedTowerLevel = tower.level;
+        this.lastSelectedTowerRange = rangeTiles;
         if (this.upgradeButtonEl) {
           this.upgradeButtonEl.style.visibility = "visible";
           const buttonX = tower.x + TILE_SIZE / 2 - 12;
@@ -591,11 +607,7 @@ export class EffectManager {
         if (this.rangeCircleEl) {
           this.rangeCircleEl.style.visibility = "visible";
           this.rangeCircleEl.setAttribute("transform", `translate(${tower.x}, ${tower.y})`);
-          const towerBase = TOWER_BASE[tower.type];
-          const baseRange = towerBase?.range ?? 3.5;
-          const rangeTiles = baseRange * TOWER_LEVEL_RANGE_MULT ** (tower.level - 1);
-          const rangePx = rangeTiles * TILE_SIZE;
-          this.rangeCircleEl.setAttribute("r", String(rangePx));
+          this.rangeCircleEl.setAttribute("r", String(rangeTiles * TILE_SIZE));
           this.rangeCircleEl.setAttribute("stroke", "rgba(0,255,0,0.6)");
         }
       }
@@ -618,6 +630,7 @@ export class EffectManager {
       }
     } else {
       this.lastSelectedTowerId = null;
+      this.lastSelectedTowerRange = Number.NaN;
       if (this.upgradeButtonEl) {
         this.upgradeButtonEl.style.visibility = "hidden";
       }
@@ -626,6 +639,10 @@ export class EffectManager {
       }
       if (this.rangeCircleEl) {
         this.rangeCircleEl.style.visibility = "hidden";
+      }
+      // The build preview uses this same circle. Leave it up when that preview is showing one.
+      if (this.splashCircleEl && !this.buildSplashVisible) {
+        this.splashCircleEl.style.visibility = "hidden";
       }
     }
   }

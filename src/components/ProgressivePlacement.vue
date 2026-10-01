@@ -86,7 +86,7 @@ function previewCells(templateIndex: number): string {
     <button
       type="button"
       class="progressive-reroll"
-      :disabled="rerollDisabled"
+      :disabled="gameStore.gold < rerollCost"
       @mousedown.prevent
       @keydown.enter.prevent
       @keydown.space.prevent

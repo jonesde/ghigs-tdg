@@ -329,6 +329,27 @@ describe("EffectManager", () => {
       expect(splashCircle().style.visibility).toBe("hidden");
     });
 
+    it("hides the selected splash circle on deselect and keeps a later cannon preview", () => {
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      const selectedTower = {
+        id: "t1",
+        x: 90,
+        y: 90,
+        type: "cannon",
+        level: 1,
+        tileX: 2,
+        tileY: 2,
+        stats: { splash: 0.5 },
+      } as unknown as { x: number; y: number; type: string; level: number };
+      manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60);
+      expect(splashCircle().style.visibility).toBe("visible");
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      expect(splashCircle().style.visibility).toBe("hidden");
+      manager.syncFromGameEngine({ tileX: 2, tileY: 3 }, "cannon", null, null, true, 1 / 60);
+      expect(splashCircle().style.visibility).toBe("visible");
+      expect(splashCircle().getAttribute("stroke-dasharray")).toBe("3,3");
+    });
+
     it("does not crash when grid is null for a selected tower", () => {
       const selectedTower = {
         id: "t1",
@@ -344,6 +365,40 @@ describe("EffectManager", () => {
       const splash = splashCircle();
       expect(splash.style.visibility).toBe("visible");
       expect(splash.getAttribute("transform")).toBe("translate(90, 90)");
+    });
+  });
+
+  describe("range circle", () => {
+    function circleWithDash(dash: string | null): SVGCircleElement {
+      const circles = Array.from(layer.querySelectorAll("circle")) as SVGCircleElement[];
+      return circles.find((circle) => circle.getAttribute("stroke-dasharray") === dash)!;
+    }
+
+    it("sizes the selected range circle from stats.range and updates without a level change", () => {
+      const selectedTower = {
+        id: "t1",
+        x: 90,
+        y: 90,
+        type: "basic",
+        level: 1,
+        tileX: 2,
+        tileY: 2,
+        stats: { splash: 0, range: 4.75 },
+      } as unknown as { x: number; y: number; type: string; level: number };
+      manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60);
+      const solid = circleWithDash(null);
+      expect(solid.getAttribute("stroke-dasharray")).toBeNull();
+      expect(solid.getAttribute("r")).toBe("171");
+      selectedTower.stats.range = 6;
+      manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60);
+      expect(solid.getAttribute("r")).toBe("216");
+    });
+
+    it("sizes the build preview range circle from buildRangeTiles", () => {
+      manager.syncFromGameEngine({ tileX: 1, tileY: 1 }, "basic", null, null, true, 1 / 60, null, 4.25);
+      const dashed = circleWithDash("4,3");
+      expect(dashed.style.visibility).toBe("visible");
+      expect(dashed.getAttribute("r")).toBe("153");
     });
   });
 

@@ -95,16 +95,25 @@ export function buildCorridorSegments(grid: Grid): CorridorSegment[] {
         }
 
         const length = tileSize;
-        if (convexDirs.has(cornerKey(corner1I, corner1J))) {
-          const t = inset / length;
-          x1 += (x2 - x1) * t;
-          y1 += (y2 - y1) * t;
+        const originX1 = x1;
+        const originY1 = y1;
+        const originX2 = x2;
+        const originY2 = y2;
+        const corner1Convex = convexDirs.has(cornerKey(corner1I, corner1J));
+        const corner2Convex = convexDirs.has(cornerKey(corner2I, corner2J));
+        if (corner1Convex) {
+          const insetFraction = inset / length;
+          x1 = originX1 + (originX2 - originX1) * insetFraction;
+          y1 = originY1 + (originY2 - originY1) * insetFraction;
         }
-        if (convexDirs.has(cornerKey(corner2I, corner2J))) {
-          const t = inset / length;
-          x2 += (x1 - x2) * t;
-          y2 += (y1 - y2) * t;
+        if (corner2Convex) {
+          const insetFraction = inset / length;
+          x2 = originX2 + (originX1 - originX2) * insetFraction;
+          y2 = originY2 + (originY1 - originY2) * insetFraction;
         }
+        // Both chamfers consume this edge. The remainder would be a cuboid facing
+        // backwards across the walkable tile; the two diagonals already close the corners.
+        if (corner1Convex && corner2Convex && inset * 2 >= length) continue;
         segments.push({ x1, y1, x2, y2 });
       }
     }

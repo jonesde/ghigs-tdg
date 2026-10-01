@@ -3,6 +3,7 @@ import { ActiveEvents, EventQueue } from "@dimforge/rapier2d-compat";
 import { FIXED_DT } from "@/sim/Constants.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { Grid } from "@/sim/grid/Grid.js";
+import { corridorWallHalfThicknessWorld } from "@/sim/navmesh/navmeshConfig.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
 import type { ColliderTag } from "./ColliderUserData.js";
@@ -158,7 +159,7 @@ export class PhysicsWorld {
     const RAPIER = getRapier();
     this.dropBodies(this.corridorBodies);
     const segments = buildCorridorSegments(this.grid);
-    const halfThickness = this.grid.tileSize * 0.05;
+    const halfThickness = corridorWallHalfThicknessWorld(this.grid.tileSize);
     const corridorTag: ColliderTag = { kind: "corridor" };
     for (const segment of segments) {
       const centerX = (segment.x1 + segment.x2) / 2;

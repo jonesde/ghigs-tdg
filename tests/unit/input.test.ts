@@ -837,6 +837,30 @@ describe("useInput", () => {
       triggerInput("x");
       expect(gameStore.selectedTowerType).toBeNull();
     });
+
+    it("key 1 snaps hover to the selected tower and leaves that tower selected", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.selectedTower = { id: "tower-1", tileX: 4, tileY: 7 } as unknown as Tower;
+      gameStore.setHoverTile({ tileX: 1, tileY: 1 });
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("1");
+      expect(gameStore.selectedTowerType).toBe(TowerIds.BASIC);
+      expect(gameStore.hoverTile).toEqual({ tileX: 4, tileY: 7 });
+      expect(gameStore.buildHoverHeld).toBe(true);
+      expect(gameStore.selectedTower).toMatchObject({ id: "tower-1", tileX: 4, tileY: 7 });
+    });
+
+    it("key 2 while already building does not move the hover tile", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.selectedTower = { id: "tower-1", tileX: 4, tileY: 7 } as unknown as Tower;
+      gameStore.selectedTowerType = TowerIds.BASIC;
+      gameStore.setHoverTile({ tileX: 1, tileY: 1 });
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("2");
+      expect(gameStore.selectedTowerType).toBe(TowerIds.ICE);
+      expect(gameStore.hoverTile).toEqual({ tileX: 1, tileY: 1 });
+      expect(gameStore.selectedTower).toMatchObject({ id: "tower-1" });
+    });
   });
 
   describe("Tab key (cycle)", () => {

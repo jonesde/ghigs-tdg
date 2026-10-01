@@ -181,6 +181,25 @@ export function makeSerpentineMap(): MapData {
   return makeMapData({ width, height, spawns, base, tiles, regionId: 0, level: 1, style: "serpentine" });
 }
 
+// 1-tile-wide L (east on row 4, then south on col 7). One inside corner, southwest of tile (7, 4).
+export function makeOneWideCornerMap(): MapData {
+  const width = 9;
+  const height = 9;
+  const tiles: Tile[][] = [];
+  for (let rowIndex = 0; rowIndex < height; rowIndex++) {
+    const row: Tile[] = [];
+    for (let colIndex = 0; colIndex < width; colIndex++) {
+      row.push({ type: "terrain", height: 1 });
+    }
+    tiles.push(row);
+  }
+  for (let colIndex = 0; colIndex < 7; colIndex++) tiles[4][colIndex].type = "path";
+  for (let rowIndex = 4; rowIndex < 8; rowIndex++) tiles[rowIndex][7].type = "path";
+  const spawns: SpawnPoint[] = [{ x: 0, y: 4 }];
+  const base: BasePoint = { x: 7, y: 7 };
+  return makeMapData({ width, height, spawns, base, tiles, regionId: 0, level: 1, style: "bastion" });
+}
+
 export function makeSplitMap(): MapData {
   const width = 10;
   const height = 8;

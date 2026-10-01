@@ -222,6 +222,23 @@ describe("GameStore", () => {
       store.setHoverTile({ tileX: 3, tileY: 4 });
       expect(store.hoverTile).toEqual({ tileX: 3, tileY: 4 });
     });
+
+    it("snaps hover to the selected tower only when build mode starts", () => {
+      store.selectedTower = { tileX: 4, tileY: 7 } as unknown as Tower;
+      store.setHoverTile({ tileX: 1, tileY: 1 });
+      store.selectBuildType("basic");
+      expect(store.hoverTile).toEqual({ tileX: 4, tileY: 7 });
+      expect(store.buildHoverHeld).toBe(true);
+      expect(store.selectedTower).toMatchObject({ tileX: 4, tileY: 7 });
+
+      store.setHoverTile({ tileX: 2, tileY: 3 });
+      store.selectBuildType("ice");
+      expect(store.hoverTile).toEqual({ tileX: 2, tileY: 3 });
+
+      store.selectBuildType(null);
+      expect(store.hoverTile).toEqual({ tileX: 2, tileY: 3 });
+      expect(store.selectedTower).toMatchObject({ tileX: 4, tileY: 7 });
+    });
   });
 
   describe("setState / togglePause", () => {

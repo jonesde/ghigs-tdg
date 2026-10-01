@@ -7,33 +7,7 @@ import { CrowdManager, restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdMana
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { NoopParticleSpawner } from "@/sim/ParticleSystem.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
-import { makeBastionMap, makeMapData } from "../../../helpers/mock-grid.js";
-
-// A synthetic 1-tile-wide L-shaped corridor (a horizontal run then a vertical run
-// to the base) — the canonical inside-corner case. Used to verify a wide enemy
-// rounds the bend and reaches the base instead of clipping the wall / stalling.
-function makeOneWideCornerMap() {
-  const width = 9;
-  const height = 9;
-  const tiles: { type: "terrain" | "path" | "base" | "spawn"; height: number }[][] = [];
-  for (let rowIndex = 0; rowIndex < height; rowIndex++) {
-    const row: { type: "terrain" | "path" | "base" | "spawn"; height: number }[] = [];
-    for (let colIndex = 0; colIndex < width; colIndex++) row.push({ type: "terrain", height: 1 });
-    tiles.push(row);
-  }
-  for (let colIndex = 0; colIndex < 7; colIndex++) tiles[4]![colIndex]!.type = "path";
-  for (let rowIndex = 4; rowIndex < 8; rowIndex++) tiles[rowIndex]![7]!.type = "path";
-  return makeMapData({
-    width,
-    height,
-    tiles,
-    spawns: [{ x: 0, y: 4 }],
-    base: { x: 7, y: 7 },
-    regionId: 0,
-    level: 1,
-    style: "bastion",
-  });
-}
+import { makeBastionMap, makeMapData, makeOneWideCornerMap } from "../../../helpers/mock-grid.js";
 
 // A minimal base attack target so Enemy.postPhysics can run its base-attack
 // tick without needing a full GameEngine. The damage value is never asserted.

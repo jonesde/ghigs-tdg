@@ -92,7 +92,7 @@ watch(
       <div class="hud-center">
         <span class="hud-stat base-health" :class="{ warning: baseHealthRatio <= 0.5 && baseHealthRatio > 0.25, critical: baseHealthRatio <= 0.25 }">
           <span class="hud-icon">♥</span>
-          <span class="hud-value">{{ gameStore.baseHealth }}</span>
+          <span class="hud-value">{{ Math.round(gameStore.baseHealth) }}</span>
         </span>
         <span class="hud-stat gold">
           <span class="hud-icon">🪙</span>
