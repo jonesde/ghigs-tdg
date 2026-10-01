@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { clearBuildAndTowerForProgressive } from "@/composables/progressivePlacement.js";
+import { PROGRESSIVE_REROLL_GOLD_PER_WAVE } from "@/sim/Constants.js";
+import { dispatchCommand } from "@/sim/commandBus.js";
 import {
   generateProgressiveCatalog,
   localTile,
@@ -16,6 +19,23 @@ const catalog = computed(() => {
   if (!config) return null;
   return generateProgressiveCatalog(config.seed);
 });
+
+const rerollCost = computed(() => PROGRESSIVE_REROLL_GOLD_PER_WAVE * gameStore.currentWave);
+const rerollDisabled = computed(() => gameStore.gold < rerollCost.value);
+
+function onOfferClick(index: number) {
+  clearBuildAndTowerForProgressive(gameStore);
+  if (index === gameStore.progressiveSelectedOffer) {
+    gameStore.rotateProgressiveBlock();
+    return;
+  }
+  gameStore.selectProgressiveOffer(index);
+}
+
+function rerollOffer() {
+  if (rerollDisabled.value) return;
+  dispatchCommand({ commandId: 0, type: "action:rerollProgressiveOffer" });
+}
 
 function previewCells(templateIndex: number): string {
   const templates = catalog.value;
@@ -54,13 +74,19 @@ function previewCells(templateIndex: number): string {
         type="button"
         class="progressive-card"
         :class="{ selected: index === gameStore.progressiveSelectedOffer }"
-        @click="gameStore.selectProgressiveOffer(index)"
+        @click="onOfferClick(index)"
       >
         <svg viewBox="0 0 5 5" width="72" height="72" aria-hidden="true" v-html="previewCells(templateIndex)"></svg>
         <span>{{ index + 1 }}</span>
       </button>
     </div>
-    <div class="progressive-hint">R rotates. Click a highlighted site to place.</div>
+    <button type="button" class="progressive-reroll" :disabled="rerollDisabled" @click="rerollOffer">
+      Re-roll {{ rerollCost }}g
+    </button>
+    <div class="progressive-hint">
+      Tab cycles. Click the selected block or press R to rotate. Arrows move the space. Enter or a click on a pattern
+      places.
+    </div>
   </div>
 </template>
 
@@ -68,7 +94,8 @@ function previewCells(templateIndex: number): string {
 .progressive-placement {
   position: absolute;
   left: 50%;
-  bottom: 24px;
+  /* 84px default build bar plus a 12px gap, so the hint is not drawn on top of the shop. */
+  bottom: 96px;
   transform: translateX(-50%);
   z-index: 20;
   display: flex;
@@ -111,8 +138,23 @@ function previewCells(templateIndex: number): string {
   border-color: #5fd0ff;
 }
 
+.progressive-reroll {
+  padding: 6px 12px;
+  background: #141721;
+  color: var(--color-text);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.progressive-reroll:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .progressive-hint {
   font-size: var(--font-sm, 12px);
   opacity: 0.8;
+  text-align: center;
 }
 </style>

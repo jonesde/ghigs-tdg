@@ -7,6 +7,12 @@ import { TowerIds } from "@/sim/ConstantsTower.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
+import {
+  createProgressiveBoard,
+  drawBlockOffer,
+  progressiveConfigForIndex,
+  sitesAtRotation,
+} from "@/sim/grid/ProgressiveMap.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import { SnapshotStore } from "@/sim/SnapshotStore.js";
 import type { Tower } from "@/sim/towers/Tower.js";
@@ -1037,6 +1043,105 @@ describe("useInput", () => {
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("f");
       expect(dispatched("action:setTargeting")).toBe(false);
+    });
+  });
+
+  describe("progressive placement hold", () => {
+    function captureHandler(): (event: KeyboardEvent) => void {
+      let capturedHandler: ((event: KeyboardEvent) => void) | null = null;
+      const originalAddEventListener = window.addEventListener;
+      window.addEventListener = vi.fn((event: string, handler: (keyboardEvent: KeyboardEvent) => void) => {
+        if (event === "keydown") capturedHandler = handler;
+        originalAddEventListener.call(window, event, handler as unknown as EventListener);
+      }) as never;
+      useInput(gameStore, dispatcher, uiStore);
+      window.addEventListener = originalAddEventListener;
+      if (!capturedHandler) throw new Error("keydown handler missing");
+      return capturedHandler;
+    }
+
+    function armHold(): number {
+      const config = progressiveConfigForIndex(36);
+      if (!config) throw new Error("progressive config 36 missing");
+      const started = createProgressiveBoard(config);
+      gameStore.mapIndex = 36;
+      gameStore.setState(GameState.PAUSED);
+      gameStore.progressivePlacementHold = true;
+      gameStore.progressiveOffer = drawBlockOffer(started.board, started.catalog, 2, () => 0.25);
+      gameStore.progressiveSelectedOffer = 0;
+      gameStore.progressiveRotation = 0;
+      gameStore.progressivePlacements = [];
+      gameStore.syncProgressiveCursor();
+      return gameStore.progressiveOffer[0]!;
+    }
+
+    it("moves the placement site with arrows and places it with Enter", () => {
+      const config = progressiveConfigForIndex(36);
+      if (!config) throw new Error("progressive config 36 missing");
+      const started = createProgressiveBoard(config);
+      gameStore.mapIndex = 36;
+      gameStore.setState(GameState.PAUSED);
+      gameStore.progressivePlacementHold = true;
+      // A one-opening board has a single path cell. Terrain fits on several closed edges,
+      // so the arrow cursor has more than one space to move between.
+      gameStore.progressiveOffer = [8, 0];
+      gameStore.progressiveSelectedOffer = 0;
+      gameStore.progressiveRotation = 0;
+      gameStore.progressivePlacements = [];
+      gameStore.syncProgressiveCursor();
+      const sites = sitesAtRotation(started.board, started.catalog, 8, gameStore.progressiveRotation);
+      const origin = sites.find((site) => sites.some((other) => other.blockX > site.blockX));
+      expect(origin).toBeTruthy();
+      gameStore.progressiveSelectedSite = { blockX: origin!.blockX, blockY: origin!.blockY };
+      const handler = captureHandler();
+      handler(makeEvent("ArrowRight"));
+      expect(gameStore.progressiveSelectedSite).not.toEqual({ blockX: origin!.blockX, blockY: origin!.blockY });
+      expect(dispatched("action:selectTower")).toBe(false);
+      const site = gameStore.progressiveSelectedSite;
+      expect(site).toBeTruthy();
+      handler(makeEvent("Enter"));
+      expect(lastOfType("action:placeProgressiveBlock")).toMatchObject({
+        templateIndex: 8,
+        rotation: gameStore.progressiveRotation,
+        blockX: site!.blockX,
+        blockY: site!.blockY,
+      });
+    });
+
+    it("cycles block choices with Tab", () => {
+      armHold();
+      const handler = captureHandler();
+      handler(makeEvent("Tab"));
+      expect(gameStore.progressiveSelectedOffer).toBe(1);
+      handler(makeEvent("Tab"));
+      expect(gameStore.progressiveSelectedOffer).toBe(0);
+    });
+
+    it("clears build mode and the selected tower when a block is selected or rotated", () => {
+      armHold();
+      const handler = captureHandler();
+      gameStore.selectedTowerType = TowerIds.BASIC;
+      gameStore.selectedTower = { id: "tower-1" } as Tower;
+      handler(makeEvent("1"));
+      expect(dispatched("action:cancelBuildMode")).toBe(true);
+      expect(lastSelectedTowerId()).toBeNull();
+      expect(gameStore.selectedTowerType).toBeNull();
+
+      dispatcher.commands.length = 0;
+      gameStore.selectedTowerType = TowerIds.BASIC;
+      gameStore.selectedTower = { id: "tower-1" } as Tower;
+      handler(makeEvent("r"));
+      expect(dispatched("action:cancelBuildMode")).toBe(true);
+      expect(lastSelectedTowerId()).toBeNull();
+    });
+
+    it("does not start a tower build from digit 4", () => {
+      armHold();
+      gameStore.selectedTowerType = TowerIds.BASIC;
+      const handler = captureHandler();
+      handler(makeEvent("4"));
+      expect(dispatched("action:selectBuildType")).toBe(false);
+      expect(gameStore.selectedTowerType).toBe(TowerIds.BASIC);
     });
   });
 

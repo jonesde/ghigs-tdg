@@ -41,11 +41,11 @@ import { TOWER_META, TowerIds } from "@/sim/ConstantsTower.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
 import {
   blockCoordinateForTile,
-  legalSites,
   placementLegal,
   progressiveBlockWorldCorner,
   progressiveConfigForIndex,
   replayProgressiveBoard,
+  sitesAtRotation,
 } from "@/sim/grid/ProgressiveMap.js";
 import type { ThemeBundle } from "@/sim/HostBindings.js";
 import { ParticleSystem } from "@/sim/ParticleSystem.js";
@@ -60,6 +60,7 @@ import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
+import { progressivePatternMarkup } from "./progressivePreview.js";
 
 const svgRoot = ref<SVGSVGElement | null>(null);
 const defsLayer = ref<SVGDefsElement | null>(null);
@@ -122,14 +123,22 @@ const progressiveGhost = computed(() => {
   const templateIndex = gameStore.progressiveOffer[gameStore.progressiveSelectedOffer];
   if (!config || templateIndex === undefined) return "";
   const replayed = replayProgressiveBoard(config, gameStore.progressivePlacements);
-  const sites = legalSites(replayed.board, replayed.catalog, templateIndex).filter(
-    (site) => site.rotation === gameStore.progressiveRotation,
-  );
+  const sites = sitesAtRotation(replayed.board, replayed.catalog, templateIndex, gameStore.progressiveRotation);
+  const selectedSite = gameStore.progressiveSelectedSite;
   return sites
     .map((site) => {
       const corner = progressiveBlockWorldCorner(site.blockX, site.blockY, mapTileSize);
-      const size = 5 * mapTileSize;
-      return `<rect x="${corner.x}" y="${corner.y}" width="${size}" height="${size}" fill="rgba(95,208,255,0.22)" stroke="#5fd0ff" stroke-width="2" />`;
+      const selected =
+        selectedSite !== null && selectedSite.blockX === site.blockX && selectedSite.blockY === site.blockY;
+      return progressivePatternMarkup(
+        replayed.catalog,
+        templateIndex,
+        gameStore.progressiveRotation,
+        corner.x,
+        corner.y,
+        mapTileSize,
+        selected,
+      );
     })
     .join("");
 });

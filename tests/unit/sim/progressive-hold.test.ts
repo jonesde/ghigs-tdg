@@ -2,7 +2,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GameState, PRE_EMPTIVE_WAVE_TIMER } from "@/sim/Constants.js";
 import { GameEngine } from "@/sim/GameEngine.js";
-import { createProgressiveBoard, legalSites, progressiveConfigForIndex } from "@/sim/grid/ProgressiveMap.js";
+import {
+  createProgressiveBoard,
+  legalSites,
+  progressiveConfigForIndex,
+  templateCanExtendOpening,
+} from "@/sim/grid/ProgressiveMap.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import type { WaveManager } from "@/sim/waves/WaveManager.js";
 import { createTestPersistState, createTestThemeBundle, MockHostBindings } from "../../helpers/mock-stores.js";
@@ -211,5 +216,90 @@ describe("progressive placement hold", () => {
     expect(engine.grid?.worldOriginY).toBe(originY);
     expect(engine.grid?.pathVersion).toBe(pathVersion);
     expect(notifications().some((message) => message.includes("walk mesh failed"))).toBe(true);
+  });
+
+  function boardForOffer() {
+    const config = progressiveConfigForIndex(36);
+    if (!config) throw new Error("progressive config 36 missing");
+    return createProgressiveBoard(config);
+  }
+
+  it("re-rolls every choice for 10 gold times the wave and keeps an extender", () => {
+    engine.debug("setWave", 3);
+    const goldBefore = engine.runState.gold;
+    const rolled = engine.rerollProgressiveOffer();
+    expect(rolled).toBe(true);
+    expect(engine.runState.gold).toBe(goldBefore - 30);
+    expect(engine.progressiveOffer).toHaveLength(2);
+    expect(engine.progressivePlacementHold).toBe(true);
+    const started = boardForOffer();
+    expect(
+      engine.progressiveOffer.some((templateIndex) =>
+        templateCanExtendOpening(started.board, started.catalog, templateIndex),
+      ),
+    ).toBe(true);
+
+    engine.persistState.generalAddons.progressiveThirdChoice = 0;
+    engine.runState.gold = goldBefore;
+    expect(engine.rerollProgressiveOffer()).toBe(true);
+    expect(engine.progressiveOffer).toHaveLength(3);
+    expect(engine.runState.gold).toBe(goldBefore - 30);
+  });
+
+  it("does not spend or draw when a re-roll is short on gold", () => {
+    const left = engine;
+    left.debug("setWave", 3);
+    const right = initEngine(36);
+    right.debug("setWave", 3);
+    expect(left.progressiveOffer).toEqual(right.progressiveOffer);
+    const offer = left.progressiveOffer.slice();
+    left.runState.gold = 29;
+    expect(left.rerollProgressiveOffer()).toBe(false);
+    expect(left.runState.gold).toBe(29);
+    expect(left.progressiveOffer).toEqual(offer);
+    const leftNotes = (left.host as MockHostBindings).uiEvents
+      .filter((event) => event.type === "showNotification")
+      .map((event) => event.message);
+    expect(leftNotes.some((message) => message.includes("Not enough gold"))).toBe(true);
+    left.runState.gold = 500;
+    right.runState.gold = 500;
+    expect(left.rerollProgressiveOffer()).toBe(true);
+    expect(right.rerollProgressiveOffer()).toBe(true);
+    expect(left.progressiveOffer).toEqual(right.progressiveOffer);
+    expect(left.runState.gold).toBe(470);
+    expect(right.runState.gold).toBe(470);
+  });
+
+  it("rejects a re-roll when no hold is open", () => {
+    expect(engine.rerollProgressiveOffer()).toBe(false);
+    expect(engine.progressiveOffer).toEqual([]);
+  });
+
+  it("clears the selected tower when a placement hold opens and ignores tower clicks", () => {
+    const grid = engine.grid;
+    const towerManager = engine.towerManager;
+    if (!grid || !towerManager) throw new Error("grid or tower manager missing");
+    let buildTile: { x: number; y: number } | null = null;
+    for (let tileY = 0; tileY < grid.height && !buildTile; tileY++) {
+      for (let tileX = 0; tileX < grid.width; tileX++) {
+        if (grid.canBuild(tileX, tileY)) {
+          buildTile = { x: tileX, y: tileY };
+          break;
+        }
+      }
+    }
+    if (!buildTile) throw new Error("no buildable tile on the progressive board");
+    const tower = towerManager.build("basic", buildTile.x, buildTile.y, engine.persistState, grid);
+    if (!tower) throw new Error("tower build failed");
+    engine.runState.selectedTowerId = String(tower.id);
+    engine.runState.selectedTowerType = "basic";
+    engine.debug("setWave", 3);
+    expect(engine.progressivePlacementHold).toBe(true);
+    expect(engine.runState.selectedTowerId).toBeNull();
+    expect(engine.runState.selectedTowerType).toBeNull();
+    const world = grid.tileToWorld(tower.tileX, tower.tileY);
+    engine.handleClick(world.x, world.y);
+    expect(engine.runState.selectedTowerId).toBeNull();
+    expect(engine.runState.selectedTowerType).toBeNull();
   });
 });

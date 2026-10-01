@@ -7,6 +7,7 @@ import type { Command } from "./Command.js";
 import { drainCommandQueue } from "./commandDrain.js";
 import type { PersistStateSlice } from "./HostBindings.js";
 import { buildSnapshot } from "./SnapshotSerializer.js";
+import { decideSnapshotPost } from "./snapshotGate.js";
 import { computeStepBudget, type StepBudget } from "./stepBudget.js";
 import { WorkerHostBindings } from "./WorkerHostBindings.js";
 import type { MainToWorkerMessage, WorkerToMainMessage } from "./WorkerProtocol.js";
@@ -60,6 +61,9 @@ let hasPostedSnapshot = false;
 // (acked) the previous snapshot. Set true when a snapshot is posted so the next
 // running-idle tick is dropped unless an ack (or a forced post) arrives.
 let awaitingAck = false;
+// True after a posted snapshot has included an active placement hold. The next
+// hold (a snapshot where the hold is clear) forces again. Reset with the ack gate.
+let placementHoldPosted = false;
 // FrameId of the most recently posted snapshot. An ack only releases the gate
 // when it carries a frameId >= this value, so a stale ack (a duplicate render of
 // an older snapshot, or an ack delivered across an init boundary) cannot unblock
@@ -125,6 +129,7 @@ function startLoop(): void {
   running = true;
   hasPostedSnapshot = false;
   awaitingAck = false;
+  placementHoldPosted = false;
   lastPostedFrameId = 0;
   lastTime = 0; // re-anchored on first tick
   accumulator = 0;
@@ -205,9 +210,18 @@ function tick(): void {
     // (scaledDt === 0) AND no command mutated visible state this tick, the
     // engine state is static — building + structured-cloning a full snapshot is
     // pure waste. We still post when a command applied (so build/select/pause
-    // actions show up while paused) and we always post at least the first
-    // snapshot so the main thread establishes a baseline.
-    const idle = engine.lastScaledDt === 0 && !stateMutatedThisTick;
+    // actions show up while paused), when the first snapshot establishes a
+    // baseline, and when a placement hold has not been posted yet. That hold is
+    // armed inside update and pauses the run, so a dropped arming frame would
+    // otherwise never be retried.
+    const snapshotGate = decideSnapshotPost({
+      hasPostedSnapshot,
+      awaitingAck,
+      lastScaledDt: engine.lastScaledDt,
+      stateMutatedThisTick,
+      placementHoldActive: engine.progressivePlacementHold,
+      placementHoldPosted,
+    });
 
     if (terminal) {
       // Final frame: post exactly once, then stop the loop until the next init.
@@ -237,61 +251,49 @@ function tick(): void {
       return;
     }
 
-    if (!idle || !hasPostedSnapshot) {
-      const isBaseline = !hasPostedSnapshot;
-      // Paused AND a command mutated visible state this tick (distinct from `idle`,
-      // which is the non-mutated paused case). The only force path while paused.
-      const pausedMutation = engine.lastScaledDt === 0 && stateMutatedThisTick;
-      // Force-posts bypass backpressure: baseline, AND any tick where a command
-      // applied (paused OR running) so player input is reflected promptly.
-      const forced = isBaseline || stateMutatedThisTick;
-      if (awaitingAck && !forced) {
-        // Running (no command, not baseline) but main hasn't acked the last
-        // snapshot → drop build+post. awaitingAck stays true; next tick re-checks.
-        // Persist-flush is skipped too (still fires on forced posts / 5s fallback / dispose).
-        // Particle/lightning/stun buffers are deliberately NOT consumed here: effects
-        // generated on a dropped tick survive and ship with the next posted snapshot.
-      } else {
-        const snapshot = buildSnapshot(
-          engine,
-          lastAppliedCommandId,
-          {
-            commandId: lastAppliedCommandId,
-            applied: lastAppliedCount,
-            skipped: lastSkippedCount,
-            failedCommandId: lastFailedCommandId,
-          },
-          lastFailedCommandId,
-        );
-        stampSnapshotGeneration(snapshot, workerGeneration);
-        postMessage({ type: "snapshot", snapshot });
-        lastPostedFrameId = snapshot.frameId;
-        consumeDeliveredEffects(engine);
-        hasPostedSnapshot = true;
-        // baseline       → true  (establish gate from first frame)
-        // pausedMutation → false (so a *next* forced post isn't swallowed)
-        // running/normal → true  (resume throttle; next running tick waits for ack)
-        awaitingAck = !pausedMutation;
+    // post is false for a paused-idle tick and for a running tick still waiting
+    // on snapshotAck. Effects stay buffered until a real post.
+    if (snapshotGate.post) {
+      const snapshot = buildSnapshot(
+        engine,
+        lastAppliedCommandId,
+        {
+          commandId: lastAppliedCommandId,
+          applied: lastAppliedCount,
+          skipped: lastSkippedCount,
+          failedCommandId: lastFailedCommandId,
+        },
+        lastFailedCommandId,
+      );
+      stampSnapshotGeneration(snapshot, workerGeneration);
+      postMessage({ type: "snapshot", snapshot });
+      lastPostedFrameId = snapshot.frameId;
+      consumeDeliveredEffects(engine);
+      hasPostedSnapshot = true;
+      // Running and baseline posts close the gate. A paused command leaves it open
+      // so the next forced post is not swallowed. A hold announcement on a playing
+      // tick follows the running rule; the latch records that this post carried it.
+      awaitingAck = snapshotGate.awaitingAck;
+      placementHoldPosted = snapshotGate.placementHoldPosted;
 
-        // Phase 9 persist batching: flush to the host only on significant events so
-        // we do not hit the persist store on every dirty mutation. Reads live
-        // runState directly (the snapshot may not exist when idle). Triggers: wave
-        // increased, a new milestone claim appeared, boss kill gem award, or a 5s
-        // fallback elapsed while dirty.
-        const milestoneKeyCount = Object.keys(engine.runState.milestoneRewardsClaimed).length;
-        const waveChanged = engine.runState.currentWave !== lastFlushWave;
-        const milestoneGained = milestoneKeyCount > lastFlushMilestoneKeys;
-        const bossesKilledChanged = engine.runState.bossesKilledThisRun !== lastFlushBossesKilled;
-        const fallbackElapsed = now - lastFlushTime >= PERSIST_FLUSH_FALLBACK_MS;
-        if (engine.persistDirty && (waveChanged || milestoneGained || bossesKilledChanged || fallbackElapsed)) {
-          host.schedulePersistSave(buildPersistSlice(engine));
-          engine.persistDirty = false;
-          lastFlushTime = now;
-        }
-        lastFlushWave = engine.runState.currentWave;
-        lastFlushMilestoneKeys = milestoneKeyCount;
-        lastFlushBossesKilled = engine.runState.bossesKilledThisRun;
+      // Phase 9 persist batching: flush to the host only on significant events so
+      // we do not hit the persist store on every dirty mutation. Reads live
+      // runState directly (the snapshot may not exist when idle). Triggers: wave
+      // increased, a new milestone claim appeared, boss kill gem award, or a 5s
+      // fallback elapsed while dirty.
+      const milestoneKeyCount = Object.keys(engine.runState.milestoneRewardsClaimed).length;
+      const waveChanged = engine.runState.currentWave !== lastFlushWave;
+      const milestoneGained = milestoneKeyCount > lastFlushMilestoneKeys;
+      const bossesKilledChanged = engine.runState.bossesKilledThisRun !== lastFlushBossesKilled;
+      const fallbackElapsed = now - lastFlushTime >= PERSIST_FLUSH_FALLBACK_MS;
+      if (engine.persistDirty && (waveChanged || milestoneGained || bossesKilledChanged || fallbackElapsed)) {
+        host.schedulePersistSave(buildPersistSlice(engine));
+        engine.persistDirty = false;
+        lastFlushTime = now;
       }
+      lastFlushWave = engine.runState.currentWave;
+      lastFlushMilestoneKeys = milestoneKeyCount;
+      lastFlushBossesKilled = engine.runState.bossesKilledThisRun;
     }
   } catch (err) {
     // A simulation or snapshot error must not kill the tick loop. Report it and
@@ -372,6 +374,7 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
       }
       commandQueue.length = 0;
       awaitingAck = false;
+      placementHoldPosted = false;
       lastPostedFrameId = 0;
       lastAppliedCommandId = 0;
       lastFailedCommandId = 0;
@@ -470,6 +473,7 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
       lastFailedCommandId = receipt.lastFailedCommandId;
       commandQueue.length = 0;
       awaitingAck = false;
+      placementHoldPosted = false;
       lastPostedFrameId = 0;
       // Retire this run's generation so any command still in flight after teardown
       // can never be mistaken for the next run's.

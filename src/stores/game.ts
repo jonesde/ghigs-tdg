@@ -2,7 +2,16 @@ import { defineStore } from "pinia";
 import { GameState, STARTING_BASE_HEALTH, StartingGold } from "@/sim/Constants.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
-import { generateProgressiveMap, type ProgressiveStamp, progressiveConfigForIndex } from "@/sim/grid/ProgressiveMap.js";
+import {
+  chooseAdjacentSite,
+  generateProgressiveMap,
+  nextUsableRotation,
+  type ProgressiveSiteDirection,
+  type ProgressiveStamp,
+  progressiveConfigForIndex,
+  replayProgressiveBoard,
+  sitesAtRotation,
+} from "@/sim/grid/ProgressiveMap.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 
 type GameStateValue = (typeof GameState)[keyof typeof GameState];
@@ -63,9 +72,13 @@ export interface GameStoreLike {
   selectTower(tower: Tower | null): void;
   setHoverTile(tile: HoverTile | null): void;
   progressivePlacementHold?: boolean;
+  progressiveOffer?: number[];
   progressiveRotation?: number;
+  progressiveSelectedOffer?: number;
+  progressiveSelectedSite?: { blockX: number; blockY: number } | null;
   rotateProgressiveBlock?: () => void;
   selectProgressiveOffer?: (index: number) => void;
+  moveProgressiveSite?: (direction: ProgressiveSiteDirection) => void;
 }
 
 interface GameStateShape {
@@ -101,6 +114,7 @@ interface GameStateShape {
   progressiveOffer: number[];
   progressiveRotation: number;
   progressiveSelectedOffer: number;
+  progressiveSelectedSite: { blockX: number; blockY: number } | null;
   progressivePlacements: ProgressiveStamp[];
   layoutGeneration: number;
 }
@@ -145,6 +159,7 @@ export const useGameStore = defineStore("game", {
     progressiveOffer: [],
     progressiveRotation: 0,
     progressiveSelectedOffer: 0,
+    progressiveSelectedSite: null,
     progressivePlacements: [],
     layoutGeneration: 0,
   }),
@@ -245,17 +260,67 @@ export const useGameStore = defineStore("game", {
       this.progressiveOffer = [];
       this.progressiveRotation = 0;
       this.progressiveSelectedOffer = 0;
+      this.progressiveSelectedSite = null;
       this.progressivePlacements = [];
       this.layoutGeneration = 0;
     },
 
     rotateProgressiveBlock() {
-      this.progressiveRotation = (this.progressiveRotation + 1) % 4;
+      const config = progressiveConfigForIndex(this.mapIndex);
+      const templateIndex = this.progressiveOffer[this.progressiveSelectedOffer];
+      if (!config || templateIndex === undefined) return;
+      const replayed = replayProgressiveBoard(config, this.progressivePlacements);
+      this.progressiveRotation = nextUsableRotation(
+        replayed.board,
+        replayed.catalog,
+        templateIndex,
+        (this.progressiveRotation + 1) % 4,
+      );
+      this.syncProgressiveCursor();
     },
 
     selectProgressiveOffer(index: number) {
       if (index < 0 || index >= this.progressiveOffer.length) return;
       this.progressiveSelectedOffer = index;
+      this.syncProgressiveCursor();
+    },
+
+    moveProgressiveSite(direction: ProgressiveSiteDirection) {
+      const config = progressiveConfigForIndex(this.mapIndex);
+      const templateIndex = this.progressiveOffer[this.progressiveSelectedOffer];
+      if (!config || templateIndex === undefined) return;
+      const replayed = replayProgressiveBoard(config, this.progressivePlacements);
+      const sites = sitesAtRotation(replayed.board, replayed.catalog, templateIndex, this.progressiveRotation);
+      const selectedSite = this.progressiveSelectedSite;
+      const current = selectedSite
+        ? sites.find((site) => site.blockX === selectedSite.blockX && site.blockY === selectedSite.blockY)
+        : undefined;
+      if (!current) {
+        this.syncProgressiveCursor();
+        return;
+      }
+      const nextSite = chooseAdjacentSite(sites, current, direction);
+      this.progressiveSelectedSite = { blockX: nextSite.blockX, blockY: nextSite.blockY };
+    },
+
+    syncProgressiveCursor() {
+      const config = progressiveConfigForIndex(this.mapIndex);
+      const templateIndex = this.progressiveOffer[this.progressiveSelectedOffer];
+      if (!config || templateIndex === undefined) {
+        this.progressiveSelectedSite = null;
+        return;
+      }
+      const replayed = replayProgressiveBoard(config, this.progressivePlacements);
+      const rotation = nextUsableRotation(replayed.board, replayed.catalog, templateIndex, this.progressiveRotation);
+      if (this.progressiveRotation !== rotation) this.progressiveRotation = rotation;
+      const sites = sitesAtRotation(replayed.board, replayed.catalog, templateIndex, rotation);
+      const selectedSite = this.progressiveSelectedSite;
+      const siteStillLegal =
+        selectedSite !== null &&
+        sites.some((site) => site.blockX === selectedSite.blockX && site.blockY === selectedSite.blockY);
+      if (siteStillLegal) return;
+      const firstSite = sites[0];
+      this.progressiveSelectedSite = firstSite ? { blockX: firstSite.blockX, blockY: firstSite.blockY } : null;
     },
 
     applyProgressiveLayout(layoutGeneration: number, stamps: ProgressiveStamp[]) {
@@ -336,6 +401,7 @@ export const useGameStore = defineStore("game", {
       this.progressiveOffer = [];
       this.progressiveRotation = 0;
       this.progressiveSelectedOffer = 0;
+      this.progressiveSelectedSite = null;
       this.progressivePlacements = [];
       this.layoutGeneration = 0;
     },

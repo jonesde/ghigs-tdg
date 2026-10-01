@@ -1,4 +1,5 @@
 import { onUnmounted } from "vue";
+import { clearBuildAndTowerForProgressive } from "@/composables/progressivePlacement.js";
 import type { Command } from "@/sim/Command.js";
 import type { CommandDispatcher } from "@/sim/CommandDispatcher.js";
 import { GameState } from "@/sim/Constants.js";
@@ -60,20 +61,74 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         event.preventDefault();
         return;
       }
-      if (event.key === "Tab" && !gs.selectedTowerType) {
+      if (event.key === "Tab") {
         event.preventDefault();
+        const offerLength = gs.progressiveOffer?.length ?? 0;
+        if (offerLength > 0) {
+          const currentIndex = gs.progressiveSelectedOffer ?? 0;
+          const offset = event.shiftKey ? -1 : 1;
+          const nextIndex = (currentIndex + offset + offerLength) % offerLength;
+          clearBuildAndTowerForProgressive(gs);
+          gs.selectProgressiveOffer?.(nextIndex);
+        }
         return;
       }
-      // Rotation stays on the main thread until the place command carries the quarter-turn count.
       if (event.key === "r" || event.key === "R") {
+        clearBuildAndTowerForProgressive(gs);
         gs.rotateProgressiveBlock?.();
         event.preventDefault();
         return;
       }
-      const offerDigit = parseInt(event.key, 10);
-      if (offerDigit >= 1 && offerDigit <= 3) {
-        gs.selectProgressiveOffer?.(offerDigit - 1);
+      if (event.key === "Enter") {
+        if (uiStore.confirmDialog) {
+          uiStore.executeConfirm();
+          return;
+        }
+        if (
+          uiStore.showPauseMenu ||
+          uiStore.showSkillTree ||
+          uiStore.showStatsPanel ||
+          uiStore.showHelpDialog ||
+          uiStore.debugPanelVisible
+        ) {
+          return;
+        }
+        const templateIndex = gs.progressiveOffer?.[gs.progressiveSelectedOffer ?? 0];
+        const site = gs.progressiveSelectedSite;
+        if (templateIndex === undefined || !site || gs.progressiveRotation === undefined) return;
+        dispatch({
+          commandId: nextInputCommandId++,
+          type: "action:placeProgressiveBlock",
+          templateIndex,
+          rotation: gs.progressiveRotation,
+          blockX: site.blockX,
+          blockY: site.blockY,
+        });
         event.preventDefault();
+        return;
+      }
+      if (
+        event.key === "ArrowRight" ||
+        event.key === "ArrowLeft" ||
+        event.key === "ArrowUp" ||
+        event.key === "ArrowDown"
+      ) {
+        event.preventDefault();
+        if (!canActNow(event.key)) return;
+        let direction: "up" | "down" | "left" | "right" = "down";
+        if (event.key === "ArrowRight") direction = "right";
+        else if (event.key === "ArrowLeft") direction = "left";
+        else if (event.key === "ArrowUp") direction = "up";
+        gs.moveProgressiveSite?.(direction);
+        return;
+      }
+      const offerDigit = parseInt(event.key, 10);
+      if (offerDigit >= 1 && offerDigit <= 9) {
+        event.preventDefault();
+        if (offerDigit <= 3) {
+          clearBuildAndTowerForProgressive(gs);
+          gs.selectProgressiveOffer?.(offerDigit - 1);
+        }
         return;
       }
     }

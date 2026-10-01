@@ -31,6 +31,7 @@ export const MapsContentSchema = z.object({
   progressive: z.object({
     blockSize: z.literal(5),
     placementInterval: z.number().int().min(1),
+    rerollGoldPerWave: z.number().int().min(0),
     variants: z.array(ProgressiveVariantSchema).length(12),
   }),
 });

@@ -3,26 +3,34 @@ import { describe, expect, it, vi } from "vitest";
 import { MAP_GEM_MULTIPLIERS, TOTAL_MAPS } from "@/sim/Constants.js";
 import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
-import { getMap } from "@/sim/grid/Map.js";
+import { getMap, mulberry32 } from "@/sim/grid/Map.js";
 import {
   type BlockEdge,
+  type BlockSite,
   type BlockTemplate,
   boardToGeneratedMap,
+  chooseAdjacentSite,
   commitPlacement,
   createProgressiveBoard,
+  drawBlockOffer,
   gemMultiplierForMap,
   generateProgressiveCatalog,
   generateProgressiveMap,
   generateProgressiveMapByIndex,
   legalSites,
+  nextUsableRotation,
+  offerHasAlternative,
   type PlacedBlock,
   type ProgressiveBoard,
   type ProgressiveConfig,
+  placementExtendsOpening,
   placementLegal,
   progressiveConfigForIndex,
   progressiveUnlockMapIndex,
   replayProgressiveBoard,
   rotatedMouths,
+  sitesAtRotation,
+  templateCanExtendOpening,
 } from "@/sim/grid/ProgressiveMap.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { createDefaultPersistState, maybeUnlockNextMap } from "@/sim/PersistState.js";
@@ -375,5 +383,84 @@ describe("progressive economy", () => {
     expect(tryRefundGeneral(save, "progressiveThirdChoice", 0)).toMatchObject({ ok: true, gems: 100 });
     expect(save.gems).toBe(100);
     expect(save.generalAddons.progressiveThirdChoice).toBeNull();
+  });
+});
+
+describe("progressive block offers", () => {
+  function offerExtends(board: ProgressiveBoard, catalog: BlockTemplate[], offer: number[]): boolean {
+    return offer.some((templateIndex) => templateCanExtendOpening(board, catalog, templateIndex));
+  }
+
+  it("reserves a template that can extend an opening", () => {
+    const started = createProgressiveBoard(configFor(1));
+    const spawn = started.board.spawns[0]!;
+    const delta = EDGE_DELTA[spawn.edge];
+    const facing = OPPOSITE_EDGE[spawn.edge];
+    const rotation = rotationFacing(started.catalog[0]!, facing);
+    expect(
+      placementExtendsOpening(
+        started.board,
+        started.catalog,
+        0,
+        rotation,
+        spawn.blockX + delta.x,
+        spawn.blockY + delta.y,
+      ),
+    ).toBe(true);
+    const random = mulberry32(1);
+    for (let draw = 0; draw < 40; draw++) {
+      const pair = drawBlockOffer(started.board, started.catalog, 2, random);
+      const triple = drawBlockOffer(started.board, started.catalog, 3, random);
+      expect(pair).toHaveLength(2);
+      expect(triple).toHaveLength(3);
+      expect(offerExtends(started.board, started.catalog, pair)).toBe(true);
+      expect(offerExtends(started.board, started.catalog, triple)).toBe(true);
+      expect(new Set(pair).size).toBe(pair.length);
+      expect(new Set(triple).size).toBe(triple.length);
+    }
+    const biased = drawBlockOffer(started.board, started.catalog, 3, () => 0.99);
+    expect(biased).toHaveLength(3);
+    expect(offerExtends(started.board, started.catalog, biased)).toBe(true);
+    expect(offerHasAlternative(started.board, started.catalog, 2, biased.slice(0, 2))).toBe(true);
+  });
+
+  it("fills from terrain when no template extends an opening", () => {
+    const catalog = generateProgressiveCatalog(1);
+    const board = emptyBoard([placed(8, 0, 0, 0)]);
+    const offer = drawBlockOffer(board, catalog, 2, () => 0);
+    expect(offer.length).toBeGreaterThan(0);
+    expect(offer.every((templateIndex) => !templateCanExtendOpening(board, catalog, templateIndex))).toBe(true);
+    expect(offerHasAlternative(board, catalog, 2, offer)).toBe(false);
+  });
+
+  it("skips quarter-turns with no site and moves to the nearest site on an axis", () => {
+    const started = createProgressiveBoard(configFor(1));
+    let skipped = false;
+    for (let templateIndex = 0; templateIndex < started.catalog.length; templateIndex++) {
+      const populated: number[] = [];
+      const empty: number[] = [];
+      for (let rotation = 0; rotation < 4; rotation++) {
+        const sites = sitesAtRotation(started.board, started.catalog, templateIndex, rotation);
+        if (sites.length > 0) populated.push(rotation);
+        else empty.push(rotation);
+      }
+      const emptyRotation = empty[0];
+      if (populated.length === 0 || emptyRotation === undefined) continue;
+      const usable = nextUsableRotation(started.board, started.catalog, templateIndex, emptyRotation);
+      expect(populated).toContain(usable);
+      expect(empty).not.toContain(usable);
+      skipped = true;
+      break;
+    }
+    expect(skipped).toBe(true);
+
+    const sites: BlockSite[] = [
+      { rotation: 0, blockX: 0, blockY: 0 },
+      { rotation: 0, blockX: 2, blockY: 0 },
+      { rotation: 0, blockX: 0, blockY: 3 },
+    ];
+    expect(chooseAdjacentSite(sites, sites[0]!, "right")).toEqual(sites[1]);
+    expect(chooseAdjacentSite(sites, sites[1]!, "right")).toEqual(sites[1]);
+    expect(chooseAdjacentSite(sites, sites[0]!, "down")).toEqual(sites[2]);
   });
 });

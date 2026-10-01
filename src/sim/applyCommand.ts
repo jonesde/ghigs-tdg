@@ -133,6 +133,8 @@ export function applyCommand(engine: GameEngine, command: Command, enemyLookup?:
       return true;
     case "action:placeProgressiveBlock":
       return engine.placeProgressiveBlock(command.templateIndex, command.rotation, command.blockX, command.blockY);
+    case "action:rerollProgressiveOffer":
+      return engine.rerollProgressiveOffer();
     // NOTE: lifecycle:setTheme is intentionally absent — mid-run theme
     // switching is out of scope per README.md.
     // LLM / enemy-commander commands (Phase 1 commander seam). These mutate enemy

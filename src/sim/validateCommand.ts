@@ -193,6 +193,8 @@ export function validateCommand(command: Command, grid?: CommandGridInfo | null)
         return "action:debugEndRun victory must be a boolean";
       }
       return null;
+    case "action:rerollProgressiveOffer":
+      return null;
     case "action:placeProgressiveBlock": {
       if (!Number.isInteger(command.templateIndex) || command.templateIndex < 0 || command.templateIndex > 9) {
         return "action:placeProgressiveBlock templateIndex must be an integer 0-9";

@@ -657,21 +657,200 @@ export function boardWithPlayerStamp(
   return next;
 }
 
+export type ProgressiveSiteDirection = "up" | "down" | "left" | "right";
+
+export function sitesAtRotation(
+  board: ProgressiveBoard,
+  catalog: BlockTemplate[],
+  templateIndex: number,
+  rotation: number,
+): BlockSite[] {
+  const quarterTurns = normalizeQuarterTurns(rotation);
+  return legalSites(board, catalog, templateIndex).filter((site) => site.rotation === quarterTurns);
+}
+
+export function nextUsableRotation(
+  board: ProgressiveBoard,
+  catalog: BlockTemplate[],
+  templateIndex: number,
+  startRotation: number,
+): number {
+  const start = normalizeQuarterTurns(startRotation);
+  for (let offset = 0; offset < 4; offset++) {
+    const rotation = (start + offset) % 4;
+    if (sitesAtRotation(board, catalog, templateIndex, rotation).length > 0) return rotation;
+  }
+  return start;
+}
+
+export function chooseAdjacentSite(
+  sites: BlockSite[],
+  current: BlockSite,
+  direction: ProgressiveSiteDirection,
+): BlockSite {
+  let bestSite: BlockSite | null = null;
+  let bestPrimary = Number.POSITIVE_INFINITY;
+  let bestPerpendicular = Number.POSITIVE_INFINITY;
+  for (const site of sites) {
+    if (site.blockX === current.blockX && site.blockY === current.blockY) continue;
+    const deltaX = site.blockX - current.blockX;
+    const deltaY = site.blockY - current.blockY;
+    let primary = 0;
+    let perpendicular = 0;
+    if (direction === "up") {
+      if (deltaY >= 0) continue;
+      primary = -deltaY;
+      perpendicular = Math.abs(deltaX);
+    } else if (direction === "down") {
+      if (deltaY <= 0) continue;
+      primary = deltaY;
+      perpendicular = Math.abs(deltaX);
+    } else if (direction === "left") {
+      if (deltaX >= 0) continue;
+      primary = -deltaX;
+      perpendicular = Math.abs(deltaY);
+    } else {
+      if (deltaX <= 0) continue;
+      primary = deltaX;
+      perpendicular = Math.abs(deltaY);
+    }
+    if (primary < bestPrimary || (primary === bestPrimary && perpendicular < bestPerpendicular)) {
+      bestSite = site;
+      bestPrimary = primary;
+      bestPerpendicular = perpendicular;
+    }
+  }
+  return bestSite ?? current;
+}
+
+export function placementExtendsOpening(
+  board: ProgressiveBoard,
+  catalog: BlockTemplate[],
+  templateIndex: number,
+  rotation: number,
+  blockX: number,
+  blockY: number,
+): boolean {
+  if (!placementLegal(board, catalog, templateIndex, rotation, blockX, blockY)) return false;
+  const template = catalog[templateIndex];
+  if (!template || template.mouths.length === 0) return false;
+  const mouths = rotatedMouths(template, rotation);
+  let connectedToOpening = 0;
+  let newMouths = 0;
+  for (const edge of mouths) {
+    const delta = EDGE_DELTA[edge];
+    const neighbor = blockAt(board, blockX + delta.x, blockY + delta.y);
+    if (!neighbor) {
+      newMouths += 1;
+      continue;
+    }
+    if (blockMouths(neighbor, catalog).includes(OPPOSITE_EDGE[edge])) connectedToOpening += 1;
+  }
+  return connectedToOpening > 0 && newMouths > 0;
+}
+
+export function templateCanExtendOpening(
+  board: ProgressiveBoard,
+  catalog: BlockTemplate[],
+  templateIndex: number,
+): boolean {
+  return legalSites(board, catalog, templateIndex).some((site) =>
+    placementExtendsOpening(board, catalog, templateIndex, site.rotation, site.blockX, site.blockY),
+  );
+}
+
+function legalTemplateGroups(
+  board: ProgressiveBoard,
+  catalog: BlockTemplate[],
+): { legal: number[]; extending: number[] } {
+  const legal: number[] = [];
+  const extending: number[] = [];
+  for (let templateIndex = 0; templateIndex < catalog.length; templateIndex++) {
+    if (legalSites(board, catalog, templateIndex).length === 0) continue;
+    legal.push(templateIndex);
+    if (templateCanExtendOpening(board, catalog, templateIndex)) extending.push(templateIndex);
+  }
+  return { legal, extending };
+}
+
+function takeUniform(pool: number[], rng: () => number): number {
+  const pickedIndex = Math.floor(rng() * pool.length);
+  const picked = pool[pickedIndex] ?? pool[0]!;
+  pool.splice(pickedIndex, 1);
+  return picked;
+}
+
+function shuffleOffer(offer: number[], rng: () => number): void {
+  for (let index = offer.length - 1; index > 0; index--) {
+    const swapIndex = Math.floor(rng() * (index + 1));
+    const current = offer[index]!;
+    offer[index] = offer[swapIndex]!;
+    offer[swapIndex] = current;
+  }
+}
+
+function sameTemplateSet(left: readonly number[], right: readonly number[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  for (const templateIndex of left) {
+    if (!rightSet.has(templateIndex)) return false;
+  }
+  return true;
+}
+
+export function offerHasAlternative(
+  board: ProgressiveBoard,
+  catalog: BlockTemplate[],
+  choiceCount: number,
+  currentOffer: readonly number[],
+): boolean {
+  const groups = legalTemplateGroups(board, catalog);
+  const slotCount = Math.min(choiceCount, groups.legal.length);
+  if (slotCount <= 0) return false;
+  const extending = new Set(groups.extending);
+  const combination: number[] = [];
+  let validCount = 0;
+  let matchesCurrent = false;
+  const walk = (start: number): void => {
+    if (validCount > 1) return;
+    if (combination.length === slotCount) {
+      const includesExtender =
+        extending.size === 0 || combination.some((templateIndex) => extending.has(templateIndex));
+      if (!includesExtender) return;
+      validCount += 1;
+      if (sameTemplateSet(combination, currentOffer)) matchesCurrent = true;
+      return;
+    }
+    for (let index = start; index < groups.legal.length; index++) {
+      combination.push(groups.legal[index]!);
+      walk(index + 1);
+      combination.pop();
+      if (validCount > 1) return;
+    }
+  };
+  walk(0);
+  if (validCount > 1) return true;
+  return validCount === 1 && !matchesCurrent;
+}
+
 export function drawBlockOffer(
   board: ProgressiveBoard,
   catalog: BlockTemplate[],
   choiceCount: number,
   rng: () => number,
 ): number[] {
+  const groups = legalTemplateGroups(board, catalog);
+  if (groups.legal.length === 0 || choiceCount <= 0) return [];
   const offer: number[] = [];
-  let attempts = 0;
-  while (offer.length < choiceCount && attempts < 64) {
-    attempts += 1;
-    const templateIndex = Math.floor(rng() * catalog.length);
-    if (offer.includes(templateIndex)) continue;
-    if (legalSites(board, catalog, templateIndex).length === 0) continue;
-    offer.push(templateIndex);
+  const pool = groups.legal.slice();
+  if (groups.extending.length > 0) {
+    const extender = takeUniform(groups.extending.slice(), rng);
+    offer.push(extender);
+    const poolIndex = pool.indexOf(extender);
+    if (poolIndex >= 0) pool.splice(poolIndex, 1);
   }
+  while (offer.length < choiceCount && pool.length > 0) offer.push(takeUniform(pool, rng));
+  shuffleOffer(offer, rng);
   return offer;
 }
 

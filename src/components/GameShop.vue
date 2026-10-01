@@ -19,6 +19,7 @@ const discount = computed(() => {
 const towerList = Object.values(TowerIds) as TowerId[];
 
 function toggleBuild(type: TowerId) {
+  if (gameStore.progressivePlacementHold) return;
   const nextType = gameStore.selectedTowerType === type ? null : type;
   gameStore.selectBuildType(nextType);
   dispatchCommand({ commandId: 0, type: "action:selectBuildType", towerType: nextType });

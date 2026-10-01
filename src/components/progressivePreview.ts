@@ -1,3 +1,5 @@
+import { type BlockTemplate, localTile, type PlacedBlock, PROGRESSIVE_BLOCK_SIZE } from "@/sim/grid/ProgressiveMap.js";
+
 const PATH_FILL = "#d7b072";
 const TERRAIN_FILLS = ["#6e8f7a", "#4d6658", "#2c3a32", "#1b2620"];
 
@@ -5,4 +7,43 @@ export function progressivePreviewFill(tile: { type: string; height: number }): 
   if (tile.type === "path") return PATH_FILL;
   const heightStep = Math.min(4, Math.max(1, Math.round(tile.height)));
   return TERRAIN_FILLS[heightStep - 1] ?? TERRAIN_FILLS[2]!;
+}
+
+export function progressivePatternMarkup(
+  catalog: BlockTemplate[],
+  templateIndex: number,
+  rotation: number,
+  originX: number,
+  originY: number,
+  cellSize: number,
+  selected: boolean,
+): string {
+  const block: PlacedBlock = {
+    kind: "catalog",
+    templateIndex,
+    rotation,
+    blockX: 0,
+    blockY: 0,
+    fill: false,
+    entryEdges: [],
+    heightPattern: "flat",
+    flatHeight: 1,
+    peakCorner: 0,
+  };
+  let cells = "";
+  for (let localY = 0; localY < PROGRESSIVE_BLOCK_SIZE; localY++) {
+    for (let localX = 0; localX < PROGRESSIVE_BLOCK_SIZE; localX++) {
+      const tile = localTile(catalog, block, localX, localY);
+      const fill = progressivePreviewFill(tile ?? { type: "terrain", height: 1 });
+      const cellX = originX + localX * cellSize;
+      const cellY = originY + localY * cellSize;
+      cells += `<rect x="${cellX}" y="${cellY}" width="${cellSize}" height="${cellSize}" fill="${fill}" />`;
+    }
+  }
+  const size = PROGRESSIVE_BLOCK_SIZE * cellSize;
+  const stroke = selected
+    ? `<rect x="${originX}" y="${originY}" width="${size}" height="${size}" fill="none" stroke="#5fd0ff" stroke-width="3" />`
+    : "";
+  const opacity = selected ? 0.75 : 0.45;
+  return `<g opacity="${opacity}">${cells}${stroke}</g>`;
 }

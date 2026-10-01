@@ -84,6 +84,7 @@ export type Command =
       blockX: number;
       blockY: number;
     }
+  | { commandId: number; type: "action:rerollProgressiveOffer" }
 
   // ---- Lifecycle ----
   | {

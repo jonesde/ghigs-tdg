@@ -151,6 +151,7 @@ export const MAP_LEVELS: MapLevelConfig[] = maps.levels as MapLevelConfig[];
 export const TOTAL_MAPS = MAP_LEVELS.length;
 export const PROGRESSIVE_BLOCK_SIZE = maps.progressive.blockSize;
 export const PROGRESSIVE_PLACEMENT_INTERVAL = maps.progressive.placementInterval;
+export const PROGRESSIVE_REROLL_GOLD_PER_WAVE = maps.progressive.rerollGoldPerWave;
 export const PROGRESSIVE_VARIANTS = maps.progressive.variants;
 export const PROGRESSIVE_MAP_INDEX_BASE = TOTAL_MAPS;
 export const PROGRESSIVE_MAP_COUNT = PROGRESSIVE_VARIANTS.length;

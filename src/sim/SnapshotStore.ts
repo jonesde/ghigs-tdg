@@ -257,11 +257,16 @@ export class SnapshotStore {
     // non-null local value from the snapshot.
     if (meta.selectedTowerType === null) gs.selectedTowerType = null;
     const placementHold = meta.progressivePlacementHold === true;
+    let progressiveCursorDirty = false;
     if (gs.progressivePlacementHold !== placementHold) {
       gs.progressivePlacementHold = placementHold;
       if (placementHold) {
         gs.progressiveRotation = 0;
         gs.progressiveSelectedOffer = 0;
+        gs.progressiveSelectedSite = null;
+        progressiveCursorDirty = true;
+      } else {
+        gs.progressiveSelectedSite = null;
       }
     }
     const offer = meta.progressiveOffer ?? [];
@@ -269,7 +274,10 @@ export class SnapshotStore {
       gs.progressiveOffer = offer.slice();
       gs.progressiveRotation = 0;
       gs.progressiveSelectedOffer = 0;
+      gs.progressiveSelectedSite = null;
+      progressiveCursorDirty = true;
     }
+    if (progressiveCursorDirty && gs.progressivePlacementHold) gs.syncProgressiveCursor();
     if (
       meta.layoutGeneration !== undefined &&
       snapshot.progressivePlacements &&

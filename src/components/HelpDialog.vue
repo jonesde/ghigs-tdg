@@ -296,6 +296,14 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                 <td>Move tower selection in that direction. In build mode: move build position</td>
               </tr>
               <tr>
+                <td><kbd>Tab</kbd> / <kbd>R</kbd> / arrows / <kbd>Enter</kbd></td>
+                <td>
+                  During a block placement: Tab cycles the block choices, R or a second click on the selected choice
+                  rotates it, the arrow keys move the placement space, and Enter places that block. Re-roll spends 10
+                  gold times the wave number and redraws every choice.
+                </td>
+              </tr>
+              <tr>
                 <td><kbd>W</kbd> / <kbd>U</kbd></td>
                 <td>Upgrade the selected tower. If the tower needs specialization and only one specialization is available, selects it directly</td>
               </tr>

@@ -30,6 +30,7 @@ import {
   createProgressiveBoard,
   drawBlockOffer,
   gemMultiplierForMap,
+  offerHasAlternative,
   type ProgressiveBoard,
   type ProgressiveStamp,
   progressiveConfigForIndex,
@@ -76,6 +77,7 @@ import {
   MILESTONE_GEMS,
   MILESTONE_WAVES,
   PROGRESSIVE_PLACEMENT_INTERVAL,
+  PROGRESSIVE_REROLL_GOLD_PER_WAVE,
   REGION_GEM_REWARDS,
   SELL_DISCOUNT_PCT,
   SELL_VALUE_RATIO,
@@ -938,9 +940,10 @@ export class GameEngine {
     const ty = tile.y;
 
     if (this.progressivePlacementHold) {
+      // A missed site used to select the tower under the cursor and reopen the
+      // tower panel on top of the block choices. The hold owns selection.
       this.runState.selectedTowerType = null;
-      const tower = this.towerManager?.towerAt(tx, ty);
-      this.runState.selectedTowerId = tower ? String(tower.id) : null;
+      this.runState.selectedTowerId = null;
       return;
     }
 
@@ -1473,8 +1476,29 @@ export class GameEngine {
       this.waveManager.active = false;
     }
     this.runState.selectedTowerType = null;
+    this.runState.selectedTowerId = null;
     setGameState(this.runState, GameState.PAUSED);
     this.runState.waveCountdown = null;
+    return true;
+  }
+
+  rerollProgressiveOffer(): boolean {
+    if (!this.progressivePlacementHold) return false;
+    const board = this.progressiveBoard;
+    const catalog = this.progressiveCatalog;
+    const rng = this.progressiveRng;
+    if (!board || !catalog || !rng) return false;
+    const cost = PROGRESSIVE_REROLL_GOLD_PER_WAVE * this.runState.currentWave;
+    if (this.runState.gold < cost) {
+      this.host.notifyUi({ type: "showNotification", message: "Not enough gold to re-roll." });
+      return false;
+    }
+    if (!offerHasAlternative(board, catalog, this.progressiveChoiceCount(), this.progressiveOffer)) {
+      this.host.notifyUi({ type: "showNotification", message: "No other block choices." });
+      return false;
+    }
+    setGold(this.runState, this.runState.gold - cost);
+    this.progressiveOffer = drawBlockOffer(board, catalog, this.progressiveChoiceCount(), rng);
     return true;
   }
 
