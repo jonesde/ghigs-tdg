@@ -33,7 +33,8 @@ Defend your base against 100 waves of enemies across 36 procedurally-generated m
 | `Tab` | If build mode active then cycle tower type (next to the right in the shop menu, from last loop back to first), or if no build mode then cycle time scale forward (1× → 2× → 4× → 8×) |
 | `Shift` + `Tab` | Same as `Tab` but in reverse (previous tower type in build mode, or reverse cycle time scale 8× → 4× → 2× → 1×) |
 | `1`–`9` | Build mode for corresponding tower type (use current shop panel order; support up to 9 even though there are only 6 towers now) |
-| `Up Arrow` / `Down Arrow` / `Left Arrow` / `Right Arrow` | Move tower selection in that direction (direction-priority search); in build mode: move build position |
+| `Up Arrow` / `Down Arrow` / `Left Arrow` / `Right Arrow` | Move tower selection in that direction (direction-priority search); in build mode: move build position. Once zoomed in, the view pans when that tile or placement site comes within 20% of the screen width of an edge, and only far enough to clear that line |
+| `Page Up` / `Page Down` | Zoom in / zoom out. Page Down returns to the whole map |
 | `w` or `u` | Upgrade the selected tower. If the tower needs specialization and only one specialization is available, selects it directly |
 | `e` or `c` | When the selected tower needs specialization: `e` selects Specialization A, `c` selects Specialization B |
 | `a` | Reverse cycle time scale (8× → 4× → 2× → 1×) |
@@ -43,6 +44,16 @@ Defend your base against 100 waves of enemies across 36 procedurally-generated m
 | Click on empty tile (build mode) | Place selected tower |
 | Click on tower | Select tower for upgrade/sell |
 | Click upgrade button (on selected tower) | Upgrade tower |
+
+### Mouse Controls
+
+| Input | Action |
+|---|---|
+| Wheel | Zoom in (wheel up) or out (wheel down) about the cursor |
+| Right-button drag | Pan the view |
+| Alt + left-button drag | Pan the view |
+
+On a progressive map, opening a block choice zooms the view back out to the whole board.
 
 ## Tech Stack
 

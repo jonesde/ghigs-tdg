@@ -293,14 +293,19 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
               </tr>
               <tr>
                 <td><kbd>&uarr;</kbd> / <kbd>&darr;</kbd> / <kbd>&larr;</kbd> / <kbd>&rarr;</kbd></td>
-                <td>Move tower selection in that direction. In build mode: move build position</td>
+                <td>Move tower selection in that direction. In build mode: move the build tile. Once zoomed in, the view pans when that tile comes within 20% of the screen width of an edge</td>
+              </tr>
+              <tr>
+                <td><kbd>Page Up</kbd> / <kbd>Page Down</kbd></td>
+                <td>Zoom in or out. Page Down returns to the whole map. Zoom stays on the selected tower, build tile, or placement site</td>
               </tr>
               <tr>
                 <td><kbd>Tab</kbd> / <kbd>R</kbd> / arrows / <kbd>Enter</kbd></td>
                 <td>
-                  During a block placement: Tab cycles the block choices, R or a second click on the selected choice
-                  rotates it, the arrow keys move the placement space, and Enter places that block. Re-roll spends 10
-                  gold times the wave number and redraws every choice.
+                  During a block placement the view zooms out to the whole map. Tab cycles the block choices, R or a
+                  second click on the selected choice rotates it, the arrow keys move the placement space (the view pans
+                  when that site comes within 20% of the screen width of an edge), and Enter places that block. Re-roll
+                  spends 10 gold times the wave number and redraws every choice.
                 </td>
               </tr>
               <tr>
@@ -334,6 +339,14 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
               <tr>
                 <td>Click a tower</td>
                 <td>Select it to view stats, upgrade, or sell</td>
+              </tr>
+              <tr>
+                <td>Mouse wheel</td>
+                <td>Zoom in or out about the cursor</td>
+              </tr>
+              <tr>
+                <td>Right-drag, or Alt + left-drag</td>
+                <td>Pan the view</td>
               </tr>
             </tbody>
           </table>

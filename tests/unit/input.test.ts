@@ -1,6 +1,7 @@
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useInput } from "@/composables/Input.js";
+import { EDGE_BUFFER_FRACTION, fitFrame, frameFromCenter, revealPoint, ZOOM_STEP } from "@/render/svg/cameraFrame.js";
 import type { Command } from "@/sim/Command.js";
 import { GameState } from "@/sim/Constants.js";
 import { TowerIds } from "@/sim/ConstantsTower.js";
@@ -8,8 +9,12 @@ import { setCommandDispatcher } from "@/sim/commandBus.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
 import {
+  chooseAdjacentSite,
   createProgressiveBoard,
   drawBlockOffer,
+  generateProgressiveMap,
+  PROGRESSIVE_BLOCK_SIZE,
+  progressiveBlockWorldCorner,
   progressiveConfigForIndex,
   sitesAtRotation,
 } from "@/sim/grid/ProgressiveMap.js";
@@ -1142,6 +1147,307 @@ describe("useInput", () => {
       handler(makeEvent("4"));
       expect(dispatched("action:selectBuildType")).toBe(false);
       expect(gameStore.selectedTowerType).toBe(TowerIds.BASIC);
+    });
+  });
+
+  describe("camera", () => {
+    function installMap(tileCount: number) {
+      const grid = {
+        width: tileCount,
+        height: tileCount,
+        tileSize: 36,
+        worldOriginX: 0,
+        worldOriginY: 0,
+        tileToWorld: (tileX: number, tileY: number) => ({ x: tileX * 36 + 18, y: tileY * 36 + 18 }),
+      };
+      gameStore.initMap(
+        0,
+        { regionId: 0, width: tileCount, height: tileCount, tiles: [] } as unknown as GeneratedMap,
+        grid as unknown as Grid,
+      );
+    }
+
+    function fitOn(viewportWidth: number, viewportHeight: number, tileCount: number) {
+      const worldSize = tileCount * 36;
+      return fitFrame({ originX: 0, originY: 0, width: worldSize, height: worldSize }, viewportWidth, viewportHeight);
+    }
+
+    it("zooms in with Page Up about the view center", () => {
+      installMap(20);
+      gameStore.setViewport(800, 600);
+      const fit = fitOn(800, 600, 20);
+      const centerX = fit.originX + fit.width / 2;
+      const centerY = fit.originY + fit.height / 2;
+      gameStore.setCameraFrame(centerX, centerY, fit.height);
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("PageUp");
+      expect(gameStore.camera.followsMap).toBe(false);
+      expect(gameStore.camera.viewHeight).toBeCloseTo(fit.height / ZOOM_STEP);
+      expect(gameStore.camera.centerX).toBeCloseTo(centerX);
+      expect(gameStore.camera.centerY).toBeCloseTo(centerY);
+    });
+
+    it("keeps the fit frame on Page Down", () => {
+      installMap(20);
+      gameStore.setViewport(800, 600);
+      const fit = fitOn(800, 600, 20);
+      gameStore.setCameraFrame(fit.originX + fit.width / 2, fit.originY + fit.height / 2, fit.height);
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("PageDown");
+      expect(gameStore.camera.followsMap).toBe(true);
+      expect(gameStore.camera.viewHeight).toBeCloseTo(fit.height);
+    });
+
+    it("ignores Page Up while help is open", () => {
+      installMap(20);
+      gameStore.setViewport(800, 600);
+      const fit = fitOn(800, 600, 20);
+      gameStore.setCameraFrame(fit.originX + fit.width / 2, fit.originY + fit.height / 2, fit.height);
+      uiStore.showHelpDialog = true;
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("PageUp");
+      expect(gameStore.camera.followsMap).toBe(true);
+      expect(gameStore.camera.viewHeight).toBeCloseTo(fit.height);
+    });
+
+    it("ignores Page Up while a text field is focused", () => {
+      installMap(20);
+      gameStore.setViewport(800, 600);
+      const fit = fitOn(800, 600, 20);
+      gameStore.setCameraFrame(fit.originX + fit.width / 2, fit.originY + fit.height / 2, fit.height);
+      let capturedHandler: ((event: KeyboardEvent) => void) | null = null;
+      const originalAddEventListener = window.addEventListener;
+      window.addEventListener = vi.fn((event: string, handler: (keyboardEvent: KeyboardEvent) => void) => {
+        if (event === "keydown") capturedHandler = handler;
+        originalAddEventListener.call(window, event, handler as unknown as EventListener);
+      }) as never;
+      useInput(gameStore, dispatcher, uiStore);
+      window.addEventListener = originalAddEventListener;
+      const textarea = document.createElement("textarea");
+      const testEvent = makeEvent("PageUp");
+      Object.defineProperty(testEvent, "target", { value: textarea });
+      (capturedHandler as ((event: KeyboardEvent) => void) | null)?.(testEvent);
+      expect(gameStore.camera.followsMap).toBe(true);
+      expect(gameStore.camera.viewHeight).toBeCloseTo(fit.height);
+    });
+
+    it("does not pan a build arrow that stays inside the edge buffer", () => {
+      installMap(20);
+      gameStore.setViewport(600, 600);
+      gameStore.selectedTowerType = "cannon";
+      gameStore.hoverTile = { tileX: 10, tileY: 10 };
+      const center = 10 * 36 + 18;
+      gameStore.camera = { centerX: center, centerY: center, viewHeight: 8 * 36, followsMap: false };
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("ArrowRight");
+      expect(gameStore.hoverTile).toEqual({ tileX: 11, tileY: 10 });
+      expect(gameStore.camera.centerX).toBeCloseTo(center);
+      expect(gameStore.camera.centerY).toBeCloseTo(center);
+      expect(gameStore.camera.followsMap).toBe(false);
+    });
+
+    it("pans a build arrow only onto the screen-width edge buffer", () => {
+      installMap(20);
+      gameStore.setViewport(600, 600);
+      gameStore.selectedTowerType = "cannon";
+      gameStore.hoverTile = { tileX: 10, tileY: 10 };
+      const viewHeight = 8 * 36;
+      const viewWidth = viewHeight;
+      const margin = viewWidth * EDGE_BUFFER_FRACTION;
+      const worldX = 11 * 36 + 18;
+      const worldY = 10 * 36 + 18;
+      const startCenterX = worldX - viewWidth / 2 + 10;
+      gameStore.camera = { centerX: startCenterX, centerY: worldY, viewHeight, followsMap: false };
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("ArrowRight");
+      expect(gameStore.hoverTile).toEqual({ tileX: 11, tileY: 10 });
+      expect(gameStore.camera.centerX).toBeCloseTo(worldX - viewWidth / 2 + margin);
+      expect(gameStore.camera.centerY).toBeCloseTo(worldY);
+      expect(gameStore.camera.followsMap).toBe(false);
+    });
+
+    it("pans the first build arrow onto the screen-width edge buffer", () => {
+      installMap(20);
+      gameStore.setViewport(600, 600);
+      gameStore.selectedTowerType = "cannon";
+      const viewHeight = 8 * 36;
+      const viewWidth = viewHeight;
+      const margin = viewWidth * EDGE_BUFFER_FRACTION;
+      const worldX = 10 * 36 + 18;
+      const worldY = worldX;
+      const startCenterX = worldX - viewWidth / 2 + 10;
+      gameStore.camera = { centerX: startCenterX, centerY: worldY, viewHeight, followsMap: false };
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("ArrowRight");
+      expect(gameStore.hoverTile).toEqual({ tileX: 10, tileY: 10 });
+      expect(gameStore.camera.centerX).toBeCloseTo(worldX - viewWidth / 2 + margin);
+      expect(gameStore.camera.centerY).toBeCloseTo(worldY);
+      expect(gameStore.camera.followsMap).toBe(false);
+    });
+
+    it("uses the frame width, not the frame height, for a vertical edge", () => {
+      installMap(20);
+      gameStore.setViewport(800, 400);
+      gameStore.selectedTowerType = "cannon";
+      gameStore.hoverTile = { tileX: 10, tileY: 10 };
+      const viewHeight = 200;
+      const viewWidth = viewHeight * (800 / 400);
+      const margin = viewWidth * EDGE_BUFFER_FRACTION;
+      const worldX = 10 * 36 + 18;
+      const worldY = 11 * 36 + 18;
+      const startCenterY = worldY - viewHeight / 2 + 10;
+      gameStore.camera = { centerX: worldX, centerY: startCenterY, viewHeight, followsMap: false };
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("ArrowDown");
+      expect(gameStore.hoverTile).toEqual({ tileX: 10, tileY: 11 });
+      expect(gameStore.camera.centerX).toBeCloseTo(worldX);
+      expect(gameStore.camera.centerY).toBeCloseTo(worldY - viewHeight / 2 + margin);
+    });
+
+    it("does not pan a build-mode arrow while the whole map is in frame", () => {
+      installMap(20);
+      gameStore.setViewport(600, 600);
+      const fit = fitOn(600, 600, 20);
+      gameStore.setCameraFrame(fit.originX + fit.width / 2, fit.originY + fit.height / 2, fit.height);
+      gameStore.selectedTowerType = "cannon";
+      gameStore.hoverTile = { tileX: 10, tileY: 10 };
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("ArrowRight");
+      expect(gameStore.hoverTile).toEqual({ tileX: 11, tileY: 10 });
+      expect(gameStore.camera.followsMap).toBe(true);
+      expect(gameStore.camera.centerX).toBeCloseTo(fit.originX + fit.width / 2);
+      expect(gameStore.camera.viewHeight).toBeCloseTo(fit.height);
+    });
+
+    it("does not pan a tower arrow that stays inside the edge buffer", () => {
+      gameStore.setState(GameState.PLAYING);
+      const { engine, towers } = applyTowerSnapshot([
+        { tileX: 2, tileY: 3 },
+        { tileX: 4, tileY: 3 },
+      ]);
+      const left = towers.find((tower) => tower.tileX === 2 && tower.tileY === 3)!;
+      gameStore.grid = engine.grid;
+      gameStore.selectedTower = left as unknown as Tower;
+      const viewHeight = 180;
+      gameStore.setViewport(600, 600);
+      gameStore.camera = { centerX: 126, centerY: 126, viewHeight, followsMap: false };
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("ArrowRight");
+      expect(gameStore.camera.centerX).toBeCloseTo(126);
+      expect(gameStore.camera.centerY).toBeCloseTo(126);
+      expect(gameStore.camera.followsMap).toBe(false);
+    });
+
+    it("pans a tower arrow only onto the breached edge", () => {
+      gameStore.setState(GameState.PLAYING);
+      const { engine, towers } = applyTowerSnapshot([
+        { tileX: 2, tileY: 3 },
+        { tileX: 4, tileY: 3 },
+      ]);
+      const left = towers.find((tower) => tower.tileX === 2 && tower.tileY === 3)!;
+      gameStore.grid = engine.grid;
+      gameStore.selectedTower = left as unknown as Tower;
+      const viewHeight = 180;
+      const viewWidth = viewHeight;
+      const margin = viewWidth * EDGE_BUFFER_FRACTION;
+      const worldX = 4 * 36 + 18;
+      gameStore.setViewport(600, 600);
+      gameStore.camera = { centerX: viewWidth / 2, centerY: viewHeight / 2, viewHeight, followsMap: false };
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("ArrowRight");
+      expect(gameStore.camera.centerX).toBeCloseTo(worldX - viewWidth / 2 + margin);
+      expect(gameStore.camera.centerY).toBeCloseTo(viewHeight / 2);
+    });
+
+    function armProgressiveArrow() {
+      const config = progressiveConfigForIndex(36);
+      if (!config) throw new Error("progressive config 36 missing");
+      const started = createProgressiveBoard(config);
+      const map = generateProgressiveMap(config);
+      gameStore.map = map;
+      gameStore.mapIndex = 36;
+      gameStore.setState(GameState.PAUSED);
+      gameStore.progressivePlacementHold = true;
+      gameStore.progressiveOffer = [8, 0];
+      gameStore.progressiveSelectedOffer = 0;
+      gameStore.progressiveRotation = 0;
+      gameStore.progressivePlacements = [];
+      gameStore.syncProgressiveCursor();
+      const sites = sitesAtRotation(started.board, started.catalog, 8, gameStore.progressiveRotation);
+      const origin = sites.find((site) => sites.some((other) => other.blockX > site.blockX));
+      expect(origin).toBeTruthy();
+      const destination = chooseAdjacentSite(sites, origin!, "right");
+      gameStore.progressiveSelectedSite = { blockX: origin!.blockX, blockY: origin!.blockY };
+      const tileSize = 36;
+      const halfBlock = (PROGRESSIVE_BLOCK_SIZE * tileSize) / 2;
+      const corner = progressiveBlockWorldCorner(destination.blockX, destination.blockY, tileSize);
+      return {
+        map,
+        destination,
+        focusX: corner.x + halfBlock,
+        focusY: corner.y + halfBlock,
+        worldDx: (destination.blockX - origin!.blockX) * PROGRESSIVE_BLOCK_SIZE * tileSize,
+        worldDy: (destination.blockY - origin!.blockY) * PROGRESSIVE_BLOCK_SIZE * tileSize,
+      };
+    }
+
+    it("does not pan a progressive site step that stays inside the edge buffer", () => {
+      const armed = armProgressiveArrow();
+      const viewHeight = 200;
+      gameStore.setViewport(400, 400);
+      gameStore.camera = { centerX: armed.focusX, centerY: armed.focusY, viewHeight, followsMap: false };
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("ArrowRight");
+      expect(gameStore.progressiveSelectedSite).toEqual({
+        blockX: armed.destination.blockX,
+        blockY: armed.destination.blockY,
+      });
+      expect(gameStore.camera.centerX).toBeCloseTo(armed.focusX);
+      expect(gameStore.camera.centerY).toBeCloseTo(armed.focusY);
+      expect(armed.worldDx).not.toBe(0);
+      expect(gameStore.camera.followsMap).toBe(false);
+    });
+
+    it("pans a progressive site step only onto the screen-width edge buffer", () => {
+      const armed = armProgressiveArrow();
+      const viewHeight = 200;
+      const viewportWidth = 400;
+      const viewportHeight = 400;
+      const frame = frameFromCenter(armed.focusX - 90, armed.focusY, viewHeight, viewportWidth, viewportHeight);
+      const margin = frame.width * EDGE_BUFFER_FRACTION;
+      const mapOriginX = (armed.map.originTileX ?? 0) * 36;
+      const mapOriginY = (armed.map.originTileY ?? 0) * 36;
+      const mapRect = {
+        originX: mapOriginX,
+        originY: mapOriginY,
+        width: armed.map.width * 36,
+        height: armed.map.height * 36,
+      };
+      const expected = revealPoint(frame, armed.focusX, armed.focusY, margin, mapRect);
+      gameStore.setViewport(viewportWidth, viewportHeight);
+      gameStore.camera = {
+        centerX: frame.originX + frame.width / 2,
+        centerY: frame.originY + frame.height / 2,
+        viewHeight,
+        followsMap: false,
+      };
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("ArrowRight");
+      expect(gameStore.progressiveSelectedSite).toEqual({
+        blockX: armed.destination.blockX,
+        blockY: armed.destination.blockY,
+      });
+      expect(gameStore.camera.centerX).toBeCloseTo(expected.originX + expected.width / 2);
+      expect(gameStore.camera.centerY).toBeCloseTo(expected.originY + expected.height / 2);
+      expect(Math.abs(gameStore.camera.centerX - (frame.originX + frame.width / 2))).toBeLessThan(
+        Math.abs(armed.worldDx),
+      );
+      if (armed.worldDy !== 0) {
+        expect(Math.abs(gameStore.camera.centerY - (frame.originY + frame.height / 2))).toBeLessThan(
+          Math.abs(armed.worldDy),
+        );
+      }
+      expect(expected.originX).not.toBeCloseTo(frame.originX);
     });
   });
 

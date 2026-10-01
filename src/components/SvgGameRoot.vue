@@ -1,7 +1,8 @@
 <template>
   <div class="svg-wrapper">
     <svg ref="svgRoot" class="game-svg" xmlns="http://www.w3.org/2000/svg"
-         :viewBox="displayedViewBox" @mousemove="onMouseMove" @click="onClick" @mousedown="onMouseDown" @contextmenu.prevent>
+         :class="{ panning: panActive }" :viewBox="displayedViewBox" preserveAspectRatio="xMidYMid meet"
+         @mousemove="onMouseMove" @click="onClick" @mousedown="onMouseDown" @wheel.prevent="onWheel" @contextmenu.prevent>
       <defs ref="defsLayer"></defs>
 
       <g ref="worldLayer" class="camera-wrapper">
@@ -19,6 +20,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useInput } from "@/composables/Input.js";
+import { fitFrame, frameFromCenter, TILE_SIZE, wheelZoomFactor } from "@/render/svg/cameraFrame.js";
 import { EffectManager } from "@/render/svg/EffectManager.js";
 import { EnemyManager } from "@/render/svg/EnemyManager.js";
 import { ParticleManager } from "@/render/svg/ParticleManager.js";
@@ -112,10 +114,8 @@ const buildPreviewColor = computed(() => {
   return themeStore.getTowerVisual(gameStore.selectedTowerType)?.color ?? null;
 });
 
-const viewSize = ref({ w: 800, h: 600 });
-
-const mapTileSize = 36;
 const displayedViewBox = ref<string | undefined>(undefined);
+const panActive = ref(false);
 
 const progressiveGhost = computed(() => {
   if (!gameStore.progressivePlacementHold || !gameStore.map) return "";
@@ -127,7 +127,7 @@ const progressiveGhost = computed(() => {
   const selectedSite = gameStore.progressiveSelectedSite;
   return sites
     .map((site) => {
-      const corner = progressiveBlockWorldCorner(site.blockX, site.blockY, mapTileSize);
+      const corner = progressiveBlockWorldCorner(site.blockX, site.blockY, TILE_SIZE);
       const selected =
         selectedSite !== null && selectedSite.blockX === site.blockX && selectedSite.blockY === site.blockY;
       return progressivePatternMarkup(
@@ -136,7 +136,7 @@ const progressiveGhost = computed(() => {
         gameStore.progressiveRotation,
         corner.x,
         corner.y,
-        mapTileSize,
+        TILE_SIZE,
         selected,
       );
     })
@@ -162,8 +162,6 @@ let lastParticleFrame: number = 0;
 let disposed = false;
 let renderFrameHandle: number | null = null;
 
-let cameraTransformString = "translate(0,0) scale(1)";
-
 // Monotonic id source for click commands dispatched to the dispatcher. The
 // dispatcher reassigns ids when undefined; click handlers always supply their
 // own so each click carries a distinct commandId for tracing.
@@ -171,11 +169,9 @@ let nextClickCommandId = 1;
 // Separate id source for sell-confirm-initiated executeSell commands (fix #7).
 let nextConfirmCommandId = 1;
 
-// Cached inverse CTM -- only recomputed when camera, view size, or the fit rectangle changes
+// Cached inverse CTM. Recomputed when the viewBox string or the element size changes.
 let cachedInverseCtm: DOMMatrix | null = null;
-let cachedCameraX: number = 0;
-let cachedCameraY: number = 0;
-let cachedCameraZoom: number = 1;
+let cachedViewBox = "";
 let cachedViewW: number = 0;
 let cachedViewH: number = 0;
 
@@ -183,10 +179,10 @@ const targetViewRect = computed((): ViewRect | null => {
   const map = gameStore.map;
   if (!map) return null;
   return {
-    originX: (map.originTileX ?? 0) * mapTileSize,
-    originY: (map.originTileY ?? 0) * mapTileSize,
-    width: map.width * mapTileSize,
-    height: map.height * mapTileSize,
+    originX: (map.originTileX ?? 0) * TILE_SIZE,
+    originY: (map.originTileY ?? 0) * TILE_SIZE,
+    width: map.width * TILE_SIZE,
+    height: map.height * TILE_SIZE,
   };
 });
 
@@ -196,11 +192,34 @@ let tweenStartedAt = 0;
 let tweenFrom: ViewRect | null = null;
 let tweenTo: ViewRect | null = null;
 let snappedMapIndex: number | null = null;
+let lastFitMapRect: ViewRect | null = null;
+let lastFitViewportWidth = 0;
+let lastFitViewportHeight = 0;
 
 function assignDisplayedRect(rect: ViewRect): void {
   displayedRect = rect;
-  displayedViewBox.value = formatViewRect(rect);
+  const formatted = formatViewRect(rect);
+  displayedViewBox.value = formatted;
+  svgRoot.value?.setAttribute("viewBox", formatted);
   cachedInverseCtm = null;
+  cachedViewBox = formatted;
+}
+
+function cameraFrameRect(): ViewRect | null {
+  const viewport = gameStore.viewport;
+  const camera = gameStore.camera;
+  if (viewport.width <= 0 || viewport.height <= 0 || camera.viewHeight <= 0) return null;
+  return frameFromCenter(camera.centerX, camera.centerY, camera.viewHeight, viewport.width, viewport.height);
+}
+
+function publishCameraFrame(): void {
+  const rect = cameraFrameRect();
+  if (!rect) return;
+  assignDisplayedRect(rect);
+}
+
+function writeCameraFrame(rect: ViewRect): void {
+  gameStore.setCameraFrame(rect.originX + rect.width / 2, rect.originY + rect.height / 2, rect.height);
 }
 
 function cancelViewBoxTween(): void {
@@ -221,14 +240,18 @@ function rectsEqual(left: ViewRect, right: ViewRect): boolean {
 
 function stepViewBoxTween(now: number): void {
   if (!tweenFrom || !tweenTo) return;
+  if (!gameStore.camera.followsMap) {
+    cancelViewBoxTween();
+    return;
+  }
   const progress = Math.min(1, (now - tweenStartedAt) / VIEW_BOX_TWEEN_MS);
   if (progress >= 1) {
     const settled = tweenTo;
     cancelViewBoxTween();
-    assignDisplayedRect(settled);
+    writeCameraFrame(settled);
     return;
   }
-  assignDisplayedRect(interpolateViewRect(tweenFrom, tweenTo, easeOutCubic(progress)));
+  writeCameraFrame(interpolateViewRect(tweenFrom, tweenTo, easeOutCubic(progress)));
   viewBoxFrame = requestAnimationFrame(stepViewBoxTween);
 }
 
@@ -241,27 +264,90 @@ function startViewBoxTween(from: ViewRect, to: ViewRect): void {
 }
 
 watch(
-  () => ({ rect: targetViewRect.value, mapIndex: gameStore.mapIndex, style: gameStore.map?.style ?? null }),
+  () => ({
+    rect: targetViewRect.value,
+    mapIndex: gameStore.mapIndex,
+    style: gameStore.map?.style ?? null,
+    viewportWidth: gameStore.viewport.width,
+    viewportHeight: gameStore.viewport.height,
+    followsMap: gameStore.camera.followsMap,
+  }),
   (next) => {
     if (!next.rect) {
       cancelViewBoxTween();
       displayedRect = null;
       displayedViewBox.value = undefined;
       snappedMapIndex = null;
+      lastFitMapRect = null;
+      lastFitViewportWidth = 0;
+      lastFitViewportHeight = 0;
       cachedInverseCtm = null;
       return;
     }
-    const mapChanged = snappedMapIndex !== next.mapIndex;
-    const currentRect = displayedRect;
-    snappedMapIndex = next.mapIndex;
-    if (currentRect === null || mapChanged || next.style !== "progressive" || rectsEqual(currentRect, next.rect)) {
-      cancelViewBoxTween();
-      assignDisplayedRect(next.rect);
+    if (next.viewportWidth <= 0 || next.viewportHeight <= 0) {
+      if (next.followsMap) {
+        cancelViewBoxTween();
+        assignDisplayedRect(next.rect);
+      }
       return;
     }
-    startViewBoxTween(currentRect, next.rect);
+    const fit = fitFrame(next.rect, next.viewportWidth, next.viewportHeight);
+    if (!next.followsMap) {
+      cancelViewBoxTween();
+      return;
+    }
+    const mapChanged = snappedMapIndex !== next.mapIndex;
+    const mapRectChanged = lastFitMapRect === null || !rectsEqual(lastFitMapRect, next.rect);
+    const viewportChanged =
+      lastFitViewportWidth !== next.viewportWidth || lastFitViewportHeight !== next.viewportHeight;
+    const currentRect = cameraFrameRect();
+    // A frame write during the growth tween can retrigger this watch. The map rect
+    // is unchanged, so keep interpolating instead of snapping to the fit frame.
+    if (!mapChanged && !mapRectChanged && !viewportChanged && viewBoxFrame !== null) return;
+    snappedMapIndex = next.mapIndex;
+    lastFitMapRect = next.rect;
+    lastFitViewportWidth = next.viewportWidth;
+    lastFitViewportHeight = next.viewportHeight;
+    // Ease when a progressive frame is not the fit and the viewport did not change.
+    // That covers board growth and a placement hold handing a zoomed frame back.
+    // A viewport change or a new map snaps, and an already-fit frame is left as it is.
+    if (
+      currentRect !== null &&
+      !mapChanged &&
+      next.style === "progressive" &&
+      !viewportChanged &&
+      !rectsEqual(currentRect, fit)
+    ) {
+      startViewBoxTween(currentRect, fit);
+      return;
+    }
+    cancelViewBoxTween();
+    writeCameraFrame(fit);
   },
   { immediate: true },
+);
+
+// Choosing a block needs every legal site on screen. followMap flags the current
+// frame; the fit watch above eases it out to the whole board. A zoom during the
+// hold clears the flag again and cancels that ease.
+watch(
+  () => gameStore.progressivePlacementHold,
+  (holding) => {
+    if (holding) gameStore.followMap();
+  },
+);
+
+watch(
+  () => ({
+    centerX: gameStore.camera.centerX,
+    centerY: gameStore.camera.centerY,
+    viewHeight: gameStore.camera.viewHeight,
+    viewportWidth: gameStore.viewport.width,
+    viewportHeight: gameStore.viewport.height,
+  }),
+  () => {
+    publishCameraFrame();
+  },
 );
 
 // Mousedown/click deduplication — mousedown fires on button press (less likely to be dropped),
@@ -280,26 +366,21 @@ let dispatcher: WorkerCommandDispatcher | null = null;
 const snapshotStore = new SnapshotStore(gameStore);
 
 const updateCachedCtm = (): void => {
-  if (!worldLayer.value) return;
-  const cam = gameStore.camera;
-  // Skip recompute only when nothing changed AND we already have a valid CTM.
-  // The camera/viewSize watchers null cachedInverseCtm externally, so we must
-  // recompute whenever it is null even if camera/viewSize appear unchanged.
+  if (!worldLayer.value || !svgRoot.value) return;
+  const viewBox = displayedViewBox.value ?? "";
+  const viewWidth = svgRoot.value.clientWidth;
+  const viewHeight = svgRoot.value.clientHeight;
   if (
     cachedInverseCtm !== null &&
-    cam.x === cachedCameraX &&
-    cam.y === cachedCameraY &&
-    cam.zoom === cachedCameraZoom &&
-    viewSize.value.w === cachedViewW &&
-    viewSize.value.h === cachedViewH
+    viewBox === cachedViewBox &&
+    viewWidth === cachedViewW &&
+    viewHeight === cachedViewH
   ) {
     return;
   }
-  cachedCameraX = cam.x;
-  cachedCameraY = cam.y;
-  cachedCameraZoom = cam.zoom;
-  cachedViewW = viewSize.value.w;
-  cachedViewH = viewSize.value.h;
+  cachedViewBox = viewBox;
+  cachedViewW = viewWidth;
+  cachedViewH = viewHeight;
   cachedInverseCtm = worldLayer.value.getScreenCTM()?.inverse() ?? null;
 };
 
@@ -321,7 +402,9 @@ const scheduleHover = (clientX: number, clientY: number): void => {
 // write it directly to gameStore (the worker echoes it back unchanged).
 const flushHover = (): void => {
   pendingHoverScheduled = false;
-  if (!svgRoot.value || !cachedInverseCtm) return;
+  if (!svgRoot.value) return;
+  if (!cachedInverseCtm) updateCachedCtm();
+  if (!cachedInverseCtm) return;
 
   const pt = svgRoot.value.createSVGPoint();
   pt.x = pendingHoverX;
@@ -333,7 +416,7 @@ const flushHover = (): void => {
   const grid = gameStore.grid;
   const tile = grid
     ? grid.worldToTile(worldPos.x, worldPos.y)
-    : { x: Math.floor(worldPos.x / mapTileSize), y: Math.floor(worldPos.y / mapTileSize) };
+    : { x: Math.floor(worldPos.x / TILE_SIZE), y: Math.floor(worldPos.y / TILE_SIZE) };
   const tileX = tile.x;
   const tileY = tile.y;
   if (grid?.inBounds(tileX, tileY)) {
@@ -353,7 +436,7 @@ const computeHoverUpgradeBtn = (worldX: number, worldY: number): boolean => {
   if (!selectedTower || gameStore.selectedTowerType) return false;
   const grid = gameStore.grid;
   if (!grid) return false;
-  const tileSize = grid.tileSize || mapTileSize;
+  const tileSize = grid.tileSize || TILE_SIZE;
   const buildX = grid.worldOriginX + (selectedTower.tileX + 1) * tileSize - 12;
   const buildY = grid.worldOriginY + selectedTower.tileY * tileSize + 2;
   return worldX >= buildX && worldX <= buildX + 10 && worldY >= buildY && worldY <= buildY + 10;
@@ -418,7 +501,77 @@ function progressivePlacementCommand(
   };
 }
 
+let panLastClientX = 0;
+let panLastClientY = 0;
+
+function worldPerPixel(): { x: number; y: number } | null {
+  const viewport = gameStore.viewport;
+  if (!displayedRect || viewport.width <= 0 || viewport.height <= 0) return null;
+  return { x: displayedRect.width / viewport.width, y: displayedRect.height / viewport.height };
+}
+
+function clientToWorld(clientX: number, clientY: number): { x: number; y: number } | null {
+  if (!svgRoot.value) return null;
+  updateCachedCtm();
+  if (!cachedInverseCtm) return null;
+  const point = svgRoot.value.createSVGPoint();
+  point.x = clientX;
+  point.y = clientY;
+  const world = point.matrixTransform(cachedInverseCtm);
+  return { x: world.x, y: world.y };
+}
+
+function isPanButton(event: MouseEvent): boolean {
+  return event.button === 2 || (event.button === 0 && event.altKey);
+}
+
+// Pan listens on window so the drag continues after the pointer leaves the svg.
+// The listeners are removed on mouseup, on blur, and when the component unmounts.
+function stopPan(): void {
+  panActive.value = false;
+  window.removeEventListener("mousemove", onPanMove);
+  window.removeEventListener("mouseup", stopPan);
+  window.removeEventListener("blur", stopPan);
+}
+
+function onPanMove(event: MouseEvent): void {
+  if (!panActive.value) return;
+  const scale = worldPerPixel();
+  if (!scale) return;
+  const worldDx = -(event.clientX - panLastClientX) * scale.x;
+  const worldDy = -(event.clientY - panLastClientY) * scale.y;
+  panLastClientX = event.clientX;
+  panLastClientY = event.clientY;
+  gameStore.panCamera(worldDx, worldDy);
+  publishCameraFrame();
+  updateCachedCtm();
+  scheduleHover(event.clientX, event.clientY);
+}
+
+function startPan(event: MouseEvent): void {
+  panActive.value = true;
+  panLastClientX = event.clientX;
+  panLastClientY = event.clientY;
+  mouseDownHandledGesture = true;
+  window.addEventListener("mousemove", onPanMove);
+  window.addEventListener("mouseup", stopPan);
+  window.addEventListener("blur", stopPan);
+  event.preventDefault();
+}
+
+const onWheel = (event: WheelEvent): void => {
+  const world = clientToWorld(event.clientX, event.clientY);
+  if (!world) return;
+  gameStore.zoomCamera(wheelZoomFactor(event.deltaY, event.deltaMode), world.x, world.y);
+  publishCameraFrame();
+  cachedInverseCtm = null;
+};
+
 const onMouseDown = (e: MouseEvent): void => {
+  if (isPanButton(e)) {
+    startPan(e);
+    return;
+  }
   if (e.button !== 0) return;
   dispatchClick(e.clientX, e.clientY);
   mouseDownHandledGesture = true;
@@ -531,10 +684,6 @@ function renderLoop(): void {
     return;
   }
 
-  const cam = gameStore.camera;
-  cameraTransformString = `translate(${cam.x}, ${cam.y}) scale(${cam.zoom})`;
-  worldLayer.value?.setAttribute("transform", cameraTransformString);
-
   enemyManager.syncFromGameEngine(snapshot.enemies);
   towerManager.syncFromGameEngine(snapshot.towers, snapshot.meta.lastScaledDt);
   projectileManager.syncFromGameEngine(snapshot.projectiles);
@@ -631,26 +780,22 @@ onMounted(async () => {
     resizeObserver.value = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
-        viewSize.value = { w: width, h: height };
+        gameStore.setViewport(width, height);
       }
     });
     resizeObserver.value.observe(svgRoot.value);
   }
 
   watch(
-    () => gameStore.camera,
+    () => [gameStore.viewport.width, gameStore.viewport.height],
     () => {
       cachedInverseCtm = null;
     },
-    { deep: true },
   );
-  watch(
-    () => viewSize.value,
-    () => {
-      cachedInverseCtm = null;
-    },
-    { deep: true },
-  );
+
+  // The viewBox is the camera. worldLayer stays at identity so a transform here
+  // is not applied on top of that frame. The grid and the entities share this group.
+  worldLayer.value?.setAttribute("transform", "translate(0,0) scale(1)");
 
   // The main thread builds its own static Grid from the same map data so that
   // click-coordinate conversion and path highlights work without the engine.
@@ -658,14 +803,6 @@ onMounted(async () => {
     const { Grid } = await import("@/sim/grid/Grid.js");
     const grid = new Grid(gameStore.map);
     gameStore.grid = grid;
-    // The static grid is rendered in viewBox (world-pixel) space and the dynamic
-    // overlays live inside worldLayer, which the render loop transforms by
-    // gameStore.camera. The viewBox already scales the whole map to fit the
-    // screen, so the camera must be identity here; applying fitToGrid on top
-    // would scale/offset the overlays away from the grid.
-    cameraTransformString = "translate(0,0) scale(1)";
-    worldLayer.value?.setAttribute("transform", cameraTransformString);
-    gameStore.setCamera(0, 0, 1);
   }
 
   worker.postMessage({
@@ -696,6 +833,7 @@ watch(
 
 onUnmounted(() => {
   pendingHoverScheduled = false;
+  stopPan();
   cancelViewBoxTween();
   disposed = true;
   if (renderFrameHandle !== null) {
@@ -760,10 +898,13 @@ onUnmounted(() => {
 
 .game-svg {
   width: 100%;
-  height: auto;
-  max-height: 100%;
+  height: 100%;
   cursor: crosshair;
   display: block;
   user-select: none;
+}
+
+.game-svg.panning {
+  cursor: grabbing;
 }
 </style>

@@ -1,10 +1,12 @@
 import { onUnmounted } from "vue";
 import { clearBuildAndTowerForProgressive } from "@/composables/progressivePlacement.js";
+import { ZOOM_STEP } from "@/render/svg/cameraFrame.js";
 import type { Command } from "@/sim/Command.js";
 import type { CommandDispatcher } from "@/sim/CommandDispatcher.js";
 import { GameState } from "@/sim/Constants.js";
 import { type TowerId, TowerIds } from "@/sim/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
+import { PROGRESSIVE_BLOCK_SIZE, progressiveBlockWorldCorner } from "@/sim/grid/ProgressiveMap.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 import type { GameStoreLike } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -12,6 +14,75 @@ import type { UiStoreLike } from "@/stores/ui.js";
 
 const towerIdList = Object.values(TowerIds) as TowerId[];
 const targetingModes = ["first", "last", "closest", "strong", "furthest"] as const;
+
+interface CameraReveal {
+  worldX: number;
+  worldY: number;
+}
+
+interface InputGrid {
+  width: number;
+  height: number;
+  tileSize?: number;
+  worldOriginX?: number;
+  worldOriginY?: number;
+  tileToWorld?: (tileX: number, tileY: number) => { x: number; y: number };
+}
+
+function inputGrid(gameStore: GameStoreLike): InputGrid | null {
+  return (gameStore as unknown as { grid: InputGrid | null }).grid ?? null;
+}
+
+function tileSizeOf(gameStore: GameStoreLike): number {
+  const tileSize = inputGrid(gameStore)?.tileSize;
+  return tileSize && tileSize > 0 ? tileSize : 36;
+}
+
+function tileCenter(gameStore: GameStoreLike, tileX: number, tileY: number): { x: number; y: number } {
+  const grid = inputGrid(gameStore);
+  if (grid?.tileToWorld) return grid.tileToWorld(tileX, tileY);
+  const tileSize = tileSizeOf(gameStore);
+  const originX = grid?.worldOriginX ?? 0;
+  const originY = grid?.worldOriginY ?? 0;
+  return { x: originX + tileX * tileSize + tileSize / 2, y: originY + tileY * tileSize + tileSize / 2 };
+}
+
+function overlayBlocksCamera(uiStore: UiStoreLike): boolean {
+  return (
+    uiStore.showPauseMenu ||
+    uiStore.showSkillTree ||
+    uiStore.showStatsPanel ||
+    uiStore.showHelpDialog ||
+    uiStore.debugPanelVisible ||
+    !!uiStore.confirmDialog
+  );
+}
+
+function applyCameraFollow(gameStore: GameStoreLike, uiStore: UiStoreLike, reveal: CameraReveal | null): void {
+  if (!reveal || overlayBlocksCamera(uiStore)) return;
+  gameStore.revealCameraPoint(reveal.worldX, reveal.worldY);
+}
+
+function placementSiteCenter(gameStore: GameStoreLike, blockX: number, blockY: number): { x: number; y: number } {
+  const tileSize = tileSizeOf(gameStore);
+  const corner = progressiveBlockWorldCorner(blockX, blockY, tileSize);
+  const halfBlock = (PROGRESSIVE_BLOCK_SIZE * tileSize) / 2;
+  return { x: corner.x + halfBlock, y: corner.y + halfBlock };
+}
+
+function keyboardZoomFocus(gameStore: GameStoreLike): { x: number; y: number } | null {
+  if (gameStore.progressivePlacementHold && gameStore.progressiveSelectedSite) {
+    const site = gameStore.progressiveSelectedSite;
+    return placementSiteCenter(gameStore, site.blockX, site.blockY);
+  }
+  if (gameStore.selectedTower && !gameStore.selectedTowerType) {
+    return tileCenter(gameStore, gameStore.selectedTower.tileX, gameStore.selectedTower.tileY);
+  }
+  if (gameStore.selectedTowerType && gameStore.hoverTile) {
+    return tileCenter(gameStore, gameStore.hoverTile.tileX, gameStore.hoverTile.tileY);
+  }
+  return null;
+}
 
 // Sets the local build-type preview AND informs the worker via the command seam
 // so it can place towers on input:click. The snapshot mirrors runState.selectedTowerType
@@ -119,7 +190,16 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         if (event.key === "ArrowRight") direction = "right";
         else if (event.key === "ArrowLeft") direction = "left";
         else if (event.key === "ArrowUp") direction = "up";
+        const previousSite = gs.progressiveSelectedSite ? { ...gs.progressiveSelectedSite } : null;
         gs.moveProgressiveSite?.(direction);
+        const nextSite = gs.progressiveSelectedSite;
+        const siteMoved =
+          !!nextSite &&
+          (!previousSite || nextSite.blockX !== previousSite.blockX || nextSite.blockY !== previousSite.blockY);
+        if (nextSite && siteMoved) {
+          const center = placementSiteCenter(gs, nextSite.blockX, nextSite.blockY);
+          applyCameraFollow(gs, uiStore, { worldX: center.x, worldY: center.y });
+        }
         return;
       }
       const offerDigit = parseInt(event.key, 10);
@@ -179,35 +259,44 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
       case "ArrowRight":
         event.preventDefault();
         if (gs.selectedTowerType) {
-          if (canActNow(event.key)) moveBuildPosition(gs, 1, 0);
+          if (canActNow(event.key)) applyCameraFollow(gs, uiStore, moveBuildPosition(gs, 1, 0));
         } else if (canActNow(event.key)) {
-          moveTowerSelection(gs, "right");
+          applyCameraFollow(gs, uiStore, moveTowerSelection(gs, "right"));
         }
         break;
       case "ArrowLeft":
         event.preventDefault();
         if (gs.selectedTowerType) {
-          if (canActNow(event.key)) moveBuildPosition(gs, -1, 0);
+          if (canActNow(event.key)) applyCameraFollow(gs, uiStore, moveBuildPosition(gs, -1, 0));
         } else if (canActNow(event.key)) {
-          moveTowerSelection(gs, "left");
+          applyCameraFollow(gs, uiStore, moveTowerSelection(gs, "left"));
         }
         break;
       case "ArrowUp":
         event.preventDefault();
         if (gs.selectedTowerType) {
-          if (canActNow(event.key)) moveBuildPosition(gs, 0, -1);
+          if (canActNow(event.key)) applyCameraFollow(gs, uiStore, moveBuildPosition(gs, 0, -1));
         } else if (canActNow(event.key)) {
-          moveTowerSelection(gs, "up");
+          applyCameraFollow(gs, uiStore, moveTowerSelection(gs, "up"));
         }
         break;
       case "ArrowDown":
         event.preventDefault();
         if (gs.selectedTowerType) {
-          if (canActNow(event.key)) moveBuildPosition(gs, 0, 1);
+          if (canActNow(event.key)) applyCameraFollow(gs, uiStore, moveBuildPosition(gs, 0, 1));
         } else if (canActNow(event.key)) {
-          moveTowerSelection(gs, "down");
+          applyCameraFollow(gs, uiStore, moveTowerSelection(gs, "down"));
         }
         break;
+      case "PageUp":
+      case "PageDown": {
+        if (overlayBlocksCamera(uiStore)) break;
+        const focus = keyboardZoomFocus(gs);
+        const magnification = event.key === "PageUp" ? ZOOM_STEP : 1 / ZOOM_STEP;
+        gs.zoomCamera(magnification, focus?.x ?? null, focus?.y ?? null);
+        event.preventDefault();
+        break;
+      }
       case "w":
         if (canActNow(event.key) && gs.selectedTower) {
           dispatch({ commandId: nextInputCommandId++, type: "action:upgradeSelected" });
@@ -360,9 +449,9 @@ function handleTabCycle(gameStore: GameStoreLike, previous: boolean): void {
   }
 }
 
-function moveBuildPosition(gameStore: GameStoreLike, dx: number, dy: number): void {
-  const grid = (gameStore as unknown as { grid: { width: number; height: number } | null }).grid;
-  if (!grid) return;
+function moveBuildPosition(gameStore: GameStoreLike, dx: number, dy: number): CameraReveal | null {
+  const grid = inputGrid(gameStore);
+  if (!grid) return null;
 
   const currentHover = gameStore.hoverTile;
   let tileX: number;
@@ -385,6 +474,9 @@ function moveBuildPosition(gameStore: GameStoreLike, dx: number, dy: number): vo
   }
 
   gameStore.setHoverTile({ tileX, tileY });
+  if (currentHover && currentHover.tileX === tileX && currentHover.tileY === tileY) return null;
+  const center = tileCenter(gameStore, tileX, tileY);
+  return { worldX: center.x, worldY: center.y };
 }
 
 type Direction = "up" | "down" | "left" | "right";
@@ -456,9 +548,9 @@ function searchTowers(
   return null;
 }
 
-function moveTowerSelection(gameStore: GameStoreLike, direction: Direction): void {
+function moveTowerSelection(gameStore: GameStoreLike, direction: Direction): CameraReveal | null {
   const towers = getNavigableTowers(gameStore);
-  if (towers.length === 0) return;
+  if (towers.length === 0) return null;
 
   const selected = gameStore.selectedTower;
   if (!selected) {
@@ -468,8 +560,10 @@ function moveTowerSelection(gameStore: GameStoreLike, direction: Direction): voi
       if (direction === "left") return a.tileX - b.tileX || a.tileY - b.tileY;
       return b.tileX - a.tileX || a.tileY - b.tileY;
     });
-    dispatchCommand({ commandId: nextInputCommandId++, type: "action:selectTower", towerId: sorted[0]!.id });
-    return;
+    const chosen = sorted[0]!;
+    dispatchCommand({ commandId: nextInputCommandId++, type: "action:selectTower", towerId: chosen.id });
+    const center = tileCenter(gameStore, chosen.tileX, chosen.tileY);
+    return { worldX: center.x, worldY: center.y };
   }
 
   const originX = selected.tileX;
@@ -486,7 +580,7 @@ function moveTowerSelection(gameStore: GameStoreLike, direction: Direction): voi
 
   // If no tower found, wrap around to the opposite edge
   if (!target) {
-    const grid = (gameStore as unknown as { grid: { width: number; height: number } | null }).grid;
+    const grid = inputGrid(gameStore);
     if (grid) {
       let wrapOriginX = originX;
       let wrapOriginY = originY;
@@ -505,7 +599,8 @@ function moveTowerSelection(gameStore: GameStoreLike, direction: Direction): voi
     }
   }
 
-  if (target) {
-    dispatchCommand({ commandId: nextInputCommandId++, type: "action:selectTower", towerId: target.id });
-  }
+  if (!target) return null;
+  dispatchCommand({ commandId: nextInputCommandId++, type: "action:selectTower", towerId: target.id });
+  const center = tileCenter(gameStore, target.tileX, target.tileY);
+  return { worldX: center.x, worldY: center.y };
 }

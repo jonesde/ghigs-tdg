@@ -1,4 +1,17 @@
 import { defineStore } from "pinia";
+import {
+  EDGE_BUFFER_FRACTION,
+  fitFrame,
+  frameFromCenter,
+  framesMatch,
+  panFrame,
+  revealPoint,
+  TILE_SIZE,
+  tileMapRect,
+  type ZoomFrameResult,
+  zoomFrame,
+} from "@/render/svg/cameraFrame.js";
+import type { ViewRect } from "@/render/svg/viewBoxTween.js";
 import { GameState, STARTING_BASE_HEALTH, StartingGold } from "@/sim/Constants.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
@@ -32,10 +45,99 @@ interface GemBreakdown {
   firstClearBonus: number;
 }
 
-interface CameraState {
-  x: number;
-  y: number;
-  zoom: number;
+export interface CameraState {
+  centerX: number;
+  centerY: number;
+  viewHeight: number;
+  followsMap: boolean;
+}
+
+interface ViewportSize {
+  width: number;
+  height: number;
+}
+
+function defaultCamera(): CameraState {
+  return { centerX: 0, centerY: 0, viewHeight: 0, followsMap: true };
+}
+
+function cameraFromFrame(frame: ViewRect, followsMap: boolean): CameraState {
+  return {
+    centerX: frame.originX + frame.width / 2,
+    centerY: frame.originY + frame.height / 2,
+    viewHeight: frame.height,
+    followsMap,
+  };
+}
+
+function readMapWorldRect(map: GeneratedMap | null, grid: Grid | null): ViewRect | null {
+  const tileSize = grid?.tileSize || TILE_SIZE;
+  const widthTiles = map?.width ?? grid?.width;
+  const heightTiles = map?.height ?? grid?.height;
+  if (!widthTiles || !heightTiles) return null;
+  const gridOriginX = grid && Number.isFinite(grid.worldOriginX) ? grid.worldOriginX : undefined;
+  const gridOriginY = grid && Number.isFinite(grid.worldOriginY) ? grid.worldOriginY : undefined;
+  const originTileX = map?.originTileX ?? (gridOriginX !== undefined ? Math.round(gridOriginX / tileSize) : 0);
+  const originTileY = map?.originTileY ?? (gridOriginY !== undefined ? Math.round(gridOriginY / tileSize) : 0);
+  return tileMapRect(originTileX, originTileY, widthTiles, heightTiles, tileSize);
+}
+
+function displayedFrame(camera: CameraState, viewport: ViewportSize, mapRect: ViewRect): ViewRect | null {
+  if (viewport.width <= 0 || viewport.height <= 0) return null;
+  if (camera.viewHeight > 0) {
+    return frameFromCenter(camera.centerX, camera.centerY, camera.viewHeight, viewport.width, viewport.height);
+  }
+  return fitFrame(mapRect, viewport.width, viewport.height);
+}
+
+function shiftedCamera(
+  camera: CameraState,
+  viewport: ViewportSize,
+  mapRect: ViewRect,
+  worldDx: number,
+  worldDy: number,
+): CameraState | null {
+  const frame = displayedFrame(camera, viewport, mapRect);
+  if (!frame) return null;
+  const next = panFrame(frame, worldDx, worldDy, mapRect);
+  if (framesMatch(frame, next)) return null;
+  const fit = fitFrame(mapRect, viewport.width, viewport.height);
+  return cameraFromFrame(next, framesMatch(next, fit));
+}
+
+function revealedCamera(
+  camera: CameraState,
+  viewport: ViewportSize,
+  mapRect: ViewRect,
+  worldX: number,
+  worldY: number,
+): CameraState | null {
+  const frame = displayedFrame(camera, viewport, mapRect);
+  if (!frame) return null;
+  // Vertical edges use the same world distance. The fraction is of the frame width, the screen width.
+  const margin = frame.width * EDGE_BUFFER_FRACTION;
+  const next = revealPoint(frame, worldX, worldY, margin, mapRect);
+  if (framesMatch(frame, next)) return null;
+  const fit = fitFrame(mapRect, viewport.width, viewport.height);
+  return cameraFromFrame(next, framesMatch(next, fit));
+}
+
+function zoomedCamera(
+  camera: CameraState,
+  viewport: ViewportSize,
+  mapRect: ViewRect,
+  magnificationFactor: number,
+  focalWorldX: number | null,
+  focalWorldY: number | null,
+): CameraState | null {
+  const frame = displayedFrame(camera, viewport, mapRect);
+  if (!frame || !Number.isFinite(magnificationFactor) || magnificationFactor <= 0) return null;
+  const fit = fitFrame(mapRect, viewport.width, viewport.height);
+  const focusX = focalWorldX ?? frame.originX + frame.width / 2;
+  const focusY = focalWorldY ?? frame.originY + frame.height / 2;
+  const result: ZoomFrameResult = zoomFrame(frame, focusX, focusY, magnificationFactor, mapRect, fit);
+  if (result.reachedFit && camera.followsMap && framesMatch(frame, result.frame)) return null;
+  return cameraFromFrame(result.frame, result.reachedFit);
 }
 
 interface TowerPanelPos {
@@ -66,6 +168,8 @@ export interface GameStoreLike {
   selectedTowerType: TowerId | null;
   hoverTile: HoverTile | null;
   camera: CameraState;
+  zoomCamera(magnificationFactor: number, focalWorldX: number | null, focalWorldY: number | null): void;
+  revealCameraPoint(worldX: number, worldY: number): void;
   cycleSpeed(): number;
   cycleSpeedReverse(): number;
   selectBuildType(type: TowerId | null): void;
@@ -108,6 +212,7 @@ interface GameStateShape {
   gemBreakdown: GemBreakdown;
   endScreenData: EndScreenPayload | null;
   camera: CameraState;
+  viewport: ViewportSize;
   randomMapParams: Record<string, unknown> | null;
   worker: Worker | null;
   progressivePlacementHold: boolean;
@@ -152,7 +257,8 @@ export const useGameStore = defineStore("game", {
       firstClearBonus: 0,
     },
     endScreenData: null,
-    camera: { x: 0, y: 0, zoom: 1 },
+    camera: defaultCamera(),
+    viewport: { width: 0, height: 0 },
     randomMapParams: null,
     worker: null,
     progressivePlacementHold: false,
@@ -255,7 +361,7 @@ export const useGameStore = defineStore("game", {
       this.minimapPanelPos = { x: 40, y: 80 };
       this.hoverTile = null;
       this.endScreenData = null;
-      this.camera = { x: 0, y: 0, zoom: 1 };
+      this.camera = defaultCamera();
       this.progressivePlacementHold = false;
       this.progressiveOffer = [];
       this.progressiveRotation = 0;
@@ -333,8 +439,56 @@ export const useGameStore = defineStore("game", {
       this.layoutGeneration = layoutGeneration;
     },
 
-    setCamera(x: number, y: number, zoom: number) {
-      this.camera = { x, y, zoom };
+    setViewport(width: number, height: number) {
+      if (this.viewport.width === width && this.viewport.height === height) return;
+      this.viewport = { width, height };
+      if (width <= 0 || height <= 0) return;
+      if (this.camera.followsMap || this.camera.viewHeight <= 0) return;
+      const mapRect = readMapWorldRect(this.map, this.grid);
+      if (!mapRect) return;
+      const frame = frameFromCenter(this.camera.centerX, this.camera.centerY, this.camera.viewHeight, width, height);
+      const clamped = panFrame(frame, 0, 0, mapRect);
+      if (framesMatch(frame, clamped)) return;
+      this.camera = cameraFromFrame(clamped, false);
+    },
+
+    // Tween and fit writer. Does not take the camera away from map following.
+    // Mutates in place: replacing the camera object retriggers the fit watch, which
+    // reads followsMap, and that re-entry cancels the growth tween on its first frame.
+    setCameraFrame(centerX: number, centerY: number, viewHeight: number) {
+      const camera = this.camera;
+      if (camera.centerX === centerX && camera.centerY === centerY && camera.viewHeight === viewHeight) return;
+      camera.centerX = centerX;
+      camera.centerY = centerY;
+      camera.viewHeight = viewHeight;
+    },
+
+    // Leaves the current frame in place and marks it as map-following. SvgGameRoot's
+    // fit watch then eases that frame out to the whole board.
+    followMap() {
+      if (this.camera.followsMap) return;
+      this.camera.followsMap = true;
+    },
+
+    zoomCamera(magnificationFactor: number, focalWorldX: number | null, focalWorldY: number | null) {
+      const mapRect = readMapWorldRect(this.map, this.grid);
+      if (!mapRect) return;
+      const next = zoomedCamera(this.camera, this.viewport, mapRect, magnificationFactor, focalWorldX, focalWorldY);
+      if (next) this.camera = next;
+    },
+
+    panCamera(worldDx: number, worldDy: number) {
+      const mapRect = readMapWorldRect(this.map, this.grid);
+      if (!mapRect) return;
+      const next = shiftedCamera(this.camera, this.viewport, mapRect, worldDx, worldDy);
+      if (next) this.camera = next;
+    },
+
+    revealCameraPoint(worldX: number, worldY: number) {
+      const mapRect = readMapWorldRect(this.map, this.grid);
+      if (!mapRect) return;
+      const next = revealedCamera(this.camera, this.viewport, mapRect, worldX, worldY);
+      if (next) this.camera = next;
     },
 
     setWorker(worker: Worker) {
@@ -395,7 +549,7 @@ export const useGameStore = defineStore("game", {
         firstClearBonus: 0,
       };
       this.endScreenData = null;
-      this.camera = { x: 0, y: 0, zoom: 1 };
+      this.camera = defaultCamera();
       this.randomMapParams = null;
       this.progressivePlacementHold = false;
       this.progressiveOffer = [];

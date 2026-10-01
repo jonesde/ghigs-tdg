@@ -28,7 +28,6 @@ src/
 │   ├── ui.ts                    # UI overlay state: confirm dialogs, notifications, menu/skill-tree/stats/help/minimap context, debug panel, enemy commander selection, random-map panel, wasPlaying flags for pause/skill-tree/help
 │   └── mapTheme.ts              # Map theme state: activeTheme, defaultTheme, availableThemes, preload/load actions
 ├── composables/
-│   ├── cameraUtils.ts           # Vue composable: reactive camera CTM transform + world/screen coordinate conversion
 │   └── Input.ts                 # Keyboard input composable: dispatches to Pinia stores + engine via the command seam
 ├── components/
 │   ├── GameScreen.vue           # Root game layout: SvgGameRoot + HUD + shop + tower panel + wave countdown + debug + wave graph + pause menu
@@ -122,7 +121,7 @@ src/
 │       ├── UiOverlayManager.ts  # HP bars, shield bars, boss HP text rendering
 │       ├── SpawnManager.ts      # Spawn point rendering pool: <use> elements for spawn indicators
 │       ├── useSvgStaticContent.ts # Composable: builds <defs> symbols/filters + grid layer from active theme
-│       ├── cameraUtils.ts       # fitToGrid() and screenToWorld()/worldToScreen() helpers (pixel space)
+│       ├── cameraFrame.ts       # View frame: fit, zoom, pan, reveal, wheel factor. The SVG viewBox is this frame
 │       └── types.ts             # Shared types for render proxies and managers
 │   └── text/
 │       ├── TextGridBuilder.ts   # Static char buffer (3×3 per tile) for the <pre> monochrome base layer
@@ -163,10 +162,10 @@ The game uses a single `<svg>` root element managed by `SvgGameRoot.vue`, replac
 The SVG structure is:
 
 ```
-<svg class="game-svg" viewBox="0 0 W H">
+<svg class="game-svg" viewBox="originX originY width height">  <!-- viewBox is the camera -->
   <defs>  <!-- <symbol> templates, filters, per-map gradients -->
-  <g class="grid-layer" v-html="gridContent"></g>  <!-- Static, Vue-managed -->
-  <g ref="worldLayer" class="camera-wrapper">  <!-- Imperative camera transform -->
+  <g ref="worldLayer" class="camera-wrapper">  <!-- identity transform; grid and entities share it -->
+    <g class="grid-layer" v-html="gridContent"></g>
     <g ref="entityLayer"></g>      <!-- Towers & Enemies as <use> elements -->
     <g ref="uiOverlayLayer"></g>   <!-- HP bars, shield bars, boss text -->
     <g ref="projectileLayer"></g>  <!-- Projectiles as <circle>/<line> -->
@@ -179,7 +178,7 @@ The SVG structure is:
 
 - `<symbol>`/`<use>`: Sprite definitions are `<symbol>` templates in `<defs>`, instantiated as `<use>` elements. Animation is driven by updating the `href` attribute each frame.
 - CSS transforms on SVG: Elements use `transform-box: fill-box; transform-origin: 0 0;` for predictable positioning.
-- CTM-based input: Mouse coordinates are converted to world space via `worldLayer.getScreenCTM().inverse()`, which includes the camera transform (unlike `svgRoot.getScreenCTM()` which only accounts for the viewBox).
+- CTM-based input: Mouse coordinates are converted to world space via `worldLayer.getScreenCTM().inverse()`. The viewBox is the camera and `worldLayer` keeps an identity transform, so that CTM is the viewBox mapping. A transform on the group would be included too, which is why the group is not also scaled.
 - Click handling is centralized on the SVG root — no per-element `@click` handlers. `gameEngine.handleClick(worldX, worldY)` determines what was hit programmatically.
 
 `GameScreen.vue` renders `<SvgGameRoot>` as a sibling with HUD/shop/tower panel overlays. Vue does **not** touch per-frame rendering. The component creates the Web Worker, posts `lifecycle:init` (with `persistState` + `themeBundle`), owns `SnapshotStore` and the `WorkerCommandDispatcher`, reads the reactive snapshot mirror from Pinia stores, and cleans up on unmount (posts `lifecycle:dispose`, awaits the worker's `disposed` ack, then terminates). The SVG mounts/unmounts with the `/game` route.
@@ -467,7 +466,7 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 | `src/sim/ConstantsEnemy.ts` | Facade: ENEMY_TYPES and enemy/wave scalars from `src/content/data/enemies.json` |
 | `src/content/data/*.json` | Declarative balance/content packs (towers, enemies, economy, maps, skill-tree) validated by Zod at load |
 | `src/content/schemas/*` | Zod schemas for game content, raw map themes, LLM responses, persist save shape |
-| `src/composables/Input.ts` | Keyboard input composable: dispatches build/upgrade/sell/speed/pause intents to Pinia stores and the engine via the command seam |
+| `src/composables/Input.ts` | Keyboard input composable: dispatches build/upgrade/sell/speed/pause intents through the command seam, and Page Up/Down plus arrow-key follow through the camera actions |
 | `src/sim/ProjectileManager.ts` | Game-side projectile simulation: travel, hits, splash, chain, burn, knockback. `computeMaxHitCount` is the single pierce-total helper for every tower path; bounce falloff scales damage and burn/slow/stun magnitudes together; `creditDamage` is the public out-of-band credit entry used by burn ticks |
 | `src/sim/ParticleSystem.ts` | Game-side particle simulation: spawn, motion, life/expiry |
 | `src/sim/WaveGraphTracker.ts` | Per-wave graph data: damage dealt, gold earned, gems earned, peak enemy HP per wave |
@@ -513,7 +512,7 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 | `src/render/svg/UiOverlayManager.ts` | HP bars, shield bars, boss HP text as pooled `<rect>` and `<text>` elements |
 | `src/render/svg/SpawnManager.ts` | Spawn point rendering pool: `<use>` elements for spawn location indicators |
 | `src/render/svg/useSvgStaticContent.ts` | Composable: builds `<defs>` (symbols from active theme's tower/enemy frames, region gradients, filters) and grid layer SVG strings (tile images + base art from theme) |
-| `src/render/svg/cameraUtils.ts` | `fitToGrid()` plus pixel-space `screenToWorld()`/`worldToScreen()` helpers for the SVG camera |
+| `src/render/svg/cameraFrame.ts` | Pure view-frame math: `fitFrame`, `zoomFrame`, `panFrame`, `revealPoint`, `wheelZoomFactor`. `SvgGameRoot` writes the result into the SVG `viewBox` |
 | `src/render/svg/types.ts` | Shared types for render proxies and managers |
 | `src/render/text/TextGridBuilder.ts` | Static char buffer (3×3 chars per tile) for the `<pre>` monochrome base grid (terrain `·`, path empty, base `#`, spawn `S`) |
 | `src/render/text/TextTowerManager.ts` | Draws each tower theme `icon` in theme `color` at its tile-center on the canvas overlay |
@@ -523,8 +522,7 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 | `src/render/text/types.ts` | `TextRenderScale` (separate x/y world→canvas scales) and `TextThemeAccess` interfaces |
 | `src/components/TextGameRoot.vue` | Second passive renderer: renders a `<pre>` static base grid + a `<canvas>` overlay, driven by its own rAF loop reading `getLatestSnapshot()`; no worker, no `snapshotAck`, no input |
 | `src/components/MinimapPanel.vue` | Movable hovering panel (TowerPanel drag-by-header pattern, uses `gameStore.minimapPanelPos`) hosting `TextGameRoot`; toggled by `uiStore.showMinimap` |
-| `src/components/SvgGameRoot.vue` | Single SVG root: creates the simulation Web Worker, owns `SnapshotStore` (render loop reads snapshots) and `WorkerCommandDispatcher` (click/key intents → commands); rAF render loop does imperative DOM writes; CTM-based mouse→world coordinate conversion, centralized click routing; passes theme bundle to worker at `lifecycle:init` and to `useSvgStaticContent`; initializes SpawnManager |
-| `src/composables/cameraUtils.ts` | Vue composable: reactive camera CTM transform (`useCameraCTM`) and world/screen coordinate conversion backed by `gameStore.camera` |
+| `src/components/SvgGameRoot.vue` | Single SVG root: creates the simulation Web Worker, owns `SnapshotStore` (render loop reads snapshots) and `WorkerCommandDispatcher` (click/key intents → commands); rAF render loop does imperative DOM writes; the SVG viewBox is the camera (wheel zoom, right-drag and Alt+left-drag pan); CTM-based mouse→world coordinate conversion; passes theme bundle to worker at `lifecycle:init` and to `useSvgStaticContent`; initializes SpawnManager |
 
 ### Audio
 
@@ -552,7 +550,7 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 
 ### Camera
 
-Camera state (`x`, `y`, `zoom`) lives on `gameStore.camera` and is shared between the Vue UI and SVG rendering. Vue-side reactive transforms/conversions are provided by `src/composables/cameraUtils.ts` (`useCameraCTM`), while pixel-space helpers (`fitToGrid`, `screenToWorld`) live in `src/render/svg/cameraUtils.ts`. There is no longer a separate `services/` directory.
+The SVG `viewBox` is the camera. `gameStore.camera` holds `centerX`, `centerY`, `viewHeight`, and `followsMap`. While `followsMap` is true, `SvgGameRoot` frames the smallest viewport-aspect rectangle that contains the map and tweens that frame when a progressive board grows. A zoom or pan clears `followsMap`. Page Down, or a zoom out that reaches the fit frame, sets it again. A progressive placement hold also sets it, and the same 320ms ease pulls a zoomed frame back out to the whole board so the sites are visible. A zoom or pan during the hold takes the frame back. `worldLayer` stays at identity so the frame is not applied a second time. Wheel, right-drag, and Alt+left-drag are handled on the SVG. Page Up/Down and arrow-key follow go through `Input.ts` into `zoomCamera` and `revealCameraPoint`. An arrow pans only when the highlighted build tile, selected tower, or placement-site center is closer to an edge than 20% of the frame width, and only on the axes that cross that line, far enough to put the point on it. The same width fraction is used for the vertical edges. A point already inside that inset does not move the frame, and a pan that the map clamp absorbs does not clear `followsMap`. The frame math is in `src/render/svg/cameraFrame.ts`. Camera state stays on the main thread and is not part of `SimulationSnapshot`.
 
 ## Game Content Packs (Zod)
 
