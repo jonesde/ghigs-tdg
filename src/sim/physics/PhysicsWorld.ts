@@ -8,7 +8,12 @@ import type { Tower } from "@/sim/towers/Tower.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
 import type { ColliderTag } from "./ColliderUserData.js";
 import { ContactProcessor } from "./ContactProcessor.js";
-import { buildCorridorSegments } from "./corridorWalls.js";
+import {
+  buildCorridorSegments,
+  corridorConvexVertices,
+  terrainTowerCutCorners,
+  terrainTowerLocalOutline,
+} from "./corridorWalls.js";
 import { launchEnemy } from "./launchEnemy.js";
 import { getRapier } from "./rapierContext.js";
 
@@ -134,6 +139,9 @@ export class PhysicsWorld {
     const staleTowerIds = new Set(this.towerById.keys());
     this.dropBodies(this.towerBodies);
     this.towerById.clear();
+    // A square terrain tower fills the corridor chamfer pocket. Cutting the corner
+    // that owns that vertex puts the collider diagonal on the wall enemies already slide.
+    const convexVertices = corridorConvexVertices(this.grid);
     for (const tower of towerManager.towers) {
       if (tower.isGhost) continue;
       this.towerById.set(tower.id, tower);
@@ -144,7 +152,12 @@ export class PhysicsWorld {
       const body = this.world.createRigidBody(
         RAPIER.RigidBodyDesc.fixed().setTranslation(centerX, centerY).setUserData(tag),
       );
-      const colliderDesc = RAPIER.ColliderDesc.cuboid(half, half)
+      const cutCorners = terrainTowerCutCorners(this.grid, tower.tileX, tower.tileY, convexVertices);
+      const outline = cutCorners ? terrainTowerLocalOutline(this.grid.tileSize, cutCorners) : null;
+      const chamfered = outline
+        ? (RAPIER.ColliderDesc.convexPolyline(outline) ?? RAPIER.ColliderDesc.convexHull(outline))
+        : null;
+      const colliderDesc = (chamfered ?? RAPIER.ColliderDesc.cuboid(half, half))
         .setActiveEvents(ActiveEvents.COLLISION_EVENTS)
         .setCollisionGroups((TOWER_GROUP << 16) | ALL_GROUPS);
       this.world.createCollider(colliderDesc, body);

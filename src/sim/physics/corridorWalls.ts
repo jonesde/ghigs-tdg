@@ -1,6 +1,13 @@
 import type { Grid } from "@/sim/grid/Grid.js";
 import { corridorWallInsetWorld } from "@/sim/navmesh/navmeshConfig.js";
 
+export interface CorridorConvexVertex {
+  sx: number;
+  sy: number;
+}
+
+export type TerrainTowerCorner = "northwest" | "northeast" | "southeast" | "southwest";
+
 export interface CorridorSegment {
   x1: number;
   y1: number;
@@ -12,6 +19,107 @@ function isWalkable(grid: Grid, tileX: number, tileY: number): boolean {
   return grid.isPath(tileX, tileY) || grid.isBase(tileX, tileY) || grid.isSpawn(tileX, tileY);
 }
 
+export function corridorVertexKey(gridI: number, gridJ: number): string {
+  return `${gridI},${gridJ}`;
+}
+
+// Inside corners of the walkable corridor. sx/sy match the chamfer diagonal in
+// buildCorridorSegments: the missing quadrant is the terrain side of the vertex.
+export function corridorConvexVertices(grid: Grid): Map<string, CorridorConvexVertex> {
+  const vertices = new Map<string, CorridorConvexVertex>();
+  for (let gridJ = 1; gridJ < grid.height; gridJ++) {
+    for (let gridI = 1; gridI < grid.width; gridI++) {
+      const northwest = isWalkable(grid, gridI - 1, gridJ - 1);
+      const northeast = isWalkable(grid, gridI, gridJ - 1);
+      const southwest = isWalkable(grid, gridI - 1, gridJ);
+      const southeast = isWalkable(grid, gridI, gridJ);
+      let signX = 0;
+      let signY = 0;
+      if (!northwest && northeast && southwest) {
+        signX = 1;
+        signY = 1;
+      } else if (!northeast && northwest && southeast) {
+        signX = -1;
+        signY = 1;
+      } else if (!southwest && northwest && southeast) {
+        signX = 1;
+        signY = -1;
+      } else if (!southeast && northeast && southwest) {
+        signX = -1;
+        signY = -1;
+      }
+      if (signX !== 0) vertices.set(corridorVertexKey(gridI, gridJ), { sx: signX, sy: signY });
+    }
+  }
+  return vertices;
+}
+
+// Local-space outline (body origin at the tile center, +y south) for a terrain
+// tower that owns a corridor convex vertex. Null keeps the full cuboid: path
+// tiles must not open a gap, and a cut that consumes an edge would invert the face.
+// The cut uses the corridor chamfer inset so the new diagonal lies on the wall
+// the circle already slides. A square corner there pins the body, normal opposing
+// the outgoing leg.
+export function terrainTowerLocalOutline(
+  tileSize: number,
+  cutCorners: ReadonlySet<TerrainTowerCorner>,
+): Float32Array | null {
+  if (cutCorners.size === 0) return null;
+  const inset = corridorWallInsetWorld(tileSize);
+  if (inset * 2 >= tileSize) return null;
+  const half = tileSize / 2;
+  const left = -half;
+  const right = half;
+  const top = -half;
+  const bottom = half;
+  const coordinates: number[] = [];
+  const push = (x: number, y: number) => {
+    coordinates.push(x, y);
+  };
+  // CCW in the physics plane.
+  if (cutCorners.has("northwest")) {
+    push(left, top + inset);
+    push(left + inset, top);
+  } else {
+    push(left, top);
+  }
+  if (cutCorners.has("northeast")) {
+    push(right - inset, top);
+    push(right, top + inset);
+  } else {
+    push(right, top);
+  }
+  if (cutCorners.has("southeast")) {
+    push(right, bottom - inset);
+    push(right - inset, bottom);
+  } else {
+    push(right, bottom);
+  }
+  if (cutCorners.has("southwest")) {
+    push(left + inset, bottom);
+    push(left, bottom - inset);
+  } else {
+    push(left, bottom);
+  }
+  return new Float32Array(coordinates);
+}
+
+export function terrainTowerCutCorners(
+  grid: Grid,
+  tileX: number,
+  tileY: number,
+  convexVertices: ReadonlyMap<string, CorridorConvexVertex>,
+): Set<TerrainTowerCorner> | null {
+  if (!grid.isTerrain(tileX, tileY)) return null;
+  const cutCorners = new Set<TerrainTowerCorner>();
+  if (convexVertices.has(corridorVertexKey(tileX, tileY))) cutCorners.add("northwest");
+  if (convexVertices.has(corridorVertexKey(tileX + 1, tileY))) cutCorners.add("northeast");
+  if (convexVertices.has(corridorVertexKey(tileX + 1, tileY + 1))) cutCorners.add("southeast");
+  if (convexVertices.has(corridorVertexKey(tileX, tileY + 1))) cutCorners.add("southwest");
+  if (cutCorners.size === 0) return null;
+  return cutCorners;
+}
+
 // Walkable-tile outline: one segment per edge facing a non-walkable neighbor,
 // shortened at convex grid vertices, plus a diagonal chamfer at those vertices.
 // Same containment as the old per-tile cuboid forest; packed as a polyline later.
@@ -21,33 +129,8 @@ export function buildCorridorSegments(grid: Grid): CorridorSegment[] {
   const originY = grid.worldOriginY;
   const inset = corridorWallInsetWorld(tileSize);
   const segments: CorridorSegment[] = [];
-
-  const convexDirs = new Map<string, { sx: number; sy: number }>();
-  const cornerKey = (gridI: number, gridJ: number): string => `${gridI},${gridJ}`;
-  for (let gridJ = 1; gridJ < grid.height; gridJ++) {
-    for (let gridI = 1; gridI < grid.width; gridI++) {
-      const northwest = isWalkable(grid, gridI - 1, gridJ - 1);
-      const northeast = isWalkable(grid, gridI, gridJ - 1);
-      const southwest = isWalkable(grid, gridI - 1, gridJ);
-      const southeast = isWalkable(grid, gridI, gridJ);
-      let sx = 0;
-      let sy = 0;
-      if (!northwest && northeast && southwest) {
-        sx = 1;
-        sy = 1;
-      } else if (!northeast && northwest && southeast) {
-        sx = -1;
-        sy = 1;
-      } else if (!southwest && northwest && southeast) {
-        sx = 1;
-        sy = -1;
-      } else if (!southeast && northeast && southwest) {
-        sx = -1;
-        sy = -1;
-      }
-      if (sx !== 0) convexDirs.set(cornerKey(gridI, gridJ), { sx, sy });
-    }
-  }
+  const convexDirs = corridorConvexVertices(grid);
+  const cornerKey = corridorVertexKey;
 
   const neighbors = [
     { dx: 1, dy: 0 },
