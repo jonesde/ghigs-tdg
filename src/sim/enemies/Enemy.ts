@@ -281,6 +281,9 @@ export class Enemy {
   lastMoveTargetMode: string | null = null;
   // Progress tracking for auto-siege when stuck on a choke.
   stuckTimer: number = 0;
+  // Seconds before another FAILED or INVALID crowd retarget. CrowdManager writes
+  // this so a dead target does not fill Detour's 8-slot path queue every tick.
+  crowdRetargetCooldown: number = 0;
   lastProgressX: number = 0;
   lastProgressY: number = 0;
   markTargetMult!: number;
@@ -344,6 +347,7 @@ export class Enemy {
     this.lastMoveTargetWorld = null;
     this.lastMoveTargetMode = null;
     this.stuckTimer = 0;
+    this.crowdRetargetCooldown = 0;
     this.lastProgressX = 0;
     this.lastProgressY = 0;
     this.baseTarget = baseTarget;
@@ -772,8 +776,13 @@ export class Enemy {
     // Sparse agent resync: teleporting every frame zeroes Detour steering (even
     // with set_vel restore). Only realign when the body has been shoved off the
     // agent's path (wall/tower contact) beyond a fraction of radius.
+    // A parked body can still be nudged by a wall. Teleporting the crowd agent
+    // onto that nudge clears the Detour move target and collapses the corridor,
+    // which is how a stun at a corner leaves the agent with no path. The agent
+    // is held for the park, so the resync waits until the enemy is walking again.
     const crowdAgent = this.agent;
-    if (crowdAgent) {
+    const crowdParked = this.stunTimer > 0 || this.motionLock === "park" || this.attackingBase;
+    if (crowdAgent && !crowdParked) {
       const agentPos = fromRecast(crowdAgent.position());
       const drift = Math.hypot(this.x - agentPos.x, this.y - agentPos.y);
       const resyncThreshold = Math.max(this.radius * AGENT_RESYNC_RADIUS_FRACTION, this.grid.tileSize * 0.15);

@@ -1,4 +1,4 @@
-import { Crowd, type CrowdAgent, type NavMesh, type Vector3 } from "recast-navigation";
+import { Crowd, type CrowdAgent, Detour, type NavMesh, type Vector3 } from "recast-navigation";
 import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { ForceFieldSystem } from "@/sim/physics/ForceFieldSystem.js";
@@ -6,6 +6,9 @@ import { toRecast } from "./coords.js";
 import { getRecast } from "./recastContext.js";
 
 const CROWD_MAX_ACCEL_FACTOR_DEFAULT = 8;
+// A FAILED or still-invalid retarget waits this long. Detour admits 8 path
+// requests per crowd update, so a dead target must not take a slot every tick.
+const CROWD_RETARGET_COOLDOWN_SECONDS = 0.5;
 
 export interface CrowdAgentProfile {
   maxAccelFactor: number;
@@ -54,6 +57,11 @@ export class CrowdManager {
     void getRecast();
     this.tileSize = tileSize;
     this.crowd = new Crowd(navMesh, { maxAgents, maxAgentRadius: tileSize });
+    // teleport and requestMoveTarget both query with this default. The library
+    // default is 1 world unit, so a body a few pixels off a voxelized corner
+    // finds no polygon and the agent is marked INVALID. One tile matches
+    // NavMeshBuilder.nearestWalkableWorld.
+    this.crowd.navMeshQuery.defaultQueryHalfExtents = { x: tileSize, y: tileSize, z: tileSize };
   }
 
   setForceFieldSystem(forceFieldSystem: ForceFieldSystem | null): void {
@@ -110,7 +118,33 @@ export class CrowdManager {
   // Advances the crowd one fixed step, then writes each agent's desired velocity
   // into its Rapier body (unless park/ballistic).
   update(dt: number, enemies: Enemy[]): void {
+    const frozenAgents: CrowdAgent[] = [];
+    for (const enemy of enemies) {
+      if (enemy.removed) continue;
+      if (enemy.crowdRetargetCooldown > 0) {
+        enemy.crowdRetargetCooldown = Math.max(0, enemy.crowdRetargetCooldown - dt);
+      }
+      if (!enemy.agent) continue;
+      this.recoverLostCrowdTarget(enemy);
+      const agent = enemy.agent;
+      if (!agent || !this.isCrowdParked(enemy)) continue;
+      if (agent.state() !== Detour.DT_CROWDAGENT_STATE_WALKING) continue;
+      // Off-mesh for this crowd.update only. Detour skips integrate, neighbor
+      // displacement, and corridor.movePosition for every non-walking state, so
+      // a stun or park does not walk the agent off the body and wipe the corridor.
+      // Walking is restored immediately after the step, before the next intent.
+      agent.raw.set_state(Detour.DT_CROWDAGENT_STATE_OFFMESH);
+      zeroCrowdAgentVelocity(agent);
+      frozenAgents.push(agent);
+    }
+
     this.crowd.update(dt);
+
+    for (const agent of frozenAgents) {
+      if (agent.state() === Detour.DT_CROWDAGENT_STATE_INVALID) continue;
+      agent.raw.set_state(Detour.DT_CROWDAGENT_STATE_WALKING);
+    }
+
     for (const enemy of enemies) {
       if (!enemy.agent || !enemy.body) continue;
       const profile = getCrowdAgentProfile(enemy.type);
@@ -176,6 +210,39 @@ export class CrowdManager {
   destroy(): void {
     this.crowd.destroy();
   }
+
+  private isCrowdParked(enemy: Enemy): boolean {
+    return enemy.stunTimer > 0 || enemy.attackingBase || enemy.motionLock === "park";
+  }
+
+  // A library teleport leaves the agent INVALID or TARGET_NONE, and updateMoveRequest
+  // never reads a request while the agent is INVALID. Re-seat, then reissue the
+  // cached move target. Cross-module: writes the Detour target and, when invalid,
+  // the agent position.
+  private recoverLostCrowdTarget(enemy: Enemy): void {
+    const agent = enemy.agent;
+    const moveTarget = enemy.lastMoveTargetWorld;
+    if (!agent || !moveTarget || this.isCrowdParked(enemy)) return;
+    const targetState = agent.raw.get_targetState();
+    const invalid = agent.state() === Detour.DT_CROWDAGENT_STATE_INVALID;
+    const targetFailed = targetState === Detour.DT_CROWDAGENT_TARGET_FAILED;
+    const targetNone = targetState === Detour.DT_CROWDAGENT_TARGET_NONE;
+    if (!invalid && !targetFailed && !targetNone) return;
+    if ((invalid || targetFailed) && enemy.crowdRetargetCooldown > 0) return;
+
+    if (invalid) {
+      agent.teleport(toRecast({ x: enemy.x, y: enemy.y }));
+      if (agent.state() === Detour.DT_CROWDAGENT_STATE_INVALID) {
+        enemy.crowdRetargetCooldown = CROWD_RETARGET_COOLDOWN_SECONDS;
+        return;
+      }
+    }
+
+    const accepted = agent.requestMoveTarget(toRecast(moveTarget));
+    if (!accepted || targetFailed) {
+      enemy.crowdRetargetCooldown = CROWD_RETARGET_COOLDOWN_SECONDS;
+    }
+  }
 }
 
 // Detour's JS wrapper has no setVelocity; after teleport the agent vel is zeroed.
@@ -185,6 +252,18 @@ export function restoreCrowdAgentVelocity(agent: CrowdAgent, velocity: Vector3):
   agent.raw.set_vel(0, velocity.x);
   agent.raw.set_vel(1, velocity.y);
   agent.raw.set_vel(2, velocity.z);
+}
+
+function zeroCrowdAgentVelocity(agent: CrowdAgent): void {
+  agent.raw.set_vel(0, 0);
+  agent.raw.set_vel(1, 0);
+  agent.raw.set_vel(2, 0);
+  agent.raw.set_nvel(0, 0);
+  agent.raw.set_nvel(1, 0);
+  agent.raw.set_nvel(2, 0);
+  agent.raw.set_dvel(0, 0);
+  agent.raw.set_dvel(1, 0);
+  agent.raw.set_dvel(2, 0);
 }
 
 // Silence unused import when ENEMY_TYPES only used for documentation alignment.

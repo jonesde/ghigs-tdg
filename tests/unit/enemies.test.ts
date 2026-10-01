@@ -2,6 +2,7 @@
 /** @vitest-environment node */
 
 import { createPinia, setActivePinia } from "pinia";
+import { Detour } from "recast-navigation";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
 import {
@@ -15,11 +16,12 @@ import {
 import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
+import { fromRecast } from "@/sim/navmesh/coords.js";
 import { NavDistanceField } from "@/sim/navmesh/NavDistanceField.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
-import { makeBastionMap } from "../helpers/mock-grid";
+import { makeBastionMap, makeOneWideCornerMap } from "../helpers/mock-grid";
 import { mockDefaultTheme } from "../helpers/mock-stores.js";
 import { orderedPath } from "../helpers/navmesh-test-utils.js";
 
@@ -630,6 +632,115 @@ describe("Enemy", () => {
         const baseWorld = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
         expect(enemy.lastMoveTargetWorld.x).toBeCloseTo(baseWorld.x, 4);
         expect(enemy.lastMoveTargetWorld.y).toBeCloseTo(baseWorld.y, 4);
+      } finally {
+        crowd.destroy();
+        navBuilder.destroy();
+        physicsWorld.dispose();
+      }
+    });
+  });
+
+  describe("lightning stun at a corner", () => {
+    const fixedDt = 1 / 60;
+
+    function assertCrowdTargetHeld(enemy: Enemy): void {
+      expect(enemy.agent.state()).toBe(Detour.DT_CROWDAGENT_STATE_WALKING);
+      const targetState = enemy.agent.raw.get_targetState();
+      expect(targetState).not.toBe(Detour.DT_CROWDAGENT_TARGET_NONE);
+      expect(targetState).not.toBe(Detour.DT_CROWDAGENT_TARGET_FAILED);
+    }
+
+    it("keeps the corridor while a neighbor has the rear enemy slowed, then walks the turn", () => {
+      const grid = new Grid(makeOneWideCornerMap());
+      const navBuilder = new NavMeshBuilder(grid);
+      const physicsWorld = new PhysicsWorld(grid);
+      physicsWorld.setEnemyEnemyCollisions(false);
+      const crowd = new CrowdManager(navBuilder.getNavMesh()!, grid.tileSize, 4);
+      try {
+        const front = new Enemy("runner", 1, 0, grid, 1);
+        const rear = new Enemy("runner", 1, 0, grid, 1);
+        physicsWorld.addEnemy(front);
+        physicsWorld.addEnemy(rear);
+        crowd.addAgent(front);
+        crowd.addAgent(rear);
+        const spawnWorld = grid.tileToWorld(0, 4);
+        const seat = (enemy: Enemy, worldX: number, worldY: number) => {
+          enemy.body!.setTranslation({ x: worldX, y: worldY }, true);
+          enemy.x = worldX;
+          enemy.y = worldY;
+          enemy.centerX = worldX;
+          enemy.centerY = worldY;
+          crowd.teleportAgent(enemy, { x: worldX, y: worldY });
+        };
+        // Centers sit inside the two runner radii so Detour separation is active.
+        seat(front, spawnWorld.x + 4, spawnWorld.y);
+        seat(rear, spawnWorld.x + 1, spawnWorld.y);
+
+        const step = () => {
+          front.computeIntent(fixedDt, null);
+          rear.computeIntent(fixedDt, null);
+          crowd.update(fixedDt, [front, rear]);
+          physicsWorld.step();
+          front.postPhysics(fixedDt);
+          rear.postPhysics(fixedDt);
+        };
+
+        const approach = grid.tileToWorld(5, 4);
+        let guard = 0;
+        while (rear.x < approach.x && guard < 900) {
+          step();
+          guard++;
+        }
+        expect(guard).toBeLessThan(900);
+        assertCrowdTargetHeld(rear);
+
+        rear.applyStun(0.4);
+        const stunX = rear.x;
+        const stunY = rear.y;
+        const stunnedSteps = Math.floor(0.35 / fixedDt);
+        for (let stepIndex = 0; stepIndex < stunnedSteps; stepIndex++) step();
+
+        expect(Math.hypot(rear.x - stunX, rear.y - stunY)).toBeLessThan(1);
+        assertCrowdTargetHeld(rear);
+        const agentPosition = fromRecast(rear.agent.position());
+        const resyncThreshold = Math.max(rear.radius * 0.25, grid.tileSize * 0.15);
+        expect(Math.hypot(rear.x - agentPosition.x, rear.y - agentPosition.y)).toBeLessThan(resyncThreshold);
+
+        const resumeSteps = Math.ceil(0.5 / fixedDt) + Math.round(2 / fixedDt);
+        for (let stepIndex = 0; stepIndex < resumeSteps; stepIndex++) step();
+        expect(rear.agent.state()).toBe(Detour.DT_CROWDAGENT_STATE_WALKING);
+        expect(rear.y).toBeGreaterThan(stunY + grid.tileSize * 0.5);
+      } finally {
+        crowd.destroy();
+        navBuilder.destroy();
+        physicsWorld.dispose();
+      }
+    });
+
+    it("resyncs a body that sits off the navmesh without dropping the move target", () => {
+      const grid = new Grid(makeOneWideCornerMap());
+      const navBuilder = new NavMeshBuilder(grid);
+      const physicsWorld = new PhysicsWorld(grid);
+      physicsWorld.setEnemyEnemyCollisions(false);
+      const crowd = new CrowdManager(navBuilder.getNavMesh()!, grid.tileSize, 4);
+      try {
+        const enemy = new Enemy("runner", 1, 0, grid, 1);
+        physicsWorld.addEnemy(enemy);
+        crowd.addAgent(enemy);
+        for (let stepIndex = 0; stepIndex < 5; stepIndex++) {
+          enemy.computeIntent(fixedDt, null);
+          crowd.update(fixedDt, [enemy]);
+          physicsWorld.step();
+          enemy.postPhysics(fixedDt);
+        }
+        assertCrowdTargetHeld(enemy);
+
+        const tile = enemy.currentTile();
+        const northOfTile = grid.worldOriginY + tile.y * grid.tileSize - 10;
+        enemy.body!.setTranslation({ x: enemy.x, y: northOfTile }, true);
+        enemy.postPhysics(fixedDt);
+
+        assertCrowdTargetHeld(enemy);
       } finally {
         crowd.destroy();
         navBuilder.destroy();
