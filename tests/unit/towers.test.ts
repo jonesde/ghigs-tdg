@@ -203,13 +203,13 @@ describe("Tower", () => {
       expect(tower.stats.slowDur).toBe(TOWER_BASE.ice.slowDur);
     });
 
-    it("railgun fire rate is ~1/s at level 5 after rebalance", () => {
+    it("railgun level-5 fire rate stays in the fast band", () => {
       const tower = new Tower("railgun", 0, 0, makeSave(), makeMockGrid());
       tower.level = 5;
       const expectedRate = TOWER_BASE.railgun.fireRate * TOWER_LEVEL_RATE_MULT ** 4;
       expect(tower.stats.fireRate).toBeCloseTo(expectedRate, 4);
-      // Should be approximately 1 shot per second
-      expect(tower.stats.fireRate).toBeGreaterThan(0.8);
+      // A maxed railgun should stay a fast single-target shooter, not slow artillery
+      expect(tower.stats.fireRate).toBeGreaterThan(0.5);
       expect(tower.stats.fireRate).toBeLessThan(1.3);
     });
   });

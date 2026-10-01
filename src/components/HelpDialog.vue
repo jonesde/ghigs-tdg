@@ -297,6 +297,10 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                 <td>Move tower selection in that direction. In build mode: move the build tile. Once zoomed in, the view pans when that tile comes within 20% of the screen width of an edge</td>
               </tr>
               <tr>
+                <td><kbd>Ctrl</kbd> + <kbd>&uarr;</kbd> / <kbd>&darr;</kbd> / <kbd>&larr;</kbd> / <kbd>&rarr;</kbd></td>
+                <td>Pan the view about 20% of the screen in the pressed direction</td>
+              </tr>
+              <tr>
                 <td><kbd>Page Up</kbd> / <kbd>Page Down</kbd></td>
                 <td>Zoom in or out. Page Down returns to the whole map. Zoom stays on the selected tower, build tile, or placement site</td>
               </tr>
@@ -346,8 +350,8 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                 <td>Zoom in or out about the cursor</td>
               </tr>
               <tr>
-                <td>Right-drag, or Alt + left-drag</td>
-                <td>Pan the view</td>
+                <td>Right-drag, or Alt + left-drag, or a left-drag where a click would do nothing</td>
+                <td>Pan the view (a left-drag over a path tile, off the map, or a build tile you cannot place on)</td>
               </tr>
             </tbody>
           </table>

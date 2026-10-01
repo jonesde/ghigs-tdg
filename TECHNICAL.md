@@ -468,7 +468,7 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 | `src/sim/ConstantsEnemy.ts` | Facade: ENEMY_TYPES and enemy/wave scalars from `src/content/data/enemies.json` |
 | `src/content/data/*.json` | Declarative balance/content packs (towers, enemies, economy, maps, skill-tree) validated by Zod at load |
 | `src/content/schemas/*` | Zod schemas for game content, raw map themes, LLM responses, persist save shape |
-| `src/composables/Input.ts` | Keyboard input composable: dispatches build/upgrade/sell/speed/pause intents through the command seam, and Page Up/Down plus arrow-key follow through the camera actions |
+| `src/composables/Input.ts` | Keyboard input composable: dispatches build/upgrade/sell/speed/pause intents through the command seam, and Page Up/Down, Ctrl+arrow pan, plus arrow-key follow through the camera actions |
 | `src/sim/ProjectileManager.ts` | Game-side projectile simulation: travel, hits, splash, chain, burn, knockback. `computeMaxHitCount` is the single pierce-total helper for every tower path; bounce falloff scales damage and burn/slow/stun magnitudes together; `creditDamage` is the public out-of-band credit entry used by burn ticks |
 | `src/sim/ParticleSystem.ts` | Game-side particle simulation: spawn, motion, life/expiry |
 | `src/sim/WaveGraphTracker.ts` | Per-wave graph data: damage dealt, gold earned, gems earned, peak enemy HP per wave |
@@ -514,7 +514,7 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 | `src/render/svg/UiOverlayManager.ts` | HP bars, shield bars, boss HP text as pooled `<rect>` and `<text>` elements |
 | `src/render/svg/SpawnManager.ts` | Spawn point rendering pool: `<use>` elements for spawn location indicators |
 | `src/render/svg/useSvgStaticContent.ts` | Composable: builds `<defs>` (symbols from active theme's tower/enemy frames, region gradients, filters) and grid layer SVG strings (tile images + base art from theme) |
-| `src/render/svg/cameraFrame.ts` | Pure view-frame math: `fitFrame`, `zoomFrame`, `panFrame`, `revealPoint`, `wheelZoomFactor`. `SvgGameRoot` writes the result into the SVG `viewBox` |
+| `src/render/svg/cameraFrame.ts` | Pure view-frame math: `fitFrame`, `zoomFrame`, `panFrame`, `revealPoint`, `wheelZoomFactor`, plus frame constants (`EDGE_BUFFER_FRACTION`, `ARROW_PAN_FRACTION`, zoom/step limits). `SvgGameRoot` writes the result into the SVG `viewBox` |
 | `src/render/svg/types.ts` | Shared types for render proxies and managers |
 | `src/render/text/TextGridBuilder.ts` | Static char buffer (3×3 chars per tile) for the `<pre>` monochrome base grid (terrain `·`, path empty, base `#`, spawn `S`) |
 | `src/render/text/TextTowerManager.ts` | Draws each tower theme `icon` in theme `color` at its tile-center on the canvas overlay |
@@ -524,7 +524,7 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 | `src/render/text/types.ts` | `TextRenderScale` (separate x/y world→canvas scales) and `TextThemeAccess` interfaces |
 | `src/components/TextGameRoot.vue` | Second passive renderer: renders a `<pre>` static base grid + a `<canvas>` overlay, driven by its own rAF loop reading `getLatestSnapshot()`; no worker, no `snapshotAck`, no input |
 | `src/components/MinimapPanel.vue` | Movable hovering panel (TowerPanel drag-by-header pattern, uses `gameStore.minimapPanelPos`) hosting `TextGameRoot`; toggled by `uiStore.showMinimap` |
-| `src/components/SvgGameRoot.vue` | Single SVG root: creates the simulation Web Worker, owns `SnapshotStore` (render loop reads snapshots) and `WorkerCommandDispatcher` (click/key intents → commands); rAF render loop does imperative DOM writes; the SVG viewBox is the camera (wheel zoom, right-drag and Alt+left-drag pan); CTM-based mouse→world coordinate conversion; passes theme bundle to worker at `lifecycle:init` and to `useSvgStaticContent`; initializes SpawnManager |
+| `src/components/SvgGameRoot.vue` | Single SVG root: creates the simulation Web Worker, owns `SnapshotStore` (render loop reads snapshots) and `WorkerCommandDispatcher` (click/key intents → commands); rAF render loop does imperative DOM writes; the SVG viewBox is the camera (wheel zoom, right-drag / Alt+left-drag / inert-point left-drag pan); CTM-based mouse→world coordinate conversion; passes theme bundle to worker at `lifecycle:init` and to `useSvgStaticContent`; initializes SpawnManager |
 
 ### Audio
 
@@ -552,7 +552,7 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 
 ### Camera
 
-The SVG `viewBox` is the camera. `gameStore.camera` holds `centerX`, `centerY`, `viewHeight`, and `followsMap`. While `followsMap` is true, `SvgGameRoot` frames the smallest viewport-aspect rectangle that contains the map and tweens that frame when a progressive board grows. A zoom or pan clears `followsMap`. Page Down, or a zoom out that reaches the fit frame, sets it again. A progressive placement hold also sets it, and the same 320ms ease pulls a zoomed frame back out to the whole board so the sites are visible. A zoom or pan during the hold takes the frame back. `worldLayer` stays at identity so the frame is not applied a second time. Wheel, right-drag, and Alt+left-drag are handled on the SVG. Page Up/Down and arrow-key follow go through `Input.ts` into `zoomCamera` and `revealCameraPoint`. An arrow pans only when the highlighted build tile, selected tower, or placement-site center is closer to an edge than 20% of the frame width, and only on the axes that cross that line, far enough to put the point on it. The same width fraction is used for the vertical edges. A point already inside that inset does not move the frame, and a pan that the map clamp absorbs does not clear `followsMap`. The frame math is in `src/render/svg/cameraFrame.ts`. Camera state stays on the main thread and is not part of `SimulationSnapshot`.
+The SVG `viewBox` is the camera. `gameStore.camera` holds `centerX`, `centerY`, `viewHeight`, and `followsMap`. While `followsMap` is true, `SvgGameRoot` frames the smallest viewport-aspect rectangle that contains the map and tweens that frame when a progressive board grows. A zoom or pan clears `followsMap`. Page Down, or a zoom out that reaches the fit frame, sets it again. A progressive placement hold also sets it, and the same 320ms ease pulls a zoomed frame back out to the whole board so the sites are visible. A zoom or pan during the hold takes the frame back. `worldLayer` stays at identity so the frame is not applied a second time. Wheel, right-drag, Alt+left-drag, and a primary-button drag on a point whose click would not change run state (decided on the main thread by `src/render/svg/clickHasEffect.ts`, which mirrors `GameEngine.handleClick`) are handled on the SVG. Page Up/Down, Ctrl+arrow pan (`panCameraByFraction`, `ARROW_PAN_FRACTION` of the frame per axis), and arrow-key follow go through `Input.ts` into `zoomCamera`, `panCameraByFraction`, and `revealCameraPoint`. An arrow pans only when the highlighted build tile, selected tower, or placement-site center is closer to an edge than 20% of the frame width, and only on the axes that cross that line, far enough to put the point on it. The same width fraction is used for the vertical edges. A point already inside that inset does not move the frame, and a pan that the map clamp absorbs does not clear `followsMap`. The frame math is in `src/render/svg/cameraFrame.ts`. Camera state stays on the main thread and is not part of `SimulationSnapshot`.
 
 ## Game Content Packs (Zod)
 
@@ -598,10 +598,10 @@ E1 was a telemetry/correctness pass, but a few of its fixes are combat-visible a
 
 Measured on difficulty tick 0:
 
-- Wave 10, budget 344 (80 starting + 264 kill gold). Boss HP 1505. A level-2 basic/ice spend deals boss damage 2569 (1.71× HP) and the boss dies. Headroom stays under 2×.
-- Wave 20, budget 919 (80 + 839). Boss HP 4239, trash HP 9056. The same level-2 cap deals boss damage 2234 (0.53× HP), so the boss keeps about half its HP. With basic allowed to level 3 (10 of 11 basics bought at level 3), boss damage is 7254 (1.71× HP) and the boss dies.
+- Wave 10, budget 374 (80 starting + 294 kill gold). Boss HP 1505, trash HP 2038. A level-2 basic/ice spend deals boss damage 49 (0.03× HP) — raw damage barely clears the trash, and the boss keeps about 97%. The wall pins the boss surviving at least half its HP.
+- Wave 20, budget 1007 (80 + 927). Boss HP 4239, trash HP 9507. The level-2 cap deals zero boss damage: raw 4839 is fully absorbed by the trash, so the wall is the trash and the boss keeps full HP. With basic allowed to level 3 (all 12 basics at level 3), raw damage rises to 6799, but the boss still takes none and keeps full HP. The wall pins the boss surviving at least half its HP under both caps, and the level-3 unlock raising raw damage above the level-2 cap.
 - `bountyLevelGrowth` stays 0.5, so a higher map level still pays more per kill. `laterWaveBountyMult` (0.25) applies only after `bountyFullThroughWave` (10). That is the gold cut between the two bosses. Boss `baseHp` is 192. Starting gold stays `[80, 70, 60]`.
-- `milestoneThreshold` is 6000, the 1000-floor of one level-2 basic's post-mitigation damage across waves 1–20 on this map, and it sits above that tower's damage through wave 10. `milestoneMaxTiers` stays 5. The addon is not part of the fresh-profile fights.
+- `milestoneThreshold` is 2000, the 1000-floor of one level-2 basic's post-mitigation damage across waves 1–20 on this map, and it sits above that tower's damage through wave 10. `milestoneMaxTiers` stays 5. The addon is not part of the fresh-profile fights.
 
 **How to change balance:** edit the relevant JSON pack; keep formulas/behavior hooks in TS. Run `npm run check`. Adding a new tower still needs theme frames + any new behavior code paths, but numbers/copy go in packs.
 
@@ -686,7 +686,7 @@ All component styles use `<style scoped>` to prevent leakage.
 | Enemies | `enemies.test.ts`, `enemy-manager.test.ts` | HP/speed formulas, wave scaling, status effects (slow/stun/burn/shield/heal), shield/burn damage returns and credit, knockResist, headless `postPhysics` |
 | Waves | `waves.test.ts` | Composition, boss placement, level calculation, inter-wave timing |
 | Content packs | `content/game-content.test.ts` | Zod parse, facade constants, variant ops, recursive deep freeze |
-| Balance wall | `tests/unit/sim/balance-wall.test.ts` | Map-0 placement oracle: wave-10 basic+ice level-2 kill, wave-20 level-2 remainder, wave-20 basic level-3 kill, milestone threshold, region boss cadence |
+| Balance wall | `tests/unit/sim/balance-wall.test.ts` | Map-0 placement oracle: wave-10 basic+ice level-2 boss survival, wave-20 level-2 boss survival, wave-20 basic level-3 boss survival plus raw-damage step-up, milestone threshold, region boss cadence |
 | Gem income | `tests/unit/sim/gem-income.test.ts` | Clears, expiry, and debug jumps pay no gems; wave 15 pays the first-time milestone only; first full clear doubles boss, milestone, and completion; custom maps still use the region/level boss multiplier |
 | Tower Manager | `tower-manager.test.ts` | Build, sell, update, towerAt |
 | Enemy Manager | `enemy-manager.test.ts` | Spawn, cull, getEnemiesInRange |

@@ -1,6 +1,6 @@
 import { onUnmounted } from "vue";
 import { clearBuildAndTowerForProgressive } from "@/composables/progressivePlacement.js";
-import { ZOOM_STEP } from "@/render/svg/cameraFrame.js";
+import { ARROW_PAN_FRACTION, ZOOM_STEP } from "@/render/svg/cameraFrame.js";
 import type { Command } from "@/sim/Command.js";
 import type { CommandDispatcher } from "@/sim/CommandDispatcher.js";
 import { GameState } from "@/sim/Constants.js";
@@ -118,6 +118,21 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
     return false;
   }
 
+  // Ctrl+arrow pans the frame instead of moving the build tile or tower selection.
+  // Returns true when it acted, so the caller skips the bare-arrow behavior.
+  function panCameraByArrow(event: KeyboardEvent): boolean {
+    if (!event.ctrlKey) return false;
+    if (overlayBlocksCamera(uiStore)) return false;
+    if (!canActNow(event.key)) return false;
+    const fraction = ARROW_PAN_FRACTION;
+    if (event.key === "ArrowRight") gameStore.panCameraByFraction(fraction, 0);
+    else if (event.key === "ArrowLeft") gameStore.panCameraByFraction(-fraction, 0);
+    else if (event.key === "ArrowUp") gameStore.panCameraByFraction(0, -fraction);
+    else if (event.key === "ArrowDown") gameStore.panCameraByFraction(0, fraction);
+    else return false;
+    return true;
+  }
+
   const handle = (event: KeyboardEvent) => {
     const gs = gameStore;
     if (gs.state === GameState.MENU || gs.state === GameState.GAME_OVER || gs.state === GameState.VICTORY) return;
@@ -185,6 +200,7 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         event.key === "ArrowDown"
       ) {
         event.preventDefault();
+        if (panCameraByArrow(event)) return;
         if (!canActNow(event.key)) return;
         let direction: "up" | "down" | "left" | "right" = "down";
         if (event.key === "ArrowRight") direction = "right";
@@ -258,6 +274,7 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
       }
       case "ArrowRight":
         event.preventDefault();
+        if (panCameraByArrow(event)) break;
         if (gs.selectedTowerType) {
           if (canActNow(event.key)) applyCameraFollow(gs, uiStore, moveBuildPosition(gs, 1, 0));
         } else if (canActNow(event.key)) {
@@ -266,6 +283,7 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         break;
       case "ArrowLeft":
         event.preventDefault();
+        if (panCameraByArrow(event)) break;
         if (gs.selectedTowerType) {
           if (canActNow(event.key)) applyCameraFollow(gs, uiStore, moveBuildPosition(gs, -1, 0));
         } else if (canActNow(event.key)) {
@@ -274,6 +292,7 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         break;
       case "ArrowUp":
         event.preventDefault();
+        if (panCameraByArrow(event)) break;
         if (gs.selectedTowerType) {
           if (canActNow(event.key)) applyCameraFollow(gs, uiStore, moveBuildPosition(gs, 0, -1));
         } else if (canActNow(event.key)) {
@@ -282,6 +301,7 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         break;
       case "ArrowDown":
         event.preventDefault();
+        if (panCameraByArrow(event)) break;
         if (gs.selectedTowerType) {
           if (canActNow(event.key)) applyCameraFollow(gs, uiStore, moveBuildPosition(gs, 0, 1));
         } else if (canActNow(event.key)) {

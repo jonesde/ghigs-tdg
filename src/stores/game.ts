@@ -180,6 +180,7 @@ export interface GameStoreLike {
   hoverTile: HoverTile | null;
   camera: CameraState;
   zoomCamera(magnificationFactor: number, focalWorldX: number | null, focalWorldY: number | null): void;
+  panCameraByFraction(xFraction: number, yFraction: number): void;
   revealCameraPoint(worldX: number, worldY: number): void;
   cycleSpeed(): number;
   cycleSpeedReverse(): number;
@@ -500,6 +501,23 @@ export const useGameStore = defineStore("game", {
       const mapRect = readMapWorldRect(this.map, this.grid);
       if (!mapRect) return;
       const next = shiftedCamera(this.camera, this.viewport, mapRect, worldDx, worldDy);
+      if (next) this.camera = next;
+    },
+
+    // Pans by a fraction of the current frame, so the step feels the same on screen
+    // at any zoom. A pan the map clamp absorbs leaves the camera unchanged.
+    panCameraByFraction(xFraction: number, yFraction: number) {
+      const mapRect = readMapWorldRect(this.map, this.grid);
+      if (!mapRect) return;
+      const frame = displayedFrame(this.camera, this.viewport, mapRect);
+      if (!frame) return;
+      const next = shiftedCamera(
+        this.camera,
+        this.viewport,
+        mapRect,
+        frame.width * xFraction,
+        frame.height * yFraction,
+      );
       if (next) this.camera = next;
     },
 

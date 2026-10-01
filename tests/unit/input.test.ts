@@ -1,7 +1,14 @@
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useInput } from "@/composables/Input.js";
-import { EDGE_BUFFER_FRACTION, fitFrame, frameFromCenter, revealPoint, ZOOM_STEP } from "@/render/svg/cameraFrame.js";
+import {
+  ARROW_PAN_FRACTION,
+  EDGE_BUFFER_FRACTION,
+  fitFrame,
+  frameFromCenter,
+  revealPoint,
+  ZOOM_STEP,
+} from "@/render/svg/cameraFrame.js";
 import type { Command } from "@/sim/Command.js";
 import { GameState } from "@/sim/Constants.js";
 import { TowerIds } from "@/sim/ConstantsTower.js";
@@ -1255,6 +1262,123 @@ describe("useInput", () => {
       (capturedHandler as ((event: KeyboardEvent) => void) | null)?.(testEvent);
       expect(gameStore.camera.followsMap).toBe(true);
       expect(gameStore.camera.viewHeight).toBeCloseTo(fit.height);
+    });
+
+    describe("Ctrl+arrow camera pan", () => {
+      function zoomedFrame(viewportWidth: number, viewportHeight: number, tileCount: number, zoomSteps: number) {
+        installMap(tileCount);
+        gameStore.setViewport(viewportWidth, viewportHeight);
+        const fit = fitOn(viewportWidth, viewportHeight, tileCount);
+        const viewHeight = fit.height / ZOOM_STEP ** zoomSteps;
+        const frame = frameFromCenter(
+          fit.originX + fit.width / 2,
+          fit.originY + fit.height / 2,
+          viewHeight,
+          viewportWidth,
+          viewportHeight,
+        );
+        gameStore.camera = {
+          centerX: frame.originX + frame.width / 2,
+          centerY: frame.originY + frame.height / 2,
+          viewHeight,
+          followsMap: false,
+        };
+        return frame;
+      }
+
+      it("pans 20% of the frame width per Ctrl+ArrowRight press", () => {
+        const frame = zoomedFrame(1000, 1000, 40, 2);
+        useInput(gameStore, dispatcher, uiStore);
+        triggerInput("ArrowRight", { ctrlKey: true });
+        expect(gameStore.camera.centerX).toBeCloseTo(
+          frame.originX + frame.width / 2 + frame.width * ARROW_PAN_FRACTION,
+        );
+        expect(gameStore.camera.centerY).toBeCloseTo(frame.originY + frame.height / 2);
+        expect(gameStore.camera.followsMap).toBe(false);
+      });
+
+      it("pans 20% of the frame height per Ctrl+ArrowUp press", () => {
+        const frame = zoomedFrame(1000, 1000, 40, 2);
+        useInput(gameStore, dispatcher, uiStore);
+        triggerInput("ArrowUp", { ctrlKey: true });
+        expect(gameStore.camera.centerY).toBeCloseTo(
+          frame.originY + frame.height / 2 - frame.height * ARROW_PAN_FRACTION,
+        );
+        expect(gameStore.camera.centerX).toBeCloseTo(frame.originX + frame.width / 2);
+      });
+
+      it("pans left per Ctrl+ArrowLeft press", () => {
+        const frame = zoomedFrame(1000, 1000, 40, 2);
+        useInput(gameStore, dispatcher, uiStore);
+        triggerInput("ArrowLeft", { ctrlKey: true });
+        expect(gameStore.camera.centerX).toBeCloseTo(
+          frame.originX + frame.width / 2 - frame.width * ARROW_PAN_FRACTION,
+        );
+      });
+
+      it("does not move the build tile", () => {
+        const frame = zoomedFrame(1000, 1000, 40, 2);
+        gameStore.selectedTowerType = "cannon";
+        gameStore.hoverTile = { tileX: 10, tileY: 10 };
+        useInput(gameStore, dispatcher, uiStore);
+        triggerInput("ArrowRight", { ctrlKey: true });
+        expect(gameStore.hoverTile).toEqual({ tileX: 10, tileY: 10 });
+        expect(dispatched("action:selectTower")).toBe(false);
+        expect(gameStore.camera.centerX).toBeCloseTo(
+          frame.originX + frame.width / 2 + frame.width * ARROW_PAN_FRACTION,
+        );
+      });
+
+      it("does not move the tower selection", () => {
+        const frame = zoomedFrame(1000, 1000, 40, 2);
+        const { towers } = applyTowerSnapshot([
+          { tileX: 10, tileY: 10 },
+          { tileX: 12, tileY: 10 },
+        ]);
+        gameStore.selectedTower = towers[0] as unknown as Tower;
+        useInput(gameStore, dispatcher, uiStore);
+        triggerInput("ArrowRight", { ctrlKey: true });
+        expect(dispatched("action:selectTower")).toBe(false);
+        expect(gameStore.camera.centerX).toBeCloseTo(
+          frame.originX + frame.width / 2 + frame.width * ARROW_PAN_FRACTION,
+        );
+      });
+
+      it("ignores Ctrl+arrow while the help dialog is open", () => {
+        const frame = zoomedFrame(1000, 1000, 40, 2);
+        uiStore.showHelpDialog = true;
+        useInput(gameStore, dispatcher, uiStore);
+        triggerInput("ArrowRight", { ctrlKey: true });
+        expect(gameStore.camera.centerX).toBeCloseTo(frame.originX + frame.width / 2);
+        expect(gameStore.camera.followsMap).toBe(false);
+      });
+
+      it("does not pan a camera at the fit frame", () => {
+        installMap(40);
+        gameStore.setViewport(1000, 1000);
+        const fit = fitOn(1000, 1000, 40);
+        gameStore.setCameraFrame(fit.originX + fit.width / 2, fit.originY + fit.height / 2, fit.height);
+        useInput(gameStore, dispatcher, uiStore);
+        triggerInput("ArrowRight", { ctrlKey: true });
+        expect(gameStore.camera.followsMap).toBe(true);
+        expect(gameStore.camera.viewHeight).toBeCloseTo(fit.height);
+      });
+
+      it("pans during a placement hold without moving the site", () => {
+        const armed = armProgressiveArrow();
+        const viewHeight = 200;
+        gameStore.setViewport(400, 400);
+        const frame = frameFromCenter(armed.focusX, armed.focusY, viewHeight, 400, 400);
+        const startCenterX = frame.originX + frame.width / 2;
+        const startCenterY = frame.originY + frame.height / 2;
+        gameStore.camera = { centerX: startCenterX, centerY: startCenterY, viewHeight, followsMap: false };
+        const startSite = { ...gameStore.progressiveSelectedSite! };
+        useInput(gameStore, dispatcher, uiStore);
+        triggerInput("ArrowRight", { ctrlKey: true });
+        expect(gameStore.progressiveSelectedSite).toEqual(startSite);
+        expect(gameStore.camera.centerX).toBeGreaterThan(startCenterX);
+        expect(gameStore.camera.centerX - startCenterX).toBeLessThanOrEqual(frame.width * ARROW_PAN_FRACTION + 0.01);
+      });
     });
 
     it("does not pan a build arrow that stays inside the edge buffer", () => {

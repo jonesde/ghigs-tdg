@@ -329,6 +329,57 @@ describe("GameStore", () => {
     });
   });
 
+  describe("panCameraByFraction", () => {
+    function installSquareMap(tileCount: number) {
+      const grid = {
+        width: tileCount,
+        height: tileCount,
+        tileSize: 36,
+        worldOriginX: 0,
+        worldOriginY: 0,
+      } as unknown as Grid;
+      store.initMap(
+        0,
+        { regionId: 0, width: tileCount, height: tileCount, tiles: [] } as unknown as GeneratedMap,
+        grid,
+      );
+      store.setViewport(1000, 1000);
+    }
+
+    it("pans by the frame fraction on each axis", () => {
+      installSquareMap(40);
+      const mapSize = 40 * 36;
+      const viewHeight = mapSize / 1.44;
+      store.camera = { centerX: mapSize / 2, centerY: mapSize / 2, viewHeight, followsMap: false };
+      store.panCameraByFraction(0.2, -0.2);
+      expect(store.camera.centerX).toBeCloseTo(mapSize / 2 + viewHeight * 0.2);
+      expect(store.camera.centerY).toBeCloseTo(mapSize / 2 - viewHeight * 0.2);
+      expect(store.camera.viewHeight).toBeCloseTo(viewHeight);
+      expect(store.camera.followsMap).toBe(false);
+    });
+
+    it("absorbs a pan at the fit frame and keeps map following", () => {
+      installSquareMap(40);
+      const mapSize = 40 * 36;
+      store.camera = { centerX: mapSize / 2, centerY: mapSize / 2, viewHeight: mapSize, followsMap: true };
+      store.panCameraByFraction(0.2, 0);
+      expect(store.camera.centerX).toBe(mapSize / 2);
+      expect(store.camera.viewHeight).toBe(mapSize);
+      expect(store.camera.followsMap).toBe(true);
+    });
+
+    it("clamps at the map edge without moving the camera", () => {
+      installSquareMap(40);
+      const mapSize = 40 * 36;
+      const viewHeight = mapSize / 1.44;
+      const edgeCenterX = mapSize / 2 + (mapSize - viewHeight) / 2;
+      store.camera = { centerX: edgeCenterX, centerY: mapSize / 2, viewHeight, followsMap: false };
+      store.panCameraByFraction(0.2, 0);
+      expect(store.camera.centerX).toBeCloseTo(edgeCenterX);
+      expect(store.camera.followsMap).toBe(false);
+    });
+  });
+
   describe("claimMilestone / hasClaimedMilestone", () => {
     it("claims a milestone wave", () => {
       store.claimMilestone(15);

@@ -9,6 +9,8 @@ export const MAX_WHEEL_NOTCHES = 4;
 export const FRAME_EPSILON = 0.01;
 // Clearance kept between a highlighted point and each edge, as a fraction of the frame width.
 export const EDGE_BUFFER_FRACTION = 0.2;
+// Fraction of the frame (screen) size that one Ctrl+arrow press pans along that axis.
+export const ARROW_PAN_FRACTION = 0.2;
 
 const WHEEL_DELTA_LINE = 1;
 const WHEEL_DELTA_PAGE = 2;

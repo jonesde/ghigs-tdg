@@ -21,6 +21,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useInput } from "@/composables/Input.js";
 import { fitFrame, frameFromCenter, TILE_SIZE, wheelZoomFactor } from "@/render/svg/cameraFrame.js";
+import { type ClickEffectInput, clickHasEffect } from "@/render/svg/clickHasEffect.js";
 import { EffectManager } from "@/render/svg/EffectManager.js";
 import { EnemyManager } from "@/render/svg/EnemyManager.js";
 import { ParticleManager } from "@/render/svg/ParticleManager.js";
@@ -44,7 +45,7 @@ import {
   TERRAIN_HEIGHT_RANGE_BONUS,
 } from "@/sim/Constants.js";
 import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
-import { TOWER_BASE, TOWER_META, TowerIds } from "@/sim/ConstantsTower.js";
+import { TOWER_BASE, TOWER_META, type TowerId, TowerIds } from "@/sim/ConstantsTower.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
 import {
   blockCoordinateForTile,
@@ -103,15 +104,18 @@ const buildPreviewTilePos = computed(() => {
   return null;
 });
 
+function buildCost(towerType: TowerId): number {
+  const meta = TOWER_META[towerType];
+  if (!meta) return Number.POSITIVE_INFINITY;
+  const discount = persistStore.generalAddons?.sellActive === "discount" ? 1 - SELL_DISCOUNT_PCT : 1;
+  return Math.floor(meta.cost * discount);
+}
+
 const buildPreviewValid = computed(() => {
   const pos = buildPreviewTilePos.value;
   if (!pos || !gameStore.grid) return false;
   if (!gameStore.selectedTowerType) return false;
-  const meta = TOWER_META[gameStore.selectedTowerType];
-  if (!meta) return false;
-  const discount = persistStore.generalAddons?.sellActive === "discount" ? 1 - SELL_DISCOUNT_PCT : 1;
-  const cost = Math.floor(meta.cost * discount);
-  return gameStore.grid.canBuild(pos.tileX, pos.tileY) && gameStore.gold >= cost;
+  return gameStore.grid.canBuild(pos.tileX, pos.tileY) && gameStore.gold >= buildCost(gameStore.selectedTowerType);
 });
 
 const buildPreviewColor = computed(() => {
@@ -468,6 +472,37 @@ const computeHoverUpgradeBtn = (worldX: number, worldY: number): boolean => {
   return worldX >= buildX && worldX <= buildX + 10 && worldY >= buildY && worldY <= buildY + 10;
 };
 
+function towerOnTileAt(tileX: number, tileY: number): boolean {
+  const snapshot = snapshotStore.get();
+  if (!snapshot) return false;
+  return snapshot.towers.some((tower) => tower.tileX === tileX && tower.tileY === tileY);
+}
+
+// Decides whether a primary-button press is a click or a pan. Mirrors the
+// worker's handleClick (through clickHasEffect) so a press that would place or
+// select something never turns into a drag, and an inert one never dispatches.
+function clickHasEffectAt(worldX: number, worldY: number): boolean {
+  const towerType = gameStore.selectedTowerType;
+  const input: ClickEffectInput = {
+    progressivePlacementHold: gameStore.progressivePlacementHold,
+    placementSiteHit: progressivePlacementCommand(worldX, worldY) !== null,
+    upgradeButtonHit: computeHoverUpgradeBtn(worldX, worldY),
+    inBounds: false,
+    towerOnTile: false,
+    selectedTowerType: towerType,
+    buildable: false,
+    gold: gameStore.gold,
+    buildCost: towerType ? buildCost(towerType) : Number.POSITIVE_INFINITY,
+  };
+  const grid = gameStore.grid;
+  if (!grid) return clickHasEffect(input);
+  const tile = grid.worldToTile(worldX, worldY);
+  input.inBounds = grid.inBounds(tile.x, tile.y);
+  input.towerOnTile = input.inBounds && towerOnTileAt(tile.x, tile.y);
+  input.buildable = input.inBounds && grid.canBuild(tile.x, tile.y);
+  return clickHasEffect(input);
+}
+
 const onMouseMove = (e: MouseEvent): void => {
   updateCachedCtm();
   const pointerMoved = e.clientX !== lastPointerClientX || e.clientY !== lastPointerClientY;
@@ -479,23 +514,14 @@ const onMouseMove = (e: MouseEvent): void => {
   scheduleHover(e.clientX, e.clientY);
 };
 
-const dispatchClick = (clientX: number, clientY: number): void => {
-  if (!svgRoot.value || !worldLayer.value || !dispatcher) return;
-
-  const inverseCtm = worldLayer.value.getScreenCTM()?.inverse() ?? null;
-  if (!inverseCtm) return;
-
-  const pt = svgRoot.value.createSVGPoint();
-  pt.x = clientX;
-  pt.y = clientY;
-  const worldPos = pt.matrixTransform(inverseCtm);
-
-  const placement = progressivePlacementCommand(worldPos.x, worldPos.y);
+const dispatchClick = (worldX: number, worldY: number): void => {
+  if (!dispatcher) return;
+  const placement = progressivePlacementCommand(worldX, worldY);
   if (placement) {
     dispatcher.dispatch({ commandId: nextClickCommandId++, ...placement });
     return;
   }
-  dispatcher.dispatch({ commandId: nextClickCommandId++, type: "input:click", worldX: worldPos.x, worldY: worldPos.y });
+  dispatcher.dispatch({ commandId: nextClickCommandId++, type: "input:click", worldX, worldY });
 };
 
 function progressivePlacementCommand(
@@ -605,19 +631,27 @@ const onMouseDown = (e: MouseEvent): void => {
     return;
   }
   if (e.button !== 0) return;
-  dispatchClick(e.clientX, e.clientY);
+  const world = clientToWorld(e.clientX, e.clientY);
+  if (!world) return;
+  if (clickHasEffectAt(world.x, world.y)) {
+    dispatchClick(world.x, world.y);
+  } else {
+    startPan(e);
+  }
   mouseDownHandledGesture = true;
 };
 
 const onClick = (e: MouseEvent): void => {
-  // mousedown already dispatched for this press — skip the paired click so we
-  // don't process the same tile twice. If mousedown was somehow missed, fall
-  // through and dispatch here so the click is never dropped.
+  // mousedown already handled this press (as a click or a pan start) — skip the
+  // paired click so we don't process the same tile twice. If mousedown was
+  // somehow missed, fall through and dispatch here so the click is never dropped.
   if (mouseDownHandledGesture) {
     mouseDownHandledGesture = false;
     return;
   }
-  dispatchClick(e.clientX, e.clientY);
+  const world = clientToWorld(e.clientX, e.clientY);
+  if (!world) return;
+  dispatchClick(world.x, world.y);
 };
 
 const resizeObserver = ref<ResizeObserver | null>(null);
