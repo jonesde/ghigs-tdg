@@ -11,15 +11,15 @@
     "shotgunTank": { "cost": 35 }
   },
   "base": {
-    "basic": { "range": 2.5, "damage": 8, "fireRate": 1.0, "projSpeed": 14, "splash": 0, "health": 10 },
-    "ice": { "range": 2, "damage": 4, "fireRate": 0.8, "projSpeed": 12, "slowAmt": 0.45, "slowDur": 1.5, "splash": 0.25, "health": 20 },
-    "sniper": { "range": 4, "damage": 32, "fireRate": 0.5, "projSpeed": 30, "splash": 0, "stun": 0.2, "health": 25 },
-    "cannon": { "range": 2.5, "damage": 16, "fireRate": 0.5, "projSpeed": 6, "splash": 0.5, "groundOnly": true, "health": 30 },
-    "lightning": { "range": 3, "damage": 4, "fireRate": 0.8, "chain": 2, "stun": 0.1, "health": 35 },
+    "basic": { "range": 2.5, "damage": 12, "fireRate": 1.0, "projSpeed": 14, "splash": 0, "health": 20 },
+    "ice": { "range": 2, "damage": 8, "fireRate": 0.8, "projSpeed": 12, "slowAmt": 0.45, "slowDur": 1.5, "splash": 0.25, "health": 20 },
+    "sniper": { "range": 4, "damage": 30, "fireRate": 0.5, "projSpeed": 30, "splash": 0, "stun": 0.2, "health": 25 },
+    "cannon": { "range": 2.5, "damage": 20, "fireRate": 0.4, "projSpeed": 6, "splash": 0.5, "groundOnly": true, "health": 30 },
+    "lightning": { "range": 3, "damage": 10, "fireRate": 0.8, "chain": 2, "stun": 0.1, "health": 35 },
     "railgun": {
       "range": 4,
-      "damage": 16,
-      "fireRate": 0.25,
+      "damage": 20,
+      "fireRate": 0.3,
       "projSpeed": 60,
       "fixedAim": true,
       "pierceFalloff": 0.5,

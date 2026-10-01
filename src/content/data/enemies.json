@@ -25,7 +25,7 @@
       "flyingHeight": 0
     },
     "boss": {
-      "baseHp": 192,
+      "baseHp": 150,
       "speed": 0.5,
       "bounty": 50,
       "radius": 0.33,

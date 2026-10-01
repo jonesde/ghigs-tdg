@@ -645,15 +645,15 @@ describe("flying wave rolls", () => {
           expect(ENEMY_TYPES[entry.type]).toBeDefined();
         }
       }
-      const wave7 = generate(seed, 7);
-      const wave11 = generate(seed, 11);
-      const wave16 = generate(seed, 16);
-      for (const entry of [...wave7, ...wave11, ...wave16]) expect(ENEMY_TYPES[entry.type]).toBeDefined();
-      expect(wave7.some((entry) => entry.type === "jet" || entry.type === "aegis")).toBe(false);
-      expect(wave11.some((entry) => entry.type === "aegis")).toBe(false);
-      if (wave7.some((entry) => entry.type === "flyer")) sawFlyer = true;
-      if (wave11.some((entry) => entry.type === "jet")) sawJet = true;
-      if (wave16.some((entry) => entry.type === "aegis")) sawAegis = true;
+      const wave12 = generate(seed, 12);
+      const wave22 = generate(seed, 22);
+      const wave32 = generate(seed, 32);
+      for (const entry of [...wave12, ...wave22, ...wave32]) expect(ENEMY_TYPES[entry.type]).toBeDefined();
+      expect(wave12.some((entry) => entry.type === "jet" || entry.type === "aegis")).toBe(false);
+      expect(wave22.some((entry) => entry.type === "aegis")).toBe(false);
+      if (wave12.some((entry) => entry.type === "flyer")) sawFlyer = true;
+      if (wave22.some((entry) => entry.type === "jet")) sawJet = true;
+      if (wave32.some((entry) => entry.type === "aegis")) sawAegis = true;
     }
     expect(sawFlyer).toBe(true);
     expect(sawJet).toBe(true);

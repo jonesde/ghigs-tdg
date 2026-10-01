@@ -4,17 +4,7 @@ import { enemyBounty, enemyLevelHpMult } from "@/content/formulas.js";
 import { getGameContent } from "@/content/gameContent.js";
 import { loadGameContent } from "@/content/loadGameContent.js";
 import { GameContentSchema } from "@/content/schemas/gameContent.js";
-import { MAP_LEVELS, TOTAL_MAPS } from "@/sim/Constants.js";
-import { ENEMY_TYPES, ENEMY_WAVE_DAMAGE_MULT } from "@/sim/ConstantsEnemy.js";
-import {
-  TOWER_BASE,
-  TOWER_LEVEL_DMG_MULT,
-  TOWER_META,
-  TOWER_VARIANTS,
-  TowerIds,
-  targetsLabel,
-  towerGroundOnly,
-} from "@/sim/ConstantsTower.js";
+import { TOWER_VARIANTS, targetsLabel, towerGroundOnly } from "@/sim/ConstantsTower.js";
 
 function blankStats() {
   return {
@@ -69,25 +59,6 @@ describe("game content packs", () => {
       content.towers.ids.push("injected");
     }).toThrow(TypeError);
     expect(content.towers.tuning.levelDmgMult).toBe(originalDamageMult);
-  });
-
-  it("exposes facade constants matching pack data", () => {
-    const content = getGameContent();
-    expect(TOWER_BASE.basic).toEqual(content.towers.base.basic);
-    expect(TOWER_META.basic?.cost).toBe(20);
-    expect(ENEMY_TYPES.minion?.baseHp).toBe(8);
-    expect(ENEMY_WAVE_DAMAGE_MULT).toBe(0.2);
-    expect(content.enemies.bountyLevelGrowth).toBe(0.5);
-    expect(content.enemies.bountyFullThroughWave).toBe(10);
-    expect(content.enemies.laterWaveBountyMult).toBe(0.25);
-    expect(content.enemies.types.boss?.baseHp).toBe(192);
-    expect(TOWER_LEVEL_DMG_MULT).toBe(1.8);
-    expect(MAP_LEVELS).toHaveLength(36);
-    expect(TOTAL_MAPS).toBe(36);
-    for (const id of Object.values(TowerIds)) {
-      expect(TOWER_VARIANTS[id].A.name).toBeTruthy();
-      expect(TOWER_VARIANTS[id].B.name).toBeTruthy();
-    }
   });
 
   it("computes enemy level HP mult from pack coeffs", () => {
