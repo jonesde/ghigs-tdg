@@ -82,7 +82,6 @@ import {
   MILESTONE_WAVES,
   PROGRESSIVE_PLACEMENT_INTERVAL,
   PROGRESSIVE_REROLL_GOLD_PER_WAVE,
-  REGION_GEM_REWARDS,
   SELL_DISCOUNT_PCT,
   SELL_VALUE_RATIO,
   SLOW_HEALING_PER_ROUND,
@@ -700,22 +699,6 @@ export class GameEngine {
   // on debug setWave jumps, so gem breakdowns, best waves, and map unlocks stay
   // consistent no matter how the wave counter moved.
   private applyWaveProgressRewards(wave: number): void {
-    // Flat per-wave gem award by region (no difficulty/map multipliers). All
-    // clear paths (onWaveCleared, onWaveExpired, debugSetWave) funnel through
-    // this method, so natural clears, pre-emptive expiry, and debug jumps agree.
-    const regionId = this.runState.map?.regionId ?? 0;
-    const waveClearGems = REGION_GEM_REWARDS[regionId] ?? 0;
-    if (waveClearGems > 0) {
-      const waveClearBreakdown = this.runState.gemBreakdown.waveClears;
-      waveClearBreakdown.base += waveClearGems;
-      waveClearBreakdown.afterDiff += waveClearGems;
-      waveClearBreakdown.afterRegion += waveClearGems;
-      waveClearBreakdown.afterFirstTime += waveClearGems;
-      this.persistState.gems += waveClearGems;
-      this.runState.runGemsEarned += waveClearGems;
-      this.persistDirty = true;
-    }
-
     for (const milestoneWave of MILESTONE_WAVES) {
       if (wave >= milestoneWave && !hasClaimedMilestoneRun(this.runState, milestoneWave)) {
         this.runState.milestoneRewardsClaimed[milestoneWave] = true;
@@ -874,7 +857,6 @@ export class GameEngine {
         const subtotal =
           breakdown.bossKills.afterFirstTime +
           breakdown.milestones.afterFirstTime +
-          breakdown.waveClears.afterFirstTime +
           breakdown.waveCompletion.afterFirstTime;
         const bonus = subtotal * 2;
         this.runState.gemBreakdown.firstClearBonus = bonus;

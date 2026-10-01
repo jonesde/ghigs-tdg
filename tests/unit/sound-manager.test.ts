@@ -7,6 +7,8 @@ interface MockAudioContext {
   resume: ReturnType<typeof vi.fn>;
   createOscillator: ReturnType<typeof vi.fn>;
   createGain: ReturnType<typeof vi.fn>;
+  createBiquadFilter: ReturnType<typeof vi.fn>;
+  createBufferSource: ReturnType<typeof vi.fn>;
   destination: unknown;
   close: ReturnType<typeof vi.fn>;
 }
@@ -99,101 +101,47 @@ describe("SoundManager", () => {
       expect((sm.audioContext! as unknown as MockAudioContext).createGain).toHaveBeenCalled();
     });
 
-    it("connects oscillatorillator to gain and gain to destination", () => {
+    it("connects oscillator to lowpass, lowpass to gain, and gain to destination", () => {
       sm.play("shoot_basic");
-      const oscillator = (sm.audioContext?.createOscillator as unknown as MockAudioContext["createOscillator"]).mock
-        .results[0].value;
-      const gainNode = (sm.audioContext?.createGain as unknown as MockAudioContext["createGain"]).mock.results[0].value;
-      expect(oscillator.connect).toHaveBeenCalledWith(gainNode);
-      expect(gainNode.connect).toHaveBeenCalledWith(sm.audioContext?.destination);
+      const audioContext = sm.audioContext as unknown as MockAudioContext;
+      const oscillator = audioContext.createOscillator.mock.results[0].value;
+      const toneFilter = audioContext.createBiquadFilter.mock.results[0].value;
+      const gainNode = audioContext.createGain.mock.results[0].value;
+      expect(oscillator.connect).toHaveBeenCalledWith(toneFilter);
+      expect(toneFilter.connect).toHaveBeenCalledWith(gainNode);
+      expect(gainNode.connect).toHaveBeenCalledWith(audioContext.destination);
+      expect(toneFilter.type).toBe("lowpass");
+      expect(toneFilter.frequency.value).toBe(900);
     });
 
-    it("sets oscillatorillator frequency and type for shoot_basic", () => {
-      sm.play("shoot_basic");
-      const oscillator = (sm.audioContext?.createOscillator as MockAudioContext["createOscillator"]).mock.results[0]
-        .value;
-      expect(oscillator.frequency.value).toBe(660);
-      expect(oscillator.type).toBe("square");
-    });
-
-    it("sets oscillatorillator frequency and type for shoot_sniper", () => {
-      sm.play("shoot_sniper");
-      const oscillator = (sm.audioContext?.createOscillator as MockAudioContext["createOscillator"]).mock.results[0]
-        .value;
-      expect(oscillator.frequency.value).toBe(180);
-      expect(oscillator.type).toBe("sawtooth");
-    });
-
-    it("sets oscillatorillator frequency and type for shoot_cannon", () => {
-      sm.play("shoot_cannon");
-      const oscillator = (sm.audioContext?.createOscillator as MockAudioContext["createOscillator"]).mock.results[0]
-        .value;
-      expect(oscillator.frequency.value).toBe(90);
-      expect(oscillator.type).toBe("square");
-    });
-
-    it("sets oscillatorillator frequency and type for shoot_ice", () => {
-      sm.play("shoot_ice");
-      const oscillator = (sm.audioContext?.createOscillator as MockAudioContext["createOscillator"]).mock.results[0]
-        .value;
-      expect(oscillator.frequency.value).toBe(880);
-      expect(oscillator.type).toBe("sine");
-    });
-
-    it("sets oscillatorillator frequency and type for shoot_lightning", () => {
-      sm.play("shoot_lightning");
-      const oscillator = (sm.audioContext?.createOscillator as MockAudioContext["createOscillator"]).mock.results[0]
-        .value;
-      expect(oscillator.frequency.value).toBe(1200);
-      expect(oscillator.type).toBe("sawtooth");
-    });
-
-    it("sets oscillatorillator frequency and type for shoot_railgun", () => {
-      sm.play("shoot_railgun");
-      const oscillator = (sm.audioContext?.createOscillator as MockAudioContext["createOscillator"]).mock.results[0]
-        .value;
-      expect(oscillator.frequency.value).toBe(2400);
-      expect(oscillator.type).toBe("sawtooth");
-    });
-
-    it("sets oscillatorillator frequency and type for place", () => {
-      sm.play("place");
-      const oscillator = (sm.audioContext?.createOscillator as MockAudioContext["createOscillator"]).mock.results[0]
-        .value;
-      expect(oscillator.frequency.value).toBe(300);
-      expect(oscillator.type).toBe("triangle");
-    });
-
-    it("sets oscillatorillator frequency and type for base_hit", () => {
-      sm.play("base_hit");
-      const oscillator = (sm.audioContext?.createOscillator as MockAudioContext["createOscillator"]).mock.results[0]
-        .value;
-      expect(oscillator.frequency.value).toBe(80);
-      expect(oscillator.type).toBe("square");
-    });
-
-    it("sets oscillatorillator frequency and type for boss_die", () => {
-      sm.play("boss_die");
-      const oscillator = (sm.audioContext?.createOscillator as MockAudioContext["createOscillator"]).mock.results[0]
-        .value;
-      expect(oscillator.frequency.value).toBe(60);
-      expect(oscillator.type).toBe("sawtooth");
-    });
-
-    it("sets oscillatorillator frequency and type for sell", () => {
-      sm.play("sell");
-      const oscillator = (sm.audioContext?.createOscillator as MockAudioContext["createOscillator"]).mock.results[0]
-        .value;
-      expect(oscillator.frequency.value).toBe(520);
-      expect(oscillator.type).toBe("triangle");
-    });
-
-    it("sets oscillatorillator frequency and type for cancel", () => {
-      sm.play("cancel");
-      const oscillator = (sm.audioContext?.createOscillator as MockAudioContext["createOscillator"]).mock.results[0]
-        .value;
-      expect(oscillator.frequency.value).toBe(200);
-      expect(oscillator.type).toBe("sine");
+    it.each([
+      ["shoot_basic", "triangle", 392, 900, false],
+      ["shoot_sniper", "sine", 140, 400, false],
+      ["shoot_cannon", "sine", 70, 180, true],
+      ["shoot_ice", "sine", 520, 1200, false],
+      ["shoot_lightning", "triangle", 680, 1400, true],
+      ["shoot_railgun", "sine", 320, 700, false],
+      ["shoot_shotgunTank", "triangle", 160, 500, false],
+      ["shoot_sturdyWall", "sine", 90, 250, false],
+      ["place", "triangle", 220, 600, false],
+      ["base_hit", "sine", 55, 160, false],
+      ["boss_die", "sine", 70, 200, false],
+      ["sell", "triangle", 300, 700, false],
+      ["cancel", "sine", 160, 500, false],
+    ] as const)("%s starts at its voice frequency through a lowpass", (name, oscillatorType, frequencyStart, lowpassHz, usesNoise) => {
+      sm.play(name);
+      const audioContext = sm.audioContext as unknown as MockAudioContext;
+      const oscillator = audioContext.createOscillator.mock.results[0].value;
+      const toneFilter = audioContext.createBiquadFilter.mock.results[0].value;
+      expect(oscillator.type).toBe(oscillatorType);
+      expect(oscillator.frequency.setValueAtTime).toHaveBeenCalledWith(frequencyStart, expect.anything());
+      expect(oscillator.frequency.exponentialRampToValueAtTime).toHaveBeenCalled();
+      expect(toneFilter.frequency.value).toBe(lowpassHz);
+      if (usesNoise) {
+        expect(audioContext.createBufferSource).toHaveBeenCalled();
+      } else {
+        expect(audioContext.createBufferSource).not.toHaveBeenCalled();
+      }
     });
 
     it("calls setValueAtTime on gain", () => {

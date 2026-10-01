@@ -46,6 +46,7 @@ const STUN_COLOR_OUTER = "#40a0ff";
 const STUN_COLOR_INNER = "#ffffff";
 const STUN_STROKE_OUTER = 2.5;
 const STUN_STROKE_INNER = 1.5;
+const STUN_STROKE_OPACITY_SCALE = 0.5;
 
 const TILE_SIZE = 36;
 
@@ -363,11 +364,11 @@ export class EffectManager {
       outerArc.setAttribute("points", points);
       innerArc.setAttribute("points", points);
 
-      const outerOpacity = 0.35 + 0.15 * Math.sin(elapsed * STUN_PULSE_HZ * Math.PI * 2);
+      const outerOpacity = (0.35 + 0.15 * Math.sin(elapsed * STUN_PULSE_HZ * Math.PI * 2)) * STUN_STROKE_OPACITY_SCALE;
       outerArc.setAttribute("opacity", outerOpacity.toFixed(3));
 
       const flash = Math.sin(elapsed * STUN_FLASH_HZ * Math.PI * 2) > 0.2;
-      const innerOpacity = flash ? 1.0 : 0.08;
+      const innerOpacity = (flash ? 1.0 : 0.08) * STUN_STROKE_OPACITY_SCALE;
       innerArc.setAttribute("opacity", innerOpacity.toFixed(3));
 
       group.setAttribute("transform", `translate(${effect.x.toFixed(1)}, ${effect.y.toFixed(1)})`);

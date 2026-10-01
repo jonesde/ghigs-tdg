@@ -101,11 +101,6 @@ function formatBreakdown(section: string) {
         <div v-for="(line, i) in formatBreakdown('milestones')" :key="i" class="breakdown-line">{{ line }}</div>
       </div>
 
-      <div v-if="sectionBreakdown.waveClears?.base" class="breakdown-section">
-        <h3>Wave Clears</h3>
-        <div v-for="(line, i) in formatBreakdown('waveClears')" :key="i" class="breakdown-line">{{ line }}</div>
-      </div>
-
       <div v-if="sectionBreakdown.waveCompletion?.base" class="breakdown-section">
         <h3>Wave Completion</h3>
         <div v-for="(line, i) in formatBreakdown('waveCompletion')" :key="i" class="breakdown-line">{{ line }}</div>

@@ -33,7 +33,7 @@ function formatDate(timestamp: number) {
   return `${day} ${month} ${year} - ${hour}:${min}`;
 }
 
-const runHistory = computed(() => persistStore.runHistory || []);
+const runHistory = computed(() => [...(persistStore.runHistory || [])].reverse());
 
 function formatBreakdown(entry: Record<string, unknown>, section: string) {
   const gemBreakdown = entry.gemBreakdown as Record<

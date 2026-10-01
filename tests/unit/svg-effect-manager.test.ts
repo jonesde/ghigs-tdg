@@ -154,6 +154,17 @@ describe("EffectManager", () => {
       expect(polylines.length).toBe(2);
     });
 
+    it("draws the stun ring at half stroke opacity and keeps the life fade", () => {
+      manager.addStunEffect(10, 10, 0.3);
+      manager.syncFromGameEngine(null, null, null, null, false, 0);
+
+      const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
+      const polylines = groups[0]!.querySelectorAll("polyline");
+      expect(groups[0]!.getAttribute("opacity")).toBe("1.000");
+      expect(polylines[0]!.getAttribute("opacity")).toBe("0.175");
+      expect(polylines[1]!.getAttribute("opacity")).toBe("0.040");
+    });
+
     it("hides unused stun pool slots", () => {
       manager.addStunEffect(10, 10, 0.3);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);

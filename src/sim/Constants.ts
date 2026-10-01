@@ -128,7 +128,6 @@ export const DIFFICULTY_MULT_MAX = economy.difficultyMultMax;
 export const DIFFICULTY_MULT_TICK = economy.difficultyMultTick;
 export const DIFFICULTY_MULT_GEM_BASE = economy.difficultyMultGemBase;
 
-export const REGION_GEM_REWARDS = economy.regionGemRewards;
 export const MAP_GEM_MULTIPLIERS = economy.mapGemMultipliers;
 export const FIRST_TIME_MILESTONE_MULT = economy.firstTimeMilestoneMult;
 export const FIRST_FULL_CLEAR_MULT = economy.firstFullClearMult;

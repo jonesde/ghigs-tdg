@@ -103,8 +103,11 @@ if (typeof HTMLCanvasElement !== "undefined") {
 
 class MockAudioContext {
   state: AudioContextState = "running";
+  sampleRate = 44100;
+  currentTime = 0;
   createOscillator: ReturnType<typeof vi.fn>;
   createGain: ReturnType<typeof vi.fn>;
+  createBiquadFilter: ReturnType<typeof vi.fn>;
   createBuffer: ReturnType<typeof vi.fn>;
   createBufferSource: ReturnType<typeof vi.fn>;
   decodeAudioData: ReturnType<typeof vi.fn>;
@@ -116,7 +119,7 @@ class MockAudioContext {
       stop: vi.fn(),
       connect: vi.fn(),
       disconnect: vi.fn(),
-      frequency: { value: 440 },
+      frequency: { value: 440, setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() },
     }));
     this.createGain = vi.fn(() => ({
       gain: {
@@ -125,6 +128,13 @@ class MockAudioContext {
         exponentialRampToValueAtTime: vi.fn(),
         linearRampToValueAtTime: vi.fn(),
       },
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+    }));
+    this.createBiquadFilter = vi.fn(() => ({
+      type: "lowpass",
+      frequency: { value: 350 },
+      Q: { value: 1 },
       connect: vi.fn(),
       disconnect: vi.fn(),
     }));

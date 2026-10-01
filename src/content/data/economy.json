@@ -11,7 +11,6 @@
   "difficultyMultMax": 4.0,
   "difficultyMultTick": 0.25,
   "difficultyMultGemBase": 1.5,
-  "regionGemRewards": [1, 2, 4],
   "mapGemMultipliers": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 8, 10, 10, 10, 10],
   "firstTimeMilestoneMult": 2,
   "firstFullClearMult": 2,
