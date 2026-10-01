@@ -11,6 +11,7 @@ export interface FlightGrid {
   isPath(tileX: number, tileY: number): boolean;
   isSpawn(tileX: number, tileY: number): boolean;
   isBase(tileX: number, tileY: number): boolean;
+  isVoid(tileX: number, tileY: number): boolean;
   getHeight(tileX: number, tileY: number): number;
   tileToWorld(tileX: number, tileY: number): { x: number; y: number };
   worldOriginX?: number;
@@ -51,6 +52,7 @@ export function canTraverseTile(
 ): boolean {
   if (!grid.inBounds(tileX, tileY)) return false;
   if (flyingHeight <= 0) return grid.isPath(tileX, tileY) || grid.isSpawn(tileX, tileY) || grid.isBase(tileX, tileY);
+  if (grid.isVoid(tileX, tileY)) return false;
   return effectiveHeight(grid, tileX, tileY, liveTowerAt) <= flyingHeight;
 }
 
@@ -68,8 +70,8 @@ export function tilesTouchedBySegment(
 ): TilePoint[] {
   const originX = (startX - worldOriginX) / tileSize;
   const originY = (startY - worldOriginY) / tileSize;
-  const targetX = endX / tileSize;
-  const targetY = endY / tileSize;
+  const targetX = (endX - worldOriginX) / tileSize;
+  const targetY = (endY - worldOriginY) / tileSize;
   let tileX = Math.floor(originX);
   let tileY = Math.floor(originY);
   const endTileX = Math.floor(targetX);

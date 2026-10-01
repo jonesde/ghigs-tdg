@@ -1,8 +1,9 @@
 import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import ProgressivePlacement from "@/components/ProgressivePlacement.vue";
 import { progressivePatternMarkup, progressivePreviewFill } from "@/components/progressivePreview.js";
+import * as commandBus from "@/sim/commandBus.js";
 import {
   generateProgressiveCatalog,
   generateProgressiveMap,
@@ -54,6 +55,49 @@ describe("ProgressivePlacement offer cards", () => {
     expect(fills.has("#d7b072")).toBe(true);
     const terrainFills = [...fills].filter((fill) => fill !== "#d7b072");
     expect(terrainFills.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("keeps Enter from rotating a focused card or re-rolling", async () => {
+    const config = progressiveConfigForIndex(36);
+    if (!config) throw new Error("progressive config 36 missing");
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const gameStore = useGameStore();
+    gameStore.map = generateProgressiveMap(config);
+    gameStore.mapIndex = 36;
+    gameStore.progressivePlacementHold = true;
+    gameStore.progressiveRotation = 0;
+    gameStore.progressiveSelectedOffer = 0;
+    gameStore.progressiveOffer = [0, 1];
+    gameStore.gold = 500;
+    gameStore.currentWave = 3;
+    const rotate = vi.spyOn(gameStore, "rotateProgressiveBlock");
+    const dispatch = vi.spyOn(commandBus, "dispatchCommand");
+
+    const wrapper = mount(ProgressivePlacement, { global: { plugins: [pinia] } });
+    const card = wrapper.get(".progressive-card");
+    const mouseDown = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+    card.element.dispatchEvent(mouseDown);
+    expect(mouseDown.defaultPrevented).toBe(true);
+    expect(document.activeElement).not.toBe(card.element);
+
+    const cardEnter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    card.element.dispatchEvent(cardEnter);
+    expect(cardEnter.defaultPrevented).toBe(true);
+    expect(rotate).not.toHaveBeenCalled();
+    expect(gameStore.progressiveRotation).toBe(0);
+
+    await card.trigger("click");
+    expect(rotate).toHaveBeenCalled();
+
+    const reroll = wrapper.get(".progressive-reroll");
+    const rerollEnter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    reroll.element.dispatchEvent(rerollEnter);
+    expect(rerollEnter.defaultPrevented).toBe(true);
+    expect(dispatch).not.toHaveBeenCalled();
+
+    await reroll.trigger("click");
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "action:rerollProgressiveOffer" }));
   });
 });
 

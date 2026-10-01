@@ -18,6 +18,7 @@ import { canTraverseTile, readFlyingHeight, tilesTouchedBySegment } from "@/sim/
 import { writeFlightVelocities } from "@/sim/enemies/flyingSteer.js";
 import { selectTargetingTower } from "@/sim/enemies/targeting.js";
 import { Grid } from "@/sim/grid/Grid.js";
+import { generateProgressiveMap, progressiveConfigForIndex } from "@/sim/grid/ProgressiveMap.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import type { Tower } from "@/sim/towers/Tower.js";
@@ -157,6 +158,34 @@ describe("flight traversal", () => {
     expect(touched.has("0,1")).toBe(true);
     expect(touched.has("1,1")).toBe(true);
   });
+
+  it("rejects void at every flying height and keeps a shifted origin on the same tiles", () => {
+    const voidGrid = laneGrid();
+    voidGrid.tiles[1]![1]!.type = "void";
+    voidGrid.tiles[1]![1]!.height = 1;
+    expect(canTraverseTile(voidGrid, 1, 1, 0, noTower)).toBe(false);
+    expect(canTraverseTile(voidGrid, 1, 1, 2, noTower)).toBe(false);
+    expect(canTraverseTile(voidGrid, 1, 1, 3, noTower)).toBe(false);
+    expect(canTraverseTile(voidGrid, 1, 1, 5, noTower)).toBe(false);
+
+    const tileSize = voidGrid.tileSize;
+    const worldOriginX = -4 * tileSize;
+    const worldOriginY = -6 * tileSize;
+    const shifted = tilesTouchedBySegment(
+      worldOriginX + tileSize * 0.5,
+      worldOriginY + tileSize * 0.5,
+      worldOriginX + tileSize * 1.5,
+      worldOriginY + tileSize * 1.5,
+      tileSize,
+      worldOriginX,
+      worldOriginY,
+    );
+    const touched = new Set(shifted.map((tile) => `${tile.x},${tile.y}`));
+    expect(touched.has("0,0")).toBe(true);
+    expect(touched.has("1,0")).toBe(true);
+    expect(touched.has("0,1")).toBe(true);
+    expect(touched.has("1,1")).toBe(true);
+  });
 });
 
 describe("flight routes", () => {
@@ -189,6 +218,81 @@ describe("flight routes", () => {
     flyer.clearFlightPolyline();
     flyer.computeIntent(FIXED_DT, null);
     expect(flyer.flightPoints).toHaveLength(2);
+  });
+
+  it("flies the placed corridor around a void shortcut and snaps back off the margin", () => {
+    const width = 7;
+    const height = 5;
+    const map = makeMapData({ width, height, spawns: [{ x: 0, y: 1 }], base: { x: 6, y: 1 } }) as ReturnType<
+      typeof makeMapData
+    > & { originTileX?: number; originTileY?: number };
+    map.originTileX = -4;
+    map.originTileY = -6;
+    const grid = new Grid(map);
+    for (let row = 0; row < height; row++) {
+      for (let column = 0; column < width; column++) {
+        const tile = grid.tiles[row]![column]!;
+        tile.type = "terrain";
+        tile.height = 4;
+      }
+    }
+    for (let column = 0; column < width; column++) {
+      const margin = grid.tiles[0]![column]!;
+      margin.type = "void";
+      margin.height = 1;
+      const corridor = grid.tiles[4]![column]!;
+      corridor.type = "path";
+      corridor.height = 1;
+    }
+    for (const row of [2, 3]) {
+      const west = grid.tiles[row]![0]!;
+      west.type = "path";
+      west.height = 1;
+      const east = grid.tiles[row]![6]!;
+      east.type = "path";
+      east.height = 1;
+    }
+    grid.tiles[1]![0]!.type = "spawn";
+    grid.tiles[1]![0]!.height = 1;
+    grid.tiles[1]![6]!.type = "base";
+    grid.tiles[1]![6]!.height = 1;
+
+    const flyer = new EnemyEntity("flyer", 1, 0, grid, 1);
+    placeEnemy(flyer, 0, 1);
+    flyer.computeIntent(FIXED_DT, null);
+    expect(flyer.flightPoints.length).toBeGreaterThan(2);
+    let usedCorridor = false;
+    for (const point of flyer.flightPoints) {
+      const tile = grid.worldToTile(point.x, point.y);
+      expect(grid.isVoid(tile.x, tile.y)).toBe(false);
+      expect(canTraverseTile(grid, tile.x, tile.y, flyer.flyingHeight, () => false)).toBe(true);
+      if (tile.y === 4) usedCorridor = true;
+    }
+    expect(usedCorridor).toBe(true);
+
+    placeEnemy(flyer, 3, 0);
+    flyer.lastMoveTargetWorld = null;
+    flyer.postPhysics(FIXED_DT);
+    const landed = flyer.currentTile();
+    expect(grid.isVoid(landed.x, landed.y)).toBe(false);
+    expect(canTraverseTile(grid, landed.x, landed.y, flyer.flyingHeight, flyer.liveTowerAt)).toBe(true);
+  });
+
+  it("keeps a progressive spawn-to-base route off the unplaced margin", () => {
+    const config = progressiveConfigForIndex(36);
+    if (!config) throw new Error("progressive config 36 missing");
+    const grid = new Grid(generateProgressiveMap(config));
+    const spawn = grid.spawns[0];
+    if (!spawn) throw new Error("spawn missing");
+    expect(grid.worldOriginX).not.toBe(0);
+    const flyer = new EnemyEntity("flyer", 1, 0, grid, 1);
+    placeEnemy(flyer, spawn.x, spawn.y);
+    flyer.computeIntent(FIXED_DT, null);
+    expect(flyer.flightPoints.length).toBeGreaterThan(1);
+    for (const point of flyer.flightPoints) {
+      const tile = grid.worldToTile(point.x, point.y);
+      expect(grid.isVoid(tile.x, tile.y)).toBe(false);
+    }
   });
 
   it("drops a height-4 waypoint for a flyer and keeps it for a jet", () => {

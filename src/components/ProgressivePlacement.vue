@@ -74,13 +74,24 @@ function previewCells(templateIndex: number): string {
         type="button"
         class="progressive-card"
         :class="{ selected: index === gameStore.progressiveSelectedOffer }"
+        @mousedown.prevent
+        @keydown.enter.prevent
+        @keydown.space.prevent
         @click="onOfferClick(index)"
       >
         <svg viewBox="0 0 5 5" width="72" height="72" aria-hidden="true" v-html="previewCells(templateIndex)"></svg>
         <span>{{ index + 1 }}</span>
       </button>
     </div>
-    <button type="button" class="progressive-reroll" :disabled="rerollDisabled" @click="rerollOffer">
+    <button
+      type="button"
+      class="progressive-reroll"
+      :disabled="rerollDisabled"
+      @mousedown.prevent
+      @keydown.enter.prevent
+      @keydown.space.prevent
+      @click="rerollOffer"
+    >
       Re-roll {{ rerollCost }}g
     </button>
     <div class="progressive-hint">

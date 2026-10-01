@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { PROGRESSIVE_REROLL_GOLD_PER_WAVE } from "@/sim/Constants.js";
 import { useUiStore } from "@/stores/ui.js";
 
 const uiStore = useUiStore();
@@ -305,7 +306,7 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                   During a block placement the view zooms out to the whole map. Tab cycles the block choices, R or a
                   second click on the selected choice rotates it, the arrow keys move the placement space (the view pans
                   when that site comes within 20% of the screen width of an edge), and Enter places that block. Re-roll
-                  spends 10 gold times the wave number and redraws every choice.
+                  spends {{ PROGRESSIVE_REROLL_GOLD_PER_WAVE }} gold times the wave number and redraws every choice.
                 </td>
               </tr>
               <tr>

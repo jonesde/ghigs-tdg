@@ -220,6 +220,10 @@ function publishCameraFrame(): void {
 
 function writeCameraFrame(rect: ViewRect): void {
   gameStore.setCameraFrame(rect.originX + rect.width / 2, rect.originY + rect.height / 2, rect.height);
+  // Setup writes this frame before the publish watch exists. A later /game mount
+  // keeps the previous viewport, so ResizeObserver does not change it and that
+  // watch never runs. The SVG would stay at one unit per pixel until a zoom.
+  publishCameraFrame();
 }
 
 function cancelViewBoxTween(): void {

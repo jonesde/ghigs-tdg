@@ -1,6 +1,6 @@
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GameState, PRE_EMPTIVE_WAVE_TIMER } from "@/sim/Constants.js";
+import { GameState, PRE_EMPTIVE_WAVE_TIMER, PROGRESSIVE_REROLL_GOLD_PER_WAVE } from "@/sim/Constants.js";
 import { GameEngine } from "@/sim/GameEngine.js";
 import {
   createProgressiveBoard,
@@ -224,12 +224,14 @@ describe("progressive placement hold", () => {
     return createProgressiveBoard(config);
   }
 
-  it("re-rolls every choice for 10 gold times the wave and keeps an extender", () => {
-    engine.debug("setWave", 3);
+  it("re-rolls every choice for the configured gold times the wave and keeps an extender", () => {
+    const wave = 3;
+    const cost = PROGRESSIVE_REROLL_GOLD_PER_WAVE * wave;
+    engine.debug("setWave", wave);
     const goldBefore = engine.runState.gold;
     const rolled = engine.rerollProgressiveOffer();
     expect(rolled).toBe(true);
-    expect(engine.runState.gold).toBe(goldBefore - 30);
+    expect(engine.runState.gold).toBe(goldBefore - cost);
     expect(engine.progressiveOffer).toHaveLength(2);
     expect(engine.progressivePlacementHold).toBe(true);
     const started = boardForOffer();
@@ -243,7 +245,7 @@ describe("progressive placement hold", () => {
     engine.runState.gold = goldBefore;
     expect(engine.rerollProgressiveOffer()).toBe(true);
     expect(engine.progressiveOffer).toHaveLength(3);
-    expect(engine.runState.gold).toBe(goldBefore - 30);
+    expect(engine.runState.gold).toBe(goldBefore - cost);
   });
 
   it("does not spend or draw when a re-roll is short on gold", () => {
@@ -253,9 +255,11 @@ describe("progressive placement hold", () => {
     right.debug("setWave", 3);
     expect(left.progressiveOffer).toEqual(right.progressiveOffer);
     const offer = left.progressiveOffer.slice();
-    left.runState.gold = 29;
+    const cost = PROGRESSIVE_REROLL_GOLD_PER_WAVE * 3;
+    const shortGold = cost - 1;
+    left.runState.gold = shortGold;
     expect(left.rerollProgressiveOffer()).toBe(false);
-    expect(left.runState.gold).toBe(29);
+    expect(left.runState.gold).toBe(shortGold);
     expect(left.progressiveOffer).toEqual(offer);
     const leftNotes = (left.host as MockHostBindings).uiEvents
       .filter((event) => event.type === "showNotification")
@@ -266,8 +270,8 @@ describe("progressive placement hold", () => {
     expect(left.rerollProgressiveOffer()).toBe(true);
     expect(right.rerollProgressiveOffer()).toBe(true);
     expect(left.progressiveOffer).toEqual(right.progressiveOffer);
-    expect(left.runState.gold).toBe(470);
-    expect(right.runState.gold).toBe(470);
+    expect(left.runState.gold).toBe(500 - cost);
+    expect(right.runState.gold).toBe(500 - cost);
   });
 
   it("rejects a re-roll when no hold is open", () => {

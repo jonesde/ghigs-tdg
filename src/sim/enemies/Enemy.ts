@@ -838,6 +838,28 @@ export class Enemy {
       this.agent?.teleport(toRecast({ x: this.x, y: this.y }));
     }
 
+    // The rectangle above includes the progressive void margin. That margin is not
+    // drawn and is not a flight tile, so a center that lands there is moved onto
+    // the nearest placed tile. Clearing the polyline makes the next intent rebuild.
+    if (this.flyingHeight > 0) {
+      const occupied = this.currentTile();
+      if (!canTraverseTile(this.grid, occupied.x, occupied.y, this.flyingHeight, this.liveTowerAt)) {
+        const recover = nearestTraversableTile(this.grid, occupied.x, occupied.y, this.flyingHeight, this.liveTowerAt);
+        if (recover) {
+          const world = this.grid.tileToWorld(recover.x, recover.y);
+          this.x = world.x;
+          this.y = world.y;
+          this.centerX = world.x;
+          this.centerY = world.y;
+          if (this.body) {
+            this.body.setTranslation({ x: world.x, y: world.y }, true);
+            this.body.setLinvel({ x: 0, y: 0 }, true);
+          }
+          this.clearFlightPolyline();
+        }
+      }
+    }
+
     if (this.body) {
       const linvel = this.body.linvel();
       const moveSpeedEpsilon = 1e-4;

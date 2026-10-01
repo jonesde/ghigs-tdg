@@ -48,7 +48,7 @@
   "progressive": {
     "blockSize": 5,
     "placementInterval": 3,
-    "rerollGoldPerWave": 10,
+    "rerollGoldPerWave": 3,
     "variants": [
       { "regionId": 0, "level": 1, "entryCount": 1, "seed": 11011 },
       { "regionId": 0, "level": 5, "entryCount": 2, "seed": 52052 },
