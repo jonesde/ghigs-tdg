@@ -316,6 +316,30 @@ describe("TowerManager", () => {
     });
   });
 
+  describe("shiftLayoutIndices", () => {
+    it("re-keys tileMap when towers sit one shift apart", () => {
+      const first = manager.build("basic", 0, 0, makeSave(), grid) as Tower;
+      const second = manager.build("basic", 5, 0, makeSave(), grid) as Tower;
+      manager.shiftLayoutIndices(5, 0);
+      expect(first.tileX).toBe(5);
+      expect(first.tileY).toBe(0);
+      expect(second.tileX).toBe(10);
+      expect(second.tileY).toBe(0);
+      expect(manager.towerAt(5, 0)).toBe(first);
+      expect(manager.towerAt(10, 0)).toBe(second);
+      expect(manager.towerAt(0, 0)).toBeUndefined();
+      expect(manager.towers).toHaveLength(2);
+    });
+
+    it("is a no-op for a zero shift", () => {
+      const tower = manager.build("basic", 3, 2, makeSave(), grid) as Tower;
+      manager.shiftLayoutIndices(0, 0);
+      expect(tower.tileX).toBe(3);
+      expect(tower.tileY).toBe(2);
+      expect(manager.towerAt(3, 2)).toBe(tower);
+    });
+  });
+
   describe("clear", () => {
     it("removes all towers", () => {
       manager.build("basic", 0, 0, makeSave(), grid);

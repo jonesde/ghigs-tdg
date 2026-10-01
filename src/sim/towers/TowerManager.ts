@@ -223,4 +223,18 @@ export class TowerManager {
   towerAt(tileX: number, tileY: number): Tower | undefined {
     return this.tileMap.get(`${tileX},${tileY}`);
   }
+
+  // Tile indices move with the grid origin; world positions (tower.x/y) stay
+  // where they are. The fresh map avoids a shifted tower's new key clobbering
+  // another tower's old key when the two sit exactly one shift apart.
+  shiftLayoutIndices(shiftX: number, shiftY: number): void {
+    if (shiftX === 0 && shiftY === 0) return;
+    const shifted = new Map<string, Tower>();
+    for (const tower of this.towers) {
+      tower.tileX += shiftX;
+      tower.tileY += shiftY;
+      shifted.set(`${tower.tileX},${tower.tileY}`, tower);
+    }
+    this.tileMap = shifted;
+  }
 }

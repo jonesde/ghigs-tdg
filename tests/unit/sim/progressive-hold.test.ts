@@ -89,6 +89,45 @@ describe("progressive placement hold", () => {
     expect(engine.runState.waveCountdown?.nextWave).toBe(4);
   });
 
+  it("re-keys tower tiles when a placement shifts the grid origin and sells the tower cleanly", () => {
+    const site = firstOfferedSite();
+    const grid = engine.grid;
+    const towerManager = engine.towerManager;
+    if (!grid || !towerManager) throw new Error("grid or tower manager missing");
+    let buildTile: { x: number; y: number } | null = null;
+    for (let tileY = 0; tileY < grid.height && !buildTile; tileY++) {
+      for (let tileX = 0; tileX < grid.width; tileX++) {
+        if (grid.canBuild(tileX, tileY)) {
+          buildTile = { x: tileX, y: tileY };
+          break;
+        }
+      }
+    }
+    if (!buildTile) throw new Error("no buildable tile on the progressive board");
+    const tower = towerManager.build("basic", buildTile.x, buildTile.y, engine.persistState, grid);
+    if (!tower) throw new Error("tower build failed");
+    const worldBefore = { x: tower.x, y: tower.y };
+    const originXBefore = grid.worldOriginX;
+    const originYBefore = grid.worldOriginY;
+    const placed = engine.placeProgressiveBlock(site.templateIndex, site.rotation, site.blockX, site.blockY);
+    expect(placed).toBe(true);
+    const shiftX = Math.round((originXBefore - grid.worldOriginX) / grid.tileSize);
+    const shiftY = Math.round((originYBefore - grid.worldOriginY) / grid.tileSize);
+    expect(shiftX !== 0 || shiftY !== 0).toBe(true);
+    expect(tower.tileX).toBe(buildTile.x + shiftX);
+    expect(tower.tileY).toBe(buildTile.y + shiftY);
+    expect(towerManager.towerAt(tower.tileX, tower.tileY)).toBe(tower);
+    expect(towerManager.towerAt(buildTile.x, buildTile.y)).toBeUndefined();
+    expect(tower.x).toBe(worldBefore.x);
+    expect(tower.y).toBe(worldBefore.y);
+
+    towerManager.sell(tower, engine.persistState);
+    expect(towerManager.towers).toHaveLength(0);
+    expect(towerManager.towerAt(tower.tileX, tower.tileY)).toBeUndefined();
+    const towerKey = `${tower.tileX},${tower.tileY}`;
+    expect(grid.blocked.has(towerKey) || grid.terrainTowers.has(towerKey)).toBe(false);
+  });
+
   function firstOfferedSite(): { templateIndex: number; rotation: number; blockX: number; blockY: number } {
     engine.debug("setWave", 3);
     const config = progressiveConfigForIndex(36);

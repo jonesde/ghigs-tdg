@@ -1415,10 +1415,7 @@ export class GameEngine {
       this.runState.map = previousMap;
       return this.refuseWalkMesh(buildError);
     }
-    for (const tower of this.towerManager.towers) {
-      tower.tileX += shift.shiftX;
-      tower.tileY += shift.shiftY;
-    }
+    this.towerManager.shiftLayoutIndices(shift.shiftX, shift.shiftY);
     this.enemyManager.shiftLayoutIndices(shift.shiftX, shift.shiftY);
     this.enemyManager.reindexSpawns(previousSpawns, nextMap.spawns);
     this.waveManager.map = nextMap;
