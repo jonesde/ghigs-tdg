@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { RouteRecordRaw } from "vue-router";
 import { createMemoryHistory, createRouter } from "vue-router";
 import EndScreen from "@/components/EndScreen.vue";
+import { CUSTOM_PROGRESSIVE_MAP_INDEX } from "@/sim/Constants.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -30,6 +31,7 @@ function createRouterWithRoutes(): ReturnType<typeof createRouter> {
     { path: "/", name: "main-menu", component: { template: "<div>MainMenu</div>" } },
     { path: "/map-select", name: "map-select", component: { template: "<div>MapSelect</div>" } },
     { path: "/skill-tree", name: "skill-tree", component: { template: "<div>SkillTree</div>" } },
+    { path: "/game", name: "game", component: { template: "<div>Game</div>" } },
     { path: "/game-over", name: "game-over", component: { template: "<div>GameOver</div>" } },
     { path: "/victory", name: "victory", component: { template: "<div>Victory</div>" } },
   ];
@@ -144,5 +146,33 @@ describe("EndScreen", () => {
     await menuBtn.trigger("click");
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(router.currentRoute.value.path).toBe("/");
+  });
+
+  it("replays a custom progressive run from the history entry params", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: uiStore unused
+    const { pinia, gameStore, persistStore, uiStore, router } = mountEndScreen();
+    persistStore.runHistory = [
+      {
+        mapIndex: CUSTOM_PROGRESSIVE_MAP_INDEX,
+        victory: true,
+        wave: 20,
+        gems: 50,
+        bossesKilled: 1,
+        bossesReachedBase: 0,
+        gemBreakdown: {},
+        date: 0,
+        progressiveMapParams: { regionId: 1, level: 4, entryCount: 2, seed: 31337 },
+      },
+    ];
+    const wrapper = mount(EndScreen, { props: { won: true }, global: { plugins: [router, pinia] } });
+    const replayButton = wrapper.findAll("button").find((button) => button.text() === "Play Again")!;
+    await replayButton.trigger("click");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(gameStore.mapIndex).toBe(CUSTOM_PROGRESSIVE_MAP_INDEX);
+    expect(gameStore.map.style).toBe("progressive");
+    expect(gameStore.map.regionId).toBe(1);
+    expect(gameStore.map.level).toBe(4);
+    expect(gameStore.map.entryCount).toBe(2);
+    expect(gameStore.map.seed).toBe(31337);
   });
 });

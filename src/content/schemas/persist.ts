@@ -66,6 +66,10 @@ export const PersistStateSchema = z.object({
   randomMapSeed: z.number().nullable(),
   randomMapWidth: z.number(),
   randomMapHeight: z.number(),
+  progressiveMapRegion: z.number(),
+  progressiveMapLevel: z.number(),
+  progressiveMapEntries: z.number(),
+  progressiveMapSeed: z.number().nullable(),
   lastSelectedThemeId: z.string(),
   llmCommanders: z.array(LlmCommanderConfigSchema),
 });

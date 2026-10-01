@@ -29,11 +29,13 @@ import {
   commitPlacement,
   createProgressiveBoard,
   drawBlockOffer,
-  gemMultiplierForMap,
+  gemMultiplierForRegionLevel,
+  generateProgressiveMap,
   offerHasAlternative,
   type ProgressiveBoard,
+  type ProgressiveConfig,
   type ProgressiveStamp,
-  progressiveConfigForIndex,
+  progressiveConfigFromMap,
   resolveGeneratedMap,
 } from "@/sim/grid/ProgressiveMap.js";
 import type { HostBindings, ThemeBundle } from "@/sim/HostBindings.js";
@@ -70,6 +72,8 @@ import { WaveManager } from "@/sim/waves/WaveManager.js";
 import {
   BETWEEN_WAVES_TIMER,
   BONUS_GEM_BASE,
+  CUSTOM_PROGRESSIVE_MAP_INDEX,
+  CUSTOM_RANDOM_MAP_INDEX,
   DIFFICULTY_MULT_GEM_BASE,
   FIXED_DT,
   GAMEPLAY_ENEMY_CAP,
@@ -251,7 +255,12 @@ export class GameEngine {
 
   loadRandomMap(width: number, height: number, level: number, style: string, regionId: number, seed: number): void {
     const mapData = generateRandomMap(width, height, style, regionId, level, seed);
-    this._initMap(-1, mapData, this.persistState);
+    this._initMap(CUSTOM_RANDOM_MAP_INDEX, mapData, this.persistState);
+  }
+
+  loadProgressiveMap(config: ProgressiveConfig): void {
+    const mapData = generateProgressiveMap(config);
+    this._initMap(CUSTOM_PROGRESSIVE_MAP_INDEX, mapData, this.persistState);
   }
 
   _initMap(mapIndex: number, mapData: GeneratedMap, persistState: PersistState): void {
@@ -334,7 +343,7 @@ export class GameEngine {
     // every sim roller, so the same run replays identically and distinct runs diverge.
     this.simRng = mulberry32(forkRunSeed(mapData.seed, this.runId));
     if (mapData.style === "progressive") {
-      const config = progressiveConfigForIndex(mapIndex);
+      const config = progressiveConfigFromMap(mapData);
       if (config) {
         const started = createProgressiveBoard(config);
         this.progressiveBoard = started.board;
@@ -440,13 +449,21 @@ export class GameEngine {
     }
   }
 
+  // Every map — catalog, progressive variant, or custom — earns the gem multiplier
+  // of its region/level pair, so custom runs price like the fixed map they match.
+  private runGemMapMultiplier(): number {
+    const map = this.runState.map;
+    if (!map) return 1;
+    return gemMultiplierForRegionLevel(map.regionId, map.level);
+  }
+
   onBossKilled(): void {
     this.runState.bossesKilledThisRun++;
 
     const base = 1;
     const diffMult = getDifficultyMultiplier(this.persistState);
     const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
-    const mapMult = this.runState.mapIndex >= 0 ? gemMultiplierForMap(this.runState.mapIndex) : 1;
+    const mapMult = this.runGemMapMultiplier();
 
     const afterDiff = Math.ceil(base * gemMult);
     const afterRegion = Math.ceil(afterDiff * mapMult);
@@ -709,7 +726,7 @@ export class GameEngine {
         const base = MILESTONE_GEMS[milestoneWave] ?? 0;
         const diffMult = getDifficultyMultiplier(this.persistState);
         const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
-        const mapMult = this.runState.mapIndex >= 0 ? gemMultiplierForMap(this.runState.mapIndex) : 1;
+        const mapMult = this.runGemMapMultiplier();
 
         const afterDiff = Math.ceil(base * gemMult);
         const afterRegion = Math.ceil(afterDiff * mapMult);
@@ -837,7 +854,7 @@ export class GameEngine {
     if (totalBonus > 0) {
       const diffMult = getDifficultyMultiplier(this.persistState);
       const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
-      const mapMult = this.runState.mapIndex >= 0 ? gemMultiplierForMap(this.runState.mapIndex) : 1;
+      const mapMult = this.runGemMapMultiplier();
       const afterDiff = Math.ceil(totalBonus * gemMult);
       const afterRegion = Math.ceil(afterDiff * mapMult);
 
@@ -883,8 +900,14 @@ export class GameEngine {
       date: WORKER_RUN_DATE_SENTINEL,
     };
 
-    if (this.runState.mapIndex === -1 && this.runState.randomMapParams) {
+    if (this.runState.mapIndex === CUSTOM_RANDOM_MAP_INDEX && this.runState.randomMapParams) {
       historyEntry.randomMapParams = this.runState.randomMapParams;
+    }
+    // Custom progressive runs replay from their config; the board growth rewrites
+    // the map every placement but never touches these four fields.
+    const progressiveParams = progressiveConfigFromMap(this.runState.map);
+    if (this.runState.mapIndex === CUSTOM_PROGRESSIVE_MAP_INDEX && progressiveParams) {
+      historyEntry.progressiveMapParams = progressiveParams;
     }
 
     persistAddRunToHistory(this.persistState, historyEntry);
@@ -1367,7 +1390,7 @@ export class GameEngine {
     const board = this.progressiveBoard;
     const catalog = this.progressiveCatalog;
     const rng = this.progressiveRng;
-    const config = progressiveConfigForIndex(this.runState.mapIndex);
+    const config = progressiveConfigFromMap(this.runState.map);
     const grid = this.grid;
     const previousMap = this.runState.map;
     if (

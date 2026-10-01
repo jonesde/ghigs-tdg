@@ -1069,6 +1069,7 @@ describe("useInput", () => {
       const config = progressiveConfigForIndex(36);
       if (!config) throw new Error("progressive config 36 missing");
       const started = createProgressiveBoard(config);
+      gameStore.map = generateProgressiveMap(config);
       gameStore.mapIndex = 36;
       gameStore.setState(GameState.PAUSED);
       gameStore.progressivePlacementHold = true;
@@ -1084,6 +1085,7 @@ describe("useInput", () => {
       const config = progressiveConfigForIndex(36);
       if (!config) throw new Error("progressive config 36 missing");
       const started = createProgressiveBoard(config);
+      gameStore.map = generateProgressiveMap(config);
       gameStore.mapIndex = 36;
       gameStore.setState(GameState.PAUSED);
       gameStore.progressivePlacementHold = true;

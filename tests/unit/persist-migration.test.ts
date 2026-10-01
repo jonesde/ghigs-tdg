@@ -56,6 +56,14 @@ describe("PersistStore save migration v2 -> v3", () => {
     expect(result.llmCommanders).toEqual([]);
   });
 
+  it("backfills progressive map preferences (no data loss of the new fields)", () => {
+    const result = migrateToCurrent(v2ShapedSave());
+    expect(result.progressiveMapRegion).toBe(1);
+    expect(result.progressiveMapLevel).toBe(1);
+    expect(result.progressiveMapEntries).toBe(1);
+    expect(result.progressiveMapSeed).toBeNull();
+  });
+
   it("preserves top-level v2 fields through the deep merge", () => {
     const result = migrateToCurrent(v2ShapedSave());
     expect(result.gems).toBe(1234);

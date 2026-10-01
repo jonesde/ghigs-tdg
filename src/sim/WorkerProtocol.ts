@@ -17,7 +17,14 @@ export type WorkerToMainMessage =
 
 // Main → Worker
 export type MainToWorkerMessage =
-  | { type: "init"; persistState: PersistState; themeBundle: ThemeBundle; mapIndex: number; randomMapParams?: unknown }
+  | {
+      type: "init";
+      persistState: PersistState;
+      themeBundle: ThemeBundle;
+      mapIndex: number;
+      randomMapParams?: unknown;
+      progressiveMapParams?: unknown;
+    }
   | { type: "command"; command: Command }
   | { type: "confirmResult"; requestId: number; confirmed: boolean }
   | { type: "dispose" }

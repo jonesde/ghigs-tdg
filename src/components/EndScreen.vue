@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
+import { CUSTOM_PROGRESSIVE_MAP_INDEX, CUSTOM_RANDOM_MAP_INDEX } from "@/sim/Constants.js";
 import { generateRandomMap } from "@/sim/grid/Map.js";
-import { resolveGeneratedMap } from "@/sim/grid/ProgressiveMap.js";
+import { generateProgressiveMap, type ProgressiveConfig, resolveGeneratedMap } from "@/sim/grid/ProgressiveMap.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 
@@ -33,7 +34,7 @@ function replay() {
     return;
   }
   gameStore.resetToMenu();
-  if (latest.mapIndex === -1 && (latest as Record<string, unknown>).randomMapParams) {
+  if (latest.mapIndex === CUSTOM_RANDOM_MAP_INDEX && (latest as Record<string, unknown>).randomMapParams) {
     const p = (latest as Record<string, unknown>).randomMapParams as {
       width: number;
       height: number;
@@ -43,9 +44,16 @@ function replay() {
       seed: number;
     };
     const mapData = generateRandomMap(p.width, p.height, p.style, p.regionId, p.level, p.seed);
-    gameStore.mapIndex = -1;
+    gameStore.mapIndex = CUSTOM_RANDOM_MAP_INDEX;
     gameStore.map = mapData;
     gameStore.randomMapParams = p;
+  } else if (
+    latest.mapIndex === CUSTOM_PROGRESSIVE_MAP_INDEX &&
+    (latest as Record<string, unknown>).progressiveMapParams
+  ) {
+    const p = (latest as Record<string, unknown>).progressiveMapParams as ProgressiveConfig;
+    gameStore.mapIndex = CUSTOM_PROGRESSIVE_MAP_INDEX;
+    gameStore.map = generateProgressiveMap(p);
   } else {
     const mapData = resolveGeneratedMap(latest.mapIndex);
     gameStore.mapIndex = latest.mapIndex;

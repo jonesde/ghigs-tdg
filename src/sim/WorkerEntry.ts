@@ -1,5 +1,12 @@
-import { FIXED_DT, GameState, MAX_ACCUM } from "@/sim/Constants.js";
+import {
+  CUSTOM_PROGRESSIVE_MAP_INDEX,
+  CUSTOM_RANDOM_MAP_INDEX,
+  FIXED_DT,
+  GameState,
+  MAX_ACCUM,
+} from "@/sim/Constants.js";
 import { GameEngine } from "@/sim/GameEngine.js";
+import type { ProgressiveConfig } from "@/sim/grid/ProgressiveMap.js";
 import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { WorkerParticleSpawner } from "@/sim/ParticleSystem.js";
 import { initPhysics } from "@/sim/physics/rapierContext.js";
@@ -403,9 +410,10 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
         lastFlushMilestoneKeys = 0;
         lastFlushBossesKilled = 0;
         lastFlushTime = performance.now();
-        // For random maps, loadMap uses mapIndex -1; branch to loadRandomMap so
-        // getMap(-1) is never hit. Normal maps use loadMap(mapIndex).
-        if (msg.mapIndex === -1 && msg.randomMapParams) {
+        // For custom generated maps, loadMap uses CUSTOM_RANDOM_MAP_INDEX; branch to
+        // loadRandomMap so getMap(-1) is never hit. Custom progressive maps branch the
+        // same way with their config. Catalog maps use loadMap(mapIndex).
+        if (msg.mapIndex === CUSTOM_RANDOM_MAP_INDEX && msg.randomMapParams) {
           const params = msg.randomMapParams as {
             width: number;
             height: number;
@@ -415,6 +423,8 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
             seed: number;
           };
           engine.loadRandomMap(params.width, params.height, params.level, params.style, params.regionId, params.seed);
+        } else if (msg.mapIndex === CUSTOM_PROGRESSIVE_MAP_INDEX && msg.progressiveMapParams) {
+          engine.loadProgressiveMap(msg.progressiveMapParams as ProgressiveConfig);
         } else {
           engine.loadMap(msg.mapIndex);
         }

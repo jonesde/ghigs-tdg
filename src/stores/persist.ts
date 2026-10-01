@@ -56,6 +56,10 @@ interface PersistStateShape {
   randomMapSeed: number | null;
   randomMapWidth: number;
   randomMapHeight: number;
+  progressiveMapRegion: number;
+  progressiveMapLevel: number;
+  progressiveMapEntries: number;
+  progressiveMapSeed: number | null;
   lastSelectedThemeId: string;
   llmCommanders: LlmCommanderConfig[];
 }
@@ -131,6 +135,10 @@ function defaultState(): PersistStateShape {
     randomMapSeed: null,
     randomMapWidth: 20,
     randomMapHeight: 20,
+    progressiveMapRegion: 1,
+    progressiveMapLevel: 1,
+    progressiveMapEntries: 1,
+    progressiveMapSeed: null,
     lastSelectedThemeId: "default",
     llmCommanders: [],
   };

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
-import { generateRandomMap, getMapDisplayName } from "@/sim/grid/Map.js";
-import { resolveGeneratedMap } from "@/sim/grid/ProgressiveMap.js";
+import { CUSTOM_PROGRESSIVE_MAP_INDEX, CUSTOM_RANDOM_MAP_INDEX } from "@/sim/Constants.js";
+import { generateRandomMap, getMapDisplayName, progressiveMapDisplayName } from "@/sim/grid/Map.js";
+import { generateProgressiveMap, type ProgressiveConfig, resolveGeneratedMap } from "@/sim/grid/ProgressiveMap.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -58,15 +59,28 @@ interface MapInfo {
   style: string;
 }
 
-function getMapInfo(mapIndex: number) {
+function getMapInfo(entry: Record<string, unknown>): MapInfo | null {
+  const mapIndex = entry.mapIndex as number;
+  if (mapIndex === CUSTOM_PROGRESSIVE_MAP_INDEX && entry.progressiveMapParams) {
+    const params = entry.progressiveMapParams as ProgressiveConfig;
+    return {
+      name: progressiveMapDisplayName(params.regionId, params.entryCount, themeStore.defaultTheme),
+      region: regionNames.value[params.regionId] ?? "",
+      style: "progressive",
+    };
+  }
   if (mapIndex < 0) return null;
   const map = resolveGeneratedMap(mapIndex);
-  return { name: getMapDisplayName(map, themeStore.defaultTheme), region: regionNames[map.regionId], style: map.style };
+  return {
+    name: getMapDisplayName(map, themeStore.defaultTheme),
+    region: regionNames.value[map.regionId] ?? "",
+    style: map.style,
+  };
 }
 
 function replayRun(entry: Record<string, unknown>) {
   gameStore.resetToMenu();
-  if (entry.mapIndex === -1 && entry.randomMapParams) {
+  if (entry.mapIndex === CUSTOM_RANDOM_MAP_INDEX && entry.randomMapParams) {
     const p = entry.randomMapParams as {
       width: number;
       height: number;
@@ -76,9 +90,13 @@ function replayRun(entry: Record<string, unknown>) {
       seed: number;
     };
     const mapData = generateRandomMap(p.width, p.height, p.style, p.regionId, p.level, p.seed);
-    gameStore.mapIndex = -1;
+    gameStore.mapIndex = CUSTOM_RANDOM_MAP_INDEX;
     gameStore.map = mapData;
     gameStore.randomMapParams = p;
+  } else if (entry.mapIndex === CUSTOM_PROGRESSIVE_MAP_INDEX && entry.progressiveMapParams) {
+    const p = entry.progressiveMapParams as ProgressiveConfig;
+    gameStore.mapIndex = CUSTOM_PROGRESSIVE_MAP_INDEX;
+    gameStore.map = generateProgressiveMap(p);
   } else {
     const mapData = resolveGeneratedMap(entry.mapIndex as number);
     gameStore.mapIndex = entry.mapIndex as number;
@@ -103,14 +121,14 @@ function replayRun(entry: Record<string, unknown>) {
       <div v-for="(entry, index) in runHistory" :key="entry.date + '-' + index" class="history-card" :class="{ victory: entry.victory, defeat: !entry.victory }">
         <div class="card-header">
           <div class="card-title">
-            <span class="map-name">{{ getMapInfo(entry.mapIndex)?.name || 'Random Map' }}</span>
+            <span class="map-name">{{ getMapInfo(entry)?.name || 'Generated Map' }}</span>
             <span class="result-badge" :class="entry.victory ? 'badge-victory' : 'badge-defeat'">
               {{ entry.victory ? 'Victory' : 'Defeat' }}
             </span>
             <button class="play-btn" @click="replayRun(entry)">Play Again</button>
           </div>
           <div class="card-meta">
-            <span class="card-region">{{ getMapInfo(entry.mapIndex)?.region || '' }}</span>
+            <span class="card-region">{{ getMapInfo(entry)?.region || '' }}</span>
             <span class="card-date">{{ formatDate(entry.date) }}</span>
           </div>
         </div>

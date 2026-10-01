@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import type { MapStyle } from "@/sim/Constants.js";
-import { MAP_GEM_MULTIPLIERS } from "@/sim/Constants.js";
+import {
+  CUSTOM_PROGRESSIVE_MAP_INDEX,
+  CUSTOM_RANDOM_MAP_INDEX,
+  MAP_GEM_MULTIPLIERS,
+  type MapStyle,
+} from "@/sim/Constants.js";
 import { generateRandomMap, getMap, getMapDisplayName } from "@/sim/grid/Map.js";
 import {
-  gemMultiplierForMap,
+  gemMultiplierForRegionLevel,
+  generateProgressiveMap,
+  type ProgressiveConfig,
   progressiveConfigForIndex,
   progressiveMapIndex,
   progressiveUnlockMapIndex,
@@ -91,7 +97,7 @@ const mapEntries = computed<Record<number, MapEntry>>(() => {
         name: getMapDisplayName(map, theme),
         region: regionNames.value[map.regionId] ?? `Region ${regionId + 1}`,
         style: map.style,
-        gemReward: gemMultiplierForMap(index),
+        gemReward: gemMultiplierForRegionLevel(map.regionId, map.level),
         width: map.width,
         height: map.height,
         locked: persistStore.highestUnlockedMap < progressiveUnlockMapIndex(config),
@@ -173,10 +179,16 @@ const randomStyle = computed({
     persistStore.randomMapStyle = v;
   },
 });
+// A cleared number input arrives as "" through v-model.number; only a real finite
+// number is a pinned seed, anything else restores the "Auto" placeholder state.
+function normalizeSeedInput(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 const randomSeed = computed({
   get: () => persistStore.randomMapSeed,
-  set: (v: number | null) => {
-    persistStore.randomMapSeed = v;
+  set: (v: unknown) => {
+    persistStore.randomMapSeed = normalizeSeedInput(v);
   },
 });
 const randomWidth = computed({
@@ -191,13 +203,38 @@ const randomHeight = computed({
     persistStore.randomMapHeight = v;
   },
 });
+const progressiveRegion = computed({
+  get: () => persistStore.progressiveMapRegion,
+  set: (v: number) => {
+    persistStore.progressiveMapRegion = v;
+  },
+});
+const progressiveLevel = computed({
+  get: () => persistStore.progressiveMapLevel,
+  set: (v: number) => {
+    persistStore.progressiveMapLevel = v;
+  },
+});
+const progressiveEntries = computed({
+  get: () => persistStore.progressiveMapEntries,
+  set: (v: number) => {
+    persistStore.progressiveMapEntries = v;
+  },
+});
+const progressiveSeed = computed({
+  get: () => persistStore.progressiveMapSeed,
+  set: (v: unknown) => {
+    persistStore.progressiveMapSeed = normalizeSeedInput(v);
+  },
+});
 
 const DIMENSION_OPTIONS = [15, 20, 25, 30, 35, 40, 45, 50] as const;
 const STYLE_OPTIONS: MapStyle[] = ["open", "canyon", "serpentine", "split", "bastion", "battlefield"];
+const ENTRY_COUNT_OPTIONS = [1, 2, 3, 4] as const;
 
 function startRandomMap() {
   const regionId = randomRegion.value - 1;
-  const level = randomLevel.value;
+  const level = Number(randomLevel.value);
   const style = randomStyle.value;
   const width = randomWidth.value;
   const height = randomHeight.value;
@@ -223,8 +260,35 @@ function startRandomMap() {
   const mapData = generateRandomMap(width, height, style, regionId, level, seed);
   const params = { regionId, level, style, seed, width, height };
 
-  gameStore.initMap(-1, mapData, null);
+  gameStore.initMap(CUSTOM_RANDOM_MAP_INDEX, mapData, null);
   gameStore.randomMapParams = params;
+
+  router.push("/game");
+}
+
+function startProgressiveMap() {
+  const regionId = progressiveRegion.value - 1;
+  const level = Number(progressiveLevel.value);
+  const entryCount = progressiveEntries.value;
+  const seed = progressiveSeed.value ?? Math.floor(Math.random() * 999999);
+
+  if (level < 1 || level > 12) {
+    alert("Map Level must be between 1 and 12.");
+    return;
+  }
+  if (entryCount < 1 || entryCount > 4) {
+    alert("Base Entries must be between 1 and 4.");
+    return;
+  }
+  if (seed < 0) {
+    alert("Seed must be a non-negative number.");
+    return;
+  }
+
+  const config: ProgressiveConfig = { regionId, level, entryCount, seed };
+  const mapData = generateProgressiveMap(config);
+
+  gameStore.initMap(CUSTOM_PROGRESSIVE_MAP_INDEX, mapData, null);
 
   router.push("/game");
 }
@@ -297,7 +361,7 @@ function startRandomMap() {
 
     <div class="random-map-section">
       <div class="random-map-header">
-        <h3>Random Map</h3>
+        <h3>Generated Map</h3>
         <span class="random-map-subtitle">Generate a procedural map with custom parameters</span>
       </div>
       <div class="random-map-form">
@@ -338,7 +402,45 @@ function startRandomMap() {
           </div>
         </div>
         <div class="form-actions">
-          <button class="random-play-btn" @click="startRandomMap">Play Random Map</button>
+          <button class="random-play-btn" @click="startRandomMap">Play Generated Map</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="random-map-section">
+      <div class="random-map-header">
+        <h3>Progressive Map</h3>
+        <span class="random-map-subtitle">Grow a progressive map from custom parameters</span>
+      </div>
+      <div class="random-map-form">
+        <div class="form-row">
+          <div class="form-field">
+            <label for="progressive-region">Region</label>
+            <select id="progressive-region" v-model.number="progressiveRegion">
+              <option v-for="name in regionNames" :key="name" :value="regionNames.indexOf(name) + 1">{{ name }}</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="progressive-level">Map Level</label>
+            <input id="progressive-level" type="number" v-model.number="progressiveLevel" min="1" max="12" />
+          </div>
+          <div class="form-field">
+            <label for="progressive-entries">Base Entries</label>
+            <select id="progressive-entries" v-model.number="progressiveEntries">
+              <option v-for="entryCountOption in ENTRY_COUNT_OPTIONS" :key="entryCountOption" :value="entryCountOption">
+                {{ entryCountOption }}
+              </option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="progressive-seed">Map Gen Seed</label>
+            <input id="progressive-seed" type="number" v-model.number="progressiveSeed" min="0" placeholder="Auto" />
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="random-play-btn" @click="startProgressiveMap">Play Progressive Map</button>
         </div>
       </div>
     </div>

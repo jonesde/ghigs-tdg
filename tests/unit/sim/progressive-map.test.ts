@@ -13,7 +13,7 @@ import {
   commitPlacement,
   createProgressiveBoard,
   drawBlockOffer,
-  gemMultiplierForMap,
+  gemMultiplierForRegionLevel,
   generateProgressiveCatalog,
   generateProgressiveMap,
   generateProgressiveMapByIndex,
@@ -26,6 +26,7 @@ import {
   placementExtendsOpening,
   placementLegal,
   progressiveConfigForIndex,
+  progressiveConfigFromMap,
   progressiveUnlockMapIndex,
   replayProgressiveBoard,
   rotatedMouths,
@@ -350,11 +351,28 @@ describe("progressive world positions", () => {
   });
 });
 
+describe("progressive config recovery", () => {
+  it("round-trips a custom config through the generated map", () => {
+    const config: ProgressiveConfig = { regionId: 1, level: 7, entryCount: 3, seed: 424242 };
+    expect(progressiveConfigFromMap(generateProgressiveMap(config))).toEqual(config);
+  });
+
+  it("recovers a catalog variant config from its generated map", () => {
+    const config = progressiveConfigForIndex(37)!;
+    expect(progressiveConfigFromMap(generateProgressiveMap(config))).toEqual(config);
+  });
+
+  it("returns null for maps without progressive fields", () => {
+    expect(progressiveConfigFromMap(getMap(0))).toBeNull();
+    expect(progressiveConfigFromMap(null)).toBeNull();
+  });
+});
+
 describe("progressive economy", () => {
   it("uses the linked normal map's gem multiplier and level", () => {
-    expect(gemMultiplierForMap(36)).toBe(1);
-    expect(gemMultiplierForMap(39)).toBe(3);
-    expect(gemMultiplierForMap(0)).toBe(MAP_GEM_MULTIPLIERS[0]);
+    expect(gemMultiplierForRegionLevel(0, 1)).toBe(1);
+    expect(gemMultiplierForRegionLevel(0, 12)).toBe(3);
+    expect(gemMultiplierForRegionLevel(0, 1)).toBe(MAP_GEM_MULTIPLIERS[0]);
     expect(progressiveUnlockMapIndex(progressiveConfigForIndex(36)!)).toBe(0);
     expect(progressiveUnlockMapIndex(progressiveConfigForIndex(37)!)).toBe(4);
     const levelTwelve = generateProgressiveMap(progressiveConfigForIndex(39)!);

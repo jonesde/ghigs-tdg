@@ -155,6 +155,11 @@ export const PROGRESSIVE_REROLL_GOLD_PER_WAVE = maps.progressive.rerollGoldPerWa
 export const PROGRESSIVE_VARIANTS = maps.progressive.variants;
 export const PROGRESSIVE_MAP_INDEX_BASE = TOTAL_MAPS;
 export const PROGRESSIVE_MAP_COUNT = PROGRESSIVE_VARIANTS.length;
+// Custom generated maps (mapIndex -1 + randomMapParams) and custom progressive
+// maps (mapIndex -2 + progressiveMapParams) sit outside the catalog indexes, so
+// map-progress persistence (best waves, unlocks, first clears) never keys on them.
+export const CUSTOM_RANDOM_MAP_INDEX = -1;
+export const CUSTOM_PROGRESSIVE_MAP_INDEX = -2;
 
 // ===== General add-ons (from content) =====
 

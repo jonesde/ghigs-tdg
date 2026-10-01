@@ -37,7 +37,7 @@ import {
   type ViewRect,
 } from "@/render/svg/viewBoxTween.js";
 import type { EnemyVisualMeta, TowerVisualMeta } from "@/render/themes/index.js";
-import { GameState, SELL_DISCOUNT_PCT } from "@/sim/Constants.js";
+import { CUSTOM_PROGRESSIVE_MAP_INDEX, GameState, SELL_DISCOUNT_PCT } from "@/sim/Constants.js";
 import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
 import { TOWER_META, TowerIds } from "@/sim/ConstantsTower.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
@@ -45,7 +45,7 @@ import {
   blockCoordinateForTile,
   placementLegal,
   progressiveBlockWorldCorner,
-  progressiveConfigForIndex,
+  progressiveConfigFromMap,
   replayProgressiveBoard,
   sitesAtRotation,
 } from "@/sim/grid/ProgressiveMap.js";
@@ -119,7 +119,7 @@ const panActive = ref(false);
 
 const progressiveGhost = computed(() => {
   if (!gameStore.progressivePlacementHold || !gameStore.map) return "";
-  const config = progressiveConfigForIndex(gameStore.mapIndex);
+  const config = progressiveConfigFromMap(gameStore.map);
   const templateIndex = gameStore.progressiveOffer[gameStore.progressiveSelectedOffer];
   if (!config || templateIndex === undefined) return "";
   const replayed = replayProgressiveBoard(config, gameStore.progressivePlacements);
@@ -477,7 +477,7 @@ function progressivePlacementCommand(
   blockY: number;
 } | null {
   if (!gameStore.progressivePlacementHold || !gameStore.map || !gameStore.grid) return null;
-  const config = progressiveConfigForIndex(gameStore.mapIndex);
+  const config = progressiveConfigFromMap(gameStore.map);
   const templateIndex = gameStore.progressiveOffer[gameStore.progressiveSelectedOffer];
   if (!config || templateIndex === undefined) return null;
   const tile = gameStore.grid.worldToTile(worldX, worldY);
@@ -811,6 +811,12 @@ onMounted(async () => {
     themeBundle,
     mapIndex: gameStore.mapIndex,
     randomMapParams: gameStore.randomMapParams ?? undefined,
+    // Custom progressive runs carry no catalog index; the worker rebuilds the
+    // start board from these params, so they must ride the init message.
+    progressiveMapParams:
+      gameStore.mapIndex === CUSTOM_PROGRESSIVE_MAP_INDEX
+        ? (progressiveConfigFromMap(gameStore.map) ?? undefined)
+        : undefined,
   });
 
   if (gameStore.map) {

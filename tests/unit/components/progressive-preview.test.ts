@@ -3,7 +3,11 @@ import { createPinia, setActivePinia } from "pinia";
 import { describe, expect, it } from "vitest";
 import ProgressivePlacement from "@/components/ProgressivePlacement.vue";
 import { progressivePatternMarkup, progressivePreviewFill } from "@/components/progressivePreview.js";
-import { generateProgressiveCatalog, progressiveConfigForIndex } from "@/sim/grid/ProgressiveMap.js";
+import {
+  generateProgressiveCatalog,
+  generateProgressiveMap,
+  progressiveConfigForIndex,
+} from "@/sim/grid/ProgressiveMap.js";
 import { useGameStore } from "@/stores/game.js";
 
 describe("progressivePreviewFill", () => {
@@ -37,6 +41,7 @@ describe("ProgressivePlacement offer cards", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const gameStore = useGameStore();
+    gameStore.map = generateProgressiveMap(config);
     gameStore.mapIndex = 36;
     gameStore.progressivePlacementHold = true;
     gameStore.progressiveRotation = 0;

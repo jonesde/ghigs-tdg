@@ -10,19 +10,23 @@ import {
 } from "@/sim/Constants.js";
 import { BOSS_CADENCE } from "@/sim/ConstantsEnemy.js";
 
+export function progressiveMapDisplayName(regionId: number, entryCount: number, theme: MapThemeData | null): string {
+  const region = theme?.regions.find((regionEntry) => regionEntry.id === regionId);
+  const regionName = region?.name ?? `Region ${regionId + 1}`;
+  return `${regionName} Progressive ${entryCount}`;
+}
+
 export function getMapDisplayName(map: GeneratedMap | null, theme: MapThemeData | null): string {
   if (!map) return "";
   if (map.style === "progressive" && map.entryCount !== undefined) {
-    const region = theme?.regions.find((regionEntry) => regionEntry.id === map.regionId);
-    const regionName = region?.name ?? `Region ${map.regionId + 1}`;
-    return `${regionName} Progressive ${map.entryCount}`;
+    return progressiveMapDisplayName(map.regionId, map.entryCount, theme);
   }
-  if (!theme) return map.name || "Random Map";
+  if (!theme) return map.name || "Generated Map";
   const region = theme.regions.find((regionEntry) => regionEntry.id === map.regionId);
   if (region && map.level !== undefined) {
     return `${region.name} Map ${map.level}`;
   }
-  return map.name || "Random Map";
+  return map.name || "Generated Map";
 }
 
 interface Tile {
@@ -856,7 +860,7 @@ export function generateRandomMap(
     tiles,
     spawns,
     base,
-    name: level > 0 ? `Region ${regionId + 1} Map ${level}` : "Random Map",
+    name: level > 0 ? `Region ${regionId + 1} Map ${level}` : "Generated Map",
     bossCadence: BOSS_CADENCE[regionId]!,
     seed,
   };

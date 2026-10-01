@@ -135,15 +135,21 @@ export function progressiveConfigForIndex(mapIndex: number): ProgressiveConfig |
   return { regionId: variant.regionId, level: variant.level, entryCount: variant.entryCount, seed: variant.seed };
 }
 
+// A progressive GeneratedMap carries every ProgressiveConfig field (boardToGeneratedMap
+// writes them back on every rebuild), so run-time callers recover the config from the
+// live map instead of the catalog index — custom progressive runs have no catalog index.
+export function progressiveConfigFromMap(map: GeneratedMap | null): ProgressiveConfig | null {
+  if (map === null) return null;
+  if (map.style !== "progressive" || map.entryCount === undefined) return null;
+  return { regionId: map.regionId, level: map.level, entryCount: map.entryCount, seed: map.seed };
+}
+
 export function progressiveUnlockMapIndex(config: ProgressiveConfig): number {
   return config.regionId * MAPS_PER_REGION + (config.level - 1);
 }
 
-export function gemMultiplierForMap(mapIndex: number): number {
-  if (mapIndex >= 0 && mapIndex < MAP_GEM_MULTIPLIERS.length) return MAP_GEM_MULTIPLIERS[mapIndex] || 1;
-  const config = progressiveConfigForIndex(mapIndex);
-  if (!config) return 1;
-  return MAP_GEM_MULTIPLIERS[progressiveUnlockMapIndex(config)] || 1;
+export function gemMultiplierForRegionLevel(regionId: number, level: number): number {
+  return MAP_GEM_MULTIPLIERS[regionId * MAPS_PER_REGION + (level - 1)] || 1;
 }
 
 export function progressiveTileRotation(seed: number, absoluteX: number, absoluteY: number): number {

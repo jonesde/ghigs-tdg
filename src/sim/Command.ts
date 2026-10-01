@@ -94,6 +94,7 @@ export type Command =
       themeBundle: ThemeBundle;
       mapIndex: number;
       randomMapParams?: unknown;
+      progressiveMapParams?: unknown;
     }
   | { commandId: number; type: "lifecycle:dispose" }
 

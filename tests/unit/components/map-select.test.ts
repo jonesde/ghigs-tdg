@@ -6,6 +6,7 @@ import type { RouteRecordRaw } from "vue-router";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { mockDefaultTheme } from "@/../tests/helpers/mock-stores.js";
 import MapSelect from "@/components/MapSelect.vue";
+import { CUSTOM_PROGRESSIVE_MAP_INDEX, CUSTOM_RANDOM_MAP_INDEX } from "@/sim/Constants.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -165,5 +166,96 @@ describe("MapSelect", () => {
       expect(card.attributes("tabindex")).toBeDefined();
       expect(card.attributes("role")).toBeDefined();
     }
+  });
+
+  it("labels the custom map forms Generated Map and Progressive Map", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    expect(wrapper.text()).toContain("Generated Map");
+    expect(wrapper.text()).toContain("Progressive Map");
+    expect(wrapper.text()).toContain("Play Generated Map");
+    expect(wrapper.text()).toContain("Play Progressive Map");
+    expect(wrapper.text()).not.toContain("Random Map");
+  });
+
+  it("offers base entry counts 1 through 4 in the progressive form", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    const options = wrapper.find("#progressive-entries").findAll("option");
+    expect(options.map((option) => option.element.value)).toEqual(["1", "2", "3", "4"]);
+  });
+
+  it("starts a custom generated map from the form with a pinned seed", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: uiStore unused
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    await router.replace("/map-select");
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    await wrapper.find("#random-seed").setValue("777");
+    await wrapper.find("#random-level").setValue("4");
+    const playButton = wrapper.findAll("button").find((button) => button.text() === "Play Generated Map");
+    expect(playButton).toBeTruthy();
+    await playButton!.trigger("click");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(router.currentRoute.value.path).toBe("/game");
+    expect(gameStore.mapIndex).toBe(CUSTOM_RANDOM_MAP_INDEX);
+    expect(gameStore.map.seed).toBe(777);
+    expect(gameStore.randomMapParams.seed).toBe(777);
+    expect(gameStore.randomMapParams.level).toBe(4);
+    expect(persistStore.randomMapSeed).toBe(777);
+  });
+
+  it("starts a custom progressive map from the form with the chosen entries and seed", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: uiStore unused
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    await router.replace("/map-select");
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    await wrapper.find("#progressive-region").setValue("1");
+    await wrapper.find("#progressive-level").setValue("7");
+    await wrapper.find("#progressive-entries").setValue("3");
+    await wrapper.find("#progressive-seed").setValue("424242");
+    const playButton = wrapper.findAll("button").find((button) => button.text() === "Play Progressive Map");
+    expect(playButton).toBeTruthy();
+    await playButton!.trigger("click");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(router.currentRoute.value.path).toBe("/game");
+    expect(gameStore.mapIndex).toBe(CUSTOM_PROGRESSIVE_MAP_INDEX);
+    expect(gameStore.map.style).toBe("progressive");
+    expect(gameStore.map.regionId).toBe(0);
+    expect(gameStore.map.level).toBe(7);
+    expect(gameStore.map.entryCount).toBe(3);
+    expect(gameStore.map.seed).toBe(424242);
+    expect(persistStore.progressiveMapEntries).toBe(3);
+  });
+
+  it("rolls an auto seed for a custom progressive map when none is pinned", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: uiStore unused
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    persistStore.progressiveMapSeed = null;
+    await router.replace("/map-select");
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    const playButton = wrapper.findAll("button").find((button) => button.text() === "Play Progressive Map");
+    await playButton!.trigger("click");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(router.currentRoute.value.path).toBe("/game");
+    expect(gameStore.map.seed).toBeGreaterThanOrEqual(0);
+    expect(gameStore.map.seed).toBeLessThan(999999);
+  });
+
+  it("restores the Auto seed placeholder when the seed input is cleared", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    const progressiveSeedInput = wrapper.find("#progressive-seed");
+    await progressiveSeedInput.setValue("4242");
+    expect(persistStore.progressiveMapSeed).toBe(4242);
+    await progressiveSeedInput.setValue("");
+    expect(persistStore.progressiveMapSeed).toBeNull();
+    const randomSeedInput = wrapper.find("#random-seed");
+    await randomSeedInput.setValue("55");
+    expect(persistStore.randomMapSeed).toBe(55);
+    await randomSeedInput.setValue("");
+    expect(persistStore.randomMapSeed).toBeNull();
   });
 });

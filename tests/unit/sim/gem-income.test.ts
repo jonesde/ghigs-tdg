@@ -8,7 +8,13 @@
 // values, the endGame history payload, and the Level-3 (16 gem) wave-20 pacing.
 
 import { describe, expect, it } from "vitest";
-import { MILESTONE_GEMS, REGION_GEM_REWARDS, VICTORY_WAVE } from "@/sim/Constants.js";
+import {
+  CUSTOM_PROGRESSIVE_MAP_INDEX,
+  CUSTOM_RANDOM_MAP_INDEX,
+  MILESTONE_GEMS,
+  REGION_GEM_REWARDS,
+  VICTORY_WAVE,
+} from "@/sim/Constants.js";
 import { GameEngine } from "@/sim/GameEngine.js";
 import { createTestPersistState, createTestThemeBundle, MockHostBindings } from "../../helpers/mock-stores.js";
 
@@ -101,5 +107,41 @@ describe("per-wave gem income", () => {
       breakdown.waveClears.afterFirstTime +
       breakdown.waveCompletion.afterFirstTime;
     expect(breakdown.firstClearBonus).toBe(subtotal * 2);
+  });
+});
+
+describe("custom map gem multipliers", () => {
+  it("applies the region/level map multiplier to custom generated runs", () => {
+    const engine = new GameEngine(
+      createTestPersistState(),
+      createTestThemeBundle(),
+      new MockHostBindings(),
+      CUSTOM_RANDOM_MAP_INDEX,
+    );
+    engine.loadRandomMap(20, 20, 12, "open", 0, 42);
+    engine.onBossKilled();
+    expect(engine.runState.gemBreakdown.bossKills).toEqual({
+      base: 1,
+      afterDiff: 1,
+      afterRegion: 3,
+      afterFirstTime: 3,
+    });
+    expect(engine.runState.runGemsEarned).toBe(3);
+  });
+
+  it("applies the same multiplier to custom progressive runs and records replay params", () => {
+    const engine = new GameEngine(
+      createTestPersistState(),
+      createTestThemeBundle(),
+      new MockHostBindings(),
+      CUSTOM_PROGRESSIVE_MAP_INDEX,
+    );
+    engine.loadProgressiveMap({ regionId: 0, level: 12, entryCount: 1, seed: 999 });
+    engine.onBossKilled();
+    expect(engine.runState.gemBreakdown.bossKills.afterRegion).toBe(3);
+    engine.endGame(false);
+    const historyEntry = engine.persistState.runHistory[engine.persistState.runHistory.length - 1];
+    expect(historyEntry.mapIndex).toBe(CUSTOM_PROGRESSIVE_MAP_INDEX);
+    expect(historyEntry.progressiveMapParams).toEqual({ regionId: 0, level: 12, entryCount: 1, seed: 999 });
   });
 });

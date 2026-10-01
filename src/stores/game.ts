@@ -21,7 +21,7 @@ import {
   nextUsableRotation,
   type ProgressiveSiteDirection,
   type ProgressiveStamp,
-  progressiveConfigForIndex,
+  progressiveConfigFromMap,
   replayProgressiveBoard,
   sitesAtRotation,
 } from "@/sim/grid/ProgressiveMap.js";
@@ -384,7 +384,7 @@ export const useGameStore = defineStore("game", {
     },
 
     rotateProgressiveBlock() {
-      const config = progressiveConfigForIndex(this.mapIndex);
+      const config = progressiveConfigFromMap(this.map);
       const templateIndex = this.progressiveOffer[this.progressiveSelectedOffer];
       if (!config || templateIndex === undefined) return;
       const replayed = replayProgressiveBoard(config, this.progressivePlacements);
@@ -404,7 +404,7 @@ export const useGameStore = defineStore("game", {
     },
 
     moveProgressiveSite(direction: ProgressiveSiteDirection) {
-      const config = progressiveConfigForIndex(this.mapIndex);
+      const config = progressiveConfigFromMap(this.map);
       const templateIndex = this.progressiveOffer[this.progressiveSelectedOffer];
       if (!config || templateIndex === undefined) return;
       const replayed = replayProgressiveBoard(config, this.progressivePlacements);
@@ -422,7 +422,7 @@ export const useGameStore = defineStore("game", {
     },
 
     syncProgressiveCursor() {
-      const config = progressiveConfigForIndex(this.mapIndex);
+      const config = progressiveConfigFromMap(this.map);
       const templateIndex = this.progressiveOffer[this.progressiveSelectedOffer];
       if (!config || templateIndex === undefined) {
         this.progressiveSelectedSite = null;
@@ -442,7 +442,7 @@ export const useGameStore = defineStore("game", {
     },
 
     applyProgressiveLayout(layoutGeneration: number, stamps: ProgressiveStamp[]) {
-      const config = progressiveConfigForIndex(this.mapIndex);
+      const config = progressiveConfigFromMap(this.map);
       if (!config) return;
       const map = generateProgressiveMap(config, stamps);
       this.map = map;

@@ -24,7 +24,7 @@ src/
 │   └── index.ts                 # Route definitions + navigation guards (dispose engine on route change)
 ├── stores/
 │   ├── game.ts                  # Volatile per-run state: lives, gold, wave, game state, selection, camera, tower/panel positions, hover state, frame id, run gem/boss counters, milestone breakdown, end-screen data, random-map params, worker reference
-│   ├── persist.ts               # Persistent meta-progression: gems, unlocks, difficulty, map progress, random-map preferences, last-selected theme (localStorage)
+│   ├── persist.ts               # Persistent meta-progression: gems, unlocks, difficulty, map progress, random-map and progressive-map preferences, last-selected theme (localStorage)
 │   ├── ui.ts                    # UI overlay state: confirm dialogs, notifications, menu/skill-tree/stats/help/minimap context, debug panel, enemy commander selection, random-map panel, wasPlaying flags for pause/skill-tree/help
 │   └── mapTheme.ts              # Map theme state: activeTheme, defaultTheme, availableThemes, preload/load actions
 ├── composables/
@@ -43,7 +43,7 @@ src/
 │   ├── ProgressivePlacement.vue # Between-wave block offer: height-shaded 5×5 previews, rotation, site hint
 │   ├── HelpDialog.vue           # Help/controls overlay (toggled from in-game menu)
 │   ├── MainMenu.vue             # Main menu: new game, resume, skill tree, difficulty slider, profile reset
-│   ├── MapSelect.vue            # Map selection grid: unlock status, best waves, region info
+│   ├── MapSelect.vue            # Map selection grid + Generated Map / Progressive Map custom forms
 │   ├── SkillTree.vue            # Skill tree: tower levels, specializations, add-ons, general upgrades
 │   ├── EndScreen.vue            # Game over / victory screen: gem breakdown and navigation
 │   ├── ConfirmDialog.vue        # Reusable modal dialog (teleported to body)
@@ -156,7 +156,7 @@ src/
 The game uses a single `<svg>` root element managed by `SvgGameRoot.vue`, replacing the previous two-layer Canvas + DOM overlay architecture. All visual content — grid tiles, towers, enemies, projectiles, particles, and effects — is rendered as SVG elements.
 
 - **Vue (Declarative):** Manages structural changes (map loading, building/selling towers, opening shops). Mounts the root SVG and static layers via `v-html` for the grid.
-- **GameEngine (Logic, in Web Worker):** Orchestrates all game logic (enemy movement, tower targeting, projectile updates, wave management). Constructor takes plain `PersistState` + `ThemeBundle` + `HostBindings` + `mapIndex` (plus optional `randomMapParams` and `particleSpawner`) — no Pinia, no canvas reference. `GameRunState` is created internally in `_initMap`, not passed in. `handleClick()` accepts world coordinates; `setHover` was removed (hover is main-thread-only UI state). The engine runs inside the Web Worker (`src/sim/WorkerEntry.ts`), not on the main thread.
+- **GameEngine (Logic, in Web Worker):** Orchestrates all game logic (enemy movement, tower targeting, projectile updates, wave management). Constructor takes plain `PersistState` + `ThemeBundle` + `HostBindings` + `mapIndex` (plus optional `randomMapParams` and `particleSpawner`) — no Pinia, no canvas reference. `loadMap(mapIndex)` loads catalog maps; `loadRandomMap(...)` and `loadProgressiveMap(config)` load custom runs (`CUSTOM_RANDOM_MAP_INDEX` / `CUSTOM_PROGRESSIVE_MAP_INDEX`). `GameRunState` is created internally in `_initMap`, not passed in. `handleClick()` accepts world coordinates; `setHover` was removed (hover is main-thread-only UI state). The engine runs inside the Web Worker (`src/sim/WorkerEntry.ts`), not on the main thread.
 - **Direct DOM (Imperative Rendering):** A main-thread `requestAnimationFrame` loop reads the latest `SimulationSnapshot` from the `SnapshotStore` and writes per-frame properties via `setAttribute` and `style.transform`. It does not call the engine directly — all intent flows in as `Command`s and all state flows out as snapshots. Bypasses Vue's reactivity system for hot paths.
 
 The SVG structure is:
@@ -186,7 +186,7 @@ The SVG structure is:
 ### Four Pinia Stores
 
 - **`gameStore`** — reactive mirror/projection of the simulation `SimulationSnapshot`. The worker is authoritative for simulation state; `gameStore` holds the subset the Vue UI binds to (lives, gold, wave, game state, selection, time scale, dialog visibility, frame id, run gem/boss counters, milestone breakdown, end-screen data) and is updated by snapshot diffs each frame. Main-thread-only state (camera, hover tile, hover-upgrade-button, tower/panel positions, random-map params, worker reference) also lives here. Reset when starting a new map.
-- **`persistStore`** — persistent meta-progression (gems, unlocked skills, map progress, difficulty, general add-ons, random-map preferences, last-selected theme) and LLM commander configurations (`llmCommanders` array). Auto-saved to `localStorage` via manual `save()` calls.
+- **`persistStore`** — persistent meta-progression (gems, unlocked skills, map progress, difficulty, general add-ons, random-map and progressive-map preferences, last-selected theme) and LLM commander configurations (`llmCommanders` array). Auto-saved to `localStorage` via manual `save()` calls.
 - **`uiStore`** — UI overlay visibility and confirm dialog state, plus notifications, minimap toggle, enemy commander selection ("none"/"stubby"/"stubbs"), random-map panel visibility, and wasPlaying flags for pause/skill-tree/help (so closing these overlays restores the prior playing/paused state).
 - **`mapThemeStore`** — map theme state: `defaultTheme` (preloaded at app init for synchronous access by non-game screens) and `activeTheme` (resolved for the current run), plus `availableThemes` and preload/load actions.
 
@@ -372,6 +372,8 @@ Full-physics motion: DetourCrowd owns path follow + local avoidance; Rapier owns
 
 Map indexes `PROGRESSIVE_MAP_INDEX_BASE` (36) through the next 12 entries are the progressive variants in `maps.json` (`progressive.variants`: 3 regions × entry counts 1–4). `resolveGeneratedMap` builds the starting board with `createProgressiveBoard`. The generated map's `style` is `"progressive"`.
 
+**Custom progressive maps.** The MapSelect "Progressive Map" form starts a custom run from a player-chosen `ProgressiveConfig` (region, level 1–12, base entries 1–4, seed with auto-roll when blank). Custom progressive runs use `mapIndex` `CUSTOM_PROGRESSIVE_MAP_INDEX` (-2) and carry their config as `progressiveMapParams` on the worker init message and on the run-history entry (custom "Generated Map" runs use `CUSTOM_RANDOM_MAP_INDEX` (-1) + `randomMapParams` the same way). Run-time code recovers the config from the live map via `progressiveConfigFromMap(map)` — `boardToGeneratedMap` writes `regionId` / `level` / `entryCount` / `seed` back onto every rebuild — so `gameStore`, `SvgGameRoot`, `ProgressivePlacement`, and `GameEngine` need no config plumbing for custom runs; `progressiveConfigForIndex` remains only where a catalog index is the input (MapSelect variant entries, `resolveGeneratedMap`). Gem map multipliers are `gemMultiplierForRegionLevel(regionId, level)` (`MAP_GEM_MULTIPLIERS[regionId * 12 + level - 1]`) for every map kind, custom runs included. Custom runs of either kind skip map-progress persistence (best waves, unlocks, first clears, milestone claims) because those key on `mapIndex >= 0`.
+
 The board uses absolute block coordinates. The base block is `(0, 0)` and north is negative Y. Each block is 5×5 tiles. `generateProgressiveCatalog` builds 10 templates from the variant seed: path patterns (straight, elbows, tee, plus, some with an open center) plus two terrain fills. Terrain height is `flat`, `ramp`, `ridge`, or `peak`, stored on the template tiles as height 1–4. Path tiles are height 1.
 
 `boardToGeneratedMap` writes `originTileX` / `originTileY` from the block bounds minus a one-block margin. `Grid.worldOriginX/Y` is that origin times the 36px tile size. West or north growth lowers the origin so an existing tile keeps its world position. `Grid.replaceFromMap` returns `shiftX` / `shiftY` and applies that shift to `blocked`, `terrainTowers`, and `ghostTowers`. Callers add the same shift to tower tile indexes and enemy route tiles. Enemy and tower world positions are not moved.
@@ -420,7 +422,7 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 | File | Description |
 |---|---|
 | `src/stores/game.ts` | Volatile game state: lives, gold, wave, selection, time scale, camera, tower/panel positions, hover state, frame id, run gem/boss counters, milestone breakdown, end-screen data, random-map params, worker reference |
-| `src/stores/persist.ts` | Persistent state: gems, unlocks, difficulty, map progress, random-map preferences, last-selected theme, localStorage I/O |
+| `src/stores/persist.ts` | Persistent state: gems, unlocks, difficulty, map progress, random-map and progressive-map preferences, last-selected theme, localStorage I/O |
 | `src/stores/ui.ts` | UI state: confirm dialog, notifications, main menu / skill tree / stats / help / minimap overlay flags, debug panel visibility, enemy commander selection, random-map panel, wasPlaying flags for pause/skill-tree/help |
 | `src/stores/mapTheme.ts` | Map theme state: activeTheme, defaultTheme (preloaded at app init), availableThemes, preload/load actions |
 
@@ -446,7 +448,7 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 | `src/components/PauseMenu.vue` | Pause menu overlay: resume, skill tree, difficulty adjustment, quit to main menu |
 | `src/components/HelpDialog.vue` | Help/controls overlay (toggled from the in-game pause menu) |
 | `src/components/MainMenu.vue` | Main menu: new game, resume, skill tree, difficulty slider, profile reset |
-| `src/components/MapSelect.vue` | Map grid: 36 maps with unlock status, best waves, region info; theme drop-down, responsive grid (`auto-fill`), awaits theme resolution before navigation |
+| `src/components/MapSelect.vue` | Map grid: 36 maps with unlock status, best waves, region info; theme drop-down, responsive grid (`auto-fill`), awaits theme resolution before navigation; "Generated Map" form (style/width/height/seed) and "Progressive Map" form (base entries/seed) start custom runs |
 | `src/components/SkillTree.vue` | Skill tree: tower level unlocks, specializations, add-ons, general upgrades; reads default theme (not active theme) |
 | `src/components/EndScreen.vue` | Victory/game-over screen: gem breakdown, wave count, navigation buttons; reads default theme for region names |
 | `src/components/ConfirmDialog.vue` | Global modal dialog (teleported to body, driven by uiStore) |
@@ -637,7 +639,7 @@ Game progress (gems, unlocks, difficulty, map progress) is saved to `localStorag
 | Route | Component | Description |
 |---|---|---|
 | `/` | `MainMenu.vue` | Main menu with difficulty slider and navigation |
-| `/map-select` | `MapSelect.vue` | Map selection grid with theme drop-down, responsive layout, awaits theme resolution before navigation |
+| `/map-select` | `MapSelect.vue` | Map selection grid with theme drop-down, responsive layout, Generated Map / Progressive Map custom forms, awaits theme resolution before navigation |
 | `/skill-tree` | `SkillTree.vue` | Gem-based upgrade tree |
 | `/game` | `GameScreen.vue` | Active gameplay with single SVG root + UI overlays |
 | `/commanders` | `CommandersScreen.vue` | LLM commander management: create/edit/delete custom commanders, activate built-in or LLM commanders |

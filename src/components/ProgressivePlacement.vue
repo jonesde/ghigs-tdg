@@ -7,7 +7,7 @@ import {
   generateProgressiveCatalog,
   localTile,
   type PlacedBlock,
-  progressiveConfigForIndex,
+  progressiveConfigFromMap,
 } from "@/sim/grid/ProgressiveMap.js";
 import { useGameStore } from "@/stores/game.js";
 import { progressivePreviewFill } from "./progressivePreview.js";
@@ -15,7 +15,7 @@ import { progressivePreviewFill } from "./progressivePreview.js";
 const gameStore = useGameStore();
 
 const catalog = computed(() => {
-  const config = progressiveConfigForIndex(gameStore.mapIndex);
+  const config = progressiveConfigFromMap(gameStore.map);
   if (!config) return null;
   return generateProgressiveCatalog(config.seed);
 });
