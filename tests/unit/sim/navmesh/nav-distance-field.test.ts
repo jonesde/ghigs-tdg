@@ -153,4 +153,36 @@ describe("NavDistanceField", () => {
     expect(field.getDistanceToBase(2, 0)).toBeGreaterThanOrEqual(0);
     expect(field.getBlockedApproach(2, 0)).toBeNull();
   });
+
+  it("measures a through route straight through a live wall when the open route is sealed", () => {
+    const grid = gridFromRows(["S##W##B"], { x: 0, y: 0 }, { x: 6, y: 0 });
+    const field = new NavDistanceField(grid, null);
+    field.rebuild();
+
+    expect(field.getDistanceToBase(2, 0)).toBe(-1);
+    expect(field.getThroughDistanceToBase(2, 0)).toBe(4);
+    expect(field.getThroughBlockers(2, 0)).toEqual([{ x: 3, y: 0 }]);
+    expect(field.getFieldPathVersion()).toBe(grid.pathVersion);
+  });
+
+  it("reports no through blockers on a clear route and equals the open distance", () => {
+    const grid = gridFromRows(["S#####B"], { x: 0, y: 0 }, { x: 6, y: 0 });
+    const field = new NavDistanceField(grid, null);
+    field.rebuild();
+
+    expect(field.getThroughBlockers(2, 0)).toEqual([]);
+    expect(field.getThroughDistanceToBase(2, 0)).toBe(field.getDistanceToBase(2, 0));
+  });
+
+  it("orders a two-wall series enemy side first", () => {
+    const grid = gridFromRows(["S##WW#B"], { x: 0, y: 0 }, { x: 6, y: 0 });
+    const field = new NavDistanceField(grid, null);
+    field.rebuild();
+
+    expect(field.getThroughBlockers(2, 0)).toEqual([
+      { x: 3, y: 0 },
+      { x: 4, y: 0 },
+    ]);
+    expect(field.getThroughDistanceToBase(2, 0)).toBeGreaterThanOrEqual(0);
+  });
 });

@@ -172,7 +172,7 @@ describe("Rapier contact attack flags", () => {
     expect(enemy.blockedByTower).toBe(pathTower);
   });
 
-  it("ticks tower damage from postPhysics only while contact is live", () => {
+  it("ticks siege damage from postPhysics only while contact is live", () => {
     const damage = { value: 0 };
     const enemy = new Enemy("runner", 1, 0, grid, 1);
     physicsWorld.addEnemy(enemy);
@@ -190,9 +190,35 @@ describe("Rapier contact attack flags", () => {
       },
     } as unknown as Tower;
     physicsWorld.rebuildTowers({ towers: [tower] } as unknown as TowerManager);
+    enemy.applySiege(tower);
     enemy.body!.setTranslation({ x: towerCenter.x, y: towerCenter.y }, true);
     physicsWorld.step();
     enemy.postPhysics(FIXED_DT);
     expect(damage.value).toBeGreaterThan(0);
+  });
+
+  it("deals no damage for incidental contact without a committed siege", () => {
+    const damage = { value: 0 };
+    const enemy = new Enemy("runner", 1, 0, grid, 1);
+    physicsWorld.addEnemy(enemy);
+    const towerCenter = grid.tileToWorld(3, 4);
+    const tower = {
+      id: "walkpast",
+      tileX: 3,
+      tileY: 4,
+      x: towerCenter.x,
+      y: towerCenter.y,
+      isGhost: false,
+      health: 50,
+      takeDamage(amount: number): void {
+        damage.value += amount;
+      },
+    } as unknown as Tower;
+    physicsWorld.rebuildTowers({ towers: [tower] } as unknown as TowerManager);
+    enemy.body!.setTranslation({ x: towerCenter.x, y: towerCenter.y }, true);
+    physicsWorld.step();
+    expect(enemy.blockedByTower).toBe(tower);
+    enemy.postPhysics(FIXED_DT);
+    expect(damage.value).toBe(0);
   });
 });

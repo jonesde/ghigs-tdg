@@ -40,6 +40,8 @@ export class EnemyManager {
   crowdManager: CrowdManager | null = null;
   private blockedApproachLookup: ((tileX: number, tileY: number) => BlockedApproach | null) | null = null;
   private distanceToBaseLookup: ((tileX: number, tileY: number) => number) | null = null;
+  private throughDistanceLookup: ((tileX: number, tileY: number) => number) | null = null;
+  private throughBlockersLookup: ((tileX: number, tileY: number) => Array<{ x: number; y: number }>) | null = null;
   private flightDistanceLookup: ((tileX: number, tileY: number, flyingHeight: number) => number) | null = null;
   // Cross-module: GameEngine wires this to the ProjectileManager so burn ticks
   // (applied inside Enemy.updateStatusTimers) credit the inflicting tower's
@@ -116,6 +118,22 @@ export class EnemyManager {
 
   distanceToBase(tileX: number, tileY: number): number {
     return this.distanceToBaseLookup?.(tileX, tileY) ?? -1;
+  }
+
+  setThroughDistanceLookup(
+    distance: ((tileX: number, tileY: number) => number) | null,
+    blockers: ((tileX: number, tileY: number) => Array<{ x: number; y: number }>) | null,
+  ): void {
+    this.throughDistanceLookup = distance;
+    this.throughBlockersLookup = blockers;
+  }
+
+  throughDistanceToBase(tileX: number, tileY: number): number {
+    return this.throughDistanceLookup?.(tileX, tileY) ?? -1;
+  }
+
+  throughBlockers(tileX: number, tileY: number): Array<{ x: number; y: number }> {
+    return this.throughBlockersLookup?.(tileX, tileY) ?? [];
   }
 
   setFlightDistanceLookup(lookup: ((tileX: number, tileY: number, flyingHeight: number) => number) | null): void {

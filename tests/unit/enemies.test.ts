@@ -14,11 +14,13 @@ import {
   MIN_SLOW_FACTOR,
 } from "@/sim/ConstantsEnemy.js";
 import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
+import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
 import { fromRecast } from "@/sim/navmesh/coords.js";
 import { NavDistanceField } from "@/sim/navmesh/NavDistanceField.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
+import { NoopParticleSpawner } from "@/sim/ParticleSystem.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap, makeOneWideCornerMap } from "../helpers/mock-grid";
@@ -584,7 +586,7 @@ describe("Enemy", () => {
       return grid;
     }
 
-    it("walks toward the wall face instead of the tile nearest the base", () => {
+    it("breaches a sealed 1-wide lane: open walk is infinite so the wall loses", () => {
       const grid = makeSealedGrid();
       const navBuilder = new NavMeshBuilder(grid);
       for (let tileX = 0; tileX <= 5; tileX++) navBuilder.addTowerObstacle(tileX, 2);
@@ -592,16 +594,22 @@ describe("Enemy", () => {
       const crowd = new CrowdManager(navBuilder.getNavMesh(), grid.tileSize, 4);
       const field = new NavDistanceField(grid, navBuilder);
       field.rebuild();
+      const enemyManager = new EnemyManager(grid, new NoopParticleSpawner(), 0, null, {});
+      enemyManager.setPhysicsWorld(physicsWorld);
+      enemyManager.setBlockedApproachLookup((tileX, tileY) => field.getBlockedApproach(tileX, tileY));
+      enemyManager.setDistanceToBaseLookup((tileX, tileY) => field.getDistanceToBase(tileX, tileY));
+      enemyManager.setThroughDistanceLookup(
+        (tileX, tileY) => field.getThroughDistanceToBase(tileX, tileY),
+        (tileX, tileY) => field.getThroughBlockers(tileX, tileY),
+      );
       try {
-        const enemy = new Enemy("minion", 1, 0, grid, 1);
-        physicsWorld.addEnemy(enemy);
+        const enemy = enemyManager.spawn("minion", 1, 0, 1);
+        enemy.towerAt = () => null;
         crowd.addAgent(enemy);
-        const manager = { blockedApproach: (tileX, tileY) => field.getBlockedApproach(tileX, tileY) };
+        const manager = enemyManager as unknown as Parameters<Enemy["computeIntent"]>[1];
+        expect(field.getDistanceToBase(3, 0)).toBe(-1);
+        expect(field.getThroughDistanceToBase(3, 0)).toBeGreaterThanOrEqual(0);
         enemy.computeIntent(fixedDt, manager);
-        const approach = field.getBlockedApproach(3, 0);
-        expect(approach).not.toBeNull();
-        expect(enemy.lastMoveTargetWorld.x).toBeCloseTo(approach.approachWorld.x, 4);
-        expect(enemy.lastMoveTargetWorld.y).toBeCloseTo(approach.approachWorld.y, 4);
 
         const startX = enemy.x;
         for (let step = 0; step < 180; step++) {
@@ -612,6 +620,7 @@ describe("Enemy", () => {
         }
         expect(enemy.x).toBeGreaterThan(startX + grid.tileSize);
       } finally {
+        enemyManager.clear();
         crowd.destroy();
         navBuilder.destroy();
         physicsWorld.dispose();

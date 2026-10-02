@@ -1,4 +1,5 @@
 import type { Grid } from "@/sim/grid/Grid.js";
+import { blockersOnThroughPath, buildThroughField } from "./BreachDecision.js";
 import type { NavMeshBuilder, WorldPoint } from "./NavMeshBuilder.js";
 
 export interface PathMetric {
@@ -35,6 +36,7 @@ export class NavDistanceField {
   private navMeshBuilder: NavMeshBuilder | null;
   private pathVersion = -1;
   private distanceToBase: number[][] = [];
+  private throughDistanceToBase: number[][] = [];
   private blockedApproach: (BlockedApproach | null)[][] = [];
   private spawnReachable: boolean[] = [];
   private pathMetrics: PathMetric[] = [];
@@ -60,6 +62,7 @@ export class NavDistanceField {
   rebuild(): void {
     this.pathVersion = this.grid.pathVersion;
     this.distanceToBase = this.computeDistanceToBase();
+    this.throughDistanceToBase = buildThroughField(this.grid);
     this.blockedApproach = this.computeBlockedApproach();
     this.pathMetrics = [];
     this.spawnReachable = [];
@@ -98,6 +101,25 @@ export class NavDistanceField {
     const row = this.distanceToBase[tileY];
     if (!row || tileX < 0 || tileX >= row.length) return -1;
     return row[tileX] ?? -1;
+  }
+
+  // Tile distance to base walking straight through live blocking towers. Paired
+  // with getDistanceToBase (open walk) as the two legs of the breach decision.
+  getThroughDistanceToBase(tileX: number, tileY: number): number {
+    if (tileY < 0 || tileY >= this.throughDistanceToBase.length) return -1;
+    const row = this.throughDistanceToBase[tileY];
+    if (!row || tileX < 0 || tileX >= row.length) return -1;
+    return row[tileX] ?? -1;
+  }
+
+  // Blocked tiles on one shortest through-path from the tile to the base,
+  // enemy side first (first entry is the wall facing the enemy).
+  getThroughBlockers(tileX: number, tileY: number): Array<{ x: number; y: number }> {
+    return blockersOnThroughPath(this.grid, this.throughDistanceToBase, tileX, tileY);
+  }
+
+  getFieldPathVersion(): number {
+    return this.pathVersion;
   }
 
   // Near face of the first blocked tile on the shortest tile path into the base

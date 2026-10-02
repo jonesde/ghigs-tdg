@@ -399,6 +399,10 @@ export class GameEngine {
     this.enemyManager.setDistanceToBaseLookup(
       (tileX, tileY) => this.navDistanceField?.getDistanceToBase(tileX, tileY) ?? -1,
     );
+    this.enemyManager.setThroughDistanceLookup(
+      (tileX, tileY) => this.navDistanceField?.getThroughDistanceToBase(tileX, tileY) ?? -1,
+      (tileX, tileY) => this.navDistanceField?.getThroughBlockers(tileX, tileY) ?? [],
+    );
     this.enemyManager.setFlightDistanceLookup(
       (tileX, tileY, flyingHeight) => this.flightDistanceField?.getDistanceToBase(tileX, tileY, flyingHeight) ?? -1,
     );

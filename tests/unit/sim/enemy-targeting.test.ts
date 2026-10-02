@@ -1,6 +1,5 @@
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it } from "vitest";
-import { SIEGE_STUCK_SECONDS } from "@/sim/ConstantsEnemy.js";
 import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { selectTargetingTower, type TargetingTower } from "@/sim/enemies/targeting.js";
 import { Grid } from "@/sim/grid/Grid.js";
@@ -71,6 +70,8 @@ describe("Enemy computeIntent engagement policy", () => {
     return {
       liveTowers: () => towers.filter((entry) => !entry.isGhost && entry.health > 0) as unknown as Tower[],
       distanceToBase: (tileX: number) => distanceByColumn(tileX),
+      throughDistanceToBase: (tileX: number) => distanceByColumn(tileX),
+      throughBlockers: () => [],
       blockedApproach: () => null,
     } as unknown as Parameters<Enemy["computeIntent"]>[1];
   }
@@ -84,23 +85,20 @@ describe("Enemy computeIntent engagement policy", () => {
     expect(enemy.siegeTower).toBe(stronger);
   });
 
-  it("releases a siege for base and does not auto-siege a blocking tower", () => {
+  it("releases a siege for base and does not auto-siege incidental contact", () => {
     const parked = tower(4, 3, 20);
     const blocker = tower(3, 3, 20);
     enemy.targetingMode = "base";
     enemy.routingMode = "siege";
     enemy.siegeTower = parked as unknown as Tower;
     enemy.blockedByTower = blocker as unknown as Tower;
-    enemy.stuckTimer = SIEGE_STUCK_SECONDS;
-    enemy.lastProgressX = enemy.x;
-    enemy.lastProgressY = enemy.y;
-    enemy.computeIntent(SIEGE_STUCK_SECONDS, policyManager([parked, blocker]));
+    enemy.breachCooldownSeconds = 0;
+    enemy.computeIntent(0.016, policyManager([parked, blocker]));
     expect(enemy.routingMode).toBe("default");
     expect(enemy.siegeTower).toBeNull();
-    expect(enemy.stuckTimer).toBe(0);
     enemy.blockedByTower = blocker as unknown as Tower;
-    enemy.stuckTimer = SIEGE_STUCK_SECONDS;
-    enemy.computeIntent(SIEGE_STUCK_SECONDS, policyManager([parked, blocker]));
+    enemy.breachCooldownSeconds = 0;
+    enemy.computeIntent(0.016, policyManager([parked, blocker]));
     expect(enemy.routingMode).toBe("default");
     expect(enemy.siegeTower).toBeNull();
   });

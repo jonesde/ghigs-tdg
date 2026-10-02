@@ -5,14 +5,16 @@ import { DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
 import {
   AGENT_RESYNC_RADIUS_FRACTION,
   BOSS_STUN_REDUCTION,
+  BREACH_HYSTERESIS_SECONDS,
+  BREACH_REEVAL_SECONDS,
   ENEMY_LEVEL_HP_MULT,
   ENEMY_TYPES,
   ENEMY_WAVE_DAMAGE_MULT,
   enemyLevelBounty,
   MAX_BURN_STACKS,
   MIN_SLOW_FACTOR,
-  SIEGE_STUCK_SECONDS,
 } from "@/sim/ConstantsEnemy.js";
+import { decideBreach } from "@/sim/navmesh/BreachDecision.js";
 import { restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdManager.js";
 import { fromRecast, toRecast } from "@/sim/navmesh/coords.js";
 import { launchEnemy } from "@/sim/physics/launchEnemy.js";
@@ -200,6 +202,8 @@ interface EnemyManagerRef {
   blockedApproach?(tileX: number, tileY: number): { approachWorld: { x: number; y: number } } | null;
   liveTowers?(): Tower[];
   distanceToBase?(tileX: number, tileY: number): number;
+  throughDistanceToBase?(tileX: number, tileY: number): number;
+  throughBlockers?(tileX: number, tileY: number): Array<{ x: number; y: number }>;
   flightDistanceToBase?(tileX: number, tileY: number, flyingHeight: number): number;
   // Cross-module: burn ticks route their dealt damage here so the inflicting
   // tower's totalDamageDealt/waveDamage (DPS graph, milestones) include it.
@@ -305,6 +309,12 @@ export class Enemy {
   lastMoveTargetMode: string | null = null;
   // Progress tracking for auto-siege when stuck on a choke.
   stuckTimer: number = 0;
+  // Breach-vs-detour decision cache. Re-evaluate when the enemy changes tile,
+  // the tower set changes (pathVersion), or the cadence elapses, so per-tick
+  // intent stays at field reads instead of a greedy descent every tick.
+  breachPathVersion: number = -1;
+  breachCooldownSeconds: number = 0;
+  private breachSnapKey: number | null = null;
   // Seconds before another FAILED or INVALID crowd retarget. CrowdManager writes
   // this so a dead target does not fill Detour's 8-slot path queue every tick.
   crowdRetargetCooldown: number = 0;
@@ -375,6 +385,8 @@ export class Enemy {
     this.lastProgressX = 0;
     this.lastProgressY = 0;
     this.baseTarget = baseTarget;
+    this.breachPathVersion = -1;
+    this.breachCooldownSeconds = 0;
 
     this.spawnIndex = spawnIndex;
     this.wave = wave;
@@ -537,6 +549,9 @@ export class Enemy {
     this.routingMode = mode;
     this.siegeTower = null;
     this.motionLock = "none";
+    this.breachSnapKey = null;
+    this.breachPathVersion = -1;
+    this.breachCooldownSeconds = 0;
     this.clearMoveTargetCache();
 
     const targetTile = mode === "hold" ? routePath[0]! : routePath[routePath.length - 1]!;
@@ -556,6 +571,9 @@ export class Enemy {
     this.routingMode = "siege";
     this.siegeTower = tower;
     this.motionLock = "none";
+    this.breachSnapKey = null;
+    this.breachPathVersion = -1;
+    this.breachCooldownSeconds = 0;
     this.clearMoveTargetCache();
     if (this.flyingHeight > 0) {
       this.rebuildFlightPolyline();
@@ -573,6 +591,9 @@ export class Enemy {
     this.siegeTower = null;
     this.blockedByTower = null;
     this.motionLock = "none";
+    this.breachSnapKey = null;
+    this.breachPathVersion = -1;
+    this.breachCooldownSeconds = 0;
     this.routeTiles = [];
     this.strafeOccupancyKey = null;
     this.clearMoveTargetCache();
@@ -721,23 +742,9 @@ export class Enemy {
       !isEngagementPolicy(this.targetingMode) &&
       !this.attackingBase &&
       this.routingMode === "default" &&
-      enemyManager &&
-      this.blockedByTower &&
-      !this.blockedByTower.isGhost
+      enemyManager
     ) {
-      const progress = Math.hypot(this.x - this.lastProgressX, this.y - this.lastProgressY);
-      const agentInvalid = this.agent?.state() === 0;
-      if (progress < this.grid.tileSize * 0.05 || agentInvalid) {
-        this.stuckTimer += dt;
-        if (this.stuckTimer >= SIEGE_STUCK_SECONDS) {
-          this.applySiege(this.blockedByTower);
-          this.stuckTimer = 0;
-        }
-      } else {
-        this.stuckTimer = 0;
-        this.lastProgressX = this.x;
-        this.lastProgressY = this.y;
-      }
+      this.evaluateBreachDecision(dt, enemyManager);
     } else if (this.routingMode !== "siege") {
       this.stuckTimer = 0;
       this.lastProgressX = this.x;
@@ -771,6 +778,98 @@ export class Enemy {
         break;
       }
     }
+  }
+
+  // Unified breach-vs-detour decision for default routing: siege the enemy-side
+  // wall when walking through it (plus the breach time at this enemy's own DPS)
+  // beats the open walk around it, otherwise keep the open Detour route. Snaps
+  // non-walkable tiles so a commander hold on terrain still decides from the
+  // nearest corridor tile. Re-evaluates on tile change, tower-set change, or a
+  // short cadence rather than every tick.
+  private evaluateBreachDecision(dt: number, enemyManager: EnemyManagerRef): void {
+    this.breachCooldownSeconds = Math.max(0, this.breachCooldownSeconds - dt);
+    if (this.attackingBase) return;
+    const readOpen = (tileX: number, tileY: number): number => enemyManager.distanceToBase?.(tileX, tileY) ?? -1;
+    const readThrough = (tileX: number, tileY: number): number =>
+      enemyManager.throughDistanceToBase?.(tileX, tileY) ?? -1;
+    const readBlockers = (tileX: number, tileY: number): Array<{ x: number; y: number }> =>
+      enemyManager.throughBlockers?.(tileX, tileY) ?? [];
+    if (!enemyManager.distanceToBase || !enemyManager.throughDistanceToBase) {
+      this.trackBreachProgress();
+      return;
+    }
+    const tile = this.currentTile();
+    const snapped = isWalkableTile(this.grid, tile.x, tile.y) ? tile : nearestWalkableTile(this.grid, tile.x, tile.y);
+    if (!snapped) {
+      this.trackBreachProgress();
+      return;
+    }
+    const snapKey = snapped.y * this.grid.width + snapped.x;
+    const towerSetChanged = this.grid.pathVersion !== this.breachPathVersion;
+    const siegeTargetGone = this.routingMode === "siege" && (!this.siegeTower || this.siegeTower.isGhost);
+    if (!towerSetChanged && !siegeTargetGone && snapKey === this.breachSnapKey && this.breachCooldownSeconds > 0) {
+      this.trackBreachProgress();
+      return;
+    }
+    this.breachCooldownSeconds = BREACH_REEVAL_SECONDS;
+    this.trackBreachProgress();
+    const openDistance = readOpen(snapped.x, snapped.y);
+    const throughDistance = readThrough(snapped.x, snapped.y);
+    if (throughDistance < 0) {
+      this.breachSnapKey = snapKey;
+      this.breachPathVersion = this.grid.pathVersion;
+      return;
+    }
+    const blockers = this.blockersFromTiles(readBlockers(snapped.x, snapped.y));
+    const currentlySieging = this.routingMode === "siege";
+    const evaluation = decideBreach({
+      openDistanceTiles: openDistance,
+      throughDistanceTiles: throughDistance,
+      blockers,
+      enemyDamagePerSecond: this.attackDamage * this.attackSpeed,
+      enemySpeedTilesPerSecond: this.speed,
+      hysteresisSeconds: BREACH_HYSTERESIS_SECONDS,
+      currentlySieging,
+    });
+    this.breachSnapKey = snapKey;
+    this.breachPathVersion = this.grid.pathVersion;
+    if (evaluation.decision === "detour") {
+      if (currentlySieging) this.releaseToDefault();
+      return;
+    }
+    const siegeTile = evaluation.siegeTile;
+    if (!siegeTile) return;
+    const tower = this.towerAt(siegeTile.x, siegeTile.y);
+    if (!tower || tower.isGhost || tower.enemyAttackImmune) return;
+    if (!(currentlySieging && this.siegeTower === tower)) this.applySiege(tower);
+  }
+
+  private blockersFromTiles(
+    tiles: Array<{ x: number; y: number }>,
+  ): Array<{ tileX: number; tileY: number; health: number; breachable: boolean }> {
+    const blockers: Array<{ tileX: number; tileY: number; health: number; breachable: boolean }> = [];
+    for (const tile of tiles) {
+      const tower = this.towerAt(tile.x, tile.y);
+      if (!tower || tower.isGhost || tower.enemyAttackImmune) {
+        blockers.push({ tileX: tile.x, tileY: tile.y, health: 0, breachable: false });
+        continue;
+      }
+      blockers.push({ tileX: tile.x, tileY: tile.y, health: Math.max(0, tower.health), breachable: true });
+    }
+    return blockers;
+  }
+
+  // Walk-past rule: only a committed siege damages towers. An enemy walking
+  // around a wall (default/route/hold contact) reports the contact but never
+  // converts it into damage.
+  private canDamageTower(tower: Tower): boolean {
+    return this.routingMode === "siege" && this.siegeTower === tower && !tower.isGhost;
+  }
+
+  private trackBreachProgress(): void {
+    this.stuckTimer = 0;
+    this.lastProgressX = this.x;
+    this.lastProgressY = this.y;
   }
 
   // Reads stepped body, sparse agent resync, contact-driven attacks, bounds.
@@ -830,7 +929,13 @@ export class Enemy {
 
     if (this.flyingHeight > 0) {
       this.applyFlightAttack(dt);
-    } else if (!this.attackingBase && this.blockedByTower && !this.blockedByTower.isGhost && this.stunTimer <= 0) {
+    } else if (
+      !this.attackingBase &&
+      this.blockedByTower &&
+      !this.blockedByTower.isGhost &&
+      this.stunTimer <= 0 &&
+      this.canDamageTower(this.blockedByTower)
+    ) {
       this.attackTimer -= dt;
       if (this.attackTimer <= 0) {
         this.blockedByTower.takeDamage(this.attackDamage, this);

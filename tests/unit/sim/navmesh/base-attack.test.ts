@@ -88,7 +88,7 @@ describe("postPhysics base attack", () => {
     expect(fakeBase.damage).toBeGreaterThan(damageAtContact);
   });
 
-  it("attacks a live tower while overlapping its collider and not the base", () => {
+  it("attacks a sieged tower while overlapping its collider and not the base", () => {
     enemyManager.baseTarget = makeBaseTarget();
 
     const enemy = enemyManager.spawn("runner", 1, 0, 1);
@@ -116,6 +116,7 @@ describe("postPhysics base attack", () => {
     } as unknown as TowerManager;
     physicsWorld.rebuildTowers(towerManagerStub);
     grid.blocked.add("3,3");
+    enemy!.applySiege(fakeTower);
 
     enemy!.body!.setTranslation({ x: towerCenter.x, y: towerCenter.y }, true);
 
