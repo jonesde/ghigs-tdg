@@ -6,6 +6,7 @@ import aftermathTheme from "@/render/themes/data/the-aftermath.json";
 import { DEFAULT_THEME_ID, MAP_THEME_MANIFEST, type MapThemeData } from "@/render/themes/index.js";
 import { normalizeThemeImages } from "@/render/themes/normalize.js";
 import { createTestMapThemeStore } from "../helpers/mock-stores";
+import { makeMockRegionMapLayout, mockRegionMapImage } from "../helpers/regionMap";
 
 describe("Map Theme System", () => {
   describe("Theme Manifest", () => {
@@ -57,6 +58,8 @@ describe("Map Theme System", () => {
               terrain4: "<svg></svg>",
             },
             base: "<svg></svg>",
+            mapImage: mockRegionMapImage,
+            mapLayout: makeMockRegionMapLayout(),
           },
         ],
       };
@@ -75,6 +78,9 @@ describe("Map Theme System", () => {
       expect(goblin.name).toBe("Goblin");
       expect(normalized.regions).toHaveLength(1);
       expect(normalized.regions[0]!.name).toBe("Forest");
+      expect(normalized.regions[0]!.mapImage).toContain("<svg");
+      expect(normalized.regions[0]!.mapLayout.viewBox).toBe("0 0 400 300");
+      expect(normalized.regions[0]!.mapLayout.nodes).toHaveLength(16);
     });
 
     it("should normalize spawn visuals", async () => {
@@ -288,6 +294,75 @@ describe("Aftermath theme", () => {
   });
 });
 
+describe("Region map layouts", () => {
+  const shippedThemes = [
+    { label: "Polymath", raw: defaultTheme },
+    { label: "Aftermath", raw: aftermathTheme },
+  ];
+
+  for (const { label, raw } of shippedThemes) {
+    describe(label, () => {
+      const theme = RawMapThemeSchema.parse(raw);
+
+      it("ships a region map image and level layout for every region", () => {
+        expect(theme.regions).toHaveLength(3);
+        for (const region of theme.regions) {
+          expect(region.mapImage.startsWith("<svg")).toBe(true);
+          expect(region.mapImage).toContain(`viewBox="${region.mapLayout.viewBox}"`);
+          expect(region.mapLayout.nodes).toHaveLength(16);
+          expect(region.mapLayout.connections).toHaveLength(15);
+        }
+      });
+
+      it("places 12 level nodes and 4 progressive branch nodes", () => {
+        for (const region of theme.regions) {
+          const levels = region.mapLayout.nodes
+            .filter((node) => node.kind === "level")
+            .map((node) => node.level)
+            .sort((a, b) => a - b);
+          expect(levels).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+          const progressiveLevels = region.mapLayout.nodes
+            .filter((node) => node.kind === "progressive")
+            .map((node) => node.level)
+            .sort((a, b) => a - b);
+          expect(progressiveLevels).toEqual([1, 5, 9, 12]);
+        }
+      });
+
+      it("connects the level chain and branches progressive nodes off levels 1, 5, 9, and 12", () => {
+        for (const region of theme.regions) {
+          const nodeKeys = new Set(region.mapLayout.nodes.map((node) => `${node.kind}:${node.level}`));
+          for (const connection of region.mapLayout.connections) {
+            expect(nodeKeys.has(`${connection.from.kind}:${connection.from.level}`)).toBe(true);
+            expect(nodeKeys.has(`${connection.to.kind}:${connection.to.level}`)).toBe(true);
+          }
+          const chain = region.mapLayout.connections.filter(
+            (connection) => connection.from.kind === "level" && connection.to.kind === "level",
+          );
+          expect(chain).toHaveLength(11);
+          const branches = region.mapLayout.connections.filter((connection) => connection.to.kind === "progressive");
+          expect(branches.map((connection) => connection.from.level)).toEqual([1, 5, 9, 12]);
+        }
+      });
+    });
+  }
+
+  it("rejects duplicate region map nodes", () => {
+    const raw = structuredClone(defaultTheme);
+    raw.regions[0]!.mapLayout.nodes.push({ kind: "level", level: 1, x: 0, y: 0 });
+    expect(() => RawMapThemeSchema.parse(raw)).toThrow();
+  });
+
+  it("rejects region map connections that do not resolve to a node", () => {
+    const raw = structuredClone(defaultTheme);
+    raw.regions[0]!.mapLayout.connections.push({
+      from: { kind: "level", level: 1 },
+      to: { kind: "progressive", level: 2 },
+    });
+    expect(() => RawMapThemeSchema.parse(raw)).toThrow();
+  });
+});
+
 function buildCustomTheme(overrides?: {
   regionBase?: string;
   pathColor?: string;
@@ -353,6 +428,8 @@ function buildCustomTheme(overrides?: {
           terrain4: makeTileSvg(terrainColors[3]!, true),
         },
         base: regionBase,
+        mapImage: mockRegionMapImage,
+        mapLayout: makeMockRegionMapLayout(),
       },
     ],
   };

@@ -96,6 +96,36 @@ Each region has 5 tile images:
 
 An empty string (`""`) falls back to the default procedurally-generated base structure.
 
+### Region Map Image & Layout (3 sets)
+
+Each region has a map image and a level layout, used by the `/map-select` screen (one tab per region):
+
+| Region ID | Map Art Field | Layout Field |
+|---|---|---|
+| `0` | `regions[0].mapImage` | `regions[0].mapLayout` |
+| `1` | `regions[1].mapImage` | `regions[1].mapLayout` |
+| `2` | `regions[2].mapImage` | `regions[2].mapLayout` |
+
+- `mapImage`: the region map background — an inline `<svg>...</svg>` string or an external SVG ref (same convention as every other image).
+- `mapLayout`: where the map levels sit on that image and how they connect. Node `x`/`y` coordinates are in the `mapImage`'s viewBox space.
+
+`mapLayout` fields:
+
+| Field | Value |
+|---|---|
+| `viewBox` | Four numbers, e.g. `"0 0 1100 700"`. Must match the `viewBox` of `mapImage` |
+| `nodes` | Exactly 16 entries: `{ "kind", "level", "x", "y" }` |
+| `connections` | 15 entries: `{ "from": { "kind", "level" }, "to": { "kind", "level" } }` |
+
+Node `kind` and `level`:
+
+- `"kind": "level"` — one node per map level 1–12; `level` is the map level. This is the generated map `regionId * 12 + level - 1`.
+- `"kind": "progressive"` — one node per progressive variant; `level` is the branch level the variant unlocks with (1, 5, 9, or 12 — the levels of `progressive.variants` in `src/content/data/maps.json`).
+
+Connections describe the current level progression: 11 chain links (`level` 1→2, 2→3, … 11→12) plus 4 branch links (`level` 1→`progressive` 1, `level` 5→`progressive` 5, `level` 9→`progressive` 9, `level` 12→`progressive` 12). Every endpoint must reference an existing node.
+
+`RawMapThemeSchema` enforces the structure: no duplicate `(kind, level)` nodes, exactly the 12 level nodes 1–12, exactly 4 progressive nodes, and no connection to a missing node. The branch level set (1, 5, 9, 12) is matched against `maps.json` at load time in `MapSelect.vue` (an unmatched progressive node is skipped with a warning).
+
 ### Spawn Image Set (optional)
 
 | Field | Symbol id | Shown when |
@@ -162,6 +192,16 @@ Tiles fill each grid cell exactly. Each tile, including path and the tile under 
 
 The base art replaces the default procedural base. If left as `""`, the default base renderer (rounded rectangle with gems and hexagonal emblem) is used instead. Your SVG is inserted directly into a `<g transform="translate(...)">` wrapper.
 
+### Region Map Art
+
+| Property | Value |
+|---|---|
+| **viewBox** | Freeform `0 0 W H`; `mapLayout.viewBox` must match it exactly |
+| **Placement** | Nested `<svg>` filling the Map Select map area (aspect ratio preserved) |
+| **Node markers** | Drawn by `RegionMap.vue` on top (circle + label); leave headroom around node coordinates |
+
+The mapImage is background art behind the level markers and connection lines. Keep it low-contrast so the markers, labels, and connection lines stay readable. Node `x`/`y` values in `mapLayout` are in the same user space as the viewBox.
+
 ---
 
 ## Symbol ID Contract
@@ -220,8 +260,9 @@ The normalizer strips XML prologues, HTML comments, and whitespace. For inline S
 | Enemy attack sets | 6 (optional per enemy) |
 | Region tile sets | 15 (3 regions × 5 tile types) |
 | Region base sets | 3 |
+| Region map images | 3 (plus a `mapLayout` data structure each) |
 | Spawn images | 3 (optional) |
-| **Total image sets, both shipped themes** | **55** |
+| **Total image sets, both shipped themes** | **58** |
 
 ---
 

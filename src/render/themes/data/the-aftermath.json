@@ -790,7 +790,46 @@
         "terrain3": "<svg viewBox=\"0 0 36 36\"><g stroke-linejoin=\"round\" stroke-linecap=\"round\"><rect x=\"0\" y=\"0\" width=\"36\" height=\"36\" fill=\"#8c6244\"/><ellipse cx=\"17\" cy=\"17\" rx=\"8\" ry=\"7\" fill=\"#9a6848\" opacity=\"0.58\"/><ellipse cx=\"21\" cy=\"19\" rx=\"5.5\" ry=\"4.5\" fill=\"#7a5438\" opacity=\"0.62\"/><ellipse cx=\"14\" cy=\"20\" rx=\"4.5\" ry=\"3.5\" fill=\"#a07858\" opacity=\"0.55\"/><path d=\"M11 17 C11 12, 16 10, 21 13 C25 16, 24 23, 18 25 C13 27, 11 22, 11 17 Z\" fill=\"#7a5438\" opacity=\"0.5\"/><ellipse cx=\"27\" cy=\"12\" rx=\"3.5\" ry=\"4.5\" fill=\"#7a5438\" opacity=\"0.42\"/><ellipse cx=\"9\" cy=\"12\" rx=\"3.5\" ry=\"4\" fill=\"#a07858\" opacity=\"0.4\"/><circle cx=\"26\" cy=\"27\" r=\"1.1\" fill=\"#7a5438\" opacity=\"0.45\"/><ellipse cx=\"8\" cy=\"2\" rx=\"5\" ry=\"5\" fill=\"#9a6848\" opacity=\"0.24\"/><ellipse cx=\"33.5\" cy=\"8\" rx=\"5\" ry=\"4.5\" fill=\"#a07858\" opacity=\"0.26\"/><ellipse cx=\"1.5\" cy=\"24\" rx=\"4.5\" ry=\"6\" fill=\"#7a5438\" opacity=\"0.28\"/></g></svg>",
         "terrain4": "<svg viewBox=\"0 0 36 36\"><g stroke-linejoin=\"round\" stroke-linecap=\"round\"><rect x=\"0\" y=\"0\" width=\"36\" height=\"36\" fill=\"#6a4630\"/><ellipse cx=\"20\" cy=\"18\" rx=\"8\" ry=\"7\" fill=\"#7a5438\" opacity=\"0.58\"/><ellipse cx=\"16\" cy=\"16\" rx=\"5\" ry=\"4.5\" fill=\"#5a3c28\" opacity=\"0.65\"/><ellipse cx=\"23\" cy=\"22\" rx=\"5\" ry=\"4\" fill=\"#806048\" opacity=\"0.55\"/><path d=\"M14 12 C17 8, 24 9, 26 14 C28 19, 23 23, 17 21 C12 19, 11 15, 14 12 Z\" fill=\"#5a3c28\" opacity=\"0.5\"/><ellipse cx=\"10\" cy=\"20\" rx=\"4\" ry=\"5\" fill=\"#5a3c28\" opacity=\"0.45\"/><ellipse cx=\"28\" cy=\"14\" rx=\"3\" ry=\"4\" fill=\"#806048\" opacity=\"0.42\"/><ellipse cx=\"12\" cy=\"28\" rx=\"5\" ry=\"2.8\" fill=\"#7a5438\" opacity=\"0.4\"/><circle cx=\"26\" cy=\"29\" r=\"0.9\" fill=\"#5a3c28\" opacity=\"0.48\"/><ellipse cx=\"16\" cy=\"1\" rx=\"7\" ry=\"4\" fill=\"#806048\" opacity=\"0.26\"/><ellipse cx=\"33\" cy=\"28\" rx=\"4.5\" ry=\"5\" fill=\"#5a3c28\" opacity=\"0.28\"/><ellipse cx=\"6\" cy=\"33.5\" rx=\"6\" ry=\"4\" fill=\"#7a5438\" opacity=\"0.24\"/></g></svg>"
       },
-      "base": "<svg viewBox=\"0 0 108 108\"><g stroke-linejoin=\"round\" stroke-linecap=\"round\"><ellipse cx=\"54\" cy=\"60\" rx=\"42\" ry=\"30\" fill=\"#6a4a34\" opacity=\"0.94\"/><rect x=\"22\" y=\"62\" width=\"16\" height=\"12\" rx=\"1.2\" fill=\"#6a4e38\" stroke=\"#1a120e\" stroke-width=\"1\"/><line x1=\"22\" y1=\"68\" x2=\"38\" y2=\"68\" stroke=\"#3a2a1c\" stroke-width=\"0.8\"/><circle cx=\"58\" cy=\"56\" r=\"21\" fill=\"#4a2e1c\"/><circle cx=\"54\" cy=\"50\" r=\"20\" fill=\"#8a5a3a\" stroke=\"#1a120e\" stroke-width=\"1.6\"/><ellipse cx=\"46\" cy=\"42\" rx=\"8\" ry=\"4.5\" fill=\"#c48a62\" opacity=\"0.8\"/><circle cx=\"54\" cy=\"50\" r=\"13\" fill=\"none\" stroke=\"#6a4030\" stroke-width=\"1.4\"/><circle cx=\"54\" cy=\"50\" r=\"6\" fill=\"none\" stroke=\"#5a3424\" stroke-width=\"1.1\"/><rect x=\"50\" y=\"46\" width=\"8\" height=\"6\" rx=\"1\" fill=\"#5a4030\" stroke=\"#1a120e\" stroke-width=\"0.6\"/><line x1=\"70\" y1=\"46\" x2=\"80\" y2=\"32\" stroke=\"#4a4038\" stroke-width=\"1.6\"/><circle cx=\"82\" cy=\"30\" r=\"11\" fill=\"#ffb020\" opacity=\"0.28\"/><circle cx=\"82\" cy=\"30\" r=\"4.2\" fill=\"#ffcc66\" stroke=\"#a85a10\" stroke-width=\"0.8\"/></g></svg>"
+      "base": "<svg viewBox=\"0 0 108 108\"><g stroke-linejoin=\"round\" stroke-linecap=\"round\"><ellipse cx=\"54\" cy=\"60\" rx=\"42\" ry=\"30\" fill=\"#6a4a34\" opacity=\"0.94\"/><rect x=\"22\" y=\"62\" width=\"16\" height=\"12\" rx=\"1.2\" fill=\"#6a4e38\" stroke=\"#1a120e\" stroke-width=\"1\"/><line x1=\"22\" y1=\"68\" x2=\"38\" y2=\"68\" stroke=\"#3a2a1c\" stroke-width=\"0.8\"/><circle cx=\"58\" cy=\"56\" r=\"21\" fill=\"#4a2e1c\"/><circle cx=\"54\" cy=\"50\" r=\"20\" fill=\"#8a5a3a\" stroke=\"#1a120e\" stroke-width=\"1.6\"/><ellipse cx=\"46\" cy=\"42\" rx=\"8\" ry=\"4.5\" fill=\"#c48a62\" opacity=\"0.8\"/><circle cx=\"54\" cy=\"50\" r=\"13\" fill=\"none\" stroke=\"#6a4030\" stroke-width=\"1.4\"/><circle cx=\"54\" cy=\"50\" r=\"6\" fill=\"none\" stroke=\"#5a3424\" stroke-width=\"1.1\"/><rect x=\"50\" y=\"46\" width=\"8\" height=\"6\" rx=\"1\" fill=\"#5a4030\" stroke=\"#1a120e\" stroke-width=\"0.6\"/><line x1=\"70\" y1=\"46\" x2=\"80\" y2=\"32\" stroke=\"#4a4038\" stroke-width=\"1.6\"/><circle cx=\"82\" cy=\"30\" r=\"11\" fill=\"#ffb020\" opacity=\"0.28\"/><circle cx=\"82\" cy=\"30\" r=\"4.2\" fill=\"#ffcc66\" stroke=\"#a85a10\" stroke-width=\"0.8\"/></g></svg>",
+      "mapImage": "<svg viewBox=\"0 0 1100 700\"><rect width=\"1100\" height=\"700\" fill=\"#2a1c16\"/><ellipse cx=\"260\" cy=\"190\" rx=\"280\" ry=\"130\" fill=\"#4a2e1c\" opacity=\"0.5\"/><ellipse cx=\"840\" cy=\"520\" rx=\"300\" ry=\"140\" fill=\"#4a2e1c\" opacity=\"0.4\"/><ellipse cx=\"640\" cy=\"300\" rx=\"210\" ry=\"95\" fill=\"#8a5a3a\" opacity=\"0.28\"/><path d=\"M60 610 Q400 520 700 420 T1040 210\" stroke=\"#b87333\" stroke-opacity=\"0.35\" stroke-width=\"26\" stroke-linecap=\"round\" fill=\"none\"/><rect x=\"16\" y=\"16\" width=\"1068\" height=\"668\" rx=\"24\" fill=\"none\" stroke=\"#b87333\" stroke-opacity=\"0.35\" stroke-width=\"4\"/></svg>",
+      "mapLayout": {
+        "viewBox": "0 0 1100 700",
+        "nodes": [
+          { "kind": "level", "level": 1, "x": 90, "y": 580 },
+          { "kind": "level", "level": 2, "x": 230, "y": 500 },
+          { "kind": "level", "level": 3, "x": 370, "y": 580 },
+          { "kind": "level", "level": 4, "x": 510, "y": 500 },
+          { "kind": "level", "level": 5, "x": 650, "y": 580 },
+          { "kind": "level", "level": 6, "x": 790, "y": 500 },
+          { "kind": "level", "level": 7, "x": 930, "y": 580 },
+          { "kind": "level", "level": 8, "x": 990, "y": 430 },
+          { "kind": "level", "level": 9, "x": 850, "y": 350 },
+          { "kind": "level", "level": 10, "x": 700, "y": 420 },
+          { "kind": "level", "level": 11, "x": 560, "y": 330 },
+          { "kind": "level", "level": 12, "x": 420, "y": 240 },
+          { "kind": "progressive", "level": 1, "x": 120, "y": 415 },
+          { "kind": "progressive", "level": 5, "x": 680, "y": 260 },
+          { "kind": "progressive", "level": 9, "x": 850, "y": 190 },
+          { "kind": "progressive", "level": 12, "x": 270, "y": 130 }
+        ],
+        "connections": [
+          { "from": { "kind": "level", "level": 1 }, "to": { "kind": "level", "level": 2 } },
+          { "from": { "kind": "level", "level": 2 }, "to": { "kind": "level", "level": 3 } },
+          { "from": { "kind": "level", "level": 3 }, "to": { "kind": "level", "level": 4 } },
+          { "from": { "kind": "level", "level": 4 }, "to": { "kind": "level", "level": 5 } },
+          { "from": { "kind": "level", "level": 5 }, "to": { "kind": "level", "level": 6 } },
+          { "from": { "kind": "level", "level": 6 }, "to": { "kind": "level", "level": 7 } },
+          { "from": { "kind": "level", "level": 7 }, "to": { "kind": "level", "level": 8 } },
+          { "from": { "kind": "level", "level": 8 }, "to": { "kind": "level", "level": 9 } },
+          { "from": { "kind": "level", "level": 9 }, "to": { "kind": "level", "level": 10 } },
+          { "from": { "kind": "level", "level": 10 }, "to": { "kind": "level", "level": 11 } },
+          { "from": { "kind": "level", "level": 11 }, "to": { "kind": "level", "level": 12 } },
+          { "from": { "kind": "level", "level": 1 }, "to": { "kind": "progressive", "level": 1 } },
+          { "from": { "kind": "level", "level": 5 }, "to": { "kind": "progressive", "level": 5 } },
+          { "from": { "kind": "level", "level": 9 }, "to": { "kind": "progressive", "level": 9 } },
+          { "from": { "kind": "level", "level": 12 }, "to": { "kind": "progressive", "level": 12 } }
+        ]
+      }
     },
     {
       "id": 1,
@@ -802,7 +841,46 @@
         "terrain3": "<svg viewBox=\"0 0 36 36\"><g stroke-linejoin=\"round\" stroke-linecap=\"round\"><rect x=\"0\" y=\"0\" width=\"36\" height=\"36\" fill=\"#8e9470\"/><ellipse cx=\"16\" cy=\"15\" rx=\"9\" ry=\"4.5\" fill=\"#9aa080\" opacity=\"0.55\"/><ellipse cx=\"22\" cy=\"18\" rx=\"7\" ry=\"4\" fill=\"#a8b090\" opacity=\"0.5\"/><ellipse cx=\"14\" cy=\"22\" rx=\"6\" ry=\"3.5\" fill=\"#7e8662\" opacity=\"0.6\"/><path d=\"M12 12 C16 9, 24 10, 27 14 C29 17, 24 20, 16 19 C11 18, 9 15, 12 12 Z\" fill=\"#7e8662\" opacity=\"0.48\"/><ellipse cx=\"26\" cy=\"26\" rx=\"4.5\" ry=\"3\" fill=\"#7e8662\" opacity=\"0.45\"/><ellipse cx=\"9\" cy=\"14\" rx=\"3.5\" ry=\"4\" fill=\"#a8b090\" opacity=\"0.4\"/><circle cx=\"20\" cy=\"28\" r=\"1\" fill=\"#7e8662\" opacity=\"0.42\"/><ellipse cx=\"3\" cy=\"2\" rx=\"6\" ry=\"4\" fill=\"#a8b090\" opacity=\"0.26\"/><ellipse cx=\"33\" cy=\"16\" rx=\"4.5\" ry=\"5\" fill=\"#7e8662\" opacity=\"0.28\"/><ellipse cx=\"20\" cy=\"33.5\" rx=\"6\" ry=\"3.5\" fill=\"#9aa080\" opacity=\"0.24\"/></g></svg>",
         "terrain4": "<svg viewBox=\"0 0 36 36\"><g stroke-linejoin=\"round\" stroke-linecap=\"round\"><rect x=\"0\" y=\"0\" width=\"36\" height=\"36\" fill=\"#5c6848\"/><ellipse cx=\"15\" cy=\"14\" rx=\"8\" ry=\"5\" fill=\"#6a7854\" opacity=\"0.55\"/><ellipse cx=\"22\" cy=\"17\" rx=\"7\" ry=\"4.5\" fill=\"#7a8868\" opacity=\"0.5\"/><ellipse cx=\"18\" cy=\"23\" rx=\"8\" ry=\"4\" fill=\"#4e5a3e\" opacity=\"0.62\"/><path d=\"M11 11 C15 8, 23 9, 27 13 C30 16, 25 20, 16 19 C11 18, 8 15, 11 11 Z\" fill=\"#4e5a3e\" opacity=\"0.5\"/><ellipse cx=\"10\" cy=\"24\" rx=\"4\" ry=\"3.5\" fill=\"#6a7854\" opacity=\"0.45\"/><ellipse cx=\"27\" cy=\"24\" rx=\"3.5\" ry=\"4\" fill=\"#4e5a3e\" opacity=\"0.42\"/><ellipse cx=\"20\" cy=\"29\" rx=\"6\" ry=\"2.2\" fill=\"#7a8868\" opacity=\"0.4\"/><circle cx=\"12\" cy=\"12\" r=\"0.9\" fill=\"#4e5a3e\" opacity=\"0.45\"/><ellipse cx=\"2\" cy=\"10\" rx=\"5\" ry=\"4\" fill=\"#6a7854\" opacity=\"0.26\"/><ellipse cx=\"28\" cy=\"1.5\" rx=\"6\" ry=\"4\" fill=\"#7a8868\" opacity=\"0.24\"/><ellipse cx=\"33\" cy=\"30\" rx=\"4.5\" ry=\"5\" fill=\"#4e5a3e\" opacity=\"0.28\"/></g></svg>"
       },
-      "base": "<svg viewBox=\"0 0 108 108\"><g stroke-linejoin=\"round\" stroke-linecap=\"round\"><ellipse cx=\"54\" cy=\"62\" rx=\"44\" ry=\"28\" fill=\"#d2c09a\" opacity=\"0.92\"/><polygon points=\"66.93,33.36 59.36,40.93 48.64,40.93 41.07,33.36 41.07,22.64 48.64,15.07 59.36,15.07 66.93,22.64\" fill=\"#d85a4a\" stroke=\"#6a241c\" stroke-width=\"1\"/><polygon points=\"56.54,27.3 53.3,30.54 48.7,30.54 45.46,27.3 45.46,22.7 48.7,19.46 53.3,19.46 56.54,22.7\" fill=\"#f0a090\" opacity=\"0.85\"/><line x1=\"54\" y1=\"40\" x2=\"54\" y2=\"52\" stroke=\"#b7a27a\" stroke-width=\"1.6\"/><rect x=\"28\" y=\"48\" width=\"54\" height=\"26\" rx=\"4\" fill=\"#6a7a58\" stroke=\"#2e3828\" stroke-width=\"1.4\"/><rect x=\"34\" y=\"52\" width=\"7\" height=\"5\" rx=\"0.6\" fill=\"#d5ece8\" stroke=\"#2e3828\" stroke-width=\"0.5\"/><rect x=\"45\" y=\"52\" width=\"7\" height=\"5\" rx=\"0.6\" fill=\"#d5ece8\" stroke=\"#2e3828\" stroke-width=\"0.5\"/><rect x=\"56\" y=\"52\" width=\"7\" height=\"5\" rx=\"0.6\" fill=\"#d5ece8\" stroke=\"#2e3828\" stroke-width=\"0.5\"/><rect x=\"67\" y=\"52\" width=\"7\" height=\"5\" rx=\"0.6\" fill=\"#d5ece8\" stroke=\"#2e3828\" stroke-width=\"0.5\"/><rect x=\"30\" y=\"59\" width=\"50\" height=\"3.2\" rx=\"0.4\" fill=\"#c45a48\"/><ellipse cx=\"70\" cy=\"70\" rx=\"22\" ry=\"10\" fill=\"#e6d4b0\" opacity=\"0.9\"/></g></svg>"
+      "base": "<svg viewBox=\"0 0 108 108\"><g stroke-linejoin=\"round\" stroke-linecap=\"round\"><ellipse cx=\"54\" cy=\"62\" rx=\"44\" ry=\"28\" fill=\"#d2c09a\" opacity=\"0.92\"/><polygon points=\"66.93,33.36 59.36,40.93 48.64,40.93 41.07,33.36 41.07,22.64 48.64,15.07 59.36,15.07 66.93,22.64\" fill=\"#d85a4a\" stroke=\"#6a241c\" stroke-width=\"1\"/><polygon points=\"56.54,27.3 53.3,30.54 48.7,30.54 45.46,27.3 45.46,22.7 48.7,19.46 53.3,19.46 56.54,22.7\" fill=\"#f0a090\" opacity=\"0.85\"/><line x1=\"54\" y1=\"40\" x2=\"54\" y2=\"52\" stroke=\"#b7a27a\" stroke-width=\"1.6\"/><rect x=\"28\" y=\"48\" width=\"54\" height=\"26\" rx=\"4\" fill=\"#6a7a58\" stroke=\"#2e3828\" stroke-width=\"1.4\"/><rect x=\"34\" y=\"52\" width=\"7\" height=\"5\" rx=\"0.6\" fill=\"#d5ece8\" stroke=\"#2e3828\" stroke-width=\"0.5\"/><rect x=\"45\" y=\"52\" width=\"7\" height=\"5\" rx=\"0.6\" fill=\"#d5ece8\" stroke=\"#2e3828\" stroke-width=\"0.5\"/><rect x=\"56\" y=\"52\" width=\"7\" height=\"5\" rx=\"0.6\" fill=\"#d5ece8\" stroke=\"#2e3828\" stroke-width=\"0.5\"/><rect x=\"67\" y=\"52\" width=\"7\" height=\"5\" rx=\"0.6\" fill=\"#d5ece8\" stroke=\"#2e3828\" stroke-width=\"0.5\"/><rect x=\"30\" y=\"59\" width=\"50\" height=\"3.2\" rx=\"0.4\" fill=\"#c45a48\"/><ellipse cx=\"70\" cy=\"70\" rx=\"22\" ry=\"10\" fill=\"#e6d4b0\" opacity=\"0.9\"/></g></svg>",
+      "mapImage": "<svg viewBox=\"0 0 1100 700\"><rect width=\"1100\" height=\"700\" fill=\"#2e2a1e\"/><ellipse cx=\"260\" cy=\"190\" rx=\"280\" ry=\"130\" fill=\"#4a4230\" opacity=\"0.5\"/><ellipse cx=\"840\" cy=\"520\" rx=\"300\" ry=\"140\" fill=\"#4a4230\" opacity=\"0.4\"/><ellipse cx=\"640\" cy=\"300\" rx=\"210\" ry=\"95\" fill=\"#d2c09a\" opacity=\"0.28\"/><path d=\"M60 610 Q400 520 700 420 T1040 210\" stroke=\"#c2b280\" stroke-opacity=\"0.35\" stroke-width=\"26\" stroke-linecap=\"round\" fill=\"none\"/><rect x=\"16\" y=\"16\" width=\"1068\" height=\"668\" rx=\"24\" fill=\"none\" stroke=\"#c2b280\" stroke-opacity=\"0.35\" stroke-width=\"4\"/></svg>",
+      "mapLayout": {
+        "viewBox": "0 0 1100 700",
+        "nodes": [
+          { "kind": "level", "level": 1, "x": 100, "y": 530 },
+          { "kind": "level", "level": 2, "x": 185, "y": 350 },
+          { "kind": "level", "level": 3, "x": 270, "y": 170 },
+          { "kind": "level", "level": 4, "x": 355, "y": 350 },
+          { "kind": "level", "level": 5, "x": 440, "y": 530 },
+          { "kind": "level", "level": 6, "x": 525, "y": 350 },
+          { "kind": "level", "level": 7, "x": 610, "y": 170 },
+          { "kind": "level", "level": 8, "x": 695, "y": 350 },
+          { "kind": "level", "level": 9, "x": 780, "y": 530 },
+          { "kind": "level", "level": 10, "x": 865, "y": 350 },
+          { "kind": "level", "level": 11, "x": 950, "y": 170 },
+          { "kind": "level", "level": 12, "x": 1035, "y": 350 },
+          { "kind": "progressive", "level": 1, "x": 200, "y": 650 },
+          { "kind": "progressive", "level": 5, "x": 330, "y": 650 },
+          { "kind": "progressive", "level": 9, "x": 880, "y": 650 },
+          { "kind": "progressive", "level": 12, "x": 1040, "y": 530 }
+        ],
+        "connections": [
+          { "from": { "kind": "level", "level": 1 }, "to": { "kind": "level", "level": 2 } },
+          { "from": { "kind": "level", "level": 2 }, "to": { "kind": "level", "level": 3 } },
+          { "from": { "kind": "level", "level": 3 }, "to": { "kind": "level", "level": 4 } },
+          { "from": { "kind": "level", "level": 4 }, "to": { "kind": "level", "level": 5 } },
+          { "from": { "kind": "level", "level": 5 }, "to": { "kind": "level", "level": 6 } },
+          { "from": { "kind": "level", "level": 6 }, "to": { "kind": "level", "level": 7 } },
+          { "from": { "kind": "level", "level": 7 }, "to": { "kind": "level", "level": 8 } },
+          { "from": { "kind": "level", "level": 8 }, "to": { "kind": "level", "level": 9 } },
+          { "from": { "kind": "level", "level": 9 }, "to": { "kind": "level", "level": 10 } },
+          { "from": { "kind": "level", "level": 10 }, "to": { "kind": "level", "level": 11 } },
+          { "from": { "kind": "level", "level": 11 }, "to": { "kind": "level", "level": 12 } },
+          { "from": { "kind": "level", "level": 1 }, "to": { "kind": "progressive", "level": 1 } },
+          { "from": { "kind": "level", "level": 5 }, "to": { "kind": "progressive", "level": 5 } },
+          { "from": { "kind": "level", "level": 9 }, "to": { "kind": "progressive", "level": 9 } },
+          { "from": { "kind": "level", "level": 12 }, "to": { "kind": "progressive", "level": 12 } }
+        ]
+      }
     },
     {
       "id": 2,
@@ -814,7 +892,46 @@
         "terrain3": "<svg viewBox=\"0 0 36 36\"><g stroke-linejoin=\"round\" stroke-linecap=\"round\"><rect x=\"0\" y=\"0\" width=\"36\" height=\"36\" fill=\"#6e6a64\"/><ellipse cx=\"14\" cy=\"18\" rx=\"6\" ry=\"8\" fill=\"#5a5650\" opacity=\"0.55\"/><ellipse cx=\"22\" cy=\"16\" rx=\"8\" ry=\"5\" fill=\"#625e58\" opacity=\"0.5\"/><ellipse cx=\"18\" cy=\"22\" rx=\"5.5\" ry=\"5\" fill=\"#7c7872\" opacity=\"0.48\"/><path d=\"M9 18 C12 13, 20 12, 26 16 C30 19, 24 25, 15 25 C10 25, 6 22, 9 18 Z\" fill=\"#7c7872\" opacity=\"0.42\"/><ellipse cx=\"26\" cy=\"24\" rx=\"4\" ry=\"3.5\" fill=\"#5a5650\" opacity=\"0.45\"/><ellipse cx=\"11\" cy=\"12\" rx=\"4\" ry=\"3.5\" fill=\"#625e58\" opacity=\"0.4\"/><circle cx=\"24\" cy=\"11\" r=\"1\" fill=\"#625e58\" opacity=\"0.42\"/><ellipse cx=\"3\" cy=\"3\" rx=\"5\" ry=\"4\" fill=\"#7c7872\" opacity=\"0.26\"/><ellipse cx=\"33\" cy=\"10\" rx=\"4.5\" ry=\"5\" fill=\"#625e58\" opacity=\"0.24\"/><ellipse cx=\"10\" cy=\"33.5\" rx=\"6\" ry=\"4\" fill=\"#5a5650\" opacity=\"0.28\"/></g></svg>",
         "terrain4": "<svg viewBox=\"0 0 36 36\"><g stroke-linejoin=\"round\" stroke-linecap=\"round\"><rect x=\"0\" y=\"0\" width=\"36\" height=\"36\" fill=\"#3e3e3e\"/><ellipse cx=\"15\" cy=\"17\" rx=\"6\" ry=\"7\" fill=\"#343434\" opacity=\"0.62\"/><ellipse cx=\"23\" cy=\"15\" rx=\"7\" ry=\"4.5\" fill=\"#4a4a4a\" opacity=\"0.52\"/><ellipse cx=\"18\" cy=\"23\" rx=\"5\" ry=\"4.5\" fill=\"#52524e\" opacity=\"0.55\"/><path d=\"M8 14 C12 10, 22 10, 28 14 C31 17, 24 21, 14 20 C9 19, 6 17, 8 14 Z\" fill=\"#52524e\" opacity=\"0.48\"/><ellipse cx=\"11\" cy=\"26\" rx=\"5\" ry=\"3\" fill=\"#4a4a4a\" opacity=\"0.45\"/><ellipse cx=\"27\" cy=\"25\" rx=\"3.5\" ry=\"4\" fill=\"#343434\" opacity=\"0.5\"/><ellipse cx=\"26\" cy=\"11\" rx=\"3.5\" ry=\"3\" fill=\"#52524e\" opacity=\"0.4\"/><circle cx=\"12\" cy=\"12\" r=\"0.9\" fill=\"#343434\" opacity=\"0.45\"/><ellipse cx=\"2\" cy=\"8\" rx=\"5\" ry=\"4\" fill=\"#4a4a4a\" opacity=\"0.26\"/><ellipse cx=\"30\" cy=\"33.5\" rx=\"6\" ry=\"4\" fill=\"#52524e\" opacity=\"0.24\"/><ellipse cx=\"33\" cy=\"18\" rx=\"4.5\" ry=\"6\" fill=\"#343434\" opacity=\"0.28\"/></g></svg>"
       },
-      "base": "<svg viewBox=\"0 0 108 108\"><g stroke-linejoin=\"round\" stroke-linecap=\"round\"><ellipse cx=\"54\" cy=\"58\" rx=\"40\" ry=\"32\" fill=\"#3a3a3a\" opacity=\"0.92\"/><circle cx=\"88\" cy=\"56\" r=\"4.2\" fill=\"#9a9690\" stroke=\"#4a4844\" stroke-width=\"0.8\"/><circle cx=\"78.04\" cy=\"74.38\" r=\"4.2\" fill=\"#9a9690\" stroke=\"#4a4844\" stroke-width=\"0.8\"/><circle cx=\"54\" cy=\"82\" r=\"4.2\" fill=\"#9a9690\" stroke=\"#4a4844\" stroke-width=\"0.8\"/><circle cx=\"29.96\" cy=\"74.38\" r=\"4.2\" fill=\"#9a9690\" stroke=\"#4a4844\" stroke-width=\"0.8\"/><circle cx=\"20\" cy=\"56\" r=\"4.2\" fill=\"#9a9690\" stroke=\"#4a4844\" stroke-width=\"0.8\"/><circle cx=\"29.96\" cy=\"37.62\" r=\"4.2\" fill=\"#9a9690\" stroke=\"#4a4844\" stroke-width=\"0.8\"/><circle cx=\"54\" cy=\"30\" r=\"4.2\" fill=\"#9a9690\" stroke=\"#4a4844\" stroke-width=\"0.8\"/><circle cx=\"78.04\" cy=\"37.62\" r=\"4.2\" fill=\"#9a9690\" stroke=\"#4a4844\" stroke-width=\"0.8\"/><rect x=\"38\" y=\"42\" width=\"32\" height=\"30\" rx=\"1.5\" fill=\"#5a4638\" stroke=\"#1a120e\" stroke-width=\"1.3\"/><rect x=\"36\" y=\"38\" width=\"30\" height=\"26\" rx=\"1.2\" fill=\"#4a4038\" stroke=\"#241c16\" stroke-width=\"1.2\"/><rect x=\"40\" y=\"42\" width=\"12\" height=\"4\" rx=\"0.6\" fill=\"#6a6058\" opacity=\"0.7\"/><circle cx=\"58\" cy=\"44\" r=\"4.5\" fill=\"#2a2a2a\" stroke=\"#111\" stroke-width=\"0.9\"/><circle cx=\"58\" cy=\"44\" r=\"2.1\" fill=\"#1a1a1a\"/><circle cx=\"60\" cy=\"36\" r=\"2.2\" fill=\"#b8b4ae\" opacity=\"0.28\"/><circle cx=\"63\" cy=\"32\" r=\"1.6\" fill=\"#d0ccc6\" opacity=\"0.2\"/></g></svg>"
+      "base": "<svg viewBox=\"0 0 108 108\"><g stroke-linejoin=\"round\" stroke-linecap=\"round\"><ellipse cx=\"54\" cy=\"58\" rx=\"40\" ry=\"32\" fill=\"#3a3a3a\" opacity=\"0.92\"/><circle cx=\"88\" cy=\"56\" r=\"4.2\" fill=\"#9a9690\" stroke=\"#4a4844\" stroke-width=\"0.8\"/><circle cx=\"78.04\" cy=\"74.38\" r=\"4.2\" fill=\"#9a9690\" stroke=\"#4a4844\" stroke-width=\"0.8\"/><circle cx=\"54\" cy=\"82\" r=\"4.2\" fill=\"#9a9690\" stroke=\"#4a4844\" stroke-width=\"0.8\"/><circle cx=\"29.96\" cy=\"74.38\" r=\"4.2\" fill=\"#9a9690\" stroke=\"#4a4844\" stroke-width=\"0.8\"/><circle cx=\"20\" cy=\"56\" r=\"4.2\" fill=\"#9a9690\" stroke=\"#4a4844\" stroke-width=\"0.8\"/><circle cx=\"29.96\" cy=\"37.62\" r=\"4.2\" fill=\"#9a9690\" stroke=\"#4a4844\" stroke-width=\"0.8\"/><circle cx=\"54\" cy=\"30\" r=\"4.2\" fill=\"#9a9690\" stroke=\"#4a4844\" stroke-width=\"0.8\"/><circle cx=\"78.04\" cy=\"37.62\" r=\"4.2\" fill=\"#9a9690\" stroke=\"#4a4844\" stroke-width=\"0.8\"/><rect x=\"38\" y=\"42\" width=\"32\" height=\"30\" rx=\"1.5\" fill=\"#5a4638\" stroke=\"#1a120e\" stroke-width=\"1.3\"/><rect x=\"36\" y=\"38\" width=\"30\" height=\"26\" rx=\"1.2\" fill=\"#4a4038\" stroke=\"#241c16\" stroke-width=\"1.2\"/><rect x=\"40\" y=\"42\" width=\"12\" height=\"4\" rx=\"0.6\" fill=\"#6a6058\" opacity=\"0.7\"/><circle cx=\"58\" cy=\"44\" r=\"4.5\" fill=\"#2a2a2a\" stroke=\"#111\" stroke-width=\"0.9\"/><circle cx=\"58\" cy=\"44\" r=\"2.1\" fill=\"#1a1a1a\"/><circle cx=\"60\" cy=\"36\" r=\"2.2\" fill=\"#b8b4ae\" opacity=\"0.28\"/><circle cx=\"63\" cy=\"32\" r=\"1.6\" fill=\"#d0ccc6\" opacity=\"0.2\"/></g></svg>",
+      "mapImage": "<svg viewBox=\"0 0 1100 700\"><rect width=\"1100\" height=\"700\" fill=\"#232323\"/><ellipse cx=\"260\" cy=\"190\" rx=\"280\" ry=\"130\" fill=\"#3a3a3a\" opacity=\"0.5\"/><ellipse cx=\"840\" cy=\"520\" rx=\"300\" ry=\"140\" fill=\"#3a3a3a\" opacity=\"0.4\"/><ellipse cx=\"640\" cy=\"300\" rx=\"210\" ry=\"95\" fill=\"#9a9690\" opacity=\"0.28\"/><path d=\"M60 610 Q400 520 700 420 T1040 210\" stroke=\"#8a9099\" stroke-opacity=\"0.35\" stroke-width=\"26\" stroke-linecap=\"round\" fill=\"none\"/><rect x=\"16\" y=\"16\" width=\"1068\" height=\"668\" rx=\"24\" fill=\"none\" stroke=\"#8a9099\" stroke-opacity=\"0.35\" stroke-width=\"4\"/></svg>",
+      "mapLayout": {
+        "viewBox": "0 0 1100 700",
+        "nodes": [
+          { "kind": "level", "level": 1, "x": 100, "y": 580 },
+          { "kind": "level", "level": 2, "x": 119, "y": 473 },
+          { "kind": "level", "level": 3, "x": 171, "y": 374 },
+          { "kind": "level", "level": 4, "x": 255, "y": 293 },
+          { "kind": "level", "level": 5, "x": 363, "y": 234 },
+          { "kind": "level", "level": 6, "x": 486, "y": 204 },
+          { "kind": "level", "level": 7, "x": 614, "y": 204 },
+          { "kind": "level", "level": 8, "x": 737, "y": 234 },
+          { "kind": "level", "level": 9, "x": 845, "y": 293 },
+          { "kind": "level", "level": 10, "x": 929, "y": 374 },
+          { "kind": "level", "level": 11, "x": 981, "y": 473 },
+          { "kind": "level", "level": 12, "x": 1000, "y": 580 },
+          { "kind": "progressive", "level": 1, "x": 230, "y": 660 },
+          { "kind": "progressive", "level": 5, "x": 300, "y": 100 },
+          { "kind": "progressive", "level": 9, "x": 930, "y": 160 },
+          { "kind": "progressive", "level": 12, "x": 870, "y": 660 }
+        ],
+        "connections": [
+          { "from": { "kind": "level", "level": 1 }, "to": { "kind": "level", "level": 2 } },
+          { "from": { "kind": "level", "level": 2 }, "to": { "kind": "level", "level": 3 } },
+          { "from": { "kind": "level", "level": 3 }, "to": { "kind": "level", "level": 4 } },
+          { "from": { "kind": "level", "level": 4 }, "to": { "kind": "level", "level": 5 } },
+          { "from": { "kind": "level", "level": 5 }, "to": { "kind": "level", "level": 6 } },
+          { "from": { "kind": "level", "level": 6 }, "to": { "kind": "level", "level": 7 } },
+          { "from": { "kind": "level", "level": 7 }, "to": { "kind": "level", "level": 8 } },
+          { "from": { "kind": "level", "level": 8 }, "to": { "kind": "level", "level": 9 } },
+          { "from": { "kind": "level", "level": 9 }, "to": { "kind": "level", "level": 10 } },
+          { "from": { "kind": "level", "level": 10 }, "to": { "kind": "level", "level": 11 } },
+          { "from": { "kind": "level", "level": 11 }, "to": { "kind": "level", "level": 12 } },
+          { "from": { "kind": "level", "level": 1 }, "to": { "kind": "progressive", "level": 1 } },
+          { "from": { "kind": "level", "level": 5 }, "to": { "kind": "progressive", "level": 5 } },
+          { "from": { "kind": "level", "level": 9 }, "to": { "kind": "progressive", "level": 9 } },
+          { "from": { "kind": "level", "level": 12 }, "to": { "kind": "progressive", "level": 12 } }
+        ]
+      }
     }
   ],
   "spawns": {

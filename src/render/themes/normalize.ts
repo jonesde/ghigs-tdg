@@ -3,6 +3,7 @@ import type {
   MapThemeAnimation,
   MapThemeData,
   MapThemeFrame,
+  RegionMapLayout,
   RegionVisualMeta,
   SpawnPointVisualMeta,
   TowerVisualMeta,
@@ -84,6 +85,8 @@ async function normalizeRegionVisual(raw: {
   name: string;
   tiles: { path: string; terrain1: string; terrain2: string; terrain3: string; terrain4: string };
   base: string;
+  mapImage: string;
+  mapLayout: RegionMapLayout;
 }): Promise<RegionVisualMeta> {
   const path = stripSvgWrapper(await resolveImage(raw.tiles.path));
   const terrain1 = stripSvgWrapper(await resolveImage(raw.tiles.terrain1));
@@ -91,7 +94,15 @@ async function normalizeRegionVisual(raw: {
   const terrain3 = stripSvgWrapper(await resolveImage(raw.tiles.terrain3));
   const terrain4 = stripSvgWrapper(await resolveImage(raw.tiles.terrain4));
   const base = stripSvgWrapper(await resolveImage(raw.base));
-  return { id: raw.id, name: raw.name, tiles: { path, terrain1, terrain2, terrain3, terrain4 }, base };
+  const mapImage = stripSvgWrapper(await resolveImage(raw.mapImage));
+  return {
+    id: raw.id,
+    name: raw.name,
+    tiles: { path, terrain1, terrain2, terrain3, terrain4 },
+    base,
+    mapImage,
+    mapLayout: raw.mapLayout,
+  };
 }
 
 async function normalizeSpawnVisuals(raw: {
@@ -134,6 +145,8 @@ export async function normalizeThemeImages(raw: {
     name: string;
     tiles: { path: string; terrain1: string; terrain2: string; terrain3: string; terrain4: string };
     base: string;
+    mapImage: string;
+    mapLayout: RegionMapLayout;
   }>;
   spawns?: { closed: string; open: string; transition: string };
 }): Promise<MapThemeData> {

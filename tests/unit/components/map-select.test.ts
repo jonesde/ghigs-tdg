@@ -43,6 +43,14 @@ function mountMapSelect(): MountResult {
   return { pinia, gameStore, persistStore, uiStore, router };
 }
 
+function markerByLabel(wrapper: ReturnType<typeof mount>, label: string) {
+  return wrapper.findAll(".map-node").find((marker) => marker.find(".map-node-label").text() === label);
+}
+
+async function flushNavigation() {
+  await new Promise((resolve) => setTimeout(resolve, 100));
+}
+
 describe("MapSelect", () => {
   beforeEach(() => {
     createPinia();
@@ -50,95 +58,117 @@ describe("MapSelect", () => {
     document.body.innerHTML = "";
   });
 
-  it("renders 36 campaign maps and 12 progressive maps", () => {
+  it("renders 3 region tabs and 16 map markers for the active region", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    const mapCards = wrapper.findAll(".map-card");
-    expect(mapCards.length).toBe(48);
-    expect(wrapper.findAll(".progressive-header").length).toBe(3);
+    const tabs = wrapper.findAll(".region-tab");
+    expect(tabs.length).toBe(3);
+    expect(tabs.map((tab) => tab.text())).toEqual(["Verdant Marches", "Sunscorch Coast", "Thornpeak Wilds"]);
+    expect(tabs[0].classes()).toContain("active");
+    expect(wrapper.findAll(".map-node").length).toBe(16);
+    expect(wrapper.findAll(".map-node.progressive").length).toBe(4);
   });
 
-  it("shows locked state for unlocked maps", () => {
+  it("switches region tabs, clears the selection, and shows that region's maps", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    await markerByLabel(wrapper, "1")!.trigger("click");
+    expect(wrapper.find(".details-name").exists()).toBe(true);
+    await wrapper.findAll(".region-tab")[2].trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(wrapper.findAll(".region-tab")[2].classes()).toContain("active");
+    expect(wrapper.find(".details-hint").exists()).toBe(true);
+    expect(wrapper.findAll(".map-node").length).toBe(16);
+    const firstMarker = wrapper.findAll(".map-node")[0];
+    expect(firstMarker.find("title").text()).toContain("Thornpeak Wilds");
+  });
+
+  it("shows locked state for locked markers", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     persistStore.highestUnlockedMap = 0;
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    const lockedCards = wrapper.findAll(".map-card.locked");
-    expect(lockedCards.length).toBeGreaterThan(0);
+    expect(wrapper.findAll(".map-node.locked").length).toBe(14);
+    expect(markerByLabel(wrapper, "1")!.classes()).not.toContain("locked");
   });
 
-  it("shows best wave for completed maps", () => {
+  it("shows best wave and gem reward in the marker tooltip", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     persistStore.bestWaves.best_0 = 15;
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    expect(wrapper.text()).toContain("Best Wave: 15");
+    const tooltip = markerByLabel(wrapper, "1")!.find("title").text();
+    expect(tooltip).toContain("Best Wave: 15");
+    expect(tooltip).toContain("💎");
   });
 
-  it("displays region name for each map", () => {
+  it("selects a marker, shows its details, and plays from the Play button", async () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    expect(wrapper.text()).toContain("Verdant Marches");
-    expect(wrapper.text()).toContain("Sunscorch Coast");
-    expect(wrapper.text()).toContain("Thornpeak Wilds");
-  });
-
-  it("shows region headers", () => {
-    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
-    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
-    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    const regionHeaders = wrapper.findAll(".region-header:not(.progressive-header) .region-label");
-    expect(regionHeaders.length).toBe(3);
-  });
-
-  it("navigates to /game on map select", async () => {
-    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
-    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
-    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    const firstCard = wrapper.findAll(".map-card")[0];
-    await firstCard.trigger("click");
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await markerByLabel(wrapper, "1")!.trigger("click");
+    expect(wrapper.find(".details-name").text()).toContain("Verdant Marches Map 1");
+    expect(wrapper.find(".map-details").text()).toContain("💎");
+    expect(wrapper.find(".map-details").text()).toContain("Best Wave:");
+    const playButton = wrapper.find(".details-play-btn");
+    expect(playButton.text()).toBe("Play");
+    await playButton.trigger("click");
+    await flushNavigation();
     expect(router.currentRoute.value.path).toBe("/game");
   });
 
-  it("unlocks the 1-path progressive card and keeps the 2-path card locked", async () => {
+  it("starts the map on double click", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    await markerByLabel(wrapper, "1")!.trigger("dblclick");
+    await flushNavigation();
+    expect(router.currentRoute.value.path).toBe("/game");
+  });
+
+  it("shows an on-map play button under the selection and starts from it", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    expect(wrapper.find(".map-play-button").exists()).toBe(false);
+    await markerByLabel(wrapper, "1")!.trigger("click");
+    const playButton = wrapper.find(".map-play-button");
+    expect(playButton.exists()).toBe(true);
+    await playButton.trigger("click");
+    await flushNavigation();
+    expect(router.currentRoute.value.path).toBe("/game");
+  });
+
+  it("keeps locked markers inert and disables the Play button", async () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     persistStore.highestUnlockedMap = 0;
     await router.replace("/map-select");
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    const cards = wrapper.findAll(".map-card");
-    const onePath = cards.find((card) => card.text().includes("Verdant Marches Progressive 1"));
-    const twoPath = cards.find((card) => card.text().includes("Verdant Marches Progressive 2"));
-    expect(onePath).toBeTruthy();
-    expect(twoPath).toBeTruthy();
-    expect(onePath!.classes()).not.toContain("locked");
-    expect(twoPath!.classes()).toContain("locked");
-    await twoPath!.trigger("click");
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await markerByLabel(wrapper, "2")!.trigger("click");
+    const playButton = wrapper.find(".details-play-btn");
+    expect(playButton.text()).toBe("Locked");
+    expect(playButton.attributes("disabled")).toBeDefined();
+    await markerByLabel(wrapper, "2")!.trigger("dblclick");
+    await flushNavigation();
     expect(router.currentRoute.value.path).toBe("/map-select");
   });
 
-  it("does not navigate when clicking locked map", async () => {
+  it("unlocks the level-1 progressive marker and keeps the level-5 branch locked", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     persistStore.highestUnlockedMap = 0;
-    await router.replace("/map-select");
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    const lockedCards = wrapper.findAll(".map-card.locked");
-    expect(lockedCards.length).toBeGreaterThan(0);
-    await lockedCards[0].trigger("click");
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(router.currentRoute.value.path).toBe("/map-select");
-  });
-
-  it("displays gem reward multiplier for each map", () => {
-    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
-    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
-    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    expect(wrapper.text()).toContain("💎");
+    const oneEntry = markerByLabel(wrapper, "P1");
+    const twoEntry = markerByLabel(wrapper, "P2");
+    expect(oneEntry).toBeTruthy();
+    expect(twoEntry).toBeTruthy();
+    expect(oneEntry!.classes()).not.toContain("locked");
+    expect(twoEntry!.classes()).toContain("locked");
+    expect(oneEntry!.find("title").text()).toContain("Verdant Marches Progressive 1");
+    expect(twoEntry!.find("title").text()).toContain("Verdant Marches Progressive 2");
   });
 
   it("reactively updates locked status when highestUnlockedMap changes", async () => {
@@ -146,27 +176,24 @@ describe("MapSelect", () => {
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     persistStore.highestUnlockedMap = 0;
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    const lockedCards = wrapper.findAll(".map-card.locked");
-    expect(lockedCards.length).toBeGreaterThan(0);
+    expect(wrapper.findAll(".map-node.locked").length).toBe(14);
     persistStore.highestUnlockedMap = 5;
     await wrapper.vm.$nextTick();
-    const mapCards = wrapper.findAll(".map-card");
-    expect(mapCards[1].classes("locked")).toBe(false);
-    expect(mapCards[6].classes("locked")).toBe(true);
+    expect(wrapper.findAll(".map-node.locked").length).toBe(8);
   });
 
-  it("map cards are tab-selectable with tabindex, role, and keyboard handlers", async () => {
+  it("map markers are tab-selectable with tabindex, role, and keyboard selection", async () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    const mapCards = wrapper.findAll(".map-card");
-    expect(mapCards.length).toBe(48);
-    for (const card of mapCards) {
-      expect(card.attributes("tabindex")).toBe("0");
-      expect(card.attributes("role")).toBe("button");
-      expect(card.attributes("tabindex")).toBeDefined();
-      expect(card.attributes("role")).toBeDefined();
+    const mapNodes = wrapper.findAll(".map-node");
+    expect(mapNodes.length).toBe(16);
+    for (const marker of mapNodes) {
+      expect(marker.attributes("tabindex")).toBe("0");
+      expect(marker.attributes("role")).toBe("button");
     }
+    await markerByLabel(wrapper, "1")!.trigger("keydown", { key: "Enter" });
+    expect(wrapper.find(".details-name").text()).toContain("Verdant Marches Map 1");
   });
 
   it("hides the custom map forms until a header button opens them", () => {
@@ -174,19 +201,19 @@ describe("MapSelect", () => {
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     expect(document.body.querySelector(".form-overlay")).toBeNull();
-    const generateButton = wrapper.findAll("button").find((button) => button.text() === "Generate Map");
-    const progressiveButton = wrapper.findAll("button").find((button) => button.text() === "Progressive Run");
+    const generateButton = wrapper.findAll("button").find((button) => button.text() === "Generate");
+    const progressiveButton = wrapper.findAll("button").find((button) => button.text() === "Progressive");
     expect(generateButton).toBeTruthy();
     expect(progressiveButton).toBeTruthy();
   });
 
-  it("opens the generated map dialog from the Generate Map header button", async () => {
+  it("opens the generated map dialog from the Generate header button", async () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     await wrapper
       .findAll("button")
-      .find((button) => button.text() === "Generate Map")!
+      .find((button) => button.text() === "Generate")!
       .trigger("click");
     await wrapper.vm.$nextTick();
     expect(document.body.querySelectorAll(".form-overlay").length).toBe(1);
@@ -202,12 +229,12 @@ describe("MapSelect", () => {
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     await wrapper
       .findAll("button")
-      .find((button) => button.text() === "Generate Map")!
+      .find((button) => button.text() === "Generate")!
       .trigger("click");
     await wrapper.vm.$nextTick();
     await wrapper
       .findAll("button")
-      .find((button) => button.text() === "Progressive Run")!
+      .find((button) => button.text() === "Progressive")!
       .trigger("click");
     await wrapper.vm.$nextTick();
     expect(document.body.querySelector("#progressive-seed")).toBeTruthy();
@@ -223,7 +250,7 @@ describe("MapSelect", () => {
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     await wrapper
       .findAll("button")
-      .find((button) => button.text() === "Progressive Run")!
+      .find((button) => button.text() === "Progressive")!
       .trigger("click");
     await wrapper.vm.$nextTick();
     expect(document.body.querySelector(".form-overlay")).not.toBeNull();
@@ -238,7 +265,7 @@ describe("MapSelect", () => {
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     await wrapper
       .findAll("button")
-      .find((button) => button.text() === "Progressive Run")!
+      .find((button) => button.text() === "Progressive")!
       .trigger("click");
     await wrapper.vm.$nextTick();
     const options = (document.body.querySelector("#progressive-entries") as HTMLSelectElement).querySelectorAll(
@@ -254,7 +281,7 @@ describe("MapSelect", () => {
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     await wrapper
       .findAll("button")
-      .find((button) => button.text() === "Generate Map")!
+      .find((button) => button.text() === "Generate")!
       .trigger("click");
     await wrapper.vm.$nextTick();
     const seedInput = document.body.querySelector("#random-seed") as HTMLInputElement;
@@ -284,7 +311,7 @@ describe("MapSelect", () => {
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     await wrapper
       .findAll("button")
-      .find((button) => button.text() === "Progressive Run")!
+      .find((button) => button.text() === "Progressive")!
       .trigger("click");
     await wrapper.vm.$nextTick();
     const regionSelect = document.body.querySelector("#progressive-region") as HTMLSelectElement;
@@ -323,7 +350,7 @@ describe("MapSelect", () => {
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     await wrapper
       .findAll("button")
-      .find((button) => button.text() === "Progressive Run")!
+      .find((button) => button.text() === "Progressive")!
       .trigger("click");
     await wrapper.vm.$nextTick();
     const playButton = [...document.body.querySelectorAll("button")].find(
@@ -342,7 +369,7 @@ describe("MapSelect", () => {
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     await wrapper
       .findAll("button")
-      .find((button) => button.text() === "Progressive Run")!
+      .find((button) => button.text() === "Progressive")!
       .trigger("click");
     await wrapper.vm.$nextTick();
     const progressiveSeedInput = document.body.querySelector("#progressive-seed") as HTMLInputElement;
@@ -354,7 +381,7 @@ describe("MapSelect", () => {
     expect(persistStore.progressiveMapSeed).toBeNull();
     await wrapper
       .findAll("button")
-      .find((button) => button.text() === "Generate Map")!
+      .find((button) => button.text() === "Generate")!
       .trigger("click");
     await wrapper.vm.$nextTick();
     const randomSeedInput = document.body.querySelector("#random-seed") as HTMLInputElement;

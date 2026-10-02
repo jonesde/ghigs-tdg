@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import RegionMap from "@/components/RegionMap.vue";
+import type { RegionMapNodeView } from "@/components/RegionMapNodeView.js";
 import {
   CUSTOM_PROGRESSIVE_MAP_INDEX,
   CUSTOM_RANDOM_MAP_INDEX,
   MAP_GEM_MULTIPLIERS,
+  MAPS_PER_REGION,
   type MapStyle,
 } from "@/sim/Constants.js";
 import { generateRandomMap, getMap, getMapDisplayName } from "@/sim/grid/Map.js";
@@ -34,20 +37,6 @@ const regionNames = computed(() => {
     names.push(activeRegion?.name ?? defaultRegion?.name ?? `Region ${i + 1}`);
   }
   return names;
-});
-
-const mapDisplayName = computed(() => {
-  return (map: { regionId: number; level?: number; name?: string }) => {
-    if (map.name) return map.name;
-    const theme = themeStore.activeTheme ?? themeStore.defaultTheme;
-    if (theme) {
-      const region = theme.regions.find((r) => r.id === map.regionId);
-      if (region && map.level !== undefined) {
-        return `${region.name} Map ${map.level}`;
-      }
-    }
-    return `Map ${map.regionId}`;
-  };
 });
 
 watch(
@@ -103,10 +92,11 @@ interface MapEntry {
 // Computed map entries: reactive to highestUnlockedMap and bestWaves changes
 const mapEntries = computed<Record<number, MapEntry>>(() => {
   const entries: Record<number, MapEntry> = {};
+  const theme = themeStore.activeTheme ?? themeStore.defaultTheme;
   for (let i = 0; i < 36; i++) {
     const map = getMap(i);
     entries[i] = {
-      name: mapDisplayName.value(map),
+      name: getMapDisplayName(map, theme),
       region: regionNames.value[map.regionId],
       style: map.style,
       gemReward: MAP_GEM_MULTIPLIERS[i],
@@ -116,7 +106,6 @@ const mapEntries = computed<Record<number, MapEntry>>(() => {
       bestWave: typeof persistStore.bestWaves[`best_${i}`] === "number" ? persistStore.bestWaves[`best_${i}`] : 0,
     };
   }
-  const theme = themeStore.activeTheme ?? themeStore.defaultTheme;
   for (let regionId = 0; regionId < 3; regionId++) {
     for (let variantIndex = 0; variantIndex < 4; variantIndex++) {
       const index = progressiveMapIndex(regionId, variantIndex);
@@ -143,33 +132,84 @@ function getFullEntry(index: number) {
   return mapEntries.value[index];
 }
 
-const regionMapCounts = [12, 12, 12];
+const activeRegionTab = ref(Math.min(Math.floor(persistStore.highestUnlockedMap / MAPS_PER_REGION), 2));
+const selectedMapIndex = ref<number | null>(null);
 
-interface MapGroup {
-  regionId: number;
-  name: string;
-  maps: { index: number }[];
-  progressive: { index: number }[];
+const activeRegionLayout = computed(() => {
+  const theme = themeStore.activeTheme ?? themeStore.defaultTheme;
+  return theme?.regions.find((region) => region.id === activeRegionTab.value)?.mapLayout ?? null;
+});
+
+const activeRegionMapImage = computed(() => {
+  const theme = themeStore.activeTheme ?? themeStore.defaultTheme;
+  return theme?.regions.find((region) => region.id === activeRegionTab.value)?.mapImage ?? "";
+});
+
+function progressiveMapIndexForLevel(regionId: number, level: number): number | null {
+  for (let variantIndex = 0; variantIndex < 4; variantIndex++) {
+    const mapIndex = progressiveMapIndex(regionId, variantIndex);
+    const config = progressiveConfigForIndex(mapIndex);
+    if (config && config.level === level) return mapIndex;
+  }
+  return null;
 }
 
-const mapsByRegion = computed<MapGroup[]>(() => {
-  const groups: MapGroup[] = [];
-  let start = 0;
-  for (let regionIdx = 0; regionIdx < 3; regionIdx++) {
-    const count = regionMapCounts[regionIdx];
-    if (count === 0) continue;
-    groups.push({
-      regionId: regionIdx,
-      name: regionNames.value[regionIdx],
-      maps: Array.from({ length: count }, (_, i) => ({ index: start + i })),
-      progressive: Array.from({ length: 4 }, (_, variantIndex) => ({
-        index: progressiveMapIndex(regionIdx, variantIndex),
-      })),
+const activeRegionNodes = computed<RegionMapNodeView[]>(() => {
+  const layout = activeRegionLayout.value;
+  if (!layout) return [];
+  const regionId = activeRegionTab.value;
+  const nodeViews: RegionMapNodeView[] = [];
+  for (const node of layout.nodes) {
+    const mapIndex =
+      node.kind === "level"
+        ? regionId * MAPS_PER_REGION + (node.level - 1)
+        : progressiveMapIndexForLevel(regionId, node.level);
+    if (mapIndex === null) {
+      console.warn(`Region ${regionId} map layout has no progressive variant at level ${node.level}`);
+      continue;
+    }
+    const entry = getFullEntry(mapIndex);
+    if (!entry) continue;
+    let label = `${node.level}`;
+    if (node.kind === "progressive") {
+      const config = progressiveConfigForIndex(mapIndex);
+      label = config ? `P${config.entryCount}` : "P";
+    }
+    nodeViews.push({
+      kind: node.kind,
+      level: node.level,
+      x: node.x,
+      y: node.y,
+      label,
+      tooltip: `${entry.name} • ${entry.style} • 💎 x${entry.gemReward} • Best Wave: ${entry.bestWave} • ${entry.width}×${entry.height}`,
+      locked: entry.locked,
+      mapIndex,
     });
-    start += count;
   }
-  return groups;
+  return nodeViews;
 });
+
+const selectedEntry = computed(() => (selectedMapIndex.value === null ? null : getFullEntry(selectedMapIndex.value)));
+
+function selectRegionTab(regionId: number) {
+  activeRegionTab.value = regionId;
+  selectedMapIndex.value = null;
+}
+
+function selectNode(mapIndex: number) {
+  selectedMapIndex.value = mapIndex;
+}
+
+function startNode(mapIndex: number) {
+  const entry = getFullEntry(mapIndex);
+  if (!entry || entry.locked) return;
+  startMap(mapIndex);
+}
+
+function playSelected() {
+  if (selectedMapIndex.value === null) return;
+  startNode(selectedMapIndex.value);
+}
 
 async function startMap(index: number) {
   persistStore.clearActiveWave(index);
@@ -328,68 +368,60 @@ function startProgressiveMap() {
 <template>
   <div class="map-select">
     <div class="map-select-header">
-      <h2>Select Map</h2>
+      <div class="region-tabs" role="tablist" aria-label="Regions">
+        <button
+          v-for="(name, regionId) in regionNames"
+          :key="regionId"
+          class="region-tab"
+          :class="['region-' + regionId, { active: activeRegionTab === regionId }]"
+          role="tab"
+          :aria-selected="activeRegionTab === regionId"
+          @click="selectRegionTab(regionId)"
+        >
+          {{ name }}
+        </button>
+      </div>
       <div class="header-controls">
-        <button class="header-btn" @click="openRandomDialog()">Generate Map</button>
-        <button class="header-btn" @click="openProgressiveDialog()">Progressive Run</button>
         <select v-model="persistStore.lastSelectedThemeId" class="theme-select" @change="persistStore.save()">
           <option v-for="theme in themeStore.availableThemes" :key="theme.id" :value="theme.id">
             {{ theme.label }}
           </option>
         </select>
-        <button class="header-btn" @click="$router.push('/')">← Back</button>
+        <button class="header-btn" @click="openRandomDialog()">Generate</button>
+        <button class="header-btn" @click="openProgressiveDialog()">Progressive</button>
+        <button class="header-btn" @click="$router.push('/')"><span class="back-arrow">←</span> Back</button>
       </div>
     </div>
 
-    <div class="map-grid">
-      <template v-for="group in mapsByRegion" :key="group.regionId">
-        <div class="region-header" :class="'region-' + group.regionId">
-          <span class="region-label">{{ group.name }}</span>
-          <span class="region-divider"></span>
-        </div>
-        <div
-          v-for="m in group.maps"
-          :key="m.index"
-          class="map-card"
-          :class="{ locked: getFullEntry(m.index).locked }"
-          tabindex="0"
-          role="button"
-          @click="!getFullEntry(m.index).locked && startMap(m.index)"
-          @keydown.enter="!getFullEntry(m.index).locked && startMap(m.index)"
-          @keydown.space.prevent="!getFullEntry(m.index).locked && startMap(m.index)"
-        >
-          <div class="map-name">{{ getFullEntry(m.index).name }}</div>
-          <div class="map-region">
-            {{ getFullEntry(m.index).region }} • {{ getFullEntry(m.index).style }} • 💎 x{{ getFullEntry(m.index).gemReward }}
+    <div class="region-map-wrap">
+      <RegionMap
+        v-if="activeRegionLayout"
+        :map-image="activeRegionMapImage"
+        :view-box="activeRegionLayout.viewBox"
+        :connections="activeRegionLayout.connections"
+        :node-views="activeRegionNodes"
+        :selected-index="selectedMapIndex"
+        @select="selectNode"
+        @start="startNode"
+      />
+    </div>
+
+    <div class="map-details">
+      <template v-if="selectedEntry">
+        <div class="details-info">
+          <div class="details-name">{{ selectedEntry.name }}</div>
+          <div class="details-meta">
+            {{ selectedEntry.region }} • {{ selectedEntry.style }} • 💎 x{{ selectedEntry.gemReward }}
           </div>
-          <div class="map-best">Best Wave: {{ getFullEntry(m.index).bestWave }}</div>
-          <div class="map-dimensions">{{ getFullEntry(m.index).width }}×{{ getFullEntry(m.index).height }}</div>
-        </div>
-        <div class="region-header progressive-header">
-          <span class="region-label">Progressive</span>
-          <span class="region-divider"></span>
-        </div>
-        <div
-          v-for="m in group.progressive"
-          :key="m.index"
-          class="map-card"
-          :class="{ locked: getFullEntry(m.index).locked }"
-          tabindex="0"
-          role="button"
-          @click="!getFullEntry(m.index).locked && startMap(m.index)"
-          @keydown.enter="!getFullEntry(m.index).locked && startMap(m.index)"
-          @keydown.space.prevent="!getFullEntry(m.index).locked && startMap(m.index)"
-        >
-          <div class="map-name">{{ getFullEntry(m.index).name }}</div>
-          <div class="map-region">
-            {{ getFullEntry(m.index).region }} • {{ getFullEntry(m.index).style }} • 💎 x{{
-              getFullEntry(m.index).gemReward
-            }}
+          <div class="details-meta">
+            Best Wave: {{ selectedEntry.bestWave }} • {{ selectedEntry.width }}×{{ selectedEntry.height }}
           </div>
-          <div class="map-best">Best Wave: {{ getFullEntry(m.index).bestWave }}</div>
-          <div class="map-dimensions">{{ getFullEntry(m.index).width }}×{{ getFullEntry(m.index).height }}</div>
         </div>
+        <button class="details-play-btn" :disabled="selectedEntry.locked" @click="playSelected()">
+          {{ selectedEntry.locked ? "Locked" : "Play" }}
+        </button>
       </template>
+      <div v-else class="details-hint">Select a map marker to see its details</div>
     </div>
 
     <Teleport to="body">
@@ -510,6 +542,7 @@ function startProgressiveMap() {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   margin-bottom: 16px;
   flex-shrink: 0;
 }
@@ -521,8 +554,14 @@ function startProgressiveMap() {
 }
 
 .theme-select {
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.08);
+  /* Native select arrows hug the right border and absorb padding on their left, so the
+     caret is drawn in CSS instead: appearance none + right-positioned background icon. */
+  appearance: none;
+  padding: 8px 36px 8px 12px;
+  background-color: rgba(255, 255, 255, 0.08);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0h10L5 6z' fill='%23e6edf5' opacity='0.8'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: var(--color-text);
   border-radius: 6px;
@@ -539,12 +578,7 @@ function startProgressiveMap() {
 }
 
 .theme-select:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-.map-select-header h2 {
-  color: var(--color-accent);
-  font-size: var(--font-2xl);
+  background-color: rgba(255, 255, 255, 0.15);
 }
 
 .header-btn {
@@ -561,95 +595,117 @@ function startProgressiveMap() {
   background: rgba(255, 255, 255, 0.15);
 }
 
-.map-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 12px;
-  justify-content: center;
+.back-arrow {
+  display: inline-block;
+  transform: translateY(-2px);
 }
 
-@media (max-width: 720px) {
-  .map-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.region-header {
-  grid-column: 1 / -1;
+.region-tabs {
   display: flex;
-  align-items: center;
+  justify-content: flex-start;
   gap: 12px;
-  margin-top: 8px;
-  padding-bottom: 4px;
-}
-
-.region-header:first-child {
-  margin-top: 0;
-}
-
-.region-label {
-  font-size: var(--font-md);
-  font-weight: bold;
-  letter-spacing: 0.5px;
-  white-space: nowrap;
   flex-shrink: 0;
 }
 
-.region-0 .region-label { color: #6abf6a; }
-.region-1 .region-label { color: #e8c96a; }
-.region-2 .region-label { color: #8a7d6a; }
+@media (max-width: 1024px) {
+  .map-select-header {
+    flex-direction: column-reverse;
+  }
 
-.region-divider {
-  flex: 1;
-  height: 1px;
+  .header-controls,
+  .region-tabs {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
 }
 
-.region-0 .region-divider { background: linear-gradient(to right, rgba(106, 191, 106, 0.5), transparent); }
-.region-1 .region-divider { background: linear-gradient(to right, rgba(232, 201, 106, 0.5), transparent); }
-.region-2 .region-divider { background: linear-gradient(to right, rgba(138, 125, 106, 0.5), transparent); }
-
-.map-card {
-  min-width: 0;
-  padding: 12px;
+.region-tab {
+  padding: 8px 18px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  border-radius: 6px;
+  color: var(--color-text-dim);
+  font-size: var(--font-md);
+  font-weight: bold;
+  letter-spacing: 0.5px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
-.map-card:hover:not(.locked) {
-  background: rgba(95, 208, 255, 0.1);
+.region-tab:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.region-tab.region-0 { color: #6abf6a; }
+.region-tab.region-1 { color: #e8c96a; }
+.region-tab.region-2 { color: #8a7d6a; }
+
+.region-tab.active {
+  background: rgba(95, 208, 255, 0.12);
   border-color: var(--color-accent);
 }
 
-.map-card.locked {
-  opacity: 0.35;
-  cursor: not-allowed;
+.region-map-wrap {
+  width: 100%;
+  flex-shrink: 0;
 }
 
-.map-name {
+.map-details {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 12px 16px;
+  min-height: 64px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.details-info {
+  min-width: 0;
+}
+
+.details-name {
   font-weight: bold;
-  font-size: var(--font-md);
-  margin-bottom: 6px;
+  font-size: var(--font-xl);
+  margin-bottom: 4px;
   overflow-wrap: anywhere;
 }
 
-.map-region {
-  font-size: var(--font-xs);
+.details-meta {
+  font-size: var(--font-lg);
   color: var(--color-text-dim);
-  margin-bottom: 4px;
 }
 
-.map-best {
-  font-size: var(--font-sm);
-  color: var(--color-gold);
-  margin-bottom: 2px;
+.details-hint {
+  font-size: var(--font-lg);
+  color: var(--color-text-dim);
 }
 
-.map-dimensions {
-  font-size: var(--font-xs);
-  color: var(--color-text-dim);
+.details-play-btn {
+  flex-shrink: 0;
+  padding: 10px 24px;
+  font-size: var(--font-xl);
+  font-weight: 700;
+  border-radius: 6px;
+  border: 1px solid rgba(68, 170, 255, 0.4);
+  background: rgba(68, 170, 255, 0.2);
+  color: var(--color-accent);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.details-play-btn:hover:not(:disabled) {
+  background: rgba(68, 170, 255, 0.35);
+}
+
+.details-play-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .form-overlay {

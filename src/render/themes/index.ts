@@ -41,11 +41,37 @@ export interface EnemyVisualMeta {
   attack?: MapThemeAnimation | null;
 }
 
+// level is the map level (1-12) for "level" nodes and the branch level (1, 5, 9, or 12)
+// for "progressive" nodes, so connections read as from {level, 5} to {progressive, 5}.
+export interface RegionMapNodeRef {
+  kind: "level" | "progressive";
+  level: number;
+}
+
+export interface RegionMapNode extends RegionMapNodeRef {
+  x: number;
+  y: number;
+}
+
+export interface RegionMapConnection {
+  from: RegionMapNodeRef;
+  to: RegionMapNodeRef;
+}
+
+// Node x/y coordinates live in the mapImage's viewBox space.
+export interface RegionMapLayout {
+  viewBox: string;
+  nodes: RegionMapNode[];
+  connections: RegionMapConnection[];
+}
+
 export interface RegionVisualMeta {
   id: number;
   name: string;
   tiles: { path: string; terrain1: string; terrain2: string; terrain3: string; terrain4: string };
   base: string;
+  mapImage: string;
+  mapLayout: RegionMapLayout;
 }
 
 export interface SpawnPointVisualMeta {

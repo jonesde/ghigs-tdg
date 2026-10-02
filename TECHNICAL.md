@@ -43,7 +43,8 @@ src/
 │   ├── ProgressivePlacement.vue # Between-wave block offer: height-shaded 5×5 previews, rotation, site hint
 │   ├── HelpDialog.vue           # Help/controls overlay (toggled from in-game menu)
 │   ├── MainMenu.vue             # Main menu: new game, resume, skill tree, difficulty slider, profile reset
-│   ├── MapSelect.vue            # Map selection grid + header dialogs for Generated Map / Progressive Map custom runs
+│   ├── MapSelect.vue            # Map selection: region tabs + themed region map with level/progressive markers + header dialogs for Generated Map / Progressive Map custom runs
+│   ├── RegionMap.vue            # Region map SVG renderer: mapImage background, connection lines, level/progressive markers with tooltips, select/start events
 │   ├── SkillTree.vue            # Skill tree: tower levels, specializations, add-ons, general upgrades
 │   ├── EndScreen.vue            # Game over / victory screen: gem breakdown and navigation
 │   ├── ConfirmDialog.vue        # Reusable modal dialog (teleported to body)
@@ -437,9 +438,9 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 
 | File | Description |
 |---|---|
-| `src/render/themes/index.ts` | Theme registry: `MAP_THEME_MANIFEST` (id/label entries), lazy loaders, `MapThemeData`/`TowerVisualMeta`/`EnemyVisualMeta`/`RegionVisualMeta` types |
+| `src/render/themes/index.ts` | Theme registry: `MAP_THEME_MANIFEST` (id/label entries), lazy loaders, `MapThemeData`/`TowerVisualMeta`/`EnemyVisualMeta`/`RegionVisualMeta` types, `RegionMapLayout`/`RegionMapNode`/`RegionMapConnection` region map types |
 | `src/render/themes/normalize.ts` | `normalizeThemeImages(theme)`: walks theme object, fetches external SVG path/URL refs, replaces with inlined SVG text |
-| `src/render/themes/data/default-map-theme.json` | Default theme data: tower/enemy SVG sprites, tile images (path + 4 terrain heights per region), base 3×3 SVG per region |
+| `src/render/themes/data/default-map-theme.json` | Default theme data: tower/enemy SVG sprites, tile images (path + 4 terrain heights per region), base 3×3 SVG per region, region map image + level layout per region |
 
 ### Vue Components
 
@@ -455,7 +456,8 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 | `src/components/PauseMenu.vue` | Pause menu overlay: resume, skill tree, difficulty adjustment, quit to main menu |
 | `src/components/HelpDialog.vue` | Help/controls overlay (toggled from the in-game pause menu) |
 | `src/components/MainMenu.vue` | Main menu: new game, resume, skill tree, difficulty slider, profile reset |
-| `src/components/MapSelect.vue` | Map grid: 36 maps with unlock status, best waves, region info; theme drop-down, responsive grid (`auto-fill`), awaits theme resolution before navigation; "Generate Map" / "Progressive Run" header buttons open dialogs (teleported to body) with the custom-run forms — "Generated Map" (style/width/height/seed) and "Progressive Map" (base entries/seed) |
+| `src/components/MapSelect.vue` | Map selection screen: header row with the 3 region tabs on the left and theme drop-down / "Generate" / "Progressive" / Back controls on the right (narrow screens stack to two centered rows with the controls above the tabs); each tab shows a `RegionMap` with 12 level + 4 progressive markers (unlock status, best waves, gem multipliers in tooltips); click selects a marker (details panel with Play button plus an on-map play button under the marker), double-click plays, locked markers never start; awaits theme resolution before navigation; "Generate" / "Progressive" buttons open dialogs (teleported to body) with the custom-run forms — "Generated Map" (style/width/height/seed) and "Progressive Map" (base entries/seed) |
+| `src/components/RegionMap.vue` | Region map SVG renderer: theme `mapImage` background (nested `<svg>` via `v-html`), connection lines resolved from `RegionMapLayout.connections`, per-node markers (`RegionMapNodeView`: label, tooltip, locked/selected/progressive states, `tabindex`/`role`); emits `select(mapIndex)` on click/Enter, `start(mapIndex)` on double-click or the on-map play button under the selected marker (never for locked markers) |
 | `src/components/SkillTree.vue` | Skill tree: tower level unlocks, specializations, add-ons, general upgrades; reads default theme (not active theme) |
 | `src/components/EndScreen.vue` | Victory/game-over screen: gem breakdown, wave count, navigation buttons; reads default theme for region names |
 | `src/components/ConfirmDialog.vue` | Global modal dialog (teleported to body, driven by uiStore) |
@@ -631,7 +633,7 @@ A theme swaps the visual identity of towers, enemies, and map tiles on `/game`, 
 
 ### UI Integration
 
-- **MapSelect**: Theme drop-down selects active theme; "Generate Map" / "Progressive Run" header buttons open dialogs with the custom-run forms; grid uses responsive `auto-fill` layout; `startMap` awaits theme resolution before navigating to `/game`.
+- **MapSelect**: Theme drop-down selects active theme; "Generate" / "Progressive" header buttons open dialogs with the custom-run forms; grid uses responsive `auto-fill` layout; `startMap` awaits theme resolution before navigating to `/game`.
 - **GameShop / TowerPanel / StatsPanel / GameHud**: Read themed name/color/icon from `mapThemeStore.activeTheme` on `/game`.
 - **SkillTree / HistoryScreen / EndScreen**: Read from `mapThemeStore.defaultTheme` (not active theme).
 - **SvgGameRoot**: Passes `activeTheme` to `GameEngine` constructor and `useSvgStaticContent` composable.
@@ -646,7 +648,7 @@ Game progress (gems, unlocks, difficulty, map progress) is saved to `localStorag
 | Route | Component | Description |
 |---|---|---|
 | `/` | `MainMenu.vue` | Main menu with difficulty slider and navigation |
-| `/map-select` | `MapSelect.vue` | Map selection grid with theme drop-down, Generate Map / Progressive Run header buttons opening custom-run dialogs, awaits theme resolution before navigation |
+| `/map-select` | `MapSelect.vue` | Region tabs + themed region map with level/progressive markers, theme drop-down, Generate / Progressive header buttons opening custom-run dialogs, awaits theme resolution before navigation |
 | `/skill-tree` | `SkillTree.vue` | Gem-based upgrade tree |
 | `/game` | `GameScreen.vue` | Active gameplay with single SVG root + UI overlays |
 | `/commanders` | `CommandersScreen.vue` | LLM commander management: create/edit/delete custom commanders, activate built-in or LLM commanders |

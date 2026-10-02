@@ -19,6 +19,7 @@ import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
+import { makeMockRegionMapLayout, mockRegionMapImage } from "./regionMap.js";
 
 type GameStore = ReturnType<typeof useGameStore>;
 type PersistStore = ReturnType<typeof usePersistStore>;
@@ -72,6 +73,8 @@ export const mockDefaultTheme: MapThemeData = {
         terrain4: "<svg></svg>",
       },
       base: "",
+      mapImage: mockRegionMapImage,
+      mapLayout: makeMockRegionMapLayout(),
     },
     {
       id: 1,
@@ -84,6 +87,8 @@ export const mockDefaultTheme: MapThemeData = {
         terrain4: "<svg></svg>",
       },
       base: "",
+      mapImage: mockRegionMapImage,
+      mapLayout: makeMockRegionMapLayout(),
     },
     {
       id: 2,
@@ -96,6 +101,8 @@ export const mockDefaultTheme: MapThemeData = {
         terrain4: "<svg></svg>",
       },
       base: "",
+      mapImage: mockRegionMapImage,
+      mapLayout: makeMockRegionMapLayout(),
     },
   ],
 };

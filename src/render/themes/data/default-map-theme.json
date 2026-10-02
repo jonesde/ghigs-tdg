@@ -766,7 +766,46 @@
         "terrain3": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#366836\"/><path d=\"M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8\" stroke=\"rgba(0,0,0,0.12)\" stroke-width=\"0.5\"/></svg>",
         "terrain4": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#2a5a2a\"/><path d=\"M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8\" stroke=\"rgba(0,0,0,0.12)\" stroke-width=\"0.5\"/></svg>"
       },
-      "base": ""
+      "base": "",
+      "mapImage": "<svg viewBox=\"0 0 1100 700\"><rect width=\"1100\" height=\"700\" fill=\"#243222\"/><ellipse cx=\"260\" cy=\"190\" rx=\"280\" ry=\"130\" fill=\"#2f4a2f\" opacity=\"0.5\"/><ellipse cx=\"840\" cy=\"520\" rx=\"300\" ry=\"140\" fill=\"#2f4a2f\" opacity=\"0.4\"/><ellipse cx=\"640\" cy=\"300\" rx=\"210\" ry=\"95\" fill=\"#366836\" opacity=\"0.28\"/><path d=\"M60 610 Q400 520 700 420 T1040 210\" stroke=\"#6abf6a\" stroke-opacity=\"0.35\" stroke-width=\"26\" stroke-linecap=\"round\" fill=\"none\"/><rect x=\"16\" y=\"16\" width=\"1068\" height=\"668\" rx=\"24\" fill=\"none\" stroke=\"#6abf6a\" stroke-opacity=\"0.35\" stroke-width=\"4\"/></svg>",
+      "mapLayout": {
+        "viewBox": "0 0 1100 700",
+        "nodes": [
+          { "kind": "level", "level": 1, "x": 100, "y": 240 },
+          { "kind": "level", "level": 2, "x": 270, "y": 190 },
+          { "kind": "level", "level": 3, "x": 440, "y": 240 },
+          { "kind": "level", "level": 4, "x": 610, "y": 190 },
+          { "kind": "level", "level": 5, "x": 780, "y": 240 },
+          { "kind": "level", "level": 6, "x": 950, "y": 190 },
+          { "kind": "level", "level": 7, "x": 950, "y": 500 },
+          { "kind": "level", "level": 8, "x": 780, "y": 450 },
+          { "kind": "level", "level": 9, "x": 610, "y": 500 },
+          { "kind": "level", "level": 10, "x": 440, "y": 450 },
+          { "kind": "level", "level": 11, "x": 270, "y": 500 },
+          { "kind": "level", "level": 12, "x": 100, "y": 450 },
+          { "kind": "progressive", "level": 1, "x": 100, "y": 90 },
+          { "kind": "progressive", "level": 5, "x": 780, "y": 90 },
+          { "kind": "progressive", "level": 9, "x": 610, "y": 620 },
+          { "kind": "progressive", "level": 12, "x": 100, "y": 620 }
+        ],
+        "connections": [
+          { "from": { "kind": "level", "level": 1 }, "to": { "kind": "level", "level": 2 } },
+          { "from": { "kind": "level", "level": 2 }, "to": { "kind": "level", "level": 3 } },
+          { "from": { "kind": "level", "level": 3 }, "to": { "kind": "level", "level": 4 } },
+          { "from": { "kind": "level", "level": 4 }, "to": { "kind": "level", "level": 5 } },
+          { "from": { "kind": "level", "level": 5 }, "to": { "kind": "level", "level": 6 } },
+          { "from": { "kind": "level", "level": 6 }, "to": { "kind": "level", "level": 7 } },
+          { "from": { "kind": "level", "level": 7 }, "to": { "kind": "level", "level": 8 } },
+          { "from": { "kind": "level", "level": 8 }, "to": { "kind": "level", "level": 9 } },
+          { "from": { "kind": "level", "level": 9 }, "to": { "kind": "level", "level": 10 } },
+          { "from": { "kind": "level", "level": 10 }, "to": { "kind": "level", "level": 11 } },
+          { "from": { "kind": "level", "level": 11 }, "to": { "kind": "level", "level": 12 } },
+          { "from": { "kind": "level", "level": 1 }, "to": { "kind": "progressive", "level": 1 } },
+          { "from": { "kind": "level", "level": 5 }, "to": { "kind": "progressive", "level": 5 } },
+          { "from": { "kind": "level", "level": 9 }, "to": { "kind": "progressive", "level": 9 } },
+          { "from": { "kind": "level", "level": 12 }, "to": { "kind": "progressive", "level": 12 } }
+        ]
+      }
     },
     {
       "id": 1,
@@ -778,7 +817,46 @@
         "terrain3": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#6b5a3e\"/><path d=\"M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8\" stroke=\"rgba(0,0,0,0.12)\" stroke-width=\"0.5\"/></svg>",
         "terrain4": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#0d0d0d\"/><path d=\"M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8\" stroke=\"rgba(0,0,0,0.12)\" stroke-width=\"0.5\"/></svg>"
       },
-      "base": ""
+      "base": "",
+      "mapImage": "<svg viewBox=\"0 0 1100 700\"><rect width=\"1100\" height=\"700\" fill=\"#322a1a\"/><ellipse cx=\"260\" cy=\"190\" rx=\"280\" ry=\"130\" fill=\"#4a3d28\" opacity=\"0.5\"/><ellipse cx=\"840\" cy=\"520\" rx=\"300\" ry=\"140\" fill=\"#4a3d28\" opacity=\"0.4\"/><ellipse cx=\"640\" cy=\"300\" rx=\"210\" ry=\"95\" fill=\"#b8a56a\" opacity=\"0.28\"/><path d=\"M60 610 Q400 520 700 420 T1040 210\" stroke=\"#e8c96a\" stroke-opacity=\"0.35\" stroke-width=\"26\" stroke-linecap=\"round\" fill=\"none\"/><rect x=\"16\" y=\"16\" width=\"1068\" height=\"668\" rx=\"24\" fill=\"none\" stroke=\"#e8c96a\" stroke-opacity=\"0.35\" stroke-width=\"4\"/></svg>",
+      "mapLayout": {
+        "viewBox": "0 0 1100 700",
+        "nodes": [
+          { "kind": "level", "level": 1, "x": 160, "y": 360 },
+          { "kind": "level", "level": 2, "x": 212, "y": 240 },
+          { "kind": "level", "level": 3, "x": 355, "y": 152 },
+          { "kind": "level", "level": 4, "x": 550, "y": 120 },
+          { "kind": "level", "level": 5, "x": 745, "y": 152 },
+          { "kind": "level", "level": 6, "x": 888, "y": 240 },
+          { "kind": "level", "level": 7, "x": 940, "y": 360 },
+          { "kind": "level", "level": 8, "x": 888, "y": 480 },
+          { "kind": "level", "level": 9, "x": 745, "y": 568 },
+          { "kind": "level", "level": 10, "x": 550, "y": 600 },
+          { "kind": "level", "level": 11, "x": 355, "y": 568 },
+          { "kind": "level", "level": 12, "x": 212, "y": 480 },
+          { "kind": "progressive", "level": 1, "x": 45, "y": 360 },
+          { "kind": "progressive", "level": 5, "x": 830, "y": 55 },
+          { "kind": "progressive", "level": 9, "x": 850, "y": 655 },
+          { "kind": "progressive", "level": 12, "x": 95, "y": 590 }
+        ],
+        "connections": [
+          { "from": { "kind": "level", "level": 1 }, "to": { "kind": "level", "level": 2 } },
+          { "from": { "kind": "level", "level": 2 }, "to": { "kind": "level", "level": 3 } },
+          { "from": { "kind": "level", "level": 3 }, "to": { "kind": "level", "level": 4 } },
+          { "from": { "kind": "level", "level": 4 }, "to": { "kind": "level", "level": 5 } },
+          { "from": { "kind": "level", "level": 5 }, "to": { "kind": "level", "level": 6 } },
+          { "from": { "kind": "level", "level": 6 }, "to": { "kind": "level", "level": 7 } },
+          { "from": { "kind": "level", "level": 7 }, "to": { "kind": "level", "level": 8 } },
+          { "from": { "kind": "level", "level": 8 }, "to": { "kind": "level", "level": 9 } },
+          { "from": { "kind": "level", "level": 9 }, "to": { "kind": "level", "level": 10 } },
+          { "from": { "kind": "level", "level": 10 }, "to": { "kind": "level", "level": 11 } },
+          { "from": { "kind": "level", "level": 11 }, "to": { "kind": "level", "level": 12 } },
+          { "from": { "kind": "level", "level": 1 }, "to": { "kind": "progressive", "level": 1 } },
+          { "from": { "kind": "level", "level": 5 }, "to": { "kind": "progressive", "level": 5 } },
+          { "from": { "kind": "level", "level": 9 }, "to": { "kind": "progressive", "level": 9 } },
+          { "from": { "kind": "level", "level": 12 }, "to": { "kind": "progressive", "level": 12 } }
+        ]
+      }
     },
     {
       "id": 2,
@@ -790,7 +868,46 @@
         "terrain3": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#7a6c5e\"/><path d=\"M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8\" stroke=\"rgba(0,0,0,0.12)\" stroke-width=\"0.5\"/></svg>",
         "terrain4": "<svg viewBox=\"0 0 36 36\"><rect width=\"36\" height=\"36\" fill=\"#8a7d6a\"/><path d=\"M7.2,7.2 L28.8,28.8 M28.8,7.2 L7.2,28.8\" stroke=\"rgba(0,0,0,0.12)\" stroke-width=\"0.5\"/></svg>"
       },
-      "base": ""
+      "base": "",
+      "mapImage": "<svg viewBox=\"0 0 1100 700\"><rect width=\"1100\" height=\"700\" fill=\"#2b2823\"/><ellipse cx=\"260\" cy=\"190\" rx=\"280\" ry=\"130\" fill=\"#3a3730\" opacity=\"0.5\"/><ellipse cx=\"840\" cy=\"520\" rx=\"300\" ry=\"140\" fill=\"#3a3730\" opacity=\"0.4\"/><ellipse cx=\"640\" cy=\"300\" rx=\"210\" ry=\"95\" fill=\"#7a6c5e\" opacity=\"0.28\"/><path d=\"M60 610 Q400 520 700 420 T1040 210\" stroke=\"#8a7d6a\" stroke-opacity=\"0.35\" stroke-width=\"26\" stroke-linecap=\"round\" fill=\"none\"/><rect x=\"16\" y=\"16\" width=\"1068\" height=\"668\" rx=\"24\" fill=\"none\" stroke=\"#8a7d6a\" stroke-opacity=\"0.35\" stroke-width=\"4\"/></svg>",
+      "mapLayout": {
+        "viewBox": "0 0 1100 700",
+        "nodes": [
+          { "kind": "level", "level": 1, "x": 200, "y": 120 },
+          { "kind": "level", "level": 2, "x": 200, "y": 280 },
+          { "kind": "level", "level": 3, "x": 200, "y": 440 },
+          { "kind": "level", "level": 4, "x": 200, "y": 600 },
+          { "kind": "level", "level": 5, "x": 480, "y": 600 },
+          { "kind": "level", "level": 6, "x": 480, "y": 440 },
+          { "kind": "level", "level": 7, "x": 480, "y": 280 },
+          { "kind": "level", "level": 8, "x": 480, "y": 120 },
+          { "kind": "level", "level": 9, "x": 760, "y": 120 },
+          { "kind": "level", "level": 10, "x": 760, "y": 280 },
+          { "kind": "level", "level": 11, "x": 760, "y": 440 },
+          { "kind": "level", "level": 12, "x": 760, "y": 600 },
+          { "kind": "progressive", "level": 1, "x": 60, "y": 120 },
+          { "kind": "progressive", "level": 5, "x": 340, "y": 520 },
+          { "kind": "progressive", "level": 9, "x": 900, "y": 200 },
+          { "kind": "progressive", "level": 12, "x": 920, "y": 600 }
+        ],
+        "connections": [
+          { "from": { "kind": "level", "level": 1 }, "to": { "kind": "level", "level": 2 } },
+          { "from": { "kind": "level", "level": 2 }, "to": { "kind": "level", "level": 3 } },
+          { "from": { "kind": "level", "level": 3 }, "to": { "kind": "level", "level": 4 } },
+          { "from": { "kind": "level", "level": 4 }, "to": { "kind": "level", "level": 5 } },
+          { "from": { "kind": "level", "level": 5 }, "to": { "kind": "level", "level": 6 } },
+          { "from": { "kind": "level", "level": 6 }, "to": { "kind": "level", "level": 7 } },
+          { "from": { "kind": "level", "level": 7 }, "to": { "kind": "level", "level": 8 } },
+          { "from": { "kind": "level", "level": 8 }, "to": { "kind": "level", "level": 9 } },
+          { "from": { "kind": "level", "level": 9 }, "to": { "kind": "level", "level": 10 } },
+          { "from": { "kind": "level", "level": 10 }, "to": { "kind": "level", "level": 11 } },
+          { "from": { "kind": "level", "level": 11 }, "to": { "kind": "level", "level": 12 } },
+          { "from": { "kind": "level", "level": 1 }, "to": { "kind": "progressive", "level": 1 } },
+          { "from": { "kind": "level", "level": 5 }, "to": { "kind": "progressive", "level": 5 } },
+          { "from": { "kind": "level", "level": 9 }, "to": { "kind": "progressive", "level": 9 } },
+          { "from": { "kind": "level", "level": 12 }, "to": { "kind": "progressive", "level": 12 } }
+        ]
+      }
     }
   ],
   "spawns": {
