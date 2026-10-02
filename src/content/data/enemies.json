@@ -40,8 +40,8 @@
     "jet": { "baseHp": 5, "speed": 1.8, "bounty": 3, "radius": 0.1, "attackDamage": 2, "attackSpeed": 0.8, "flyingHeight": 5 },
     "aegis": { "baseHp": 10, "speed": 0.6, "bounty": 5, "radius": 0.16, "shield": 16, "attackDamage": 6, "attackSpeed": 0.4, "flyingHeight": 3 }
   },
-  "levelHpMult": { "intercept": 1, "slopePerLevel": 0.6 },
-  "waveDamageMult": 0.2,
+  "levelHpMult": { "intercept": 1, "slopePerLevel": 0.8 },
+  "waveDamageMult": 0.5,
   "bountyLevelGrowth": 0.5,
   "bountyFullThroughWave": 10,
   "laterWaveBountyMult": 0.25,
