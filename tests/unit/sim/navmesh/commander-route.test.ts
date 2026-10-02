@@ -59,7 +59,7 @@ describe("Commander routing drives the DetourCrowd agent", () => {
     crowdManager.setBaseTarget(enemy!, baseWorld);
 
     // Hold case: route to a single tile; agent should target that tile's world point.
-    const holdTile = orderedPath(grid, 0)[2]!;
+    const holdTile = orderedPath(grid, 0)![2]!;
     const holdWorld = grid.tileToWorld(holdTile.x, holdTile.y);
     enemy!.applyRoute([holdTile], "hold");
     expect(enemy!.routingMode).toBe("hold");
@@ -75,7 +75,7 @@ describe("Commander routing drives the DetourCrowd agent", () => {
     approxTarget(enemy!.agent!, baseWorld);
 
     // Route case: target the destination tile of a multi-tile waypoint chain.
-    const path = orderedPath(grid, 0);
+    const path = orderedPath(grid, 0)!;
     const tileA = path[1]!;
     const tileB = path[3]!;
     const tileC = path[5]!;

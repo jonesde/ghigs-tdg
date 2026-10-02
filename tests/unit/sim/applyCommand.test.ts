@@ -36,7 +36,7 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
   it("llm:routeGroup with hold: true sets routingMode to 'hold'", () => {
     const enemyId = firstEnemyId();
     const enemy = engine.getEnemiesByIds([enemyId])[0]!;
-    const holdTile = orderedPath(engine.grid!, 0)[3]!;
+    const holdTile = orderedPath(engine.grid!, 0)![3]!;
     const result = applyCommand(engine, {
       commandId: 0,
       type: "llm:routeGroup",
@@ -61,7 +61,7 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
   it("llm:routeGroup with empty waypoints releases to default pathing", () => {
     const enemyId = firstEnemyId();
     const enemy = engine.getEnemiesByIds([enemyId])[0]!;
-    enemy.applyRoute([orderedPath(engine.grid!, 0)[3]!], "hold");
+    enemy.applyRoute([orderedPath(engine.grid!, 0)![3]!], "hold");
     expect(enemy.routingMode).toBe("hold");
     const result = applyCommand(engine, {
       commandId: 0,
@@ -94,7 +94,7 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
   it("llm:routeGroup with a waypoint sets routingMode to 'route' with a non-null path", () => {
     const enemyId = firstEnemyId();
     const enemy = engine.getEnemiesByIds([enemyId])[0]!;
-    const waypoint = orderedPath(engine.grid!, 0)[3]!;
+    const waypoint = orderedPath(engine.grid!, 0)![3]!;
     const result = applyCommand(engine, {
       commandId: 0,
       type: "llm:routeGroup",
@@ -271,7 +271,7 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
       }
     }
     expect(isolatedTile).not.toBeNull();
-    const reachableWaypoint = orderedPath(grid, 0)[2]!;
+    const reachableWaypoint = orderedPath(grid, 0)![2]!;
     const result = applyCommand(engine, {
       commandId: 0,
       type: "llm:routeGroup",

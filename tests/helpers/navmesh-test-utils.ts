@@ -4,7 +4,9 @@ import type { Grid } from "@/sim/grid/Grid.js";
 // base using a BFS over Grid's tile predicates. The old grid path provider was deleted
 // with the BFS pathfinding module; tests that previously needed an ordered path tile
 // list use this instead. It is a test-only helper and must not be used in production.
-export function orderedPath(grid: Grid, spawnIndex: number): { x: number; y: number }[] {
+// Returns null when no walkable spawn-to-base route exists: callers must treat a
+// disconnected map as a failure, not as a path through walls.
+export function orderedPath(grid: Grid, spawnIndex: number): { x: number; y: number }[] | null {
   const start = grid.spawns[spawnIndex]!;
   const goalTiles = new Set(grid.getBaseGoalTiles().map((tile) => `${tile.x},${tile.y}`));
   const prev = new Map<string, string | null>();
@@ -36,7 +38,8 @@ export function orderedPath(grid: Grid, spawnIndex: number): { x: number; y: num
       queue.push(neighbor);
     }
   }
-  const goalKey = [...goalTiles].find((key) => visited.has(key)) ?? `${grid.getBase().x},${grid.getBase().y}`;
+  const goalKey = [...goalTiles].find((key) => visited.has(key));
+  if (!goalKey) return null;
   const path: { x: number; y: number }[] = [];
   let currentKey: string | null = goalKey;
   while (currentKey) {

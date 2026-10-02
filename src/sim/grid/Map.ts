@@ -1,7 +1,7 @@
 // Procedural map definitions for 3 regions × 12 maps each = 36 maps.
 
 import type { MapThemeData } from "@/render/themes/index.js";
-import { HEIGHT_NOISE_DIVISOR, HEIGHT_NOISE_FREQ, MAP_LEVELS, SERPENTINE_DOWN_CAP } from "@/sim/Constants.js";
+import { HEIGHT_NOISE_DIVISOR, HEIGHT_NOISE_FREQ, MAP_LEVELS } from "@/sim/Constants.js";
 import { BOSS_CADENCE } from "@/sim/ConstantsEnemy.js";
 
 export function progressiveMapDisplayName(regionId: number, entryCount: number, theme: MapThemeData | null): string {
@@ -127,445 +127,725 @@ function carveWidePath(
   }
 }
 
-// Single-pass serpentine: one continuous winding corridor from spawn to base.
-// `width` is the corridor width in tiles (half-extent = floor(width/2), same
-// semantics as carveWidePath). `amplitude` is the lateral swing in tiles,
-// scaled by the caller to the map's minor axis so the corridor fills the board.
-// The corridor advances monotonically along the main axis, turns perpendicular
-// by at most `amplitude` each time, then descends by at most SERPENTINE_DOWN_CAP
-// tiles, so spawn→base reachability is guaranteed by construction.
-function carveSerpentine(
-  tiles: Tile[][],
-  from: Point,
-  nextWaypoint: Point,
-  width: number = 1,
-  isLandscape: boolean = false,
-  amplitude: number = 4,
-) {
-  const widthLimit = tiles[0]!.length;
-  const heightLimit = tiles.length;
-  const halfExtent = Math.floor(width / 2);
-  let curX = from.x;
-  let curY = from.y;
-  let dir = isLandscape ? (from.y < nextWaypoint.y ? 1 : -1) : from.x < nextWaypoint.x ? 1 : -1;
-  const mainBound = isLandscape ? nextWaypoint.x : nextWaypoint.y;
-  const perpBound = isLandscape ? heightLimit : widthLimit;
-  const step = Math.max(2, Math.min(amplitude, (perpBound - 4) / 2));
-
-  const carveAt = (centerX: number, centerY: number) => {
-    for (let deltaY = -halfExtent; deltaY <= halfExtent; deltaY++) {
-      for (let deltaX = -halfExtent; deltaX <= halfExtent; deltaX++) {
-        const tileX = centerX + deltaX;
-        const tileY = centerY + deltaY;
-        if (tileX < 0 || tileY < 0 || tileX >= widthLimit || tileY >= heightLimit) continue;
-        if (tiles[tileY]![tileX]!.type === "base") continue;
-        tiles[tileY]![tileX]!.type = "path";
-        tiles[tileY]![tileX]!.height = 1;
-      }
-    }
-  };
-
-  while ((isLandscape ? curX : curY) < mainBound) {
-    const perpCoordinate = isLandscape ? curY : curX;
-    const upBound = perpBound - 2 - halfExtent;
-    const lowBound = 1 + halfExtent;
-    if (upBound < lowBound) {
-      carveAt(curX, curY);
-      if (isLandscape) curX++;
-      else curY++;
-      continue;
-    }
-    const targetPerp = dir > 0 ? Math.min(upBound, perpCoordinate + step) : Math.max(lowBound, perpCoordinate - step);
-    while ((isLandscape ? curY : curX) !== targetPerp) {
-      carveAt(curX, curY);
-      if (isLandscape) curY += dir;
-      else curX += dir;
-    }
-    const mainRemaining = mainBound - (isLandscape ? curX : curY);
-    const descentSteps = Math.min(SERPENTINE_DOWN_CAP, mainRemaining);
-    for (let descent = 0; descent < descentSteps; descent++) {
-      carveAt(curX, curY);
-      if (isLandscape) curX++;
-      else curY++;
-    }
-    dir *= -1;
-  }
-
-  while ((isLandscape ? curY : curX) !== (isLandscape ? nextWaypoint.y : nextWaypoint.x)) {
-    carveAt(curX, curY);
-    if (isLandscape) curY += Math.sign(nextWaypoint.y - curY);
-    else curX += Math.sign(nextWaypoint.x - curX);
-  }
-  while ((isLandscape ? curX : curY) !== (isLandscape ? nextWaypoint.x : nextWaypoint.y)) {
-    carveAt(curX, curY);
-    if (isLandscape) curX += Math.sign(nextWaypoint.x - curX);
-    else curY += Math.sign(nextWaypoint.y - curY);
-  }
-  carveAt(curX, curY);
-}
-
-function carveCanyon(
-  tiles: Tile[][],
-  from: Point,
-  nextWaypoint: Point,
-  rng: () => number,
-  isLandscape: boolean = false,
-) {
-  const W = tiles[0]!.length;
-  const H = tiles.length;
-  const targetMain = isLandscape ? nextWaypoint.x - 1 : nextWaypoint.y - 1;
-  const nextMain = isLandscape ? nextWaypoint.x : nextWaypoint.y;
-  const nextPerp = isLandscape ? nextWaypoint.y : nextWaypoint.x;
-  let curX = from.x;
-  let curY = from.y;
-  let segmentCount = 0;
-  const maxSegments = isLandscape ? W * 3 : H * 3;
-
-  const carveAt = (x: number, y: number, width: number) => {
-    if (x < 0 || y < 0 || x >= W || y >= H) return;
-    const halfW = Math.floor(width / 2);
-    for (let deltaY = -halfW; deltaY <= halfW; deltaY++) {
-      for (let deltaX = -halfW; deltaX <= halfW; deltaX++) {
-        const neighborX = x + deltaX;
-        const neighborY = y + deltaY;
-        if (
-          neighborX >= 0 &&
-          neighborY >= 0 &&
-          neighborX < W &&
-          neighborY < H &&
-          tiles[neighborY]![neighborX]!.type !== "base"
-        ) {
-          tiles[neighborY]![neighborX]!.type = "path";
-          tiles[neighborY]![neighborX]!.height = 1;
-        }
-      }
-    }
-  };
-
-  while ((isLandscape ? curX : curY) < targetMain && segmentCount < maxSegments) {
-    const segmentLength = 6 + Math.floor(rng() * 5);
-    const currentWidth = rng() > 0.5 ? 3 : 1;
-
-    let targetPerp: number;
-    if (segmentCount % 2 === 0) {
-      targetPerp = Math.floor((isLandscape ? H : W) / 2) + Math.floor(rng() * 4 - 2);
-    } else {
-      targetPerp = isLandscape ? (curY > Math.floor(H / 2) ? 1 : H - 2) : curX > Math.floor(W / 2) ? 1 : W - 2;
-    }
-
-    const mainDir = 1;
-    const perpDir = targetPerp > (isLandscape ? curY : curX) ? 1 : targetPerp < (isLandscape ? curY : curX) ? -1 : 0;
-
-    for (let step = 0; step < segmentLength; step++) {
-      carveAt(curX, curY, currentWidth);
-
-      const mainRemaining = targetMain - (isLandscape ? curX : curY);
-      const perpRemaining = targetPerp - (isLandscape ? curY : curX);
-
-      const moveMain =
-        mainRemaining !== 0 && (perpRemaining === 0 || Math.abs(mainRemaining) >= Math.abs(perpRemaining) * 2);
-      const movePerp =
-        perpRemaining > 0 && (mainRemaining === 0 || Math.abs(perpRemaining) > Math.abs(mainRemaining) * 0.5);
-
-      if (moveMain)
-        if (isLandscape) curX += mainDir;
-        else curY += mainDir;
-      if (movePerp)
-        if (isLandscape) curY += perpDir;
-        else curX += perpDir;
-      if (isLandscape) {
-        curX = Math.max(0, Math.min(W - 1, curX));
-        curY = Math.max(1, Math.min(H - 2, curY));
-      } else {
-        curX = Math.max(1, Math.min(W - 2, curX));
-        curY = Math.max(0, Math.min(H - 1, curY));
-      }
-
-      if ((isLandscape ? curX : curY) >= targetMain && Math.abs(targetPerp - (isLandscape ? curY : curX)) <= 1) break;
-    }
-    carveAt(curX, curY, currentWidth);
-
-    segmentCount++;
-  }
-
-  let horizontalSteps = 0;
-  while ((isLandscape ? curY : curX) !== nextPerp && horizontalSteps < (isLandscape ? H : W)) {
-    carveAt(curX, curY, 1);
-    if (isLandscape) curY += Math.sign(nextWaypoint.y - curY);
-    else curX += Math.sign(nextWaypoint.x - curX);
-    horizontalSteps++;
-  }
-
-  while ((isLandscape ? curX : curY) !== nextMain) {
-    carveAt(curX, curY, 1);
-    if (isLandscape) curX += Math.sign(nextWaypoint.x - curX);
-    else curY += Math.sign(nextWaypoint.y - curY);
-  }
-
-  carveAt(curX, curY, 1);
-}
-
-// Inverted bastion: a large triangle of buildable terrain around the base with a
-// single 1-wide notch entry at the triangle apex, a big rectangular open staging
-// area outside the apex, and a narrow 1-wide arc above the staging area that
-// enemies must walk around to reach the staging sides. `variantWallArc` picks
-// the arc construction: false carves the arc as a path corridor, true raises a
-// height-4 terrain wall (flyer/aegis must route around, jet can cross) with the
-// walkable arc threaded just outside it.
-function carveInvertedBastion(
-  tiles: Tile[][],
-  base: Point,
-  spawn: Point,
-  rng: () => number,
-  isLandscape: boolean,
-  variantWallArc: boolean,
-) {
+// Reverts degree-0/1 path tiles to terrain, then drops path tiles that cannot
+// reach a spawn. The base center is an anchor before the 3x3 stamp (it is still
+// terrain). After the stamp the whole base 3x3 is walkable, so the collar tile
+// in front of the gate is not eaten as a spur.
+function pruneDeadEnds(tiles: Tile[][], spawns: Point[], base: Point): void {
   const mapWidth = tiles[0]!.length;
   const mapHeight = tiles.length;
-
-  const paintPath = (tileX: number, tileY: number, pathWidth: number = 1) => {
-    const halfW = Math.floor(pathWidth / 2);
-    for (let deltaY = -halfW; deltaY <= halfW; deltaY++) {
-      for (let deltaX = -halfW; deltaX <= halfW; deltaX++) {
-        const neighborX = tileX + deltaX;
-        const neighborY = tileY + deltaY;
-        if (neighborX < 0 || neighborY < 0 || neighborX >= mapWidth || neighborY >= mapHeight) continue;
-        if (tiles[neighborY]![neighborX]!.type === "base") continue;
-        tiles[neighborY]![neighborX]!.type = "path";
-        tiles[neighborY]![neighborX]!.height = 1;
-      }
-    }
+  const spawnKeys = new Set(spawns.map((spawn) => `${spawn.x},${spawn.y}`));
+  const baseKey = `${base.x},${base.y}`;
+  const isAnchor = (tileX: number, tileY: number): boolean => {
+    if (tileX < 0 || tileY < 0 || tileX >= mapWidth || tileY >= mapHeight) return false;
+    const key = `${tileX},${tileY}`;
+    if (spawnKeys.has(key) || key === baseKey) return true;
+    return tiles[tileY]![tileX]!.type === "spawn";
   };
-
-  const paintTerrain = (tileX: number, tileY: number, heightValue: number) => {
-    if (tileX < 0 || tileY < 0 || tileX >= mapWidth || tileY >= mapHeight) return;
-    if (tiles[tileY]![tileX]!.type === "base") return;
+  const isWalkablePath = (tileX: number, tileY: number): boolean => {
+    if (tileX < 0 || tileY < 0 || tileX >= mapWidth || tileY >= mapHeight) return false;
+    if (isAnchor(tileX, tileY)) return true;
+    const tileType = tiles[tileY]![tileX]!.type;
+    return tileType === "path" || tileType === "base";
+  };
+  const walkableDegree = (tileX: number, tileY: number): number => {
+    let degree = 0;
+    if (isWalkablePath(tileX + 1, tileY)) degree++;
+    if (isWalkablePath(tileX - 1, tileY)) degree++;
+    if (isWalkablePath(tileX, tileY + 1)) degree++;
+    if (isWalkablePath(tileX, tileY - 1)) degree++;
+    return degree;
+  };
+  const toTerrain = (tileX: number, tileY: number): void => {
+    if (isAnchor(tileX, tileY)) return;
     tiles[tileY]![tileX]!.type = "terrain";
-    tiles[tileY]![tileX]!.height = heightValue;
+    tiles[tileY]![tileX]!.height = 2;
   };
-
-  const walkTo = (fromX: number, fromY: number, targetX: number, targetY: number, pathWidth: number = 1) => {
-    let curX = fromX;
-    let curY = fromY;
-    paintPath(curX, curY, pathWidth);
-    while (curX !== targetX || curY !== targetY) {
-      if (curX !== targetX) curX += Math.sign(targetX - curX);
-      else if (curY !== targetY) curY += Math.sign(targetY - curY);
-      paintPath(curX, curY, pathWidth);
-    }
-  };
-
-  if (isLandscape) {
-    // Base sits at the east edge; the triangle apex points west.
-    const apronDepth = Math.max(4, Math.min(Math.floor(mapWidth * 0.3), base.x - 1));
-    const apexX = base.x - apronDepth;
-    const baseRow = base.y;
-    const maxHalf = Math.max(3, Math.floor(mapHeight * 0.3));
-    // Triangle apron: rows from apex (1 wide) widening to the base row.
-    for (let step = 0; step <= apronDepth; step++) {
-      const rowX = apexX + step;
-      const half = Math.max(0, Math.floor((maxHalf * step) / apronDepth));
-      for (let deltaY = -half; deltaY <= half; deltaY++) {
-        const inside = step === 0 && deltaY === 0;
-        if (inside) paintPath(rowX, baseRow + deltaY);
-        else paintTerrain(rowX, baseRow + deltaY, 2 + Math.floor(rng() * 2));
+  for (;;) {
+    let pruned = false;
+    for (let tileY = 0; tileY < mapHeight; tileY++) {
+      for (let tileX = 0; tileX < mapWidth; tileX++) {
+        if (tiles[tileY]![tileX]!.type !== "path") continue;
+        if (isAnchor(tileX, tileY)) continue;
+        if (walkableDegree(tileX, tileY) <= 1) {
+          toTerrain(tileX, tileY);
+          pruned = true;
+        }
       }
     }
-    // Notch entry through the apex.
-    paintPath(apexX, baseRow);
-    // Rectangular staging area west of the apex, full apron width, clamped so
-    // rows never leave the board.
-    const stagingDepth = Math.max(4, Math.floor(mapWidth * 0.2));
-    const stagingWest = Math.max(1, apexX - stagingDepth);
-    const stagingNorth = Math.max(1, baseRow - maxHalf);
-    const stagingSouth = Math.min(mapHeight - 2, baseRow + maxHalf);
-    // The apex row between staging and apron is the single ground entrance.
-    for (let rowX = stagingWest; rowX <= apexX; rowX++) paintPath(rowX, baseRow);
-    for (let rowX = stagingWest; rowX < apexX; rowX++) {
-      for (let rowY = stagingNorth; rowY <= stagingSouth; rowY++) paintPath(rowX, rowY);
+    if (!pruned) break;
+  }
+  const reached = new Set<string>();
+  const queue: Point[] = [];
+  for (const spawn of spawns) {
+    if (spawn.x < 0 || spawn.y < 0 || spawn.x >= mapWidth || spawn.y >= mapHeight) continue;
+    const key = `${spawn.x},${spawn.y}`;
+    reached.add(key);
+    queue.push({ x: spawn.x, y: spawn.y });
+  }
+  let head = 0;
+  while (head < queue.length) {
+    const current = queue[head]!;
+    head += 1;
+    for (const neighbor of [
+      { x: current.x + 1, y: current.y },
+      { x: current.x - 1, y: current.y },
+      { x: current.x, y: current.y + 1 },
+      { x: current.x, y: current.y - 1 },
+    ]) {
+      if (neighbor.x < 0 || neighbor.y < 0 || neighbor.x >= mapWidth || neighbor.y >= mapHeight) continue;
+      const key = `${neighbor.x},${neighbor.y}`;
+      if (reached.has(key)) continue;
+      if (key !== baseKey && !isWalkablePath(neighbor.x, neighbor.y)) continue;
+      reached.add(key);
+      queue.push(neighbor);
     }
-    walkTo(stagingWest, baseRow, apexX, baseRow);
-    // Arc: from the west spawn around the north/south flanks into the staging
-    // sides. Clamped to the staging rectangle so the detour hugs it instead of
-    // wandering to the map's far side.
-    const arcX = stagingWest;
-    const arcTop = stagingNorth;
-    const arcBottom = stagingSouth;
-    if (variantWallArc) {
-      for (let rowY = arcTop; rowY <= arcBottom; rowY++) paintTerrain(arcX, rowY, 4);
-      for (let rowY = arcTop; rowY <= arcBottom; rowY++) paintPath(arcX - 1 >= 1 ? arcX - 1 : arcX + 1, rowY);
+  }
+  if (!reached.has(baseKey)) return;
+  for (let tileY = 0; tileY < mapHeight; tileY++) {
+    for (let tileX = 0; tileX < mapWidth; tileX++) {
+      if (tiles[tileY]![tileX]!.type !== "path") continue;
+      if (isAnchor(tileX, tileY)) continue;
+      if (!reached.has(`${tileX},${tileY}`)) toTerrain(tileX, tileY);
     }
-    walkTo(spawn.x, spawn.y, arcX, arcTop, 1);
-    walkTo(arcX, arcTop, arcX, arcBottom, 1);
-    walkTo(arcX, arcTop, arcX + 2, arcTop, 1);
-    walkTo(arcX, arcBottom, arcX + 2, arcBottom, 1);
-  } else {
-    // Base sits at the south edge; the triangle apex points north.
-    const apronDepth = Math.max(4, Math.min(Math.floor(mapHeight * 0.3), base.y - 1));
-    const apexY = base.y - apronDepth;
-    const baseCol = base.x;
-    const maxHalf = Math.max(3, Math.floor(mapWidth * 0.3));
-    // Triangle apron: rows from apex (1 wide) widening to the base row.
-    for (let step = 0; step <= apronDepth; step++) {
-      const rowY = apexY + step;
-      const half = Math.max(0, Math.floor((maxHalf * step) / apronDepth));
-      for (let deltaX = -half; deltaX <= half; deltaX++) {
-        const inside = step === 0 && deltaX === 0;
-        if (inside) paintPath(baseCol + deltaX, rowY);
-        else paintTerrain(baseCol + deltaX, rowY, 2 + Math.floor(rng() * 2));
-      }
-    }
-    // Notch entry through the apex.
-    paintPath(baseCol, apexY);
-    // Rectangular staging area north of the apex, full apron width, clamped so
-    // columns never leave the board.
-    const stagingDepth = Math.max(4, Math.floor(mapHeight * 0.2));
-    const stagingNorth = Math.max(1, apexY - stagingDepth);
-    const stagingWest = Math.max(1, baseCol - maxHalf);
-    const stagingEast = Math.min(mapWidth - 2, baseCol + maxHalf);
-    // The apex column between staging and apron is the single ground entrance.
-    for (let rowY = stagingNorth; rowY <= apexY; rowY++) paintPath(baseCol, rowY);
-    for (let rowY = stagingNorth; rowY < apexY; rowY++) {
-      for (let rowX = stagingWest; rowX <= stagingEast; rowX++) paintPath(rowX, rowY);
-    }
-    walkTo(baseCol, stagingNorth, baseCol, apexY);
-    // Arc: from the north spawn around the west/east flanks into the staging sides.
-    // The arc runs at/above the staging north edge and its legs clamp to the
-    // staging side columns, so the detour hugs the staging area instead of
-    // wandering to the map's far side. The legs dock onto the staging sides one
-    // row below the arc so staging↔arc connectivity survives the spawn inset.
-    const arcY = stagingNorth;
-    const arcLeft = stagingWest;
-    const arcRight = stagingEast;
-    if (variantWallArc) {
-      for (let colX = arcLeft; colX <= arcRight; colX++) paintTerrain(colX, arcY, 4);
-      for (let colX = arcLeft; colX <= arcRight; colX++) paintPath(colX, arcY - 1 >= 1 ? arcY - 1 : arcY + 1);
-    }
-    walkTo(spawn.x, spawn.y, arcLeft, arcY, 1);
-    walkTo(arcLeft, arcY, arcRight, arcY, 1);
-    walkTo(arcRight, arcY, arcRight, arcY + 2, 1);
-    walkTo(arcLeft, arcY, arcLeft, arcY + 2, 1);
   }
 }
-function carveOpenAreaAt(
+
+interface TileRect {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+interface RailSpan {
+  mainStart: number;
+  mainEnd: number;
+  perp: number;
+  foldIndex: number;
+}
+
+interface FoldedCorridorResult {
+  rungMains: number[];
+  rails: RailSpan[];
+}
+
+interface PerpBand {
+  low: number;
+  high: number;
+}
+
+interface WideRail {
+  foldIndex: number;
+  length: number;
+}
+
+interface BastionIsland {
+  frontMain: number;
+  islandMainStart: number;
+  islandMainEnd: number;
+  backMain: number;
+  approachEnd: number;
+  perpStart: number;
+  perpEnd: number;
+}
+
+function rectContains(rect: TileRect, tileX: number, tileY: number): boolean {
+  return tileX >= rect.minX && tileX <= rect.maxX && tileY >= rect.minY && tileY <= rect.maxY;
+}
+
+function axisPoint(isLandscape: boolean, main: number, perp: number): Point {
+  return isLandscape ? { x: main, y: perp } : { x: perp, y: main };
+}
+
+function paintPathDisk(
   tiles: Tile[][],
-  center: Point,
-  openAreaHeight: number,
-  openAreaWidth: number,
-  shapeIndex: number,
-  isLandscape: boolean = false,
-) {
-  const halfW = Math.floor(openAreaWidth / 2);
-  const W = tiles[0]!.length;
-  const H = tiles.length;
-
-  if (isLandscape) {
-    const leftEdge = center.x - openAreaHeight;
-    for (let cx = Math.max(0, leftEdge); cx <= Math.min(W - 1, center.x + openAreaHeight); cx++) {
-      for (let cy = Math.max(0, center.y - halfW); cy <= Math.min(H - 1, center.y + halfW); cy++) {
-        const dx = cx - center.x;
-        const dy = cy - center.y;
-        let inside = false;
-
-        switch (shapeIndex) {
-          case 0:
-            inside = Math.abs(dx) <= openAreaHeight && Math.abs(dy) <= halfW;
-            break;
-          case 1:
-            if (openAreaHeight > 0 && halfW > 0)
-              inside = (dx * dx) / (openAreaHeight * openAreaHeight) + (dy * dy) / (halfW * halfW) <= 1;
-            break;
-          case 2:
-            if (openAreaHeight > 0 && halfW > 0) inside = Math.abs(dx) / openAreaHeight + Math.abs(dy) / halfW <= 1;
-            break;
-          case 3: {
-            const distFromCenter = Math.abs(dx);
-            const rowMaxHalfW = Math.floor((halfW * (openAreaHeight - distFromCenter)) / (openAreaHeight || 1));
-            inside = Math.abs(dy) <= Math.max(0, rowMaxHalfW);
-            break;
-          }
-          default:
-            inside = Math.abs(dx) <= openAreaHeight && Math.abs(dy) <= halfW;
-            break;
-        }
-
-        if (inside && tiles[cy]![cx]!.type !== "base") {
-          tiles[cy]![cx]!.type = "path";
-          tiles[cy]![cx]!.height = 1;
-        }
-      }
-    }
-  } else {
-    const startY = Math.max(0, center.y - openAreaHeight);
-    const endY = Math.min(H - 1, center.y + openAreaHeight);
-
-    for (let cy = startY; cy <= endY; cy++) {
-      for (let cx = Math.max(0, center.x - halfW); cx <= Math.min(W - 1, center.x + halfW); cx++) {
-        const dx = cx - center.x;
-        const dy = cy - center.y;
-        let inside = false;
-
-        switch (shapeIndex) {
-          case 0:
-            inside = Math.abs(dx) <= halfW && Math.abs(dy) <= openAreaHeight;
-            break;
-          case 1:
-            if (halfW > 0 && openAreaHeight > 0)
-              inside = (dx * dx) / (halfW * halfW) + (dy * dy) / (openAreaHeight * openAreaHeight) <= 1;
-            break;
-          case 2:
-            if (halfW > 0 && openAreaHeight > 0) inside = Math.abs(dx) / halfW + Math.abs(dy) / openAreaHeight <= 1;
-            break;
-          case 3: {
-            const distFromCenter = Math.abs(dy);
-            const rowMaxHalfW = Math.floor((halfW * (openAreaHeight - distFromCenter)) / (openAreaHeight || 1));
-            inside = Math.abs(dx) <= Math.max(0, rowMaxHalfW);
-            break;
-          }
-          default:
-            inside = Math.abs(dx) <= halfW && Math.abs(dy) <= openAreaHeight;
-            break;
-        }
-
-        if (inside && tiles[cy]![cx]!.type !== "base") {
-          tiles[cy]![cx]!.type = "path";
-          tiles[cy]![cx]!.height = 1;
-        }
-      }
+  centerX: number,
+  centerY: number,
+  pathWidth: number,
+  reserved: TileRect | null,
+): void {
+  const mapWidth = tiles[0]!.length;
+  const mapHeight = tiles.length;
+  const halfExtent = Math.floor(pathWidth / 2);
+  for (let deltaY = -halfExtent; deltaY <= halfExtent; deltaY++) {
+    for (let deltaX = -halfExtent; deltaX <= halfExtent; deltaX++) {
+      const tileX = centerX + deltaX;
+      const tileY = centerY + deltaY;
+      if (tileX < 0 || tileY < 0 || tileX >= mapWidth || tileY >= mapHeight) continue;
+      if (tiles[tileY]![tileX]!.type === "base") continue;
+      if (reserved && rectContains(reserved, tileX, tileY)) continue;
+      tiles[tileY]![tileX]!.type = "path";
+      tiles[tileY]![tileX]!.height = 1;
     }
   }
 }
 
-// Paints a terrain ridge line that blocks low flyers: everything above
-// `flyingHeight` is untraversable for flyer (2) / aegis (3) but open to jet (5).
-// Towers built on the ridge (+1 effective height) gate even jets, which keeps
-// the ridge tactically live after the player builds on it.
-function paintRidge(
+function paintTerrainTile(tiles: Tile[][], tileX: number, tileY: number, heightValue: number): void {
+  const mapWidth = tiles[0]!.length;
+  const mapHeight = tiles.length;
+  if (tileX < 0 || tileY < 0 || tileX >= mapWidth || tileY >= mapHeight) return;
+  if (tiles[tileY]![tileX]!.type === "base") return;
+  tiles[tileY]![tileX]!.type = "terrain";
+  tiles[tileY]![tileX]!.height = heightValue;
+}
+
+function reservedFromMain(isLandscape: boolean, mainMin: number, mapWidth: number, mapHeight: number): TileRect {
+  if (isLandscape) return { minX: mainMin, minY: 0, maxX: mapWidth - 1, maxY: mapHeight - 1 };
+  return { minX: 0, minY: mainMin, maxX: mapWidth - 1, maxY: mapHeight - 1 };
+}
+
+// Folds alternate between the perp edges, then a width-1 run enters `to`.
+// `advance` is the main-axis distance between rung centers. With a corridor half-extent H the
+// interior gap is advance-2H-1, so the rungs cannot merge into one room. gateRun 3 puts the
+// width-1 alignment on baseMain-3: a wide disk there cannot reach the center collar tiles.
+function carveFoldedCorridor(
   tiles: Tile[][],
   from: Point,
-  nextWaypoint: Point,
-  heightValue: number,
-  gapCenter: Point | null,
-  gapRadius: number,
-) {
-  let curX = from.x;
-  let curY = from.y;
-  for (;;) {
-    const inGap = gapCenter !== null && Math.hypot(curX - gapCenter.x, curY - gapCenter.y) <= gapRadius;
-    if (
-      !inGap &&
-      curX >= 0 &&
-      curY >= 0 &&
-      curX < tiles[0]!.length &&
-      curY < tiles.length &&
-      tiles[curY]![curX]!.type === "terrain"
-    ) {
-      tiles[curY]![curX]!.height = heightValue;
+  to: Point,
+  isLandscape: boolean,
+  widthAt: (foldIndex: number) => number,
+  advance: number,
+  firstDirection: number,
+  reserved: TileRect | null,
+  gateRun: number,
+  band: PerpBand | null,
+  wideRail: WideRail | null,
+): FoldedCorridorResult {
+  const mapWidth = tiles[0]!.length;
+  const mapHeight = tiles.length;
+  const mainLimit = isLandscape ? mapWidth : mapHeight;
+  const perpLimit = isLandscape ? mapHeight : mapWidth;
+  const fromMain = isLandscape ? from.x : from.y;
+  const toMain = isLandscape ? to.x : to.y;
+  const toPerp = isLandscape ? to.y : to.x;
+  const mainSign = Math.sign(toMain - fromMain) || 1;
+  const mainAdvance = Math.max(2, advance);
+  const alignMain = toMain - mainSign * Math.max(0, gateRun);
+  let cursorMain = fromMain;
+  let cursorPerp = isLandscape ? from.y : from.x;
+  let direction = firstDirection >= 0 ? 1 : -1;
+  let foldIndex = 0;
+  const rungMains: number[] = [];
+  const rails: RailSpan[] = [];
+
+  const paintDiskAt = (main: number, perp: number, pathWidth: number) => {
+    const halfExtent = Math.floor(pathWidth / 2);
+    const inwardLow = 1 + halfExtent;
+    const inwardHigh = perpLimit - 2 - halfExtent;
+    for (let deltaPerp = -halfExtent; deltaPerp <= halfExtent; deltaPerp++) {
+      for (let deltaMain = -halfExtent; deltaMain <= halfExtent; deltaMain++) {
+        const paintPerp = perp + deltaPerp;
+        // The shoulder past the fold edge is two steps from the inside lane, so it
+        // is wasted path. The disk center itself still paints, including a spawn
+        // that sits on that edge.
+        if (deltaPerp !== 0 && (paintPerp < inwardLow || paintPerp > inwardHigh)) continue;
+        const point = axisPoint(isLandscape, main + deltaMain, paintPerp);
+        if (point.x < 0 || point.y < 0 || point.x >= mapWidth || point.y >= mapHeight) continue;
+        if (tiles[point.y]![point.x]!.type === "base") continue;
+        if (reserved && rectContains(reserved, point.x, point.y)) continue;
+        tiles[point.y]![point.x]!.type = "path";
+        tiles[point.y]![point.x]!.height = 1;
+      }
     }
-    if (curX === nextWaypoint.x && curY === nextWaypoint.y) break;
-    if (curX !== nextWaypoint.x) curX += Math.sign(nextWaypoint.x - curX);
-    else if (curY !== nextWaypoint.y) curY += Math.sign(nextWaypoint.y - curY);
+  };
+  const blockedCenter = (main: number, perp: number, allowDestination: boolean): boolean => {
+    if (allowDestination && main === toMain && perp === toPerp) return false;
+    const point = axisPoint(isLandscape, main, perp);
+    if (point.x < 0 || point.y < 0 || point.x >= mapWidth || point.y >= mapHeight) return true;
+    if (tiles[point.y]![point.x]!.type === "base") return true;
+    if (reserved && rectContains(reserved, point.x, point.y)) return true;
+    return false;
+  };
+  const sweepPerpTo = (targetPerp: number, pathWidth: number) => {
+    const perpStep = Math.sign(targetPerp - cursorPerp);
+    if (perpStep === 0) return;
+    while (cursorPerp !== targetPerp) {
+      paintDiskAt(cursorMain, cursorPerp, pathWidth);
+      cursorPerp += perpStep;
+    }
+    paintDiskAt(cursorMain, cursorPerp, pathWidth);
+  };
+
+  paintDiskAt(cursorMain, cursorPerp, 1);
+
+  while (mainSign * (alignMain - cursorMain) > 0 && cursorMain > 0 && cursorMain < mainLimit - 1) {
+    const remaining = mainSign * (alignMain - cursorMain);
+    if (remaining < mainAdvance) break;
+    const foldWidth = Math.max(1, widthAt(foldIndex));
+    const halfExtent = Math.floor(foldWidth / 2);
+    const boardLow = 1 + halfExtent;
+    const boardHigh = perpLimit - 2 - halfExtent;
+    const perpLow = Math.max(boardLow, band?.low ?? boardLow);
+    const perpHigh = Math.min(boardHigh, band?.high ?? boardHigh);
+    if (perpHigh < perpLow) break;
+
+    const targetPerp = direction > 0 ? perpHigh : perpLow;
+    // A swing that is already on its edge still crosses the band, then returns, so the rung
+    // covers the entry column and the rail stays on the requested edge.
+    if (targetPerp === cursorPerp) {
+      const oppositePerp = direction > 0 ? perpLow : perpHigh;
+      sweepPerpTo(oppositePerp, foldWidth);
+      sweepPerpTo(targetPerp, foldWidth);
+    } else {
+      sweepPerpTo(targetPerp, foldWidth);
+    }
+    rungMains.push(cursorMain);
+
+    const railStart = cursorMain;
+    let advanced = 0;
+    while (advanced < mainAdvance) {
+      const nextMain = cursorMain + mainSign;
+      if (mainSign * (nextMain - alignMain) > 0) break;
+      if (blockedCenter(nextMain, cursorPerp, false)) break;
+      const useWide = wideRail !== null && wideRail.foldIndex === foldIndex && advanced < wideRail.length;
+      const stepWidth = useWide ? Math.max(foldWidth, 3) : foldWidth;
+      cursorMain = nextMain;
+      paintDiskAt(cursorMain, cursorPerp, stepWidth);
+      advanced += 1;
+    }
+    rails.push({ mainStart: railStart, mainEnd: cursorMain, perp: cursorPerp, foldIndex });
+    direction = -direction;
+    foldIndex += 1;
+    if (advanced === 0) break;
   }
+
+  while (mainSign * (alignMain - cursorMain) > 0) {
+    const nextMain = cursorMain + mainSign;
+    if (blockedCenter(nextMain, cursorPerp, false)) break;
+    cursorMain = nextMain;
+    paintDiskAt(cursorMain, cursorPerp, 1);
+  }
+  while (cursorPerp !== toPerp) {
+    const nextPerp = cursorPerp + Math.sign(toPerp - cursorPerp);
+    if (blockedCenter(cursorMain, nextPerp, false)) break;
+    cursorPerp = nextPerp;
+    paintDiskAt(cursorMain, cursorPerp, 1);
+  }
+  while (cursorMain !== toMain) {
+    const nextMain = cursorMain + Math.sign(toMain - cursorMain);
+    if (blockedCenter(nextMain, cursorPerp, true)) break;
+    cursorMain = nextMain;
+    paintDiskAt(cursorMain, cursorPerp, 1);
+  }
+  if (cursorMain === toMain && cursorPerp === toPerp) paintDiskAt(toMain, toPerp, 1);
+  return { rungMains, rails };
+}
+
+function carveRing(tiles: Tile[][], island: TileRect, interiorHeight: number): void {
+  const mapWidth = tiles[0]!.length;
+  const mapHeight = tiles.length;
+  const outerMinX = island.minX - 1;
+  const outerMaxX = island.maxX + 1;
+  const outerMinY = island.minY - 1;
+  const outerMaxY = island.maxY + 1;
+  for (let tileY = outerMinY; tileY <= outerMaxY; tileY++) {
+    for (let tileX = outerMinX; tileX <= outerMaxX; tileX++) {
+      const onBorder = tileX === outerMinX || tileX === outerMaxX || tileY === outerMinY || tileY === outerMaxY;
+      if (!onBorder) continue;
+      if (tileX < 0 || tileY < 0 || tileX >= mapWidth || tileY >= mapHeight) continue;
+      if (tiles[tileY]![tileX]!.type === "base") continue;
+      tiles[tileY]![tileX]!.type = "path";
+      tiles[tileY]![tileX]!.height = 1;
+    }
+  }
+  for (let tileY = island.minY; tileY <= island.maxY; tileY++) {
+    for (let tileX = island.minX; tileX <= island.maxX; tileX++) paintTerrainTile(tiles, tileX, tileY, interiorHeight);
+  }
+}
+
+function punchRailIsland(tiles: Tile[][], rail: RailSpan, isLandscape: boolean, interiorHeight: number): boolean {
+  if (Math.abs(rail.mainEnd - rail.mainStart) < 6) return false;
+  const mapWidth = tiles[0]!.length;
+  const mapHeight = tiles.length;
+  const mainLimit = isLandscape ? mapWidth : mapHeight;
+  const perpLimit = isLandscape ? mapHeight : mapWidth;
+  const centerMain = Math.round((rail.mainStart + rail.mainEnd) / 2);
+  if (centerMain - 2 < 0 || centerMain + 2 >= mainLimit) return false;
+  if (rail.perp - 2 < 0 || rail.perp + 2 >= perpLimit) return false;
+  for (let deltaMain = -2; deltaMain <= 2; deltaMain++) {
+    for (let deltaPerp = -2; deltaPerp <= 2; deltaPerp++) {
+      const point = axisPoint(isLandscape, centerMain + deltaMain, rail.perp + deltaPerp);
+      const inner = Math.abs(deltaMain) <= 1 && Math.abs(deltaPerp) <= 1;
+      if (inner) paintTerrainTile(tiles, point.x, point.y, interiorHeight);
+      else paintPathDisk(tiles, point.x, point.y, 1, null);
+    }
+  }
+  return true;
+}
+
+function findBandEdgePath(
+  tiles: Tile[][],
+  isLandscape: boolean,
+  main: number,
+  perpStart: number,
+  perpEnd: number,
+  preferHigh: boolean,
+): Point | null {
+  const mapWidth = tiles[0]!.length;
+  const mapHeight = tiles.length;
+  const low = Math.min(perpStart, perpEnd);
+  const high = Math.max(perpStart, perpEnd);
+  let found: Point | null = null;
+  for (let perp = low; perp <= high; perp++) {
+    const point = axisPoint(isLandscape, main, perp);
+    if (point.x < 0 || point.y < 0 || point.x >= mapWidth || point.y >= mapHeight) continue;
+    const tileType = tiles[point.y]![point.x]!.type;
+    if (tileType !== "path" && tileType !== "spawn") continue;
+    found = point;
+    if (!preferHigh) return point;
+  }
+  return found;
+}
+
+function paintFlyerGapRidge(tiles: Tile[][], isLandscape: boolean, mainValue: number, gapPerp: number): void {
+  const mapWidth = tiles[0]!.length;
+  const mapHeight = tiles.length;
+  const perpLimit = isLandscape ? mapHeight : mapWidth;
+  for (let perp = 0; perp < perpLimit; perp++) {
+    const point = axisPoint(isLandscape, mainValue, perp);
+    if (point.x < 0 || point.y < 0 || point.x >= mapWidth || point.y >= mapHeight) continue;
+    if (tiles[point.y]![point.x]!.type !== "terrain") continue;
+    const inGap = perp === gapPerp || perp === gapPerp + 1;
+    tiles[point.y]![point.x]!.height = inGap ? 1 : 4;
+  }
+}
+
+// Keeps the open collar run that the walk actually reaches and closes every other
+// collar tile. Runs after the 3x3 stamp: the door is outside the stamp, and a
+// later prune only keeps it because base tiles count as walkable.
+function sealBaseCollar(tiles: Tile[][], spawns: Point[], base: Point, sealedHeight: number): void {
+  const mapWidth = tiles[0]!.length;
+  const mapHeight = tiles.length;
+  const sides = new Map<string, Point[]>();
+  const addCollar = (side: string, tileX: number, tileY: number) => {
+    if (tileX < 0 || tileY < 0 || tileX >= mapWidth || tileY >= mapHeight) return;
+    const list = sides.get(side) ?? [];
+    list.push({ x: tileX, y: tileY });
+    sides.set(side, list);
+  };
+  for (let offset = -1; offset <= 1; offset++) {
+    addCollar("west", base.x - 2, base.y + offset);
+    addCollar("east", base.x + 2, base.y + offset);
+    addCollar("north", base.x + offset, base.y - 2);
+    addCollar("south", base.x + offset, base.y + 2);
+  }
+
+  const distance = new Map<string, number>();
+  const queue: Point[] = [];
+  for (const spawn of spawns) {
+    if (spawn.x < 0 || spawn.y < 0 || spawn.x >= mapWidth || spawn.y >= mapHeight) continue;
+    const key = `${spawn.x},${spawn.y}`;
+    if (distance.has(key)) continue;
+    distance.set(key, 0);
+    queue.push({ x: spawn.x, y: spawn.y });
+  }
+  let head = 0;
+  while (head < queue.length) {
+    const current = queue[head]!;
+    head += 1;
+    const currentDistance = distance.get(`${current.x},${current.y}`)!;
+    for (const neighbor of [
+      { x: current.x + 1, y: current.y },
+      { x: current.x - 1, y: current.y },
+      { x: current.x, y: current.y + 1 },
+      { x: current.x, y: current.y - 1 },
+    ]) {
+      if (neighbor.x < 0 || neighbor.y < 0 || neighbor.x >= mapWidth || neighbor.y >= mapHeight) continue;
+      const key = `${neighbor.x},${neighbor.y}`;
+      if (distance.has(key)) continue;
+      const tileType = tiles[neighbor.y]![neighbor.x]!.type;
+      if (tileType !== "path" && tileType !== "spawn" && tileType !== "base") continue;
+      distance.set(key, currentDistance + 1);
+      queue.push(neighbor);
+    }
+  }
+
+  const isOpenCollar = (tile: Point): boolean => {
+    const tileType = tiles[tile.y]![tile.x]!.type;
+    return tileType === "path" || tileType === "spawn";
+  };
+  let gate: Point | null = null;
+  let gateSide = "";
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const [side, sideTiles] of sides) {
+    for (const tile of sideTiles) {
+      if (!isOpenCollar(tile)) continue;
+      const tileDistance = distance.get(`${tile.x},${tile.y}`);
+      if (tileDistance === undefined || tileDistance >= bestDistance) continue;
+      bestDistance = tileDistance;
+      gate = tile;
+      gateSide = side;
+    }
+  }
+  if (!gate) return;
+
+  const sideTiles = sides.get(gateSide) ?? [];
+  const alongX = sideTiles.length > 0 && sideTiles.every((tile) => tile.y === sideTiles[0]!.y);
+  const sorted = [...sideTiles].sort((left, right) => (alongX ? left.x - right.x : left.y - right.y));
+  const coordinate = (tile: Point) => (alongX ? tile.x : tile.y);
+  const gateIndex = sorted.findIndex((tile) => tile.x === gate.x && tile.y === gate.y);
+  const keep = new Set<string>();
+  if (gateIndex >= 0) {
+    keep.add(`${gate.x},${gate.y}`);
+    for (let index = gateIndex - 1; index >= 0; index--) {
+      const tile = sorted[index]!;
+      if (!isOpenCollar(tile)) break;
+      if (coordinate(sorted[index + 1]!) - coordinate(tile) !== 1) break;
+      keep.add(`${tile.x},${tile.y}`);
+    }
+    for (let index = gateIndex + 1; index < sorted.length; index++) {
+      const tile = sorted[index]!;
+      if (!isOpenCollar(tile)) break;
+      if (coordinate(tile) - coordinate(sorted[index - 1]!) !== 1) break;
+      keep.add(`${tile.x},${tile.y}`);
+    }
+  }
+
+  for (const sideTiles of sides.values()) {
+    for (const tile of sideTiles) {
+      if (!isOpenCollar(tile)) continue;
+      if (tiles[tile.y]![tile.x]!.type === "spawn") continue;
+      if (keep.has(`${tile.x},${tile.y}`)) continue;
+      paintTerrainTile(tiles, tile.x, tile.y, sealedHeight);
+    }
+  }
+}
+
+function carveSerpentine(tiles: Tile[][], spawns: Point[], base: Point, rng: () => number, isLandscape: boolean): void {
+  const mapWidth = tiles[0]!.length;
+  const mapHeight = tiles.length;
+  const perpLimit = isLandscape ? mapHeight : mapWidth;
+  const minorAxis = Math.min(mapWidth, mapHeight);
+  const jitter = 1 + Math.floor(rng() * 3);
+  const spawnPerp = Math.max(1, Math.min(perpLimit - 2, jitter));
+  const spawn = axisPoint(isLandscape, 1, spawnPerp);
+  spawns.push(spawn);
+  const wideRail = minorAxis >= 20 ? { foldIndex: 0, length: 4 } : null;
+  carveFoldedCorridor(tiles, spawn, base, isLandscape, () => 1, 4, 1, null, 3, null, wideRail);
+}
+
+function carveEdgeFold(
+  tiles: Tile[][],
+  spawns: Point[],
+  base: Point,
+  rng: () => number,
+  isLandscape: boolean,
+  widthAt: (foldIndex: number) => number,
+  advance: number,
+): void {
+  const perpLimit = isLandscape ? tiles.length : tiles[0]!.length;
+  const startOnHighEdge = rng() > 0.5;
+  const spawnPerp = startOnHighEdge ? Math.max(1, perpLimit - 2) : 1;
+  const spawn = axisPoint(isLandscape, 1, spawnPerp);
+  spawns.push(spawn);
+  carveFoldedCorridor(tiles, spawn, base, isLandscape, widthAt, advance, startOnHighEdge ? -1 : 1, null, 3, null, null);
+}
+
+function carveBattlefield(
+  tiles: Tile[][],
+  spawns: Point[],
+  base: Point,
+  rng: () => number,
+  isLandscape: boolean,
+): void {
+  carveEdgeFold(tiles, spawns, base, rng, isLandscape, (foldIndex) => (foldIndex % 2 === 0 ? 3 : 1), 5);
+}
+
+function carveCanyon(tiles: Tile[][], spawns: Point[], base: Point, rng: () => number, isLandscape: boolean): void {
+  carveEdgeFold(tiles, spawns, base, rng, isLandscape, (foldIndex) => (foldIndex % 2 === 0 ? 3 : 1), 4);
+}
+
+function carveOpen(tiles: Tile[][], spawns: Point[], base: Point, rng: () => number, isLandscape: boolean): void {
+  const mapWidth = tiles[0]!.length;
+  const mapHeight = tiles.length;
+  const perpLimit = isLandscape ? mapHeight : mapWidth;
+  const startOnHighEdge = rng() > 0.5;
+  const islandHeight = rng() > 0.5 ? 3 : 2;
+  const gapPerp = Math.min(Math.floor(rng() * Math.max(1, perpLimit - 1)), Math.max(0, perpLimit - 2));
+  const spawnPerp = startOnHighEdge ? Math.max(1, perpLimit - 2) : 1;
+  const spawn = axisPoint(isLandscape, 1, spawnPerp);
+  spawns.push(spawn);
+  const carved = carveFoldedCorridor(
+    tiles,
+    spawn,
+    base,
+    isLandscape,
+    () => 3,
+    6,
+    startOnHighEdge ? -1 : 1,
+    null,
+    3,
+    null,
+    null,
+  );
+  const mainLimit = isLandscape ? mapWidth : mapHeight;
+  const boardMid = (mainLimit - 1) / 2;
+  const candidates = carved.rails
+    .filter((rail) => Math.abs(rail.mainEnd - rail.mainStart) >= 6)
+    .sort((left, right) => {
+      const leftDistance = Math.abs((left.mainStart + left.mainEnd) / 2 - boardMid);
+      const rightDistance = Math.abs((right.mainStart + right.mainEnd) / 2 - boardMid);
+      if (leftDistance !== rightDistance) return leftDistance - rightDistance;
+      return left.foldIndex - right.foldIndex;
+    });
+  for (const rail of candidates) {
+    if (punchRailIsland(tiles, rail, isLandscape, islandHeight)) break;
+  }
+  const firstRung = carved.rungMains[0];
+  // Half of a width-3 rung is 1, so the first all-terrain column beside it is rung+2.
+  if (firstRung !== undefined) paintFlyerGapRidge(tiles, isLandscape, firstRung + 2, gapPerp);
+}
+
+function carveSplit(tiles: Tile[][], spawns: Point[], base: Point, rng: () => number, isLandscape: boolean): void {
+  const mapWidth = tiles[0]!.length;
+  const mapHeight = tiles.length;
+  const crossLimit = isLandscape ? mapHeight : mapWidth;
+  const mid = Math.floor(crossLimit / 2);
+  const lowBand = { low: 1, high: Math.max(1, mid - 2) };
+  const highBand = { low: Math.min(Math.max(1, crossLimit - 2), mid + 2), high: Math.max(1, crossLimit - 2) };
+  const inward = rng() > 0.5;
+  const lowSpawn = axisPoint(isLandscape, 1, 1);
+  const highSpawn = axisPoint(isLandscape, 1, Math.max(1, crossLimit - 2));
+  spawns.push(lowSpawn, highSpawn);
+  const lowDirection = inward ? 1 : -1;
+  const lowCarved = carveFoldedCorridor(
+    tiles,
+    lowSpawn,
+    base,
+    isLandscape,
+    () => 1,
+    4,
+    lowDirection,
+    null,
+    3,
+    lowBand,
+    null,
+  );
+  const highCarved = carveFoldedCorridor(
+    tiles,
+    highSpawn,
+    base,
+    isLandscape,
+    () => 1,
+    4,
+    -lowDirection,
+    null,
+    3,
+    highBand,
+    null,
+  );
+  const sharedMains = lowCarved.rungMains.filter((main) => highCarved.rungMains.includes(main));
+  if (sharedMains.length === 0) return;
+  const linkMain = sharedMains[Math.floor((sharedMains.length - 1) / 2)]!;
+  const lowJoin = findBandEdgePath(tiles, isLandscape, linkMain, lowBand.low, lowBand.high, true);
+  const highJoin = findBandEdgePath(tiles, isLandscape, linkMain, highBand.low, highBand.high, false);
+  if (!lowJoin || !highJoin) return;
+  carveWidePath(tiles, lowJoin, highJoin, 1, isLandscape);
+}
+
+// Three terrain tiles between the lanes so a tower on the center is in basic range of both.
+// Arm is symmetric, and the ring stays inside [1, crossLimit-2].
+function planBastionIsland(
+  baseMain: number,
+  basePerp: number,
+  crossLimit: number,
+  thickness: number,
+): BastionIsland | null {
+  const frontMain = baseMain - 5;
+  const islandMainEnd = frontMain - 1;
+  const islandMainStart = islandMainEnd - (thickness - 1);
+  const backMain = islandMainStart - 1;
+  const approachEnd = backMain - 2;
+  const crossArm = Math.min(basePerp - 2, crossLimit - 3 - basePerp);
+  if (crossArm < 1) return null;
+  if (backMain < 2 || approachEnd < 1 || islandMainStart < 1 || frontMain < 2) return null;
+  return {
+    frontMain,
+    islandMainStart,
+    islandMainEnd,
+    backMain,
+    approachEnd,
+    perpStart: basePerp - crossArm,
+    perpEnd: basePerp + crossArm,
+  };
+}
+
+function carveBastion(tiles: Tile[][], spawns: Point[], base: Point, rng: () => number, isLandscape: boolean): void {
+  const mapWidth = tiles[0]!.length;
+  const mapHeight = tiles.length;
+  const crossLimit = isLandscape ? mapHeight : mapWidth;
+  const baseMain = isLandscape ? base.x : base.y;
+  const basePerp = isLandscape ? base.y : base.x;
+  const islandHeight = rng() > 0.5 ? 3 : 2;
+  const firstDirection = rng() > 0.5 ? 1 : -1;
+  const apronMain0 = baseMain - 4;
+  for (let perp = 0; perp < crossLimit; perp++) {
+    for (let main = apronMain0; main <= apronMain0 + 2; main++) {
+      const point = axisPoint(isLandscape, main, perp);
+      paintTerrainTile(tiles, point.x, point.y, 4);
+    }
+  }
+  for (let deltaMain = -1; deltaMain <= 1; deltaMain++) {
+    for (let deltaPerp = -1; deltaPerp <= 1; deltaPerp++) {
+      const point = axisPoint(isLandscape, baseMain + deltaMain, basePerp + deltaPerp);
+      paintTerrainTile(tiles, point.x, point.y, 4);
+    }
+  }
+
+  const spawnPerp = Math.max(1, Math.min(crossLimit - 2, basePerp));
+  const spawn = axisPoint(isLandscape, 1, spawnPerp);
+  spawns.push(spawn);
+  const island =
+    planBastionIsland(baseMain, basePerp, crossLimit, 3) ?? planBastionIsland(baseMain, basePerp, crossLimit, 1);
+  if (!island) {
+    const approachMain = Math.max(1, apronMain0 - 1);
+    const reserved = reservedFromMain(isLandscape, apronMain0, mapWidth, mapHeight);
+    carveFoldedCorridor(
+      tiles,
+      spawn,
+      axisPoint(isLandscape, approachMain, basePerp),
+      isLandscape,
+      () => 1,
+      4,
+      firstDirection,
+      reserved,
+      0,
+      null,
+      null,
+    );
+    carveWidePath(tiles, axisPoint(isLandscape, approachMain, basePerp), base, 1, isLandscape);
+    return;
+  }
+
+  // Reserve the back lane's spawn side so the folds cannot bore the island or the apron.
+  // The dock itself is one tile, painted after the fold stops.
+  const reserved = reservedFromMain(isLandscape, island.backMain - 1, mapWidth, mapHeight);
+  carveFoldedCorridor(
+    tiles,
+    spawn,
+    axisPoint(isLandscape, island.approachEnd, basePerp),
+    isLandscape,
+    () => 1,
+    4,
+    firstDirection,
+    reserved,
+    0,
+    null,
+    null,
+  );
+  carveWidePath(
+    tiles,
+    axisPoint(isLandscape, island.approachEnd, basePerp),
+    axisPoint(isLandscape, island.backMain, basePerp),
+    1,
+    isLandscape,
+  );
+  const islandRect: TileRect = isLandscape
+    ? { minX: island.islandMainStart, maxX: island.islandMainEnd, minY: island.perpStart, maxY: island.perpEnd }
+    : { minX: island.perpStart, maxX: island.perpEnd, minY: island.islandMainStart, maxY: island.islandMainEnd };
+  carveRing(tiles, islandRect, islandHeight);
+  carveWidePath(tiles, axisPoint(isLandscape, island.frontMain, basePerp), base, 1, isLandscape);
 }
 
 // Generated maps are cached per MAP_LEVELS index. The pack is immutable content
@@ -641,314 +921,55 @@ export function generateRandomMap(
   const spawns: Point[] = [];
 
   switch (style) {
-    case "battlefield": {
-      if (isLandscape) {
-        const spawnY = Math.floor(height * (0.15 + rng() * 0.7));
-        const spawn = { x: 1, y: spawnY };
-        spawns.push(spawn);
-        // Pitch 2-3 keeps every row pair covered; wider gaps left dead terrain.
-        const rowSpacing = 2 + Math.floor(rng() * 2);
-        const startDirection = rng() > 0.5 ? 1 : -1;
-
-        const waypoints: Point[] = [spawn];
-        let curX = 1;
-        let direction = startDirection;
-
-        curX += rowSpacing;
-        waypoints.push({ x: curX, y: spawnY });
-
-        while (curX + rowSpacing <= base.x) {
-          direction = -direction;
-          const edgeMargin = 0.1 + rng() * 0.15;
-          const targetY = direction > 0 ? height - Math.floor(height * edgeMargin) : Math.floor(height * edgeMargin);
-          waypoints.push({ x: curX, y: targetY });
-          waypoints.push({ x: curX + rowSpacing, y: targetY });
-          curX += rowSpacing;
-        }
-
-        waypoints.push({ x: curX, y: Math.floor(height / 2) });
-        waypoints.push({ x: base.x, y: Math.floor(height / 2) });
-
-        const segmentCount = waypoints.length - 1;
-        const pathWidths: number[] = [];
-        for (let i = 0; i < segmentCount; i++) {
-          const r = rng();
-          if (r > 0.8) pathWidths.push(3);
-          else if (r > 0.45) pathWidths.push(2);
-          else pathWidths.push(1);
-        }
-
-        for (let i = 0; i < waypoints.length - 1; i++) {
-          const from = waypoints[i]!;
-          const nextWaypoint = waypoints[i + 1]!;
-          const pathWidth = pathWidths[i] || 2;
-          let curX = from.x;
-          let curY = from.y;
-          while (curX !== nextWaypoint.x || curY !== nextWaypoint.y) {
-            for (let deltaY = -Math.floor(pathWidth / 2); deltaY <= Math.floor(pathWidth / 2); deltaY++) {
-              for (let deltaX = -Math.floor(pathWidth / 2); deltaX <= Math.floor(pathWidth / 2); deltaX++) {
-                const neighborX = curX + deltaX;
-                const neighborY = curY + deltaY;
-                if (neighborX >= 0 && neighborX < width && neighborY >= 0 && neighborY < height) {
-                  if (tiles[neighborY]![neighborX]!.type !== "base") {
-                    tiles[neighborY]![neighborX]!.type = "path";
-                    tiles[neighborY]![neighborX]!.height = 1;
-                  }
-                }
-              }
-            }
-            if (curX !== nextWaypoint.x) curX += Math.sign(nextWaypoint.x - curX);
-            if (curY !== nextWaypoint.y) curY += Math.sign(nextWaypoint.y - curY);
-          }
-
-          const isHorizontal = from.x === nextWaypoint.x;
-          if (isHorizontal && rng() > 0.6) {
-            const openAreaHeight = 3 + Math.floor(rng() * 4);
-            const openAreaWidth = 3 + Math.floor(rng() * 4);
-            const shapeIndex = Math.floor(rng() * 4);
-            carveOpenAreaAt(
-              tiles,
-              { x: nextWaypoint.x, y: nextWaypoint.y },
-              openAreaWidth,
-              openAreaHeight,
-              shapeIndex,
-              true,
-            );
-          }
-        }
-      } else {
-        const spawnX = Math.floor(width * (0.15 + rng() * 0.7));
-        const spawn = { x: spawnX, y: 1 };
-        spawns.push(spawn);
-        // Pitch 2-3 keeps every row pair covered; wider gaps left dead terrain.
-        const rowSpacing = 2 + Math.floor(rng() * 2);
-        const startDirection = rng() > 0.5 ? 1 : -1;
-
-        const waypoints: Point[] = [spawn];
-        let curY = 1;
-        let direction = startDirection;
-
-        curY += rowSpacing;
-        waypoints.push({ x: spawnX, y: curY });
-
-        while (curY + rowSpacing <= base.y) {
-          direction = -direction;
-          const edgeMargin = 0.1 + rng() * 0.15;
-          const targetX = direction > 0 ? width - Math.floor(width * edgeMargin) : Math.floor(width * edgeMargin);
-          waypoints.push({ x: targetX, y: curY });
-          waypoints.push({ x: targetX, y: curY + rowSpacing });
-          curY += rowSpacing;
-        }
-
-        waypoints.push({ x: Math.floor(width / 2), y: curY });
-        waypoints.push({ x: Math.floor(width / 2), y: base.y });
-
-        const segmentCount = waypoints.length - 1;
-        const pathWidths: number[] = [];
-        for (let i = 0; i < segmentCount; i++) {
-          const r = rng();
-          if (r > 0.8) pathWidths.push(3);
-          else if (r > 0.45) pathWidths.push(2);
-          else pathWidths.push(1);
-        }
-
-        for (let i = 0; i < waypoints.length - 1; i++) {
-          const from = waypoints[i]!;
-          const nextWaypoint = waypoints[i + 1]!;
-          const pathWidth = pathWidths[i] || 2;
-          let curX = from.x;
-          let curY = from.y;
-          while (curX !== nextWaypoint.x || curY !== nextWaypoint.y) {
-            for (let deltaY = -Math.floor(pathWidth / 2); deltaY <= Math.floor(pathWidth / 2); deltaY++) {
-              for (let deltaX = -Math.floor(pathWidth / 2); deltaX <= Math.floor(pathWidth / 2); deltaX++) {
-                const neighborX = curX + deltaX;
-                const neighborY = curY + deltaY;
-                if (neighborX >= 0 && neighborX < width && neighborY >= 0 && neighborY < height) {
-                  if (tiles[neighborY]![neighborX]!.type !== "base") {
-                    tiles[neighborY]![neighborX]!.type = "path";
-                    tiles[neighborY]![neighborX]!.height = 1;
-                  }
-                }
-              }
-            }
-            if (curX !== nextWaypoint.x) curX += Math.sign(nextWaypoint.x - curX);
-            if (curY !== nextWaypoint.y) curY += Math.sign(nextWaypoint.y - curY);
-          }
-
-          const isHorizontal = from.y === nextWaypoint.y;
-          if (isHorizontal && rng() > 0.6) {
-            const openAreaHeight = 3 + Math.floor(rng() * 4);
-            const openAreaWidth = 3 + Math.floor(rng() * 4);
-            const shapeIndex = Math.floor(rng() * 4);
-            carveOpenAreaAt(tiles, { x: nextWaypoint.x, y: nextWaypoint.y }, openAreaHeight, openAreaWidth, shapeIndex);
-          }
-        }
-      }
+    case "serpentine":
+      carveSerpentine(tiles, spawns, base, rng, isLandscape);
       break;
-    }
-    case "open": {
-      // Plaza: a wide main axis plus offset side blobs and a height-gated ridge
-      // so ground and flying routes diverge and the mid-map blobs stage holds.
-      if (isLandscape) {
-        const spawn = { x: 1, y: Math.floor(height / 2) };
-        spawns.push(spawn);
-        const pathWidth = Math.round(rng() * 10) % 2 === 0 ? 3 : 2;
-        carveWidePath(tiles, spawn, base, pathWidth, true);
-        const midX = Math.floor(width * (0.3 + rng() * 0.4));
-        const blobCount = width >= 30 || height >= 30 ? 2 : 1;
-        for (let blob = 0; blob < blobCount; blob++) {
-          const blobCenter = {
-            x: Math.max(2, Math.min(width - 3, midX + Math.floor(rng() * 7 - 3) + blob * Math.floor(width / 4))),
-            y: Math.floor(height * (0.2 + rng() * 0.6)),
-          };
-          const blobHeight = 3 + Math.floor(rng() * 3);
-          const blobWidth = 4 + Math.floor(rng() * 4);
-          carveOpenAreaAt(tiles, blobCenter, blobHeight, blobWidth, 1 + Math.floor(rng() * 2), true);
-          carveWidePath(tiles, { x: blobCenter.x, y: Math.floor(height / 2) }, blobCenter, 2, true);
-        }
-        const ridgeY = rng() > 0.5 ? Math.floor(height * 0.25) : Math.floor(height * 0.75);
-        const gapX = Math.floor(width * (0.3 + rng() * 0.4));
-        paintRidge(tiles, { x: 1, y: ridgeY }, { x: width - 3, y: ridgeY }, 4, { x: gapX, y: ridgeY }, 1);
-      } else {
-        const spawn = { x: Math.floor(width / 2), y: 1 };
-        spawns.push(spawn);
-        const pathWidth = Math.round(rng() * 10) % 2 === 0 ? 3 : 2;
-        carveWidePath(tiles, spawn, base, pathWidth);
-        const midY = Math.floor(height * (0.3 + rng() * 0.4));
-        const blobCount = width >= 30 || height >= 30 ? 2 : 1;
-        for (let blob = 0; blob < blobCount; blob++) {
-          const blobCenter = {
-            x: Math.floor(width * (0.2 + rng() * 0.6)),
-            y: Math.max(2, Math.min(height - 3, midY + Math.floor(rng() * 7 - 3) + blob * Math.floor(height / 4))),
-          };
-          const blobHeight = 4 + Math.floor(rng() * 4);
-          const blobWidth = 3 + Math.floor(rng() * 3);
-          carveOpenAreaAt(tiles, blobCenter, blobHeight, blobWidth, 1 + Math.floor(rng() * 2));
-          carveWidePath(tiles, { x: Math.floor(width / 2), y: blobCenter.y }, blobCenter, 2);
-        }
-        const ridgeX = rng() > 0.5 ? Math.floor(width * 0.25) : Math.floor(width * 0.75);
-        const gapY = Math.floor(height * (0.3 + rng() * 0.4));
-        paintRidge(tiles, { x: ridgeX, y: 1 }, { x: ridgeX, y: height - 3 }, 4, { x: ridgeX, y: gapY }, 1);
-      }
+    case "battlefield":
+      carveBattlefield(tiles, spawns, base, rng, isLandscape);
       break;
-    }
-    case "canyon": {
-      if (isLandscape) {
-        const spawnY = rng() > 0.5 ? 1 : height - 2;
-        const spawn = { x: 1, y: spawnY };
-        spawns.push(spawn);
-        carveCanyon(tiles, spawn, base, rng, true);
-      } else {
-        const spawnX = rng() > 0.5 ? 1 : width - 2;
-        const spawn = { x: spawnX, y: 1 };
-        spawns.push(spawn);
-        carveCanyon(tiles, spawn, base, rng);
-      }
-      // One side lobe off the canyon's widest stretch: congregation space that
-      // the main walk keeps but flyers can cut across.
-      {
-        let lobeX = Math.floor(width / 2);
-        let lobeY = Math.floor(height / 2);
-        let bestRun = 0;
-        if (isLandscape) {
-          for (let scanX = 2; scanX < width - 2; scanX++) {
-            let run = 0;
-            for (let scanY = 0; scanY < height; scanY++) {
-              if (tiles[scanY]![scanX]!.type === "path") run++;
-            }
-            if (run > bestRun) {
-              bestRun = run;
-              lobeX = scanX;
-              lobeY = Math.floor(height / 2);
-            }
-          }
-        } else {
-          for (let scanY = 2; scanY < height - 2; scanY++) {
-            let run = 0;
-            for (let scanX = 0; scanX < width; scanX++) {
-              if (tiles[scanY]![scanX]!.type === "path") run++;
-            }
-            if (run > bestRun) {
-              bestRun = run;
-              lobeX = Math.floor(width / 2);
-              lobeY = scanY;
-            }
-          }
-        }
-        carveOpenAreaAt(
-          tiles,
-          { x: lobeX, y: lobeY },
-          3 + Math.floor(rng() * 2),
-          3 + Math.floor(rng() * 2),
-          Math.floor(rng() * 3),
-          isLandscape,
-        );
-      }
+    case "canyon":
+      carveCanyon(tiles, spawns, base, rng, isLandscape);
       break;
-    }
-    case "serpentine": {
-      const minorAxis = isLandscape ? height : width;
-      const amplitude = Math.max(3, Math.min(Math.floor(minorAxis * 0.3), Math.floor(minorAxis / 2) - 2));
-      const corridorWidth = minorAxis >= 20 ? 2 : 1;
-      if (isLandscape) {
-        const spawn = { x: Math.floor(width * (0.1 + rng() * 0.3)), y: Math.round(rng() * 2) };
-        spawns.push(spawn);
-        carveSerpentine(tiles, spawn, base, corridorWidth, true, amplitude);
-      } else {
-        const spawn = { x: Math.round(rng() * 2), y: Math.floor(height * (0.1 + rng() * 0.3)) };
-        spawns.push(spawn);
-        carveSerpentine(tiles, spawn, base, corridorWidth, false, amplitude);
-      }
-      // One staging blob at a bend on boards with room for it.
-      if (minorAxis >= 20) {
-        carveOpenAreaAt(
-          tiles,
-          { x: Math.floor(width / 2), y: Math.floor(height / 2) },
-          3,
-          3,
-          Math.floor(rng() * 3),
-          isLandscape,
-        );
-      }
+    case "open":
+      carveOpen(tiles, spawns, base, rng, isLandscape);
       break;
-    }
-    case "split": {
-      if (isLandscape) {
-        const spawn1 = { x: 1, y: 1 };
-        const spawn2 = { x: 1, y: height - 2 };
-        spawns.push(spawn1, spawn2);
-        const wideTop = rng() > 0.5;
-        carveWidePath(tiles, spawn1, base, wideTop ? 2 : 1, true);
-        carveWidePath(tiles, spawn2, base, wideTop ? 1 : 2, true);
-        // Cross-link joining the arms mid-map so the pincer interacts.
-        const linkX = Math.floor(width * (0.4 + rng() * 0.2));
-        carveWidePath(tiles, { x: linkX, y: 1 }, { x: linkX, y: height - 2 }, 1, true);
-      } else {
-        const spawn1 = { x: 1, y: 1 };
-        const spawn2 = { x: width - 2, y: 1 };
-        spawns.push(spawn1, spawn2);
-        const wideLeft = rng() > 0.5;
-        carveWidePath(tiles, spawn1, base, wideLeft ? 2 : 1);
-        carveWidePath(tiles, spawn2, base, wideLeft ? 1 : 2);
-        const linkY = Math.floor(height * (0.4 + rng() * 0.2));
-        carveWidePath(tiles, { x: 1, y: linkY }, { x: width - 2, y: linkY }, 1);
-      }
+    case "split":
+      carveSplit(tiles, spawns, base, rng, isLandscape);
       break;
-    }
-    case "bastion": {
-      const variantWallArc = rng() > 0.5;
-      if (isLandscape) {
-        const spawn = { x: 0, y: Math.floor(height / 2) };
-        spawns.push(spawn);
-        carveInvertedBastion(tiles, base, spawn, rng, true, variantWallArc);
-      } else {
-        const spawn = { x: Math.floor(width / 2), y: 0 };
-        spawns.push(spawn);
-        carveInvertedBastion(tiles, base, spawn, rng, false, variantWallArc);
-      }
+    case "bastion":
+      carveBastion(tiles, spawns, base, rng, isLandscape);
       break;
-    }
   }
+
+  // Inset every spawn one tile from the map border, then walk a spawn that
+  // still sits on terrain back onto the carved corridor. The carve paints the
+  // inset tile, so a spawn already on the corridor stays put. Bastion is
+  // exempt from that center walk: its approach starts on the inset spawn, and
+  // a center walk would pull it off the corridor.
+  for (const spawn of spawns) {
+    spawn.x = Math.max(1, Math.min(width - 2, spawn.x));
+    spawn.y = Math.max(1, Math.min(height - 2, spawn.y));
+    if (style !== "bastion" && tiles[spawn.y]![spawn.x]!.type === "terrain") {
+      const centerX = Math.floor(width / 2);
+      const centerY = Math.floor(height / 2);
+      let guard = 0;
+      while (guard < Math.max(width, height)) {
+        const cell = tiles[spawn.y]![spawn.x]!;
+        if (cell.type !== "terrain") break;
+        if (spawn.x !== centerX) spawn.x += Math.sign(centerX - spawn.x);
+        else if (spawn.y !== centerY) spawn.y += Math.sign(centerY - spawn.y);
+        else break;
+        spawn.x = Math.max(1, Math.min(width - 2, spawn.x));
+        spawn.y = Math.max(1, Math.min(height - 2, spawn.y));
+        guard++;
+      }
+    }
+    tiles[spawn.y]![spawn.x]!.type = "spawn";
+  }
+
+  // First prune, while the base center is still the anchor and the ring is not
+  // base yet. sealBaseCollar runs a second prune after the stamp.
+  pruneDeadEnds(tiles, spawns, base);
 
   for (let deltaY = -1; deltaY <= 1; deltaY++)
     for (let deltaX = -1; deltaX <= 1; deltaX++) {
@@ -961,36 +982,14 @@ export function generateRandomMap(
       // illegal, so the center stays at 1 while the ring keeps its terrain height.
       if (deltaX === 0 && deltaY === 0) cell.height = 1;
     }
-  // Walk the released spawn point back onto the existing carved corridor: step
-  // toward the map center until walkable ground is reached, then stop. The
-  // inset tile and the border tile differ by exactly one row/column, so this
-  // docks the spawn without paving new corridors through terrain.
-  const dockSpawn = (spawn: Point) => {
-    const centerX = Math.floor(width / 2);
-    const centerY = Math.floor(height / 2);
-    let guard = 0;
-    while (guard < Math.max(width, height)) {
-      const cell = tiles[spawn.y]![spawn.x]!;
-      if (cell.type !== "terrain") break;
-      if (spawn.x !== centerX) spawn.x += Math.sign(centerX - spawn.x);
-      else if (spawn.y !== centerY) spawn.y += Math.sign(centerY - spawn.y);
-      else break;
-      spawn.x = Math.max(1, Math.min(width - 2, spawn.x));
-      spawn.y = Math.max(1, Math.min(height - 2, spawn.y));
-      guard++;
-    }
-  };
 
-  // Inset every spawn one tile from the map border. Styles place spawns on
-  // row/column 0 or 1; the carve always passes through the adjacent inset
-  // tile, so docking the spawn back onto walkable ground keeps it on the
-  // corridor without paving new corridors through terrain.
-  for (const spawn of spawns) {
-    spawn.x = Math.max(1, Math.min(width - 2, spawn.x));
-    spawn.y = Math.max(1, Math.min(height - 2, spawn.y));
-    dockSpawn(spawn);
-    tiles[spawn.y]![spawn.x]!.type = "spawn";
-  }
+  // The carve aims a width-1 run at the base center. Anything else it opened on
+  // the collar becomes terrain here, so the 3x3 keeps a single door. Bastion
+  // seals at height 4 so a closed collar tile is not a flyer hole in the apron.
+  // The second prune drops spurs the seal just created. Base tiles stay walkable
+  // or this prune would eat the door.
+  sealBaseCollar(tiles, spawns, base, style === "bastion" ? 4 : 2);
+  pruneDeadEnds(tiles, spawns, base);
 
   return {
     regionId,

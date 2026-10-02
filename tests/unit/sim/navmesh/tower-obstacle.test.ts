@@ -111,7 +111,7 @@ describe("NavMeshBuilder tower obstacles", () => {
 
     // Path-blocking towers are legal gameplay; the obstacle must cut the corridor
     // so enemies path into / attack the tower instead of walking through it.
-    const choke = orderedPath(grid, 0)[3]!;
+    const choke = orderedPath(grid, 0)![3]!;
     expect(builder.addTowerObstacle(choke.x, choke.y)).not.toBeNull();
     expect(builder.findPath(spawnWorld, baseWorld).length).toBe(0);
   });

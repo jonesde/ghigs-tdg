@@ -177,7 +177,7 @@ describe("Enemy", () => {
 
     it("spawns at the first corridor tile (spawn tile center)", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
-      const firstTile = orderedPath(grid, 0)[0]!;
+      const firstTile = orderedPath(grid, 0)![0]!;
       const firstCenter = grid.tileToWorld(firstTile.x, firstTile.y);
       expect(enemy.x).toBeCloseTo(firstCenter.x, 5);
       expect(enemy.y).toBeCloseTo(firstCenter.y, 5);

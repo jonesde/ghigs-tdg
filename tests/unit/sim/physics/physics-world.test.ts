@@ -18,7 +18,7 @@ function dist(a, b) {
 function nearestPathCenter(grid, x, y) {
   let best = null;
   let bestDist = Infinity;
-  const path = orderedPath(grid, 0);
+  const path = orderedPath(grid, 0)!;
   for (const tile of path) {
     const c = grid.tileToWorld(tile.x, tile.y);
     const d = Math.hypot(c.x - x, c.y - y);
@@ -48,7 +48,7 @@ describe("PhysicsWorld — lifecycle & containment (flag OFF, direct constructio
   });
 
   it("keeps two overlapping enemies separated (no enemy-enemy overlap)", () => {
-    const tile = orderedPath(grid, 0)[5];
+    const tile = orderedPath(grid, 0)![5];
     const p = grid.tileToWorld(tile.x, tile.y);
     const e1 = new Enemy("minion", 1, 0, grid, 1);
     const e2 = new Enemy("minion", 1, 0, grid, 1);
@@ -71,7 +71,7 @@ describe("PhysicsWorld — lifecycle & containment (flag OFF, direct constructio
     const baseTile = grid.getBase();
     const baseCenter = grid.tileToWorld(baseTile.x, baseTile.y);
     // Start at a path tile near the base and drive straight at the base center.
-    const path = orderedPath(grid, 0);
+    const path = orderedPath(grid, 0)!;
     const startTile = path[Math.floor(path.length / 2)];
     const start = grid.tileToWorld(startTile.x, startTile.y);
     const enemy = new Enemy("minion", 1, 0, grid, 1);
@@ -99,14 +99,14 @@ describe("PhysicsWorld — lifecycle & containment (flag OFF, direct constructio
   it("blocks enemies with a tower collider (no tower penetration)", () => {
     // Minimal tower-manager-like object: rebuildTowers only reads `.towers`,
     // each entry's tileX/tileY/isGhost/x/y.
-    const towerTile = orderedPath(grid, 0)[5];
+    const towerTile = orderedPath(grid, 0)![5];
     const towerCenter = grid.tileToWorld(towerTile.x, towerTile.y);
     const fakeTowerManager = {
       towers: [{ tileX: towerTile.x, tileY: towerTile.y, isGhost: false, x: towerCenter.x, y: towerCenter.y }],
     };
     physicsWorld.rebuildTowers(fakeTowerManager);
 
-    const enemyStartTile = orderedPath(grid, 0)[10];
+    const enemyStartTile = orderedPath(grid, 0)![10];
     const start = grid.tileToWorld(enemyStartTile.x, enemyStartTile.y);
     const enemy = new Enemy("minion", 1, 0, grid, 1);
     enemy.x = start.x;
@@ -131,7 +131,7 @@ describe("PhysicsWorld — lifecycle & containment (flag OFF, direct constructio
   });
 
   it("contains an enemy inside the corridor under lateral escape velocity", () => {
-    const tile = orderedPath(grid, 0)[5];
+    const tile = orderedPath(grid, 0)![5];
     const center = grid.tileToWorld(tile.x, tile.y);
     const enemy = new Enemy("minion", 1, 0, grid, 1);
     enemy.x = center.x;
@@ -141,7 +141,7 @@ describe("PhysicsWorld — lifecycle & containment (flag OFF, direct constructio
     physicsWorld.addEnemy(enemy);
 
     // Push perpendicular to the local path tangent (away from the corridor).
-    const nextTile = orderedPath(grid, 0)[6];
+    const nextTile = orderedPath(grid, 0)![6];
     const next = grid.tileToWorld(nextTile.x, nextTile.y);
     let tangentX = next.x - center.x;
     let tangentY = next.y - center.y;

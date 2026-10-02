@@ -70,7 +70,7 @@ describe("EnemyManager", () => {
 
     it("spawns at the correct spawn point", () => {
       const enemy = manager.spawn("minion", 1, 0, 1);
-      const firstTile = grid.tileToWorld(orderedPath(grid, 0)[0].x, orderedPath(grid, 0)[0].y);
+      const firstTile = grid.tileToWorld(orderedPath(grid, 0)![0].x, orderedPath(grid, 0)![0].y);
       expect(enemy.x).toBeCloseTo(firstTile.x, 0);
       expect(enemy.y).toBeCloseTo(firstTile.y, 0);
     });

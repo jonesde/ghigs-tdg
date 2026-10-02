@@ -80,7 +80,9 @@ describe("Integration: Single Wave Simulation", () => {
   });
 
   it("a boss on map 0's first corner destroys a firing shotgun tank", () => {
-    const tower = engine.towerManager!.build("shotgunTank", 4, 5, engine.persistState, engine.grid!);
+    // Map 0's corridor runs east on y=1 and turns south at x=10. The tower sits on
+    // that first south tile, so the boss meets its north face in the corner.
+    const tower = engine.towerManager!.build("shotgunTank", 10, 2, engine.persistState, engine.grid!);
     expect(tower).not.toBeNull();
     engine.update(FIXED_DT);
     const boss = engine.enemyManager!.spawn("boss", 1, 0, 1);
@@ -133,7 +135,7 @@ describe("Integration: Tower Placement Flow", () => {
 
   it("path tiles remain buildable (path-blocking towers are allowed)", () => {
     const grid = engine.grid!;
-    const path = orderedPath(grid, 0);
+    const path = orderedPath(grid, 0)!;
     expect(path).not.toBeNull();
     expect(path.length).toBeGreaterThan(2);
     // Interior path tile — may wall the corridor; build must still succeed.

@@ -47,7 +47,7 @@ describe("applyCommandWithStats (Block C parallel wrapper)", () => {
       type: "llm:routeGroup",
       enemyIds: [enemyId, 99999],
       hold: true,
-      holdTile: orderedPath(engine.grid!, 0)[3]!,
+      holdTile: orderedPath(engine.grid!, 0)![3]!,
       waypoints: [],
     });
     expect(stats.mutated).toBe(true);
@@ -117,7 +117,7 @@ describe("applyCommandWithStats (Block C parallel wrapper)", () => {
   it("counts releaseHeld from the pre-apply held set", () => {
     const enemyId = firstEnemyId();
     const enemy = engine.getEnemiesByIds([enemyId])[0]!;
-    enemy.applyRoute([orderedPath(engine.grid!, 0)[3]!], "hold");
+    enemy.applyRoute([orderedPath(engine.grid!, 0)![3]!], "hold");
     const stats = applyCommandWithStats(engine, { commandId: 6, type: "llm:releaseHeld" });
     expect(stats.mutated).toBe(true);
     expect(stats.applied).toBe(1);
