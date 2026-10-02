@@ -47,6 +47,7 @@ describe("MapSelect", () => {
   beforeEach(() => {
     createPinia();
     setActivePinia(createPinia());
+    document.body.innerHTML = "";
   });
 
   it("renders 36 campaign maps and 12 progressive maps", () => {
@@ -168,23 +169,82 @@ describe("MapSelect", () => {
     }
   });
 
-  it("labels the custom map forms Generated Map and Progressive Map", () => {
+  it("hides the custom map forms until a header button opens them", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    expect(wrapper.text()).toContain("Generated Map");
-    expect(wrapper.text()).toContain("Progressive Map");
-    expect(wrapper.text()).toContain("Play Generated Map");
-    expect(wrapper.text()).toContain("Play Progressive Map");
-    expect(wrapper.text()).not.toContain("Random Map");
+    expect(document.body.querySelector(".form-overlay")).toBeNull();
+    const generateButton = wrapper.findAll("button").find((button) => button.text() === "Generate Map");
+    const progressiveButton = wrapper.findAll("button").find((button) => button.text() === "Progressive Run");
+    expect(generateButton).toBeTruthy();
+    expect(progressiveButton).toBeTruthy();
   });
 
-  it("offers base entry counts 1 through 4 in the progressive form", () => {
+  it("opens the generated map dialog from the Generate Map header button", async () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    const options = wrapper.find("#progressive-entries").findAll("option");
-    expect(options.map((option) => option.element.value)).toEqual(["1", "2", "3", "4"]);
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Generate Map")!
+      .trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(document.body.querySelectorAll(".form-overlay").length).toBe(1);
+    expect(document.body.textContent).toContain("Generated Map");
+    expect(document.body.textContent).toContain("Generate a procedural map with custom parameters");
+    expect(document.body.querySelector("#random-seed")).toBeTruthy();
+    expect(document.body.querySelector("#progressive-seed")).toBeNull();
+  });
+
+  it("opens one dialog at a time and closes it from the close button", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Generate Map")!
+      .trigger("click");
+    await wrapper.vm.$nextTick();
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Progressive Run")!
+      .trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(document.body.querySelector("#progressive-seed")).toBeTruthy();
+    expect(document.body.querySelector("#random-seed")).toBeNull();
+    (document.body.querySelector("button.form-close") as HTMLButtonElement).click();
+    await wrapper.vm.$nextTick();
+    expect(document.body.querySelector(".form-overlay")).toBeNull();
+  });
+
+  it("closes the open dialog on Escape", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Progressive Run")!
+      .trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(document.body.querySelector(".form-overlay")).not.toBeNull();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await wrapper.vm.$nextTick();
+    expect(document.body.querySelector(".form-overlay")).toBeNull();
+  });
+
+  it("offers base entry counts 1 through 4 in the progressive form", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Progressive Run")!
+      .trigger("click");
+    await wrapper.vm.$nextTick();
+    const options = (document.body.querySelector("#progressive-entries") as HTMLSelectElement).querySelectorAll(
+      "option",
+    );
+    expect(Array.from(options).map((option) => option.value)).toEqual(["1", "2", "3", "4"]);
   });
 
   it("starts a custom generated map from the form with a pinned seed", async () => {
@@ -192,11 +252,22 @@ describe("MapSelect", () => {
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     await router.replace("/map-select");
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    await wrapper.find("#random-seed").setValue("777");
-    await wrapper.find("#random-level").setValue("4");
-    const playButton = wrapper.findAll("button").find((button) => button.text() === "Play Generated Map");
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Generate Map")!
+      .trigger("click");
+    await wrapper.vm.$nextTick();
+    const seedInput = document.body.querySelector("#random-seed") as HTMLInputElement;
+    seedInput.value = "777";
+    seedInput.dispatchEvent(new Event("input", { bubbles: true }));
+    const levelInput = document.body.querySelector("#random-level") as HTMLInputElement;
+    levelInput.value = "4";
+    levelInput.dispatchEvent(new Event("input", { bubbles: true }));
+    const playButton = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Play Generated Map",
+    );
     expect(playButton).toBeTruthy();
-    await playButton!.trigger("click");
+    playButton!.click();
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(router.currentRoute.value.path).toBe("/game");
     expect(gameStore.mapIndex).toBe(CUSTOM_RANDOM_MAP_INDEX);
@@ -211,13 +282,28 @@ describe("MapSelect", () => {
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     await router.replace("/map-select");
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    await wrapper.find("#progressive-region").setValue("1");
-    await wrapper.find("#progressive-level").setValue("7");
-    await wrapper.find("#progressive-entries").setValue("3");
-    await wrapper.find("#progressive-seed").setValue("424242");
-    const playButton = wrapper.findAll("button").find((button) => button.text() === "Play Progressive Map");
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Progressive Run")!
+      .trigger("click");
+    await wrapper.vm.$nextTick();
+    const regionSelect = document.body.querySelector("#progressive-region") as HTMLSelectElement;
+    regionSelect.value = "1";
+    regionSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    const levelInput = document.body.querySelector("#progressive-level") as HTMLInputElement;
+    levelInput.value = "7";
+    levelInput.dispatchEvent(new Event("input", { bubbles: true }));
+    const entriesSelect = document.body.querySelector("#progressive-entries") as HTMLSelectElement;
+    entriesSelect.value = "3";
+    entriesSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    const seedInput = document.body.querySelector("#progressive-seed") as HTMLInputElement;
+    seedInput.value = "424242";
+    seedInput.dispatchEvent(new Event("input", { bubbles: true }));
+    const playButton = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Play Progressive Map",
+    );
     expect(playButton).toBeTruthy();
-    await playButton!.trigger("click");
+    playButton!.click();
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(router.currentRoute.value.path).toBe("/game");
     expect(gameStore.mapIndex).toBe(CUSTOM_PROGRESSIVE_MAP_INDEX);
@@ -235,8 +321,15 @@ describe("MapSelect", () => {
     persistStore.progressiveMapSeed = null;
     await router.replace("/map-select");
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    const playButton = wrapper.findAll("button").find((button) => button.text() === "Play Progressive Map");
-    await playButton!.trigger("click");
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Progressive Run")!
+      .trigger("click");
+    await wrapper.vm.$nextTick();
+    const playButton = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Play Progressive Map",
+    );
+    playButton!.click();
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(router.currentRoute.value.path).toBe("/game");
     expect(gameStore.map.seed).toBeGreaterThanOrEqual(0);
@@ -247,15 +340,29 @@ describe("MapSelect", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    const progressiveSeedInput = wrapper.find("#progressive-seed");
-    await progressiveSeedInput.setValue("4242");
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Progressive Run")!
+      .trigger("click");
+    await wrapper.vm.$nextTick();
+    const progressiveSeedInput = document.body.querySelector("#progressive-seed") as HTMLInputElement;
+    progressiveSeedInput.value = "4242";
+    progressiveSeedInput.dispatchEvent(new Event("input", { bubbles: true }));
     expect(persistStore.progressiveMapSeed).toBe(4242);
-    await progressiveSeedInput.setValue("");
+    progressiveSeedInput.value = "";
+    progressiveSeedInput.dispatchEvent(new Event("input", { bubbles: true }));
     expect(persistStore.progressiveMapSeed).toBeNull();
-    const randomSeedInput = wrapper.find("#random-seed");
-    await randomSeedInput.setValue("55");
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "Generate Map")!
+      .trigger("click");
+    await wrapper.vm.$nextTick();
+    const randomSeedInput = document.body.querySelector("#random-seed") as HTMLInputElement;
+    randomSeedInput.value = "55";
+    randomSeedInput.dispatchEvent(new Event("input", { bubbles: true }));
     expect(persistStore.randomMapSeed).toBe(55);
-    await randomSeedInput.setValue("");
+    randomSeedInput.value = "";
+    randomSeedInput.dispatchEvent(new Event("input", { bubbles: true }));
     expect(persistStore.randomMapSeed).toBeNull();
   });
 });

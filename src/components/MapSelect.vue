@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import {
   CUSTOM_PROGRESSIVE_MAP_INDEX,
@@ -57,6 +57,37 @@ watch(
     themeStore.loadActive(id).catch((err) => console.error("Failed to load theme:", err));
   },
 );
+
+const showRandomDialog = ref(false);
+const showProgressiveDialog = ref(false);
+
+function openRandomDialog() {
+  showRandomDialog.value = true;
+  showProgressiveDialog.value = false;
+}
+
+function openProgressiveDialog() {
+  showProgressiveDialog.value = true;
+  showRandomDialog.value = false;
+}
+
+function closeRandomDialog() {
+  showRandomDialog.value = false;
+}
+
+function closeProgressiveDialog() {
+  showProgressiveDialog.value = false;
+}
+
+function onWindowKeydown(event: KeyboardEvent) {
+  if (event.key === "Escape") {
+    showRandomDialog.value = false;
+    showProgressiveDialog.value = false;
+  }
+}
+
+onMounted(() => window.addEventListener("keydown", onWindowKeydown));
+onUnmounted(() => window.removeEventListener("keydown", onWindowKeydown));
 
 interface MapEntry {
   name: string;
@@ -299,12 +330,14 @@ function startProgressiveMap() {
     <div class="map-select-header">
       <h2>Select Map</h2>
       <div class="header-controls">
+        <button class="header-btn" @click="openRandomDialog()">Generate Map</button>
+        <button class="header-btn" @click="openProgressiveDialog()">Progressive Run</button>
         <select v-model="persistStore.lastSelectedThemeId" class="theme-select" @change="persistStore.save()">
           <option v-for="theme in themeStore.availableThemes" :key="theme.id" :value="theme.id">
             {{ theme.label }}
           </option>
         </select>
-        <button class="back-btn" @click="$router.push('/')">← Back</button>
+        <button class="header-btn" @click="$router.push('/')">← Back</button>
       </div>
     </div>
 
@@ -359,91 +392,105 @@ function startProgressiveMap() {
       </template>
     </div>
 
-    <div class="random-map-section">
-      <div class="random-map-header">
-        <h3>Generated Map</h3>
-        <span class="random-map-subtitle">Generate a procedural map with custom parameters</span>
+    <Teleport to="body">
+      <div v-if="showRandomDialog" class="form-overlay" @click.self="closeRandomDialog()">
+        <div class="form-dialog">
+          <div class="form-dialog-header">
+            <div class="form-dialog-title">
+              <h3>Generated Map</h3>
+              <span class="random-map-subtitle">Generate a procedural map with custom parameters</span>
+            </div>
+            <button class="form-close" @click="closeRandomDialog()">×</button>
+          </div>
+          <div class="random-map-form">
+            <div class="form-row">
+              <div class="form-field">
+                <label for="random-region">Region</label>
+                <select id="random-region" v-model.number="randomRegion">
+                  <option v-for="name in regionNames" :key="name" :value="regionNames.indexOf(name) + 1">{{ name }}</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label for="random-level">Map Level</label>
+                <input id="random-level" type="number" v-model.number="randomLevel" min="1" max="12" />
+              </div>
+              <div class="form-field">
+                <label for="random-style">Generation Type</label>
+                <select id="random-style" v-model="randomStyle">
+                  <option v-for="s in STYLE_OPTIONS" :key="s" :value="s">{{ s }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-field">
+                <label for="random-seed">Map Gen Seed</label>
+                <input id="random-seed" type="number" v-model.number="randomSeed" min="0" placeholder="Auto" />
+              </div>
+              <div class="form-field">
+                <label for="random-width">Width (tiles)</label>
+                <select id="random-width" v-model.number="randomWidth">
+                  <option v-for="v in DIMENSION_OPTIONS" :key="v" :value="v">{{ v }}</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label for="random-height">Height (tiles)</label>
+                <select id="random-height" v-model.number="randomHeight">
+                  <option v-for="v in DIMENSION_OPTIONS" :key="v" :value="v">{{ v }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="random-play-btn" @click="startRandomMap">Play Generated Map</button>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="random-map-form">
-        <div class="form-row">
-          <div class="form-field">
-            <label for="random-region">Region</label>
-            <select id="random-region" v-model.number="randomRegion">
-              <option v-for="name in regionNames" :key="name" :value="regionNames.indexOf(name) + 1">{{ name }}</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label for="random-level">Map Level</label>
-            <input id="random-level" type="number" v-model.number="randomLevel" min="1" max="12" />
-          </div>
-          <div class="form-field">
-            <label for="random-style">Generation Type</label>
-            <select id="random-style" v-model="randomStyle">
-              <option v-for="s in STYLE_OPTIONS" :key="s" :value="s">{{ s }}</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-field">
-            <label for="random-seed">Map Gen Seed</label>
-            <input id="random-seed" type="number" v-model.number="randomSeed" min="0" placeholder="Auto" />
-          </div>
-          <div class="form-field">
-            <label for="random-width">Width (tiles)</label>
-            <select id="random-width" v-model.number="randomWidth">
-              <option v-for="v in DIMENSION_OPTIONS" :key="v" :value="v">{{ v }}</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label for="random-height">Height (tiles)</label>
-            <select id="random-height" v-model.number="randomHeight">
-              <option v-for="v in DIMENSION_OPTIONS" :key="v" :value="v">{{ v }}</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-actions">
-          <button class="random-play-btn" @click="startRandomMap">Play Generated Map</button>
-        </div>
-      </div>
-    </div>
+    </Teleport>
 
-    <div class="random-map-section">
-      <div class="random-map-header">
-        <h3>Progressive Map</h3>
-        <span class="random-map-subtitle">Grow a progressive map from custom parameters</span>
+    <Teleport to="body">
+      <div v-if="showProgressiveDialog" class="form-overlay" @click.self="closeProgressiveDialog()">
+        <div class="form-dialog">
+          <div class="form-dialog-header">
+            <div class="form-dialog-title">
+              <h3>Progressive Map</h3>
+              <span class="random-map-subtitle">Grow a progressive map from custom parameters</span>
+            </div>
+            <button class="form-close" @click="closeProgressiveDialog()">×</button>
+          </div>
+          <div class="random-map-form">
+            <div class="form-row">
+              <div class="form-field">
+                <label for="progressive-region">Region</label>
+                <select id="progressive-region" v-model.number="progressiveRegion">
+                  <option v-for="name in regionNames" :key="name" :value="regionNames.indexOf(name) + 1">{{ name }}</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label for="progressive-level">Map Level</label>
+                <input id="progressive-level" type="number" v-model.number="progressiveLevel" min="1" max="12" />
+              </div>
+              <div class="form-field">
+                <label for="progressive-entries">Base Entries</label>
+                <select id="progressive-entries" v-model.number="progressiveEntries">
+                  <option v-for="entryCountOption in ENTRY_COUNT_OPTIONS" :key="entryCountOption" :value="entryCountOption">
+                    {{ entryCountOption }}
+                  </option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-field">
+                <label for="progressive-seed">Map Gen Seed</label>
+                <input id="progressive-seed" type="number" v-model.number="progressiveSeed" min="0" placeholder="Auto" />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="random-play-btn" @click="startProgressiveMap">Play Progressive Map</button>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="random-map-form">
-        <div class="form-row">
-          <div class="form-field">
-            <label for="progressive-region">Region</label>
-            <select id="progressive-region" v-model.number="progressiveRegion">
-              <option v-for="name in regionNames" :key="name" :value="regionNames.indexOf(name) + 1">{{ name }}</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label for="progressive-level">Map Level</label>
-            <input id="progressive-level" type="number" v-model.number="progressiveLevel" min="1" max="12" />
-          </div>
-          <div class="form-field">
-            <label for="progressive-entries">Base Entries</label>
-            <select id="progressive-entries" v-model.number="progressiveEntries">
-              <option v-for="entryCountOption in ENTRY_COUNT_OPTIONS" :key="entryCountOption" :value="entryCountOption">
-                {{ entryCountOption }}
-              </option>
-            </select>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-field">
-            <label for="progressive-seed">Map Gen Seed</label>
-            <input id="progressive-seed" type="number" v-model.number="progressiveSeed" min="0" placeholder="Auto" />
-          </div>
-        </div>
-        <div class="form-actions">
-          <button class="random-play-btn" @click="startProgressiveMap">Play Progressive Map</button>
-        </div>
-      </div>
-    </div>
+    </Teleport>
   </div>
 </template>
 
@@ -500,7 +547,7 @@ function startProgressiveMap() {
   font-size: var(--font-2xl);
 }
 
-.back-btn {
+.header-btn {
   padding: 8px 16px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -510,7 +557,7 @@ function startProgressiveMap() {
   font-size: var(--font-md);
 }
 
-.back-btn:hover {
+.header-btn:hover {
   background: rgba(255, 255, 255, 0.15);
 }
 
@@ -605,32 +652,63 @@ function startProgressiveMap() {
   color: var(--color-text-dim);
 }
 
-.random-map-section {
-  margin-top: 24px;
-  padding: 20px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  flex-shrink: 0;
+.form-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
 }
 
-.random-map-header {
+.form-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 20px 24px;
+}
+
+.form-dialog-header {
   display: flex;
-  align-items: baseline;
+  justify-content: space-between;
+  align-items: flex-start;
   gap: 12px;
   margin-bottom: 16px;
 }
 
-.random-map-header h3 {
+.form-dialog-title h3 {
   font-size: var(--font-xl);
   font-weight: 700;
   color: var(--color-accent);
-  margin: 0;
+  margin: 0 0 4px;
 }
 
 .random-map-subtitle {
+  display: block;
   font-size: var(--font-sm);
   color: var(--color-text-dim);
+}
+
+.form-close {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  line-height: 26px;
+  font-size: 18px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.form-close:hover {
+  background: rgba(255, 255, 255, 0.15);
 }
 
 .random-map-form {
