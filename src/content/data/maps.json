@@ -8,7 +8,7 @@
   "serpentineDownCap": 3,
   "mapsPerRegion": 12,
   "levels": [
-    { "width": 12, "height": 12, "regionId": 0, "level": 1, "style": "serpentine", "seed": 10112 },
+    { "width": 15, "height": 12, "regionId": 0, "level": 1, "style": "serpentine", "seed": 10112 },
     { "width": 15, "height": 10, "regionId": 0, "level": 2, "style": "canyon", "seed": 10222 },
     { "width": 10, "height": 15, "regionId": 0, "level": 3, "style": "serpentine", "seed": 10333 },
     { "width": 15, "height": 15, "regionId": 0, "level": 4, "style": "split", "seed": 10444 },

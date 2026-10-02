@@ -237,9 +237,9 @@ export class WaveManager {
         { minWave: 32, threshold: 0.04, type: "aegis" as const },
         { minWave: 22, threshold: 0.05, type: "jet" as const },
         { minWave: 12, threshold: 0.07, type: "flyer" as const },
-        { minWave: 21, threshold: 0.08, type: "healer" as const },
-        { minWave: 11, threshold: 0.1, type: "shielded" as const },
-        { minWave: 8, threshold: 0.1, type: "tank" as const },
+        { minWave: 35, threshold: 0.08, type: "healer" as const },
+        { minWave: 25, threshold: 0.1, type: "shielded" as const },
+        { minWave: 15, threshold: 0.1, type: "tank" as const },
         { minWave: 5, threshold: 0.08, type: "runner" as const },
       ];
       let cumulative = 0;
