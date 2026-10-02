@@ -80,9 +80,9 @@ describe("Integration: Single Wave Simulation", () => {
   });
 
   it("a boss on map 0's first corner destroys a firing shotgun tank", () => {
-    // Map 0's corridor runs east on y=1 and turns south at x=10. The tower sits on
-    // that first south tile, so the boss meets its north face in the corner.
-    const tower = engine.towerManager!.build("shotgunTank", 10, 2, engine.persistState, engine.grid!);
+    // Map 0's corridor runs south on x=1 and turns east at y=10. The tower sits
+    // on that first corner tile, so the boss meets it while turning the corner.
+    const tower = engine.towerManager!.build("shotgunTank", 1, 10, engine.persistState, engine.grid!);
     expect(tower).not.toBeNull();
     engine.update(FIXED_DT);
     const boss = engine.enemyManager!.spawn("boss", 1, 0, 1);

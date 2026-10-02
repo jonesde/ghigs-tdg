@@ -130,10 +130,15 @@ describe("Enemy perimeter surround routing", () => {
     enemyManager.baseTarget = baseTarget;
     const count = 12;
     const enemies: Enemy[] = [];
+    // The real game spaces spawns over time; dumping all 12 in one tick wedges the
+    // pile sideways off the one-tile entry onto flanking terrain, which never
+    // happens in-game. Stagger the spawns so the pile forms the way it does live.
     for (let i = 0; i < count; i++) {
       const enemy = enemyManager.spawn("minion", 1, 0, 1);
       expect(enemy).toBeTruthy();
       enemies.push(enemy!);
+      for (let step = 0; step < 600; step++)
+        stepPhysics(enemyManager, physicsWorld, FIXED_DT, null, null, crowdManager);
     }
 
     for (let step = 0; step < 12000; step++) {

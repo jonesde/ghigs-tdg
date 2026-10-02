@@ -40,7 +40,7 @@ export function selectTestTower(engine: GameEngine, tower: Tower): void {
 // can drive tower navigation through the public snapshot path (Input.ts reads
 // getLatestSnapshot().towers) instead of injecting an internal store field.
 // Throws if a coordinate is not buildable, so callers must use real buildable
-// tiles (the test map grid is 15x15).
+// tiles (callers use real buildable tiles from the loaded map).
 export function buildTestTowers(
   engine: GameEngine,
   specs: Array<{ type?: string; tileX: number; tileY: number }>,

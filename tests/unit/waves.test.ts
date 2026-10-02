@@ -165,25 +165,70 @@ describe("WaveManager", () => {
       expect(types.size).toBeGreaterThan(1);
     });
 
-    it("includes varied enemy types in waves >= 8", () => {
-      const waveManager = makeWaveManager(makeBastionMap());
-      const wave8 = waveManager.generateWave(8);
-      const types = new Set(wave8.map((e) => e.type));
-      expect(types.size).toBeGreaterThan(1);
+    it("keeps tanks behind wave 15 and rolls them from wave 15 on", () => {
+      for (let seed = 0; seed < 8; seed++) {
+        const map = makeMapData({ ...makeBastionMap(), seed: 1000 + seed });
+        for (let waveNumber = 1; waveNumber < 15; waveNumber++) {
+          for (const entry of makeWaveManager(map).generateWave(waveNumber)) {
+            expect(entry.type).not.toBe("tank");
+          }
+        }
+      }
+      let sawTank = false;
+      for (let seed = 0; seed < 30; seed++) {
+        const map = makeMapData({ ...makeBastionMap(), seed: 2000 + seed });
+        if (
+          makeWaveManager(map)
+            .generateWave(15)
+            .some((entry) => entry.type === "tank")
+        )
+          sawTank = true;
+      }
+      expect(sawTank).toBe(true);
     });
 
-    it("includes varied enemy types in waves >= 12", () => {
-      const waveManager = makeWaveManager(makeBastionMap());
-      const wave12 = waveManager.generateWave(12);
-      const types = new Set(wave12.map((e) => e.type));
-      expect(types.size).toBeGreaterThan(1);
+    it("keeps shielded behind wave 25 and rolls them from wave 25 on", () => {
+      for (let seed = 0; seed < 8; seed++) {
+        const map = makeMapData({ ...makeBastionMap(), seed: 3000 + seed });
+        for (let waveNumber = 1; waveNumber < 25; waveNumber++) {
+          for (const entry of makeWaveManager(map).generateWave(waveNumber)) {
+            expect(entry.type).not.toBe("shielded");
+          }
+        }
+      }
+      let sawShielded = false;
+      for (let seed = 0; seed < 30; seed++) {
+        const map = makeMapData({ ...makeBastionMap(), seed: 4000 + seed });
+        if (
+          makeWaveManager(map)
+            .generateWave(25)
+            .some((entry) => entry.type === "shielded")
+        )
+          sawShielded = true;
+      }
+      expect(sawShielded).toBe(true);
     });
 
-    it("includes varied enemy types in waves >= 15", () => {
-      const waveManager = makeWaveManager(makeBastionMap());
-      const wave15 = waveManager.generateWave(15);
-      const types = new Set(wave15.map((e) => e.type));
-      expect(types.size).toBeGreaterThan(1);
+    it("keeps healers behind wave 35 and rolls them from wave 35 on", () => {
+      for (let seed = 0; seed < 8; seed++) {
+        const map = makeMapData({ ...makeBastionMap(), seed: 5000 + seed });
+        for (let waveNumber = 1; waveNumber < 35; waveNumber++) {
+          for (const entry of makeWaveManager(map).generateWave(waveNumber)) {
+            expect(entry.type).not.toBe("healer");
+          }
+        }
+      }
+      let sawHealer = false;
+      for (let seed = 0; seed < 30; seed++) {
+        const map = makeMapData({ ...makeBastionMap(), seed: 6000 + seed });
+        if (
+          makeWaveManager(map)
+            .generateWave(35)
+            .some((entry) => entry.type === "healer")
+        )
+          sawHealer = true;
+      }
+      expect(sawHealer).toBe(true);
     });
 
     it("all enemies have valid types", () => {

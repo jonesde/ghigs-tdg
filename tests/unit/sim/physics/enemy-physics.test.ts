@@ -56,7 +56,9 @@ describe("Enemy ON branches (body set) driven manually", () => {
     const baseCenter = baseCenterOf(grid);
     const startDist = Math.hypot(enemy.centerX - baseCenter.x, enemy.centerY - baseCenter.y);
 
-    drive(enemy, 300);
+    // The corridor's first leg runs away from the base, so distance only starts
+    // shrinking once the enemy rounds the first corner (~300 frames on map 0).
+    drive(enemy, 600);
 
     const endDist = Math.hypot(enemy.centerX - baseCenter.x, enemy.centerY - baseCenter.y);
     expect(endDist).toBeLessThan(startDist);
@@ -78,8 +80,9 @@ describe("Enemy ON branches (body set) driven manually", () => {
   });
 
   it("knockback impulse pushes the body backward and enters ballistic mode", () => {
-    // Advance a bit so the enemy is moving toward the base, then record distance.
-    drive(enemy, 200);
+    // Advance past the first corner so the enemy is on a leg where a shove
+    // moves it unambiguously away from the base.
+    drive(enemy, 600);
     const startDist = Math.hypot(enemy.centerX - baseCenterOf(grid).x, enemy.centerY - baseCenterOf(grid).y);
     expect(startDist).toBeGreaterThan(0);
 
