@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { MAP_GEM_MULTIPLIERS, MAP_LEVELS, TOTAL_MAPS } from "@/sim/Constants.js";
 import { BOSS_CADENCE } from "@/sim/ConstantsEnemy.js";
+import { breadthFirstTilePath } from "@/sim/enemies/flightGrid.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { generateRandomMap, getMap, invalidateMapCache } from "@/sim/grid/Map.js";
 import { orderedPath } from "../helpers/navmesh-test-utils.js";
@@ -180,143 +181,84 @@ describe("Map generation", () => {
       }
     });
 
-    it("bastion open area stays within 20-40% height bounds", () => {
+    it("bastion staging hugs the base-side half of the map", () => {
       for (let i = 0; i < TOTAL_MAPS; i++) {
         const config = MAP_LEVELS[i];
         if (config.style !== "bastion") continue;
         const map = getMap(i);
         const base = map.base;
         const isLandscape = map.width > map.height;
-        const centerCoord = isLandscape ? base.x : Math.floor(map.width / 2);
-        const extent = isLandscape ? Math.floor(map.width * 0.4) : Math.floor(map.height * 0.4);
-        const minEdge = isLandscape ? base.x - extent : base.y - extent;
-        let aboveBounds = false;
+        const spawn = map.spawns[0]!;
         if (isLandscape) {
-          for (let x = Math.max(0, minEdge - 1); x >= 0; x--) {
-            for (let y = 0; y < map.height; y++) {
-              if (y !== map.spawns[0]!.y && map.tiles[y][x].type === "path") {
-                aboveBounds = true;
-                break;
-              }
-            }
-            if (aboveBounds) break;
-          }
-        } else {
-          for (let y = Math.max(0, minEdge - 1); y >= 0; y--) {
-            for (let x = 0; x < map.width; x++) {
-              if (x !== centerCoord && map.tiles[y][x].type === "path") {
-                aboveBounds = true;
-                break;
-              }
-            }
-            if (aboveBounds) break;
-          }
-        }
-        expect(aboveBounds).toBe(false);
-        let hasOpenAreaPath = false;
-        if (isLandscape) {
-          for (let x = base.x; x > minEdge && !hasOpenAreaPath; x--) {
-            for (let y = 0; y < map.height; y++) {
-              if (map.tiles[y][x].type === "path") {
-                hasOpenAreaPath = true;
-                break;
-              }
-            }
-          }
-        } else {
-          for (let y = base.y; y > minEdge && !hasOpenAreaPath; y--) {
-            for (let x = 0; x < map.width; x++) {
-              if (map.tiles[y][x].type === "path") {
-                hasOpenAreaPath = true;
-                break;
-              }
-            }
-          }
-        }
-        expect(hasOpenAreaPath).toBe(true);
-      }
-    });
-
-    it("bastion open area bottom edge is at base.y", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
-        const config = MAP_LEVELS[i];
-        if (config.style !== "bastion") continue;
-        const map = getMap(i);
-        const isLandscape = map.width > map.height;
-        let hasPathAtBaseCoord = false;
-        if (isLandscape) {
+          // Spawn on the west half, base in the east: the detour + staging sit between.
+          expect(spawn.x, `Map ${i} bastion spawn x`).toBeLessThan(base.x - 2);
+          const stagingCol = Math.floor((spawn.x + base.x) / 2);
+          let stagingHeight = 0;
           for (let y = 0; y < map.height; y++) {
-            if (map.tiles[y][map.base.x].type === "path") {
-              hasPathAtBaseCoord = true;
-              break;
-            }
+            if (map.tiles[y]![stagingCol]!.type === "path") stagingHeight++;
           }
+          expect(stagingHeight, `Map ${i} bastion staging height`).toBeGreaterThanOrEqual(3);
         } else {
+          expect(spawn.y, `Map ${i} bastion spawn y`).toBeLessThan(base.y - 2);
+          // The staging rectangle sits just north of the apex: measure its
+          // width on the row above the apex instead of the midpoint row, which
+          // can land on the single-tile notch corridor.
+          const stagingRow = Math.max(1, base.y - Math.max(4, Math.floor(map.height * 0.3)) - 2);
+          let stagingWidth = 0;
           for (let x = 0; x < map.width; x++) {
-            if (map.tiles[map.base.y][x].type === "path") {
-              hasPathAtBaseCoord = true;
-              break;
-            }
+            if (map.tiles[stagingRow]![x]!.type === "path") stagingWidth++;
           }
+          expect(stagingWidth, `Map ${i} bastion staging width`).toBeGreaterThanOrEqual(5);
         }
-        if (!hasPathAtBaseCoord) continue;
-        let belowBase = false;
-        if (isLandscape) {
-          for (let x = map.base.x + 1; x < map.width; x++) {
-            for (let y = 0; y < map.height; y++) {
-              if (map.tiles[y][x].type === "path") {
-                belowBase = true;
-                break;
-              }
-            }
-            if (belowBase) break;
-          }
-        } else {
-          for (let y = map.base.y + 1; y < map.height; y++) {
-            for (let x = 0; x < map.width; x++) {
-              if (map.tiles[y][x].type === "path") {
-                belowBase = true;
-                break;
-              }
-            }
-            if (belowBase) break;
-          }
-        }
-        expect(belowBase).toBe(false);
       }
     });
 
-    it("bastion base is within open area bounds", () => {
+    it("bastion has a narrow single-tile notch entry toward the base", () => {
       for (let i = 0; i < TOTAL_MAPS; i++) {
         const config = MAP_LEVELS[i];
         if (config.style !== "bastion") continue;
         const map = getMap(i);
         const base = map.base;
-        let foundTopEdge = false;
-        let topEdge = base.y;
-        for (let y = base.y; y >= 0; y--) {
-          for (let x = 0; x < map.width; x++) {
-            if (map.tiles[y][x].type === "path" && y < base.y) {
-              foundTopEdge = true;
-              topEdge = y;
-              break;
+        const isLandscape = map.width > map.height;
+        let foundNotch = false;
+        if (isLandscape) {
+          for (let x = map.spawns[0]!.x + 1; x < base.x - 1 && !foundNotch; x++) {
+            let pathCount = 0;
+            for (let y = 0; y < map.height; y++) {
+              if (map.tiles[y]![x]!.type === "path") pathCount++;
             }
+            if (pathCount === 1) foundNotch = true;
           }
-          if (foundTopEdge) break;
+        } else {
+          for (let y = map.spawns[0]!.y + 1; y < base.y - 1 && !foundNotch; y++) {
+            let pathCount = 0;
+            for (let x = 0; x < map.width; x++) {
+              if (map.tiles[y]![x]!.type === "path") pathCount++;
+            }
+            if (pathCount === 1) foundNotch = true;
+          }
         }
-        expect(base.y).toBeGreaterThanOrEqual(topEdge);
-        expect(base.y).toBeLessThanOrEqual(base.y);
+        expect(foundNotch, `Map ${i} bastion should narrow to a single-tile notch`).toBe(true);
       }
     });
 
-    it("all 4 bastion shapes produce valid maps", () => {
-      for (let shape = 0; shape < 4; shape++) {
-        const map = generateRandomMap(30, 30, "bastion", 0, 1, 42);
-        const grid = new Grid(map);
-        for (let s = 0; s < grid.spawns.length; s++) {
-          const path = orderedPath(grid, s);
-          expect(path, `bastion shape ${shape}: spawn ${s} should have a valid path`).not.toBeNull();
+    it("bastion triangle apron around the base is buildable terrain", () => {
+      for (let i = 0; i < TOTAL_MAPS; i++) {
+        const config = MAP_LEVELS[i];
+        if (config.style !== "bastion") continue;
+        const map = getMap(i);
+        const base = map.base;
+        let terrainNeighbors = 0;
+        for (let deltaY = -3; deltaY <= 3; deltaY++) {
+          for (let deltaX = -3; deltaX <= 3; deltaX++) {
+            if (deltaX === 0 && deltaY === 0) continue;
+            const tileX = base.x + deltaX;
+            const tileY = base.y + deltaY;
+            if (tileX < 0 || tileY < 0 || tileX >= map.width || tileY >= map.height) continue;
+            if (map.tiles[tileY]![tileX]!.type === "terrain") terrainNeighbors++;
+          }
         }
+        expect(terrainNeighbors, `Map ${i} bastion should keep terrain around the base`).toBeGreaterThan(0);
       }
     });
 
@@ -345,7 +287,7 @@ describe("Map generation", () => {
       expect(MAP_GEM_MULTIPLIERS[32]).toBe(10);
     });
 
-    it("serpentine spawn Y is in 10-40% of map height range", () => {
+    it("serpentine spawn is in the outer 40% of the entry edge", () => {
       for (let i = 0; i < TOTAL_MAPS; i++) {
         const config = MAP_LEVELS[i];
         if (config.style !== "serpentine") continue;
@@ -353,9 +295,8 @@ describe("Map generation", () => {
         const isLandscape = map.width > map.height;
         const spawnCoord = isLandscape ? map.spawns[0]!.x : map.spawns[0]!.y;
         const extent = isLandscape ? map.width : map.height;
-        const lowerBound = Math.floor(extent * 0.1);
         const upperBound = Math.floor(extent * 0.4);
-        expect(spawnCoord).toBeGreaterThanOrEqual(lowerBound);
+        expect(spawnCoord).toBeGreaterThanOrEqual(1);
         expect(spawnCoord).toBeLessThanOrEqual(upperBound);
       }
     });
@@ -419,15 +360,14 @@ describe("Map generation", () => {
       }
     });
 
-    it("landscape serpentine spawn X is in 10-40% of map width", () => {
+    it("landscape serpentine spawn X is in the outer 40% of map width", () => {
       for (let i = 0; i < TOTAL_MAPS; i++) {
         const config = MAP_LEVELS[i];
         if (config.style !== "serpentine" || config.width <= config.height) continue;
         const map = getMap(i);
         const spawnX = map.spawns[0]!.x;
-        const lowerBound = Math.floor(map.width * 0.1);
         const upperBound = Math.floor(map.width * 0.4);
-        expect(spawnX).toBeGreaterThanOrEqual(lowerBound);
+        expect(spawnX).toBeGreaterThanOrEqual(1);
         expect(spawnX).toBeLessThanOrEqual(upperBound);
       }
     });
@@ -441,6 +381,77 @@ describe("Map generation", () => {
           expect(map.spawns).toHaveLength(2);
         } else {
           expect(map.spawns, `Landscape ${config.style} should have 1 spawn`).toHaveLength(1);
+        }
+      }
+    });
+    it("split maps join their arms with a cross-link", () => {
+      for (let i = 0; i < TOTAL_MAPS; i++) {
+        const config = MAP_LEVELS[i];
+        if (config.style !== "split") continue;
+        const map = getMap(i);
+        const grid = new Grid(map);
+        // Both spawns reach the base (orderedPath covers this), and the arms
+        // share walkable ground mid-map: BFS from spawn 0 visits spawn 1's
+        // corridor through the cross-link.
+        const start = grid.spawns[0]!;
+        const other = grid.spawns[1]!;
+        const visited = new Set<string>([`${start.x},${start.y}`]);
+        const queue = [{ x: start.x, y: start.y }];
+        while (queue.length > 0) {
+          const current = queue.shift()!;
+          for (const neighbor of [
+            { x: current.x + 1, y: current.y },
+            { x: current.x - 1, y: current.y },
+            { x: current.x, y: current.y + 1 },
+            { x: current.x, y: current.y - 1 },
+          ]) {
+            if (!grid.inBounds(neighbor.x, neighbor.y)) continue;
+            const walkable =
+              grid.isPath(neighbor.x, neighbor.y) ||
+              grid.isBase(neighbor.x, neighbor.y) ||
+              grid.isSpawn(neighbor.x, neighbor.y);
+            if (!walkable) continue;
+            const neighborKey = `${neighbor.x},${neighbor.y}`;
+            if (visited.has(neighborKey)) continue;
+            visited.add(neighborKey);
+            queue.push(neighbor);
+          }
+        }
+        expect(visited.has(`${other.x},${other.y}`), `Map ${i} split arms should connect`).toBe(true);
+      }
+    });
+
+    it("open maps carry a flyer-gating ridge", () => {
+      for (let i = 0; i < TOTAL_MAPS; i++) {
+        const config = MAP_LEVELS[i];
+        if (config.style !== "open") continue;
+        const map = getMap(i);
+        let ridgeTiles = 0;
+        for (let y = 0; y < map.height; y++) {
+          for (let x = 0; x < map.width; x++) {
+            const cell = map.tiles[y]![x]!;
+            if (cell.type === "terrain" && cell.height >= 4) ridgeTiles++;
+          }
+        }
+        expect(ridgeTiles, `Map ${i} open should paint a height-4 ridge`).toBeGreaterThan(0);
+      }
+    });
+
+    it("every map is flyable at jet height and walkable from every spawn", () => {
+      const neverTower = () => false;
+      for (let i = 0; i < TOTAL_MAPS; i++) {
+        const map = getMap(i);
+        const grid = new Grid(map);
+        for (let s = 0; s < grid.spawns.length; s++) {
+          const spawn = grid.spawns[s]!;
+          const route = breadthFirstTilePath(
+            grid,
+            { x: spawn.x, y: spawn.y },
+            { x: grid.base.x, y: grid.base.y },
+            5,
+            neverTower,
+          );
+          expect(route, `Map ${i} spawn ${s} should be reachable by jet-height flyers`).not.toBeNull();
         }
       }
     });

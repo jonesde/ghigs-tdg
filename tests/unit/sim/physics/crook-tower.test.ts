@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { FIXED_DT } from "@/sim/Constants.js";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
-import { getMap } from "@/sim/grid/Map.js";
+import { generateRandomMap } from "@/sim/grid/Map.js";
 import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { corridorWallInsetWorld } from "@/sim/navmesh/navmeshConfig.js";
@@ -57,8 +57,10 @@ function walkBend(
   vertexY: number,
   stun: boolean,
   limitSeconds: number,
+  mapSeed: number = 10333,
 ): { seconds: number; x: number; y: number } {
-  const grid = new Grid(getMap(2));
+  const catalogMap = generateRandomMap(10, 15, "serpentine", 0, 1, mapSeed);
+  const grid = new Grid({ ...catalogMap });
   const navBuilder = new NavMeshBuilder(grid);
   const physicsWorld = new PhysicsWorld(grid);
   physicsWorld.setEnemyEnemyCollisions(false);
@@ -101,8 +103,9 @@ function walkBend(
 }
 
 describe("terrain tower crook chamfer", () => {
-  it("cuts the southwest corner of map 2 tile (2, 8) onto the corridor diagonal", () => {
-    const grid = new Grid(getMap(2));
+  it("cuts the southwest corner of the serpentine fourth-bend tile (2, 8)", () => {
+    const catalogMap = generateRandomMap(10, 15, "serpentine", 0, 1, 20113);
+    const grid = new Grid({ ...catalogMap });
     const convexVertices = corridorConvexVertices(grid);
     const cutCorners = terrainTowerCutCorners(grid, 2, 8, convexVertices);
     expect(cutCorners).toEqual(new Set(["southwest"]));
@@ -151,17 +154,17 @@ describe("terrain tower crook chamfer", () => {
   });
 
   it("lets a boss leave the fourth bend with a tower in the crook", () => {
-    const result = walkBend("boss", 1, 7, 2, 8, 72, 324, false, 12);
+    const result = walkBend("boss", 1, 7, 2, 8, 72, 324, false, 12, 20113);
     expect(result.seconds).toBeLessThan(12);
   });
 
   it("lets a stunned boss leave the fourth bend", () => {
-    const result = walkBend("boss", 1, 7, 2, 8, 72, 324, true, 16);
+    const result = walkBend("boss", 1, 7, 2, 8, 72, 324, true, 16, 20113);
     expect(result.seconds, `ended at ${result.x},${result.y}`).toBeLessThan(16);
   });
 
   it("lets a runner leave the fourth bend", () => {
-    const result = walkBend("runner", 1, 7, 2, 8, 72, 324, false, 8);
+    const result = walkBend("runner", 1, 7, 2, 8, 72, 324, false, 8, 20113);
     expect(result.seconds).toBeLessThan(8);
   });
 
@@ -171,7 +174,7 @@ describe("terrain tower crook chamfer", () => {
   });
 
   it("lets a boss pass a tower that does not own the inside vertex", () => {
-    const result = walkBend("boss", 1, 7, 3, 8, 72, 324, false, 12);
+    const result = walkBend("boss", 1, 7, 3, 8, 72, 324, false, 12, 20113);
     expect(result.seconds).toBeLessThan(12);
   });
 });

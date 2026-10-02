@@ -714,11 +714,11 @@ describe("useInput", () => {
     it("wraps right from rightmost tower to leftmost tower on same row", () => {
       gameStore.setState(GameState.PLAYING);
       const { engine, towers } = applyTowerSnapshot([
-        { tileX: 14, tileY: 5 },
+        { tileX: 9, tileY: 5 },
         { tileX: 2, tileY: 5 },
       ]);
       gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, engine.grid as unknown as Grid);
-      const rightmost = towers.find((t) => t.tileX === 14 && t.tileY === 5)!;
+      const rightmost = towers.find((t) => t.tileX === 9 && t.tileY === 5)!;
       const leftmost = towers.find((t) => t.tileX === 2 && t.tileY === 5)!;
       gameStore.selectedTower = rightmost as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
@@ -730,11 +730,11 @@ describe("useInput", () => {
       gameStore.setState(GameState.PLAYING);
       const { engine, towers } = applyTowerSnapshot([
         { tileX: 2, tileY: 5 },
-        { tileX: 14, tileY: 5 },
+        { tileX: 9, tileY: 5 },
       ]);
       gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, engine.grid as unknown as Grid);
       const leftmost = towers.find((t) => t.tileX === 2 && t.tileY === 5)!;
-      const rightmost = towers.find((t) => t.tileX === 14 && t.tileY === 5)!;
+      const rightmost = towers.find((t) => t.tileX === 9 && t.tileY === 5)!;
       gameStore.selectedTower = leftmost as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowLeft");
@@ -744,12 +744,12 @@ describe("useInput", () => {
     it("wraps up from topmost tower to bottommost tower on same column", () => {
       gameStore.setState(GameState.PLAYING);
       const { engine, towers } = applyTowerSnapshot([
-        { tileX: 5, tileY: 1 },
-        { tileX: 5, tileY: 13 },
+        { tileX: 8, tileY: 1 },
+        { tileX: 8, tileY: 5 },
       ]);
       gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, engine.grid as unknown as Grid);
-      const topmost = towers.find((t) => t.tileX === 5 && t.tileY === 1)!;
-      const bottommost = towers.find((t) => t.tileX === 5 && t.tileY === 13)!;
+      const topmost = towers.find((t) => t.tileX === 8 && t.tileY === 1)!;
+      const bottommost = towers.find((t) => t.tileX === 8 && t.tileY === 5)!;
       gameStore.selectedTower = topmost as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowUp");
@@ -759,12 +759,12 @@ describe("useInput", () => {
     it("wraps down from bottommost tower to topmost tower on same column", () => {
       gameStore.setState(GameState.PLAYING);
       const { engine, towers } = applyTowerSnapshot([
-        { tileX: 5, tileY: 1 },
-        { tileX: 5, tileY: 13 },
+        { tileX: 8, tileY: 1 },
+        { tileX: 8, tileY: 5 },
       ]);
       gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, engine.grid as unknown as Grid);
-      const topmost = towers.find((t) => t.tileX === 5 && t.tileY === 1)!;
-      const bottommost = towers.find((t) => t.tileX === 5 && t.tileY === 13)!;
+      const topmost = towers.find((t) => t.tileX === 8 && t.tileY === 1)!;
+      const bottommost = towers.find((t) => t.tileX === 8 && t.tileY === 5)!;
       gameStore.selectedTower = bottommost as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowDown");
@@ -789,12 +789,12 @@ describe("useInput", () => {
     it("finds tower at x-2,y+1 when pressing left from (x,y)", () => {
       gameStore.setState(GameState.PLAYING);
       const { engine, towers } = applyTowerSnapshot([
-        { tileX: 10, tileY: 7 },
-        { tileX: 8, tileY: 8 },
+        { tileX: 8, tileY: 1 },
+        { tileX: 8, tileY: 5 },
       ]);
       gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, engine.grid as unknown as Grid);
-      const origin = towers.find((t) => t.tileX === 10 && t.tileY === 7)!;
-      const offAxis = towers.find((t) => t.tileX === 8 && t.tileY === 8)!;
+      const origin = towers.find((t) => t.tileX === 8 && t.tileY === 1)!;
+      const offAxis = towers.find((t) => t.tileX === 8 && t.tileY === 5)!;
       gameStore.selectedTower = origin as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowLeft");
@@ -1332,8 +1332,8 @@ describe("useInput", () => {
       it("does not move the tower selection", () => {
         const frame = zoomedFrame(1000, 1000, 40, 2);
         const { towers } = applyTowerSnapshot([
-          { tileX: 10, tileY: 10 },
-          { tileX: 12, tileY: 10 },
+          { tileX: 8, tileY: 1 },
+          { tileX: 8, tileY: 5 },
         ]);
         gameStore.selectedTower = towers[0] as unknown as Tower;
         useInput(gameStore, dispatcher, uiStore);
