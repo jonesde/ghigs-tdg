@@ -193,6 +193,17 @@ describe("SnapshotSerializer (Phase 5)", () => {
     expect(snap.particleSpawns!.length).toBeGreaterThan(0);
   });
 
+  it("ships the spawn opacity factor when set and omits it when not", () => {
+    const engine = makeEngine();
+    engine.particleSpawner.spawn(10, 20, "#ffffff", 3, { speed: 30, life: 0.2, opacity: 0.5 });
+    engine.particleSpawner.spawn(30, 40, "#ffcf4d", 12, { speed: 80, life: 0.5 });
+
+    const snap = buildSnapshot(engine, 0);
+    expect(snap.particleSpawns).toHaveLength(2);
+    expect(snap.particleSpawns![0]!.opacity).toBe(0.5);
+    expect(snap.particleSpawns![1]!.opacity).toBeUndefined();
+  });
+
   it("does not consume effects at build time; an explicit consume clears the buffers", () => {
     const engine = makeEngine();
     const enemy = engine.enemyManager.spawn("minion", 1, 0, 1);

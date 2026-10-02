@@ -236,13 +236,48 @@ describe("TowerPanel", () => {
     expect(commands.some((command) => command.type === "action:downgradeSelected")).toBe(true);
   });
 
-  it("shows specialization options at level 4", () => {
+  function unlockVariantTiers(persistStore: ReturnType<typeof usePersistStore>, variantA: boolean, variantB: boolean) {
+    const basicUnlocks = persistStore.unlocked.basic;
+    basicUnlocks.levels[3] = true;
+    basicUnlocks.variantA[0] = variantA;
+    basicUnlocks.variantB[0] = variantB;
+  }
+
+  it("shows only the unlocked specialization button at level 4", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(
-      makeMockTower({ level: 4, canUpgrade: { ok: false, needVariant: true } }),
+      makeMockTower({ level: 4, canUpgrade: { ok: false, reason: "Choose specialization", needVariant: true } }),
     );
+    unlockVariantTiers(persistStore, true, false);
     const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
     expect(wrapper.text()).toContain("Choose Specialization");
+    const variantButtons = wrapper.findAll(".variant-section button");
+    expect(variantButtons).toHaveLength(1);
+    expect(variantButtons[0]!.text()).toContain("Rapid Fire");
+  });
+
+  it("shows both specialization buttons when both are unlocked", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(
+      makeMockTower({ level: 4, canUpgrade: { ok: false, reason: "Choose specialization", needVariant: true } }),
+    );
+    unlockVariantTiers(persistStore, true, true);
+    const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
+    expect(wrapper.text()).toContain("Choose Specialization");
+    const variantButtons = wrapper.findAll(".variant-section button");
+    expect(variantButtons).toHaveLength(2);
+    expect(variantButtons[0]!.text()).toContain("Rapid Fire");
+    expect(variantButtons[1]!.text()).toContain("Heavy Shot");
+  });
+
+  it("shows max level reached at the level-4 gate when no specialization is unlocked", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(
+      makeMockTower({ level: 4, canUpgrade: { ok: false, reason: "Choose specialization", needVariant: true } }),
+    );
+    const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
+    expect(wrapper.text()).not.toContain("Choose Specialization");
+    expect(wrapper.text()).toContain("Max level reached");
   });
 
   it("updates targetingMode ref when select changes", async () => {

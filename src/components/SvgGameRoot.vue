@@ -694,6 +694,7 @@ function handleWorkerMessage(event: MessageEvent): void {
           mainParticleSystem.spawn(request.x, request.y, request.color, request.count, {
             speed: request.speed,
             life: request.life,
+            opacity: request.opacity,
           });
         }
       }

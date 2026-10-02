@@ -61,8 +61,14 @@ interface MockEnemyManager {
 }
 
 interface MockParticleSystem {
-  spawns: Array<{ x: number; y: number; color: string; count: number; speed: number; life: number }>;
-  spawn: (x: number, y: number, color: string, count: number, opts: { speed: number; life: number }) => void;
+  spawns: Array<{ x: number; y: number; color: string; count: number; speed: number; life: number; opacity?: number }>;
+  spawn: (
+    x: number,
+    y: number,
+    color: string,
+    count: number,
+    opts: { speed: number; life: number; opacity?: number },
+  ) => void;
 }
 
 function createMockEnemy(
@@ -420,6 +426,7 @@ describe("ProjectileManager", () => {
       expect(particles.spawns[0]!.count).toBe(3);
       expect(particles.spawns[0]!.speed).toBe(30);
       expect(particles.spawns[0]!.life).toBe(0.2);
+      expect(particles.spawns[0]!.opacity).toBe(0.5);
     });
 
     it("applies crit damage when isCrit is true", () => {
@@ -619,6 +626,11 @@ describe("ProjectileManager", () => {
       const effects = manager.getRenderVisualEffects();
       // 1 tower->target flash + 1 chain hop flash
       expect(effects.lightning).toHaveLength(2);
+      expect(particles.spawns).toHaveLength(2);
+      for (const spawn of particles.spawns) {
+        expect(spawn.count).toBe(3);
+        expect(spawn.opacity).toBe(0.5);
+      }
     });
 
     it("chains more hops at higher tower level", () => {

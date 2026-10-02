@@ -8,6 +8,7 @@ export interface ParticleGame {
   maxLife: number;
   color: string;
   size: number;
+  opacity: number;
 }
 
 export interface RenderParticle {
@@ -29,6 +30,9 @@ export interface ParticleSpawnRequest {
   count: number;
   speed: number;
   life: number;
+  // Crosses the snapshot only when set (structured clone drops absent fields),
+  // so pre-change spawn kinds ship an unchanged payload.
+  opacity?: number;
 }
 
 // Shared spawner contract. `consumeSpawns` is optional: the main-thread
@@ -45,7 +49,7 @@ export interface ParticleSpawner {
     y: number,
     color: string,
     count: number,
-    opts: { speed?: number; life?: number; size?: number },
+    opts: { speed?: number; life?: number; size?: number; opacity?: number | undefined },
   ): void;
   peekSpawns?(): ParticleSpawnRequest[] | undefined;
   consumeSpawns?(): ParticleSpawnRequest[] | undefined;
@@ -85,12 +89,14 @@ export class WorkerParticleSpawner implements ParticleSpawner {
     y: number,
     color: string,
     count: number,
-    opts: { speed?: number; life?: number; size?: number },
+    opts: { speed?: number; life?: number; size?: number; opacity?: number | undefined },
   ): void {
     if (this.buffer.length >= MAX_PENDING_PARTICLE_SPAWNS) {
       this.buffer.shift();
     }
-    this.buffer.push({ x, y, color, count, speed: opts.speed ?? 60, life: opts.life ?? 0.5 });
+    const request: ParticleSpawnRequest = { x, y, color, count, speed: opts.speed ?? 60, life: opts.life ?? 0.5 };
+    if (opts.opacity !== undefined) request.opacity = opts.opacity;
+    this.buffer.push(request);
   }
 
   peekSpawns(): ParticleSpawnRequest[] | undefined {
@@ -139,11 +145,12 @@ export class ParticleSystem implements ParticleSpawner {
     y: number,
     color: string,
     count: number,
-    opts: { speed?: number; life?: number; size?: number },
+    opts: { speed?: number; life?: number; size?: number; opacity?: number | undefined },
   ): void {
     const speed = opts.speed || 60;
     const life = opts.life || 0.5;
     const size = opts.size || 3;
+    const opacity = opts.opacity ?? 1;
     const clampedCount = Math.min(count, MAX_PARTICLES_PER_SPAWN);
 
     for (let i = 0; i < clampedCount; i++) {
@@ -159,6 +166,7 @@ export class ParticleSystem implements ParticleSpawner {
         maxLife: life,
         color,
         size,
+        opacity,
       });
     }
 
@@ -198,7 +206,7 @@ export class ParticleSystem implements ParticleSpawner {
         y: particle.oy,
         color: particle.color,
         size: particle.size,
-        opacity: lifeRatio,
+        opacity: lifeRatio * particle.opacity,
       });
     }
     return result;

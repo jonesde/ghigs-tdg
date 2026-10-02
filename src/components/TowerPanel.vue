@@ -195,6 +195,15 @@ const canAffordSpecialize = computed(() => {
   return gameStore.gold >= lv5Cost.value;
 });
 
+// The worker reports "Choose specialization" at the level-4 gate regardless of
+// unlock state; with neither variant unlocked the tower is at its true cap
+// (maxLevelFor stays at 4), so the panel reports it that way.
+const blockedReason = computed(() => {
+  const check = upgradeCheck.value;
+  if (check?.needVariant && !variantAUnlocked.value && !variantBUnlocked.value) return "Max level reached";
+  return check?.reason || "Max";
+});
+
 // Cancel window is sim time: snapshot placedAt is elapsed sim ms since place
 // (Tower._gameSeconds), so pause freezes the window and timeScale scales it.
 const canCancel = computed(() => {
@@ -263,12 +272,12 @@ function handleFixedAim(dir: string | null) {
       </div>
     </div>
 
-    <div v-if="upgradeCheck?.needVariant" class="variant-section">
+    <div v-if="upgradeCheck?.needVariant && (variantAUnlocked || variantBUnlocked)" class="variant-section">
       <div class="variant-title">Choose Specialization:</div>
-      <button class="action-btn" :disabled="!variantAUnlocked || !canAffordSpecialize" @click="handleSpecialize('A')">
+      <button v-if="variantAUnlocked" class="action-btn" :disabled="!canAffordSpecialize" @click="handleSpecialize('A')">
         <span class="btn-content">{{ variantInfo?.A?.name }} ({{ lv5Cost }}g)<kbd>E</kbd></span>
       </button>
-      <button class="action-btn" :disabled="!variantBUnlocked || !canAffordSpecialize" @click="handleSpecialize('B')">
+      <button v-if="variantBUnlocked" class="action-btn" :disabled="!canAffordSpecialize" @click="handleSpecialize('B')">
         <span class="btn-content">{{ variantInfo?.B?.name }} ({{ lv5Cost }}g)<kbd>C</kbd></span>
       </button>
     </div>
@@ -278,7 +287,7 @@ function handleFixedAim(dir: string | null) {
       </button>
     </div>
     <div v-else>
-      <button class="action-btn" disabled>{{ upgradeCheck?.reason || 'Max' }}</button>
+      <button class="action-btn" disabled>{{ blockedReason }}</button>
     </div>
 
     <button class="action-btn downgrade-btn" :disabled="tower.level <= 1 || tower.isGhost" @click="handleDowngrade">

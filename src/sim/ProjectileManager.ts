@@ -26,6 +26,10 @@ import {
 // per search call.
 const NEAREST_SEARCH_FRACTIONS = [0.5, 0.25, 0.5, 1] as const;
 
+// Impact bursts read as hit feedback on top of the enemy sprites, so they
+// render dimmed (stun-ring precedent); death/build/ghost bursts stay full.
+const HIT_PARTICLE_OPACITY_SCALE = 0.5;
+
 export interface ProjectileGame {
   id: number;
   x: number;
@@ -910,7 +914,11 @@ export class ProjectileManager {
       const dealtDamage = enemy.takeDamage(instantKillDamage, true) ?? instantKillDamage;
       this.recordDamage(projectile.towerId, dealtDamage);
       if (this.particles) {
-        this.particles.spawn(projectile.x, projectile.y, projectile.color, 3, { speed: 30, life: 0.2 });
+        this.particles.spawn(projectile.x, projectile.y, projectile.color, 3, {
+          speed: 30,
+          life: 0.2,
+          opacity: HIT_PARTICLE_OPACITY_SCALE,
+        });
       }
       if (projectile.isCrit && projectile.goldOnCrit > 0 && this.onGoldReward) {
         this.onGoldReward(projectile.goldOnCrit);
@@ -924,7 +932,11 @@ export class ProjectileManager {
       const dealtDamage = enemy.takeDamage(instantKillDamage, true) ?? instantKillDamage;
       this.recordDamage(projectile.towerId, dealtDamage);
       if (this.particles) {
-        this.particles.spawn(projectile.x, projectile.y, projectile.color, 3, { speed: 30, life: 0.2 });
+        this.particles.spawn(projectile.x, projectile.y, projectile.color, 3, {
+          speed: 30,
+          life: 0.2,
+          opacity: HIT_PARTICLE_OPACITY_SCALE,
+        });
       }
       if (projectile.isCrit && projectile.goldOnCrit > 0 && this.onGoldReward) {
         this.onGoldReward(projectile.goldOnCrit);
@@ -1066,7 +1078,11 @@ export class ProjectileManager {
     }
 
     if (this.particles) {
-      this.particles.spawn(projectile.x, projectile.y, projectile.color, 3, { speed: 30, life: 0.2 });
+      this.particles.spawn(projectile.x, projectile.y, projectile.color, 3, {
+        speed: 30,
+        life: 0.2,
+        opacity: HIT_PARTICLE_OPACITY_SCALE,
+      });
     }
 
     this.removeProjectile(projectile, "hit");
@@ -1111,7 +1127,11 @@ export class ProjectileManager {
     }
     chainTargets.push(current);
     if (this.particles) {
-      this.particles.spawn(current.x, current.y, opts.color ?? "#ffcf4d", 3, { speed: 30, life: 0.2 });
+      this.particles.spawn(current.x, current.y, opts.color ?? "#ffcf4d", 3, {
+        speed: 30,
+        life: 0.2,
+        opacity: HIT_PARTICLE_OPACITY_SCALE,
+      });
     }
 
     const chainedIds = new Set<number>([current.id]);
@@ -1127,7 +1147,11 @@ export class ProjectileManager {
       chainTargets.push(nextTarget);
       chainedIds.add(nextTarget.id);
       if (this.particles) {
-        this.particles.spawn(nextTarget.x, nextTarget.y, opts.color ?? "#ffcf4d", 3, { speed: 30, life: 0.2 });
+        this.particles.spawn(nextTarget.x, nextTarget.y, opts.color ?? "#ffcf4d", 3, {
+          speed: 30,
+          life: 0.2,
+          opacity: HIT_PARTICLE_OPACITY_SCALE,
+        });
       }
       // Burn Circuit: chained enemies take burn damage over time
       if (opts.burnCircuit && nextTarget.applyBurn) {
@@ -1157,7 +1181,11 @@ export class ProjectileManager {
         this.recordDamage(opts.towerId, stormDealt);
         chainTargets.push(stormTarget);
         if (this.particles) {
-          this.particles.spawn(stormTarget.x, stormTarget.y, opts.color ?? "#ffcf4d", 3, { speed: 30, life: 0.2 });
+          this.particles.spawn(stormTarget.x, stormTarget.y, opts.color ?? "#ffcf4d", 3, {
+            speed: 30,
+            life: 0.2,
+            opacity: HIT_PARTICLE_OPACITY_SCALE,
+          });
         }
         this.bufferLightningEffect({ x1: opts.originX, y1: opts.originY, x2: stormTarget.x, y2: stormTarget.y });
       }

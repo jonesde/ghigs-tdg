@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ParticleManager } from "@/render/svg/ParticleManager.js";
 import { PARTICLE_POOL_SIZE } from "@/render/svg/types.js";
+import { ParticleSystem } from "@/sim/ParticleSystem.js";
 
 function createMockSVGElement(tagName: string) {
   const attrs: Record<string, string> = {};
@@ -178,5 +179,25 @@ describe("ParticleManager", () => {
       ] as unknown as import("@/render/svg/types").Particle[]);
       expect(mockLayer.children.length).toBe(0);
     });
+  });
+});
+
+describe("sim ParticleSystem", () => {
+  it("scales render opacity by the spawn opacity factor", () => {
+    const system = new ParticleSystem(() => 0.5);
+    system.spawn(10, 20, "#ffffff", 4, { speed: 30, life: 0.2, opacity: 0.5 });
+    const rendered = system.getRenderData();
+    expect(rendered).toHaveLength(4);
+    for (const particle of rendered) {
+      expect(particle.opacity).toBeCloseTo(0.5);
+    }
+  });
+
+  it("keeps the full life-ratio fade when no opacity factor is given", () => {
+    const system = new ParticleSystem(() => 0.5);
+    system.spawn(10, 20, "#ffffff", 4, { speed: 30, life: 0.2 });
+    expect(system.getRenderData().every((particle) => particle.opacity > 0.99)).toBe(true);
+    system.update(0.1);
+    expect(system.getRenderData().every((particle) => Math.abs(particle.opacity - 0.5) < 0.01)).toBe(true);
   });
 });
