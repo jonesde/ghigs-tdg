@@ -25,11 +25,14 @@ const DEFAULT_PROFILE: CrowdAgentProfile = {
   pathOptimizationRangeFactor: 0,
 };
 
-// Per-type crowd steering profiles (data-driven; new types add a row).
+// Per-type crowd steering profiles (data-driven; new types add a row). The boss
+// row is deliberately the mildest separation/query pressure: at 2.0/4.0 the
+// avoidance field from queueing escorts shoved bosses into wall-block corners
+// and pinned them there.
 export const CROWD_AGENT_PROFILES: Record<string, CrowdAgentProfile> = {
   runner: { maxAccelFactor: 12, separationWeight: 0.4, collisionQueryRangeFactor: 1.5, pathOptimizationRangeFactor: 2 },
   tank: { maxAccelFactor: 5, separationWeight: 1.8, collisionQueryRangeFactor: 3.5, pathOptimizationRangeFactor: 0 },
-  boss: { maxAccelFactor: 4, separationWeight: 2.0, collisionQueryRangeFactor: 4.0, pathOptimizationRangeFactor: 0 },
+  boss: { maxAccelFactor: 6, separationWeight: 1.2, collisionQueryRangeFactor: 2.8, pathOptimizationRangeFactor: 0 },
   minion: { maxAccelFactor: 8, separationWeight: 1.0, collisionQueryRangeFactor: 2.5, pathOptimizationRangeFactor: 2 },
   shielded: {
     maxAccelFactor: 7,

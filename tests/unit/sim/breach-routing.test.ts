@@ -217,6 +217,56 @@ describe("breach-vs-detour intent", () => {
     teardown();
   });
 
+  it("keeps the detour when the body's center sits inside a blocked tile beside an open lane", () => {
+    // A body rounding a chamfered wall corner parks its center inside the wall
+    // tile's rectangle. The open leg must anchor on the nearest tower-free tile,
+    // or the sealed-lane rule misfires and converts the walk-around to a siege
+    // against a wall the enemy chose to pass.
+    const rows = ["S###W####B", "##########", "##########"];
+    grid = gridFromRows(rows, { x: 0, y: 0 }, { x: 9, y: 0 });
+    grid.registerTower(4, 0);
+    grid.registerTower(4, 1);
+    navBuilder = new NavMeshBuilder(grid);
+    navBuilder.addTowerObstacle(4, 0);
+    navBuilder.addTowerObstacle(4, 1);
+    physicsWorld = new PhysicsWorld(grid);
+    crowd = new CrowdManager(navBuilder.getNavMesh(), grid.tileSize, 8);
+    field = new NavDistanceField(grid, navBuilder);
+    field.rebuild();
+    enemyManager = new EnemyManager(grid, new NoopParticleSpawner(), 0, null, {});
+    enemyManager.setPhysicsWorld(physicsWorld);
+    enemyManager.setDistanceToBaseLookup((tileX, tileY) => field.getDistanceToBase(tileX, tileY));
+    enemyManager.setThroughDistanceLookup(
+      (tileX, tileY) => field.getThroughDistanceToBase(tileX, tileY),
+      (tileX, tileY) => field.getThroughBlockers(tileX, tileY),
+    );
+    const wallWorld = grid.tileToWorld(4, 1);
+    const wall = { ...fakeTower(4, 1, 1e6, wallWorld).tower };
+    const manager = {
+      towers: [wall],
+      towerAt: (tileX, tileY) => (tileX === 4 && tileY === 1 ? wall : null),
+      getTowerById: (towerId) => (towerId === wall.id ? wall : null),
+    };
+    enemyManager.setTowerManager(manager);
+    physicsWorld.rebuildTowers(manager);
+    const enemy = enemyManager.spawn("boss", 1, 0, 1);
+    crowd.addAgent(enemy);
+    // Center inside the wall tile's rectangle, in the chamfer pocket corner.
+    const pocket = { x: wallWorld.x + 16, y: wallWorld.y + 6 };
+    enemy.body.setTranslation(pocket, true);
+    enemy.x = pocket.x;
+    enemy.y = pocket.y;
+    enemy.centerX = pocket.x;
+    enemy.centerY = pocket.y;
+    crowd.teleportAgent(enemy, pocket);
+    expect(field.getDistanceToBase(4, 1)).toBe(-1);
+    enemy.breachCooldownSeconds = 0;
+    enemy.computeIntent(fixedDt, enemyManager);
+    expect(enemy.routingMode).toBe("default");
+    expect(enemy.siegeTower).toBeNull();
+    teardown();
+  });
+
   function teardown() {
     try {
       crowd?.destroy();

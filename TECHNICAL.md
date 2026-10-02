@@ -365,6 +365,13 @@ Full-physics motion: DetourCrowd owns path follow + local avoidance; Rapier owns
 - Siege mode: enemies attack blocking towers until ghost, then repath to base.
 - Per-type crowd profiles; move-target caching; sparse agent resync on body drift.
 - `NavDistanceField`: tower-aware distance-to-base + path metrics for commanders/UI.
+- Wall-block cornering: path-tower cuboids get the same corner chamfer terrain
+  towers do wherever the tower corner juts into open corridor (wall-pair S-bends);
+  a default-routing enemy pinned on tower contact gets a walk-only recovery
+  (corridor re-plan + alternating tangential nudge) — pins never convert to siege.
+  The breach decision anchors on the nearest tower-free tile so a body rounding a
+  chamfered corner (center inside the blocked tile) cannot misread its lane as
+  sealed and misfire a siege.
 
 **Commanders:** snapshot ships `navField` (relay-cached); Stubbs uses live distances and issues `llm:siegeTower`.
 

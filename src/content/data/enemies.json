@@ -50,7 +50,7 @@
   "maxBurnStacks": 5,
   "knockbackBallisticSeconds": 0.12,
   "agentResyncRadiusFraction": 0.25,
-  "siegeStuckSeconds": 0.75,
+  "stuckRecoverySeconds": 0.75,
   "breachHysteresisSeconds": 1.0,
   "breachReevalSeconds": 0.5,
   "waveCountBase": 4,

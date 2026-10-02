@@ -13,6 +13,7 @@ import {
   enemyLevelBounty,
   MAX_BURN_STACKS,
   MIN_SLOW_FACTOR,
+  STUCK_RECOVERY_SECONDS,
 } from "@/sim/ConstantsEnemy.js";
 import { decideBreach } from "@/sim/navmesh/BreachDecision.js";
 import { restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdManager.js";
@@ -45,6 +46,10 @@ const warnedUnreachableFlightIds = new Set<number>();
 // Containment must re-teleport each time, but the polyline clear + rebuild behind
 // it is throttled to this cadence so the oscillation cannot force a BFS per tick.
 const FLIGHT_CONTAINMENT_REPLAN_COOLDOWN_SECONDS = 0.25;
+
+// Pin-recovery nudge strength in tiles per second of target slide speed over the
+// ballistic window (scaled by body mass and tile size into an impulse).
+const STUCK_NUDGE_TILES_PER_SECOND = 4;
 
 export function resetEnemyId() {
   nextId = 1;
@@ -194,6 +199,49 @@ function computeNearestWalkableTile(grid: GridRef, tileX: number, tileY: number)
   return bestTile;
 }
 
+function isOpenTile(grid: GridRef, tileX: number, tileY: number): boolean {
+  return isWalkableTile(grid, tileX, tileY) && !grid.blocked.has(`${tileX},${tileY}`);
+}
+
+// Nearest walkable tile that carries no live tower. Breach decisions anchor on
+// this: a body rounding a chamfered wall corner has its center inside the blocked
+// tile's rectangle, and reading the open leg from that tile would report the lane
+// as sealed (distance -1) and misfire the siege conversion.
+// Blocked-ness changes at runtime, so the cache is stamped with pathVersion and
+// rebuilt when a tower set change invalidates it.
+const nearestOpenCache = new WeakMap<GridRef, { pathVersion: number; entries: Map<number, WalkableTile | null> }>();
+
+export function invalidateNearestOpenCache(grid: GridRef): void {
+  nearestOpenCache.delete(grid);
+}
+
+export function nearestOpenTile(grid: GridRef, tileX: number, tileY: number): WalkableTile | null {
+  let gridCache = nearestOpenCache.get(grid);
+  if (!gridCache || gridCache.pathVersion !== grid.pathVersion) {
+    gridCache = { pathVersion: grid.pathVersion, entries: new Map() };
+    nearestOpenCache.set(grid, gridCache);
+  }
+  const tileKey = tileY * grid.width + tileX;
+  if (gridCache.entries.has(tileKey)) return gridCache.entries.get(tileKey) ?? null;
+  let bestTile: WalkableTile | null = null;
+  let bestSquaredDistance = Infinity;
+  for (let rowIndex = 0; rowIndex < grid.height; rowIndex++) {
+    for (let columnIndex = 0; columnIndex < grid.width; columnIndex++) {
+      if (!isOpenTile(grid, columnIndex, rowIndex)) continue;
+      const deltaX = columnIndex - tileX;
+      const deltaY = rowIndex - tileY;
+      const squaredDistance = deltaX * deltaX + deltaY * deltaY;
+      if (squaredDistance < bestSquaredDistance) {
+        bestSquaredDistance = squaredDistance;
+        bestTile = Object.freeze({ x: columnIndex, y: rowIndex });
+      }
+    }
+  }
+  const frozen = bestTile;
+  gridCache.entries.set(tileKey, frozen);
+  return frozen;
+}
+
 interface EnemyManagerRef {
   enemies: Enemy[];
   getEnemiesInRange(x: number, y: number, range: number): Enemy[];
@@ -307,8 +355,11 @@ export class Enemy {
   liveTowerAt: LiveTowerAt = () => false;
   towerAt: (tileX: number, tileY: number) => Tower | null = () => null;
   lastMoveTargetMode: string | null = null;
-  // Progress tracking for auto-siege when stuck on a choke.
+  // Progress tracking for the walk-only pin recovery.
   stuckTimer: number = 0;
+  // Tangent side of the next pin-recovery nudge; alternates after each attempt so
+  // a corner pin that does not slide one way tries the other.
+  stuckNudgeSign: 1 | -1 = 1;
   // Breach-vs-detour decision cache. Re-evaluate when the enemy changes tile,
   // the tower set changes (pathVersion), or the cadence elapses, so per-tick
   // intent stays at field reads instead of a greedy descent every tick.
@@ -733,6 +784,8 @@ export class Enemy {
         distanceAt,
       );
       this.stuckTimer = 0;
+      this.lastProgressX = this.x;
+      this.lastProgressY = this.y;
       if (chosen) {
         if (!(this.routingMode === "siege" && this.siegeTower === chosen)) this.applySiege(chosen);
       } else if (this.routingMode === "siege") {
@@ -744,6 +797,7 @@ export class Enemy {
       this.routingMode === "default" &&
       enemyManager
     ) {
+      this.updateStuckRecovery(dt);
       this.evaluateBreachDecision(dt, enemyManager);
     } else if (this.routingMode !== "siege") {
       this.stuckTimer = 0;
@@ -795,32 +849,35 @@ export class Enemy {
     const readBlockers = (tileX: number, tileY: number): Array<{ x: number; y: number }> =>
       enemyManager.throughBlockers?.(tileX, tileY) ?? [];
     if (!enemyManager.distanceToBase || !enemyManager.throughDistanceToBase) {
-      this.trackBreachProgress();
       return;
     }
     const tile = this.currentTile();
-    const snapped = isWalkableTile(this.grid, tile.x, tile.y) ? tile : nearestWalkableTile(this.grid, tile.x, tile.y);
-    if (!snapped) {
-      this.trackBreachProgress();
+    // The decision anchors on an open (tower-free) tile: a body rounding a
+    // chamfered wall corner stands inside the blocked tile's rectangle, and
+    // reading the open leg from that tile reports a sealed lane and misfires the
+    // siege conversion. Falls back to the type-only snap for a map with no open
+    // tile left, where the sealed-lane rule is genuinely correct.
+    const anchor = isOpenTile(this.grid, tile.x, tile.y)
+      ? tile
+      : (nearestOpenTile(this.grid, tile.x, tile.y) ?? nearestWalkableTile(this.grid, tile.x, tile.y));
+    if (!anchor) {
       return;
     }
-    const snapKey = snapped.y * this.grid.width + snapped.x;
+    const anchorKey = anchor.y * this.grid.width + anchor.x;
     const towerSetChanged = this.grid.pathVersion !== this.breachPathVersion;
     const siegeTargetGone = this.routingMode === "siege" && (!this.siegeTower || this.siegeTower.isGhost);
-    if (!towerSetChanged && !siegeTargetGone && snapKey === this.breachSnapKey && this.breachCooldownSeconds > 0) {
-      this.trackBreachProgress();
+    if (!towerSetChanged && !siegeTargetGone && anchorKey === this.breachSnapKey && this.breachCooldownSeconds > 0) {
       return;
     }
     this.breachCooldownSeconds = BREACH_REEVAL_SECONDS;
-    this.trackBreachProgress();
-    const openDistance = readOpen(snapped.x, snapped.y);
-    const throughDistance = readThrough(snapped.x, snapped.y);
+    const openDistance = readOpen(anchor.x, anchor.y);
+    const throughDistance = readThrough(anchor.x, anchor.y);
     if (throughDistance < 0) {
-      this.breachSnapKey = snapKey;
+      this.breachSnapKey = anchorKey;
       this.breachPathVersion = this.grid.pathVersion;
       return;
     }
-    const blockers = this.blockersFromTiles(readBlockers(snapped.x, snapped.y));
+    const blockers = this.blockersFromTiles(readBlockers(anchor.x, anchor.y));
     const currentlySieging = this.routingMode === "siege";
     const evaluation = decideBreach({
       openDistanceTiles: openDistance,
@@ -831,7 +888,7 @@ export class Enemy {
       hysteresisSeconds: BREACH_HYSTERESIS_SECONDS,
       currentlySieging,
     });
-    this.breachSnapKey = snapKey;
+    this.breachSnapKey = anchorKey;
     this.breachPathVersion = this.grid.pathVersion;
     if (evaluation.decision === "detour") {
       if (currentlySieging) this.releaseToDefault();
@@ -866,10 +923,63 @@ export class Enemy {
     return this.routingMode === "siege" && this.siegeTower === tower && !tower.isGhost;
   }
 
-  private trackBreachProgress(): void {
+  // Walk-only recovery for a default-routing enemy pinned on live tower contact:
+  // the breach comparator chose the detour, so a physical jam re-plans the crowd
+  // corridor and nudges the body along the wall face instead of converting the
+  // enemy to a siege. A pin is no progress (or an INVALID agent) for
+  // STUCK_RECOVERY_SECONDS; the nudge impulse rides the ballistic window so the
+  // crowd steering cannot overwrite it, and the tangent side alternates between
+  // attempts. Stunned enemies are excluded: launchEnemy releases the motion lock
+  // a stun park must keep.
+  private updateStuckRecovery(dt: number): void {
+    const contactTower = this.blockedByTower && !this.blockedByTower.isGhost ? this.blockedByTower : null;
+    if (!contactTower || this.stunTimer > 0) {
+      this.stuckTimer = 0;
+      this.lastProgressX = this.x;
+      this.lastProgressY = this.y;
+      return;
+    }
+    const progress = Math.hypot(this.x - this.lastProgressX, this.y - this.lastProgressY);
+    const agentInvalid = this.agent?.state() === 0;
+    if (progress >= this.grid.tileSize * 0.05 && !agentInvalid) {
+      this.stuckTimer = 0;
+      this.lastProgressX = this.x;
+      this.lastProgressY = this.y;
+      return;
+    }
+    this.stuckTimer += dt;
+    if (this.stuckTimer < STUCK_RECOVERY_SECONDS) return;
     this.stuckTimer = 0;
     this.lastProgressX = this.x;
     this.lastProgressY = this.y;
+    this.clearMoveTargetCache();
+    this.applyStuckNudge(contactTower);
+  }
+
+  // Tangential impulse that breaks a static wall/corner contact: desired
+  // direction toward the next crowd corner rotated ±90° (side alternates), with
+  // half a unit of the tower's outward normal blended in so the push also
+  // separates from the face. Magnitude targets roughly half a tile of travel over
+  // the ballistic window against the 0.9 linear damping.
+  private applyStuckNudge(contactTower: Tower): void {
+    if (!this.body) return;
+    const towerWorld = this.grid.tileToWorld(contactTower.tileX, contactTower.tileY);
+    const outwardX = this.x - towerWorld.x;
+    const outwardY = this.y - towerWorld.y;
+    const outwardLength = Math.hypot(outwardX, outwardY) || 1;
+    const corner = this.nextCornerWorld() ?? this.lastMoveTargetWorld ?? { x: 0, y: 0 };
+    const desiredX = corner.x - this.x;
+    const desiredY = corner.y - this.y;
+    const desiredLength = Math.hypot(desiredX, desiredY) || 1;
+    const side = this.stuckNudgeSign;
+    const tangentX = (-desiredY / desiredLength) * side;
+    const tangentY = (desiredX / desiredLength) * side;
+    const blendX = tangentX + (outwardX / outwardLength) * 0.5;
+    const blendY = tangentY + (outwardY / outwardLength) * 0.5;
+    const blendLength = Math.hypot(blendX, blendY) || 1;
+    const impulseScale = this.body.mass() * this.grid.tileSize * STUCK_NUDGE_TILES_PER_SECOND;
+    launchEnemy(this, (blendX / blendLength) * impulseScale, (blendY / blendLength) * impulseScale);
+    this.stuckNudgeSign = side === 1 ? -1 : 1;
   }
 
   // Reads stepped body, sparse agent resync, contact-driven attacks, bounds.

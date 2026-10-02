@@ -54,6 +54,68 @@ export function corridorConvexVertices(grid: Grid): Map<string, CorridorConvexVe
   return vertices;
 }
 
+function isOpenTile(grid: Grid, tileX: number, tileY: number): boolean {
+  if (!grid.inBounds(tileX, tileY)) return false;
+  if (!isWalkable(grid, tileX, tileY)) return false;
+  return !grid.blocked.has(`${tileX},${tileY}`);
+}
+
+function isBlockedPathTile(grid: Grid, tileX: number, tileY: number): boolean {
+  return grid.isPath(tileX, tileY) && grid.blocked.has(`${tileX},${tileY}`);
+}
+
+// Inside corners where the solid quadrant is a path tile carrying a live tower
+// (grid.blocked) and the other three quadrants are open walkable. The tower
+// cuboid corner at such a vertex juts into the open corridor exactly like a
+// corridor-wall inside corner, so the tower gets the same chamfer cut; corners
+// shared with a second tower tile (two solid quadrants) stay square because no
+// body rounds them.
+export function towerJutVertices(grid: Grid): Map<string, CorridorConvexVertex> {
+  const vertices = new Map<string, CorridorConvexVertex>();
+  for (let gridJ = 1; gridJ < grid.height; gridJ++) {
+    for (let gridI = 1; gridI < grid.width; gridI++) {
+      const northwest = isOpenTile(grid, gridI - 1, gridJ - 1);
+      const northeast = isOpenTile(grid, gridI, gridJ - 1);
+      const southwest = isOpenTile(grid, gridI - 1, gridJ);
+      const southeast = isOpenTile(grid, gridI, gridJ);
+      let signX = 0;
+      let signY = 0;
+      if (!northwest && northeast && southwest && southeast && isBlockedPathTile(grid, gridI - 1, gridJ - 1)) {
+        signX = 1;
+        signY = 1;
+      } else if (!northeast && northwest && southeast && southwest && isBlockedPathTile(grid, gridI, gridJ - 1)) {
+        signX = -1;
+        signY = 1;
+      } else if (!southwest && northwest && southeast && northeast && isBlockedPathTile(grid, gridI - 1, gridJ)) {
+        signX = 1;
+        signY = -1;
+      } else if (!southeast && northeast && southwest && northwest && isBlockedPathTile(grid, gridI, gridJ)) {
+        signX = -1;
+        signY = -1;
+      }
+      if (signX !== 0) vertices.set(corridorVertexKey(gridI, gridJ), { sx: signX, sy: signY });
+    }
+  }
+  return vertices;
+}
+
+// Corners of the tile (tileX, tileY) that sit on vertices in the map: the vertex
+// one step up-left of the tile corner is that tile's northwest corner, and so on
+// for the other three. A jut/convex vertex found there means this tile is that
+// vertex's solid quadrant, so the tile's own corner is the one to cut.
+function tileOwnedCorners(
+  tileX: number,
+  tileY: number,
+  vertices: ReadonlyMap<string, CorridorConvexVertex>,
+): Set<TerrainTowerCorner> {
+  const cutCorners = new Set<TerrainTowerCorner>();
+  if (vertices.has(corridorVertexKey(tileX, tileY))) cutCorners.add("northwest");
+  if (vertices.has(corridorVertexKey(tileX + 1, tileY))) cutCorners.add("northeast");
+  if (vertices.has(corridorVertexKey(tileX + 1, tileY + 1))) cutCorners.add("southeast");
+  if (vertices.has(corridorVertexKey(tileX, tileY + 1))) cutCorners.add("southwest");
+  return cutCorners;
+}
+
 // Local-space outline (body origin at the tile center, +y south) for a terrain
 // tower that owns a corridor convex vertex. Null keeps the full cuboid: path
 // tiles must not open a gap, and a cut that consumes an edge would invert the face.
@@ -111,11 +173,28 @@ export function terrainTowerCutCorners(
   convexVertices: ReadonlyMap<string, CorridorConvexVertex>,
 ): Set<TerrainTowerCorner> | null {
   if (!grid.isTerrain(tileX, tileY)) return null;
-  const cutCorners = new Set<TerrainTowerCorner>();
-  if (convexVertices.has(corridorVertexKey(tileX, tileY))) cutCorners.add("northwest");
-  if (convexVertices.has(corridorVertexKey(tileX + 1, tileY))) cutCorners.add("northeast");
-  if (convexVertices.has(corridorVertexKey(tileX + 1, tileY + 1))) cutCorners.add("southeast");
-  if (convexVertices.has(corridorVertexKey(tileX, tileY + 1))) cutCorners.add("southwest");
+  return ownedCornersOrNull(tileX, tileY, convexVertices);
+}
+
+// Path-tower variant: the solid quadrant is a live-tower path tile, so the cut
+// corners come from towerJutVertices instead of the terrain-side corridor
+// vertices. Ghosted towers are absent from grid.blocked and never cut.
+export function pathTowerCutCorners(
+  grid: Grid,
+  tileX: number,
+  tileY: number,
+  jutVertices: ReadonlyMap<string, CorridorConvexVertex>,
+): Set<TerrainTowerCorner> | null {
+  if (!grid.isPath(tileX, tileY) || !grid.blocked.has(`${tileX},${tileY}`)) return null;
+  return ownedCornersOrNull(tileX, tileY, jutVertices);
+}
+
+function ownedCornersOrNull(
+  tileX: number,
+  tileY: number,
+  vertices: ReadonlyMap<string, CorridorConvexVertex>,
+): Set<TerrainTowerCorner> | null {
+  const cutCorners = tileOwnedCorners(tileX, tileY, vertices);
   if (cutCorners.size === 0) return null;
   return cutCorners;
 }

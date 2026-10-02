@@ -11,8 +11,10 @@ import { ContactProcessor } from "./ContactProcessor.js";
 import {
   buildCorridorSegments,
   corridorConvexVertices,
+  pathTowerCutCorners,
   terrainTowerCutCorners,
   terrainTowerLocalOutline,
+  towerJutVertices,
 } from "./corridorWalls.js";
 import { launchEnemy } from "./launchEnemy.js";
 import { getRapier } from "./rapierContext.js";
@@ -140,8 +142,12 @@ export class PhysicsWorld {
     this.dropBodies(this.towerBodies);
     this.towerById.clear();
     // A square terrain tower fills the corridor chamfer pocket. Cutting the corner
-    // that owns that vertex puts the collider diagonal on the wall enemies already slide.
+    // that owns that vertex puts the collider diagonal on the wall enemies already
+    // slide. Path towers get the same treatment where their cuboid corner juts
+    // into open corridor (wall-block S-bends), so a detouring body slides the
+    // diagonal instead of pinning on the square corner.
     const convexVertices = corridorConvexVertices(this.grid);
+    const jutVertices = towerJutVertices(this.grid);
     for (const tower of towerManager.towers) {
       if (tower.isGhost) continue;
       this.towerById.set(tower.id, tower);
@@ -152,7 +158,9 @@ export class PhysicsWorld {
       const body = this.world.createRigidBody(
         RAPIER.RigidBodyDesc.fixed().setTranslation(centerX, centerY).setUserData(tag),
       );
-      const cutCorners = terrainTowerCutCorners(this.grid, tower.tileX, tower.tileY, convexVertices);
+      const cutCorners =
+        terrainTowerCutCorners(this.grid, tower.tileX, tower.tileY, convexVertices) ??
+        pathTowerCutCorners(this.grid, tower.tileX, tower.tileY, jutVertices);
       const outline = cutCorners ? terrainTowerLocalOutline(this.grid.tileSize, cutCorners) : null;
       const chamfered = outline
         ? (RAPIER.ColliderDesc.convexPolyline(outline) ?? RAPIER.ColliderDesc.convexHull(outline))

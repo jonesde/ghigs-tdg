@@ -12,6 +12,7 @@ import {
   ENEMY_WAVE_DAMAGE_MULT,
   enemyLevelBounty,
   MIN_SLOW_FACTOR,
+  STUCK_RECOVERY_SECONDS,
 } from "@/sim/ConstantsEnemy.js";
 import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
@@ -644,6 +645,84 @@ describe("Enemy", () => {
       } finally {
         crowd.destroy();
         navBuilder.destroy();
+        physicsWorld.dispose();
+      }
+    });
+  });
+
+  describe("walk-only pin recovery", () => {
+    const fixedDt = 1 / 60;
+
+    function fakeContactTower(grid: Grid) {
+      const world = grid.tileToWorld(3, 3);
+      return {
+        id: "wall",
+        tileX: 3,
+        tileY: 3,
+        x: world.x,
+        y: world.y,
+        isGhost: false,
+        health: 100,
+        maxHealth: 100,
+        enemyAttackImmune: false,
+        takeDamage: () => {},
+      };
+    }
+
+    function makePinnedWalker(grid: Grid, physicsWorld: PhysicsWorld, stunSeconds = 0) {
+      const enemy = new Enemy("minion", 1, 0, grid, 1);
+      physicsWorld.addEnemy(enemy);
+      enemy.blockedByTower = fakeContactTower(grid);
+      // The empty manager stub leaves the breach lookups unset, so
+      // evaluateBreachDecision early-returns and the recovery is the only actor.
+      const manager = {} as unknown as Parameters<Enemy["computeIntent"]>[1];
+      if (stunSeconds > 0) enemy.applyStun(stunSeconds);
+      return { enemy, manager };
+    }
+
+    it("nudges a pinned walker after the recovery window and never converts it to a siege", () => {
+      const grid = new Grid(makeBastionMap());
+      const physicsWorld = new PhysicsWorld(grid);
+      try {
+        const { enemy, manager } = makePinnedWalker(grid, physicsWorld);
+        const steps = Math.ceil(STUCK_RECOVERY_SECONDS / fixedDt);
+        for (let step = 0; step < steps; step++) enemy.computeIntent(fixedDt, manager);
+        expect(enemy.ballisticTimer).toBeGreaterThan(0);
+        expect(enemy.routingMode).toBe("default");
+        expect(enemy.siegeTower).toBeNull();
+      } finally {
+        physicsWorld.dispose();
+      }
+    });
+
+    it("does not nudge a walker that keeps making progress against the tower", () => {
+      const grid = new Grid(makeBastionMap());
+      const physicsWorld = new PhysicsWorld(grid);
+      try {
+        const { enemy, manager } = makePinnedWalker(grid, physicsWorld);
+        const steps = Math.ceil(STUCK_RECOVERY_SECONDS / fixedDt);
+        for (let step = 0; step < steps; step++) {
+          enemy.computeIntent(fixedDt, manager);
+          enemy.x += grid.tileSize * 0.1;
+          enemy.y += grid.tileSize * 0.1;
+        }
+        expect(enemy.ballisticTimer).toBe(0);
+        expect(enemy.routingMode).toBe("default");
+      } finally {
+        physicsWorld.dispose();
+      }
+    });
+
+    it("does not nudge while stunned: the impulse path would release the stun park", () => {
+      const grid = new Grid(makeBastionMap());
+      const physicsWorld = new PhysicsWorld(grid);
+      try {
+        const { enemy, manager } = makePinnedWalker(grid, physicsWorld, 10);
+        const steps = Math.ceil(STUCK_RECOVERY_SECONDS / fixedDt);
+        for (let step = 0; step < steps; step++) enemy.computeIntent(fixedDt, manager);
+        expect(enemy.ballisticTimer).toBe(0);
+        expect(enemy.motionLock).toBe("park");
+      } finally {
         physicsWorld.dispose();
       }
     });

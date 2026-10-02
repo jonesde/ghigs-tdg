@@ -28,7 +28,7 @@ export const EnemiesContentSchema = z.object({
   maxBurnStacks: z.number(),
   knockbackBallisticSeconds: z.number(),
   agentResyncRadiusFraction: z.number(),
-  siegeStuckSeconds: z.number(),
+  stuckRecoverySeconds: z.number(),
   breachHysteresisSeconds: z.number(),
   breachReevalSeconds: z.number(),
   waveCountBase: z.number(),
