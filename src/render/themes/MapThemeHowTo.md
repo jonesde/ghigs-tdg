@@ -15,6 +15,7 @@ A map theme swaps the visual identity of towers, enemies, and map tiles on the `
 {
   "id": "your-theme-id",
   "label": "Display Name",
+  "menuBackground": "",
   "towers": { /* one entry per tower id */ },
   "enemies": { /* one entry per enemy id */ },
   "regions": [ /* 3 region objects */ ],
@@ -22,7 +23,7 @@ A map theme swaps the visual identity of towers, enemies, and map tiles on the `
 }
 ```
 
-`spawns` is optional. If it is omitted, spawn tiles fall back to a translucent red rectangle.
+`menuBackground` and `spawns` are optional. If `menuBackground` is omitted, the main menu falls back to a plain dark background. If `spawns` is omitted, spawn tiles fall back to a translucent red rectangle.
 
 Current tower ids: `basic`, `ice`, `sniper`, `cannon`, `lightning`, `railgun`, `sturdyWall`, `shotgunTank`.
 
@@ -135,6 +136,15 @@ Connections describe the current level progression: 11 chain links (`level` 1→
 | `spawns.open` | `spawn-open` | The spawn is open |
 
 Spawn art is a 36×36 symbol drawn on top of the path tile. The symbol itself is not rotated. The path tile under it is.
+
+### Main Menu Background (optional)
+
+| Field | Used on |
+|---|---|
+| `menuBackground` | The `/` main menu screen, behind the menu card and theme buttons |
+| `menuBackground` | The theme selection buttons on the main menu, as a faded preview of each theme |
+
+`menuBackground` is the main menu background — an inline `<svg>...</svg>` string or an external SVG ref (same convention as every other image). Author it with a 16:9 `viewBox` (e.g. `0 0 1600 900`) and `preserveAspectRatio="xMidYMid slice"` so it covers the viewport at any aspect ratio. The same image is rendered as a slightly faded preview on each theme selection button, where it is scaled to the button's width and clipped to its shorter height. Keep it low-contrast so the menu card and theme button labels stay readable.
 
 ---
 
@@ -262,6 +272,7 @@ The normalizer strips XML prologues, HTML comments, and whitespace. For inline S
 | Region base sets | 3 |
 | Region map images | 3 (plus a `mapLayout` data structure each) |
 | Spawn images | 3 (optional) |
+| Main menu background | 1 (optional) |
 | **Total image sets, both shipped themes** | **58** |
 
 ---

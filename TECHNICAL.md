@@ -42,7 +42,7 @@ src/
 │   ├── PauseMenu.vue            # Pause menu overlay: resume, skill tree, options, quit
 │   ├── ProgressivePlacement.vue # Between-wave block offer: height-shaded 5×5 previews, rotation, site hint
 │   ├── HelpDialog.vue           # Help/controls overlay (toggled from in-game menu)
-│   ├── MainMenu.vue             # Main menu: new game, resume, skill tree, difficulty slider, profile reset
+│   ├── MainMenu.vue             # Main menu: large theme buttons (faded menuBackground preview per theme, persisted select), new game, skill tree, commanders, run history, difficulty slider
 │   ├── MapSelect.vue            # Map selection: region tabs + themed region map with level/progressive markers + header dialogs for Generated Map / Progressive Map custom runs
 │   ├── RegionMap.vue            # Region map SVG renderer: mapImage background, connection lines, level/progressive markers with tooltips, select/start events
 │   ├── SkillTree.vue            # Skill tree: tower levels, specializations, add-ons, general upgrades
@@ -438,9 +438,9 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 
 | File | Description |
 |---|---|
-| `src/render/themes/index.ts` | Theme registry: `MAP_THEME_MANIFEST` (id/label entries), lazy loaders, `MapThemeData`/`TowerVisualMeta`/`EnemyVisualMeta`/`RegionVisualMeta` types, `RegionMapLayout`/`RegionMapNode`/`RegionMapConnection` region map types |
-| `src/render/themes/normalize.ts` | `normalizeThemeImages(theme)`: walks theme object, fetches external SVG path/URL refs, replaces with inlined SVG text |
-| `src/render/themes/data/default-map-theme.json` | Default theme data: tower/enemy SVG sprites, tile images (path + 4 terrain heights per region), base 3×3 SVG per region, region map image + level layout per region |
+| `src/render/themes/index.ts` | Theme registry: `MAP_THEME_MANIFEST` (id/label/file entries), lazy loaders, `MapThemeData`/`TowerVisualMeta`/`EnemyVisualMeta`/`RegionVisualMeta` types, `RegionMapLayout`/`RegionMapNode`/`RegionMapConnection` region map types |
+| `src/render/themes/normalize.ts` | `normalizeThemeImages(theme)`: walks theme object, fetches external SVG path/URL refs, replaces with inlined SVG text (including the top-level `menuBackground`) |
+| `src/render/themes/data/default-map-theme.json` | Default theme data: tower/enemy SVG sprites, tile images (path + 4 terrain heights per region), base 3×3 SVG per region, region map image + level layout per region, optional `menuBackground` SVG |
 
 ### Vue Components
 
@@ -455,7 +455,7 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 | `src/components/WaveGraph.vue` | Per-wave graph overlay: damage dealt, gold earned, gems earned, max enemy HP across all waves |
 | `src/components/PauseMenu.vue` | Pause menu overlay: resume, skill tree, difficulty adjustment, quit to main menu |
 | `src/components/HelpDialog.vue` | Help/controls overlay (toggled from the in-game pause menu) |
-| `src/components/MainMenu.vue` | Main menu: new game, resume, skill tree, difficulty slider, profile reset |
+| `src/components/MainMenu.vue` | Main menu: large theme buttons (faded `menuBackground` preview per theme, persisted selection), new game, skill tree, commanders, run history, difficulty slider |
 | `src/components/MapSelect.vue` | Map selection screen: header row with the 3 region tabs on the left and theme drop-down / "Generate" / "Progressive" / Back controls on the right (narrow screens stack to two centered rows with the controls above the tabs); each tab shows a `RegionMap` with 12 level + 4 progressive markers (unlock status, best waves, gem multipliers in tooltips); click selects a marker (details panel with Play button plus an on-map play button under the marker), double-click plays, locked markers never start; awaits theme resolution before navigation; "Generate" / "Progressive" buttons open dialogs (teleported to body) with the custom-run forms — "Generated Map" (style/width/height/seed) and "Progressive Map" (base entries/seed) |
 | `src/components/RegionMap.vue` | Region map SVG renderer: theme `mapImage` background (nested `<svg>` via `v-html`), connection lines resolved from `RegionMapLayout.connections`, per-node markers (`RegionMapNodeView`: label, tooltip, locked/selected/progressive states, `tabindex`/`role`); emits `select(mapIndex)` on click/Enter, `start(mapIndex)` on double-click or the on-map play button under the selected marker (never for locked markers) |
 | `src/components/SkillTree.vue` | Skill tree: tower level unlocks, specializations, add-ons, general upgrades; reads default theme (not active theme) |
@@ -616,23 +616,24 @@ Measured on difficulty tick 0:
 
 ## Map Theme System
 
-A theme swaps the visual identity of towers, enemies, and map tiles on `/game`, while leaving all gameplay stats, effects, overlays, and non-`/game`/`/map-select` screens untouched. The current polygon-based art is the default theme (`id: "default"`). Raw theme JSON is Zod-validated before `normalizeThemeImages`.
+A theme swaps the visual identity of towers, enemies, and map tiles on `/game`, and (via the optional `menuBackground` field) the main-menu background and theme-button previews on `/`, while leaving all gameplay stats, effects, and overlays untouched. The current polygon-based art is the default theme (`id: "default"`). Raw theme JSON is Zod-validated before `normalizeThemeImages`.
 
 ### How It Works
 
-1. **Theme registry** (`src/render/themes/index.ts`): `MAP_THEME_MANIFEST` lists available themes with `{id, label}`. Lazy loaders resolve theme JSON files on demand (parsed with `RawMapThemeSchema`).
-2. **Theme store** (`src/stores/mapTheme.ts`): `useMapThemeStore` holds `defaultTheme` (preloaded at app init for synchronous access by non-game screens) and `activeTheme` (resolved for the current run).
-3. **Theme JSON** (`src/render/themes/data/`): `default-map-theme.json` (default polygon art) and `the-aftermath.json` (alternate theme). Each contains tower frames (SVG `<svg>` strings), enemy walking/hit-reaction frames, per-region tile images (path + 4 terrain heights), and base 3×3 SVG art.
+1. **Theme registry** (`src/render/themes/index.ts`): `MAP_THEME_MANIFEST` lists available themes with `{id, label, file}`. Lazy loaders resolve theme JSON files on demand (parsed with `RawMapThemeSchema`).
+2. **Theme store** (`src/stores/mapTheme.ts`): `useMapThemeStore` holds `defaultTheme` (preloaded at app init for synchronous access by non-game screens), `activeTheme` (resolved for the current run), and a `loadedThemes` cache so re-selecting an already-loaded theme is instant (`loadActive` / `ensureThemeLoaded` reuse it).
+3. **Theme JSON** (`src/render/themes/data/`): `default-map-theme.json` (default polygon art) and `the-aftermath.json` (alternate theme). Each contains tower frames (SVG `<svg>` strings), enemy walking/hit-reaction frames, per-region tile images (path + 4 terrain heights), base 3×3 SVG art, region map image + layout, and an optional top-level `menuBackground` SVG (the `/` main-menu background and the faded theme-button previews).
 4. **Symbol ID contract**: IDs stay `tower-${type}-f${i}`, `enemy-${type}-f${i}`, `enemy-${type}-hit-f${i}`. Themes swap only the *content* inside `<symbol>`s and the color/name/icon metadata. Render managers need zero changes.
 5. **Stats vs visuals split:** gameplay numbers live in `src/content/data/` (via Constants facades). Only visual/displayed fields (name, color, icon, shape, animation frames, tile images) live in the theme JSON.
 
 ### Scope
 
-- **In scope** (`/game` only): Tower SVG sprites + color/icon/name, enemy SVG sprites + color/shape/name, per-region tile images + base art + display names.
-- **Out of scope**: All gameplay data, all effects/overlays (particles, lightning, HP bars, range circles, etc.), non-`/game`/`/map-select` screens (Skill Tree uses default theme), in-game theme switching, audio.
+- **In scope**: Tower SVG sprites + color/icon/name, enemy SVG sprites + color/shape/name, per-region tile images + base art + display names, and the main-menu background (`menuBackground` on `/`, read from the active theme).
+- **Out of scope**: All gameplay data, all effects/overlays (particles, lightning, HP bars, range circles, etc.), the Skill Tree (uses default theme), in-game theme switching, audio.
 
 ### UI Integration
 
+- **MainMenu**: Large theme buttons (one per manifest entry, same width as the menu card, each rendering its own `menuBackground` as a faded preview) set the persisted selection (`persistStore.lastSelectedThemeId`) and `loadActive` it; the full-screen background renders `activeTheme.menuBackground` (falls back to a solid dark background when the field is absent).
 - **MapSelect**: Theme drop-down selects active theme; "Generate" / "Progressive" header buttons open dialogs with the custom-run forms; grid uses responsive `auto-fill` layout; `startMap` awaits theme resolution before navigating to `/game`.
 - **GameShop / TowerPanel / StatsPanel / GameHud**: Read themed name/color/icon from `mapThemeStore.activeTheme` on `/game`.
 - **SkillTree / HistoryScreen / EndScreen**: Read from `mapThemeStore.defaultTheme` (not active theme).
@@ -647,7 +648,7 @@ Game progress (gems, unlocks, difficulty, map progress) is saved to `localStorag
 
 | Route | Component | Description |
 |---|---|---|
-| `/` | `MainMenu.vue` | Main menu with difficulty slider and navigation |
+| `/` | `MainMenu.vue` | Main menu: large theme buttons (faded themed previews, persisted selection) plus difficulty slider and navigation |
 | `/map-select` | `MapSelect.vue` | Region tabs + themed region map with level/progressive markers, theme drop-down, Generate / Progressive header buttons opening custom-run dialogs, awaits theme resolution before navigation |
 | `/skill-tree` | `SkillTree.vue` | Gem-based upgrade tree |
 | `/game` | `GameScreen.vue` | Active gameplay with single SVG root + UI overlays |

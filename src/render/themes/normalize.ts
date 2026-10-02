@@ -119,6 +119,7 @@ async function normalizeSpawnVisuals(raw: {
 export async function normalizeThemeImages(raw: {
   id: string;
   label: string;
+  menuBackground?: string;
   towers: Record<
     string,
     {
@@ -164,9 +165,12 @@ export async function normalizeThemeImages(raw: {
 
   const normalizedSpawns = raw.spawns ? await normalizeSpawnVisuals(raw.spawns) : undefined;
 
+  const menuBackground = raw.menuBackground ? stripSvgWrapper(await resolveImage(raw.menuBackground)) : undefined;
+
   const result: {
     id: string;
     label: string;
+    menuBackground?: string;
     towers: Record<string, TowerVisualMeta>;
     enemies: Record<string, EnemyVisualMeta>;
     regions: RegionVisualMeta[];
@@ -180,6 +184,9 @@ export async function normalizeThemeImages(raw: {
   };
   if (normalizedSpawns) {
     result.spawns = normalizedSpawns;
+  }
+  if (menuBackground) {
+    result.menuBackground = menuBackground;
   }
   return result;
 }

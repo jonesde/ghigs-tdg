@@ -16,6 +16,7 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
   const activeThemeId = ref<MapThemeId>(DEFAULT_THEME_ID);
   const activeTheme = ref<MapThemeData | null>(null);
   const defaultTheme = ref<MapThemeData | null>(null);
+  const loadedThemes = ref<Record<string, MapThemeData>>({});
   const loading = ref(false);
   const error = ref<string | null>(null);
 
@@ -27,6 +28,7 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
       const normalized = await normalizeThemeImages(rawData as never);
       defaultTheme.value = normalized;
       activeTheme.value = normalized;
+      loadedThemes.value[DEFAULT_THEME_ID] = normalized;
 
       const persistStore = usePersistStore();
       const savedThemeId = persistStore.lastSelectedThemeId;
@@ -43,30 +45,54 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
     }
   }
 
+  async function fetchThemeData(id: MapThemeId): Promise<MapThemeData> {
+    const loader = MAP_THEME_LOADERS[id];
+    if (!loader) {
+      throw new Error(`Unknown theme ID: ${id}`);
+    }
+    const rawData = await loader.load();
+    return normalizeThemeImages(rawData as never);
+  }
+
   async function loadActive(id: MapThemeId): Promise<MapThemeData> {
     if (id === DEFAULT_THEME_ID && defaultTheme.value) {
       activeThemeId.value = id;
       activeTheme.value = defaultTheme.value;
+      loadedThemes.value[DEFAULT_THEME_ID] = defaultTheme.value;
       return defaultTheme.value;
+    }
+    const cached = loadedThemes.value[id];
+    if (cached) {
+      activeThemeId.value = id;
+      activeTheme.value = cached;
+      return cached;
     }
     loading.value = true;
     error.value = null;
     activeThemeId.value = id;
     try {
-      const loader = MAP_THEME_LOADERS[id];
-      if (!loader) {
-        throw new Error(`Unknown theme ID: ${id}`);
-      }
-      const rawData = await loader.load();
-      const data = await normalizeThemeImages(rawData as never);
+      const data = await fetchThemeData(id);
+      loadedThemes.value[id] = data;
       activeTheme.value = data;
-      return data;
+      return loadedThemes.value[id] ?? data;
     } catch (err) {
       error.value = err instanceof Error ? err.message : "Failed to load theme";
       throw err;
     } finally {
       loading.value = false;
     }
+  }
+
+  async function ensureThemeLoaded(id: MapThemeId): Promise<MapThemeData> {
+    if (id === DEFAULT_THEME_ID && defaultTheme.value) {
+      loadedThemes.value[DEFAULT_THEME_ID] = defaultTheme.value;
+      return defaultTheme.value;
+    }
+    const cached = loadedThemes.value[id];
+    if (cached) return cached;
+    const data = await fetchThemeData(id);
+    loadedThemes.value[id] = data;
+    return loadedThemes.value[id] ?? data;
   }
 
   const availableThemes = computed<MapThemeManifestEntry[]>(() => MAP_THEME_MANIFEST);
@@ -132,10 +158,12 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
     activeThemeId,
     activeTheme,
     defaultTheme,
+    loadedThemes,
     loading,
     error,
     preloadDefault,
     loadActive,
+    ensureThemeLoaded,
     availableThemes,
     activeThemeLabel,
     getTowerVisual,

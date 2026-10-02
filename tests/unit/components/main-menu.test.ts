@@ -4,16 +4,21 @@ import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { RouteRecordRaw } from "vue-router";
 import { createMemoryHistory, createRouter } from "vue-router";
+import { mockDefaultTheme } from "@/../tests/helpers/mock-stores.js";
 import MainMenu from "@/components/MainMenu.vue";
 import { useGameStore } from "@/stores/game.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
+
+const THEME_BG_SVG = "<svg viewBox='0 0 1600 900'><rect width='1600' height='900' fill='themebgmarker'/></svg>";
 
 interface MountResult {
   pinia: ReturnType<typeof createPinia>;
   gameStore: ReturnType<typeof useGameStore>;
   persistStore: ReturnType<typeof usePersistStore>;
   uiStore: ReturnType<typeof useUiStore>;
+  themeStore: ReturnType<typeof useMapThemeStore>;
   router: ReturnType<typeof createRouter>;
 }
 
@@ -32,9 +37,14 @@ function mountMainMenu(): MountResult {
   const gameStore = useGameStore();
   const persistStore = usePersistStore();
   const uiStore = useUiStore();
+  const themeStore = useMapThemeStore();
+  const themedMock = { ...mockDefaultTheme, menuBackground: THEME_BG_SVG };
+  themeStore.defaultTheme = themedMock;
+  themeStore.activeTheme = themedMock;
+  themeStore.loadedThemes[themedMock.id] = themedMock;
   gameStore.resetToMenu();
   const router = createRouterWithRoutes();
-  return { pinia, gameStore, persistStore, uiStore, router };
+  return { pinia, gameStore, persistStore, uiStore, themeStore, router };
 }
 
 describe("MainMenu", () => {
@@ -117,5 +127,49 @@ describe("MainMenu", () => {
     await skillBtn.trigger("click");
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(router.currentRoute.value.path).toBe("/skill-tree");
+  });
+
+  it("renders a theme card for every theme in the manifest", () => {
+    const { pinia, themeStore, router } = mountMainMenu();
+    const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
+    const cards = wrapper.findAll(".theme-card");
+    expect(cards.length).toBe(themeStore.availableThemes.length);
+    expect(cards.length).toBe(2);
+  });
+
+  it("highlights the currently selected theme card", () => {
+    const { pinia, persistStore, router } = mountMainMenu();
+    persistStore.lastSelectedThemeId = "the-aftermath";
+    const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
+    const selected = wrapper.findAll(".theme-card").find((card) => card.classes("selected"));
+    expect(selected).toBeDefined();
+    expect(selected!.text()).toBe("Aftermath");
+  });
+
+  it("selecting a theme card persists the theme id and loads it", async () => {
+    const { pinia, persistStore, themeStore, router } = mountMainMenu();
+    persistStore.lastSelectedThemeId = "the-aftermath";
+    const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
+    const card = wrapper.findAll(".theme-card").find((c) => c.text().includes("Polymath"))!;
+    await card.trigger("click");
+    expect(persistStore.lastSelectedThemeId).toBe("default");
+    expect(themeStore.activeThemeId).toBe("default");
+  });
+
+  it("renders the active theme menu background", () => {
+    const { pinia, router } = mountMainMenu();
+    const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
+    const background = wrapper.find(".menu-background");
+    expect(background.exists()).toBe(true);
+    expect(background.html()).toContain("themebgmarker");
+  });
+
+  it("renders each theme card's menu background as a preview", () => {
+    const { pinia, router } = mountMainMenu();
+    const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
+    const card = wrapper.findAll(".theme-card").find((c) => c.text().includes("Polymath"))!;
+    const cardBackground = card.find(".theme-card-bg");
+    expect(cardBackground.exists()).toBe(true);
+    expect(cardBackground.html()).toContain("themebgmarker");
   });
 });

@@ -1,6 +1,7 @@
 {
   "id": "the-aftermath",
   "label": "Aftermath",
+  "menuBackground": "<svg viewBox=\"0 0 1600 900\" preserveAspectRatio=\"xMidYMid slice\"><rect width=\"1600\" height=\"900\" fill=\"#2a1c16\"/><ellipse cx=\"420\" cy=\"280\" rx=\"420\" ry=\"200\" fill=\"#4a2e1c\" opacity=\"0.5\"/><ellipse cx=\"1240\" cy=\"640\" rx=\"450\" ry=\"210\" fill=\"#4a2e1c\" opacity=\"0.4\"/><ellipse cx=\"1000\" cy=\"450\" rx=\"320\" ry=\"140\" fill=\"#8a5a3a\" opacity=\"0.28\"/><path d=\"M90 900 Q600 760 1050 620 T1560 300\" stroke=\"#b87333\" stroke-opacity=\"0.35\" stroke-width=\"30\" stroke-linecap=\"round\" fill=\"none\"/><rect x=\"24\" y=\"24\" width=\"1552\" height=\"852\" rx=\"32\" fill=\"none\" stroke=\"#b87333\" stroke-opacity=\"0.35\" stroke-width=\"5\"/></svg>",
   "towers": {
     "basic": {
       "name": "Ten-Miss Blaster",

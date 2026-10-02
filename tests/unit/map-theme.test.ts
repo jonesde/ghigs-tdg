@@ -14,7 +14,7 @@ describe("Map Theme System", () => {
       const theme = MAP_THEME_MANIFEST.find((e) => e.id === DEFAULT_THEME_ID);
       expect(theme).toBeDefined();
       expect(theme!.id).toBe(DEFAULT_THEME_ID);
-      expect(theme!.label).toBe("Polymath (Default)");
+      expect(theme!.label).toBe("Polymath");
     });
 
     it("should have a file path for the default theme", () => {
@@ -153,6 +153,49 @@ describe("Map Theme System", () => {
       expect(basic.animation).toBeNull();
       expect(basic.walking).toBeNull();
     });
+
+    it("normalizes menuBackground when present", async () => {
+      const rawTheme = {
+        id: "test",
+        label: "Test Theme",
+        menuBackground: "<svg viewBox='0 0 100 100'><rect width='100' height='100' fill='purple'/></svg>",
+        towers: { basic: { name: "Basic Tower", color: "#ffffff", icon: "🔧", animation: null } },
+        enemies: {
+          skeleton: {
+            name: "Skeleton",
+            color: "#cccccc",
+            shape: "circle",
+            walking: { duration: 400, frames: [{ image: "<svg></svg>" }] },
+          },
+        },
+        regions: [],
+      };
+
+      const normalized = await normalizeThemeImages(rawTheme as never);
+      expect(normalized.menuBackground).toBeDefined();
+      expect(normalized.menuBackground!.startsWith("<svg")).toBe(true);
+      expect(normalized.menuBackground).toContain("fill='purple'");
+    });
+
+    it("leaves menuBackground undefined when absent", async () => {
+      const rawTheme = {
+        id: "test",
+        label: "Test Theme",
+        towers: { basic: { name: "Basic Tower", color: "#ffffff", icon: "🔧", animation: null } },
+        enemies: {
+          skeleton: {
+            name: "Skeleton",
+            color: "#cccccc",
+            shape: "circle",
+            walking: { duration: 400, frames: [{ image: "<svg></svg>" }] },
+          },
+        },
+        regions: [],
+      };
+
+      const normalized = await normalizeThemeImages(rawTheme as never);
+      expect(normalized.menuBackground).toBeUndefined();
+    });
   });
 
   describe("Theme Store", () => {
@@ -183,6 +226,35 @@ describe("Map Theme System", () => {
       const store = createTestMapThemeStore();
       expect(store.preloadDefault).toBeInstanceOf(Function);
       expect(store.reset).toBeInstanceOf(Function);
+    });
+
+    it("should provide ensureThemeLoaded function", () => {
+      const store = createTestMapThemeStore();
+      expect(store.ensureThemeLoaded).toBeInstanceOf(Function);
+    });
+
+    it("loads a theme into loadedThemes without changing the active theme", async () => {
+      const store = createTestMapThemeStore();
+      const activeBefore = store.activeTheme;
+      const loaded = await store.ensureThemeLoaded("the-aftermath");
+      expect(loaded.menuBackground).toBeDefined();
+      expect(store.loadedThemes["the-aftermath"]).toBe(loaded);
+      expect(store.activeTheme).toBe(activeBefore);
+    });
+
+    it("returns the cached theme on repeated ensureThemeLoaded calls", async () => {
+      const store = createTestMapThemeStore();
+      const first = await store.ensureThemeLoaded("the-aftermath");
+      const second = await store.ensureThemeLoaded("the-aftermath");
+      expect(second).toBe(first);
+    });
+
+    it("reuses the loadedThemes cache when switching the active theme", async () => {
+      const store = createTestMapThemeStore();
+      const loaded = await store.ensureThemeLoaded("the-aftermath");
+      const active = await store.loadActive("the-aftermath");
+      expect(active).toBe(loaded);
+      expect(store.activeTheme).toBe(loaded);
     });
   });
 });
@@ -291,6 +363,27 @@ describe("Aftermath theme", () => {
       expect(image.includes("url(#")).toBe(false);
       expect(image.includes("<filter")).toBe(false);
     }
+  });
+});
+
+describe("Menu background", () => {
+  const shippedThemes = [
+    { label: "Polymath", raw: defaultTheme },
+    { label: "Aftermath", raw: aftermathTheme },
+  ];
+
+  for (const { label, raw } of shippedThemes) {
+    it(`${label} ships a main menu background`, () => {
+      const theme = RawMapThemeSchema.parse(raw);
+      expect(theme.menuBackground).toBeDefined();
+      expect(theme.menuBackground!.startsWith("<svg")).toBe(true);
+    });
+  }
+
+  it("parses a theme without menuBackground (field is optional)", () => {
+    const raw = structuredClone(defaultTheme) as Record<string, unknown>;
+    delete raw.menuBackground;
+    expect(() => RawMapThemeSchema.parse(raw)).not.toThrow();
   });
 });
 

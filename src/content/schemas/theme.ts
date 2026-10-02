@@ -99,6 +99,7 @@ const SpawnPointVisualSchema = z.object({ closed: z.string(), open: z.string(), 
 export const RawMapThemeSchema = z.object({
   id: z.string(),
   label: z.string(),
+  menuBackground: z.string().optional(),
   towers: z.record(z.string(), TowerVisualSchema),
   enemies: z.record(z.string(), EnemyVisualSchema),
   regions: z.array(RegionVisualSchema),

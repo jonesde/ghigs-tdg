@@ -83,6 +83,7 @@ export interface SpawnPointVisualMeta {
 export interface MapThemeData {
   id: string;
   label: string;
+  menuBackground?: string;
   towers: Record<string, TowerVisualMeta>;
   enemies: Record<string, EnemyVisualMeta>;
   regions: RegionVisualMeta[];
@@ -115,7 +116,7 @@ export function getThemeLoader(id: string): MapThemeLoader | undefined {
 /* ======= ADD MAP THEMES HERE ======= */
 
 export const MAP_THEME_MANIFEST: MapThemeManifestEntry[] = [
-  { id: DEFAULT_THEME_ID, label: "Polymath (Default)", file: "./data/default-map-theme.json" },
+  { id: DEFAULT_THEME_ID, label: "Polymath", file: "./data/default-map-theme.json" },
   { id: "the-aftermath", label: "Aftermath", file: "./data/the-aftermath.json" },
 ];
 
