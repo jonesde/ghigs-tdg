@@ -73,7 +73,21 @@ export function createStubbsBrain(): CommanderBrain {
         (observation.enemies.length > 0
           ? { x: observation.enemies[0]!.tileX, y: observation.enemies[0]!.tileY }
           : null);
-      const enemyDistance = enemyTile ? distanceAt(navDistances, enemyTile.x, enemyTile.y) : -1;
+      let enemyDistance = enemyTile ? distanceAt(navDistances, enemyTile.x, enemyTile.y) : -1;
+      if (enemyDistance < 0) {
+        // The representative mean tile often lands on terrain or void for flying
+        // groups, and the ground nav field reads -1 there, silently dropping the
+        // "ahead" filter. The per-enemy distance is height-aware — the snapshot
+        // picks the flight field for flyers — so filter against the most advanced
+        // enemy instead. Mixed groups compare ground and flight fields numerically;
+        // both measure steps-to-base on their own mesh, so the min stays the
+        // closest-to-base enemy of either kind rather than a cross-mesh ranking.
+        for (const enemy of observation.enemies) {
+          const distance = enemy.distanceToBase ?? -1;
+          if (distance < 0) continue;
+          if (enemyDistance < 0 || distance < enemyDistance) enemyDistance = distance;
+        }
+      }
 
       let targetTower: ObservationTower | null = null;
       for (const tower of liveTowers) {

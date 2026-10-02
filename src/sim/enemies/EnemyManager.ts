@@ -9,7 +9,7 @@ import type { SpawnOrderView } from "@/sim/SimulationSnapshot.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
 import type { AttackTarget } from "./Enemy.js";
-import { Enemy, resetEnemyId } from "./Enemy.js";
+import { Enemy, forgetUnreachableFlightWarning, resetEnemyId } from "./Enemy.js";
 
 interface PendingEnemyEntry {
   type: string;
@@ -465,6 +465,7 @@ export class EnemyManager {
     this.physicsWorld?.removeEnemy(enemy);
     this.particles.spawn(enemy.x, enemy.y, enemy.color, 12, { speed: 80, life: 0.5 });
     this.idToEnemy.delete(enemy.id);
+    forgetUnreachableFlightWarning(enemy.id);
     const removedSpawnIndex = enemy.spawnIndex;
     this.enemies.splice(i, 1);
     this.spawnCountsDirty = true;

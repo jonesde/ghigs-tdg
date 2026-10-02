@@ -9,7 +9,7 @@ import {
   type LlmCommanderConfig,
 } from "@/commanders/llm/types.js";
 import type { CommanderObservation } from "@/commanders/observation.js";
-import type { CommanderToMainMessage } from "@/commanders/protocol.js";
+import type { CommanderSnapshotSlice, CommanderToMainMessage } from "@/commanders/protocol.js";
 import { GameState } from "@/sim/Constants.js";
 import { GameEngine } from "@/sim/GameEngine.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
@@ -94,6 +94,11 @@ function messagesFromCall(
   const init = fetchFn.mock.calls[callIndex]?.[1] as { body?: string } | undefined;
   const body = JSON.parse(String(init?.body)) as { messages: { role: string; content: string }[] };
   return body.messages;
+}
+
+function lastUserContent(fetchFn: { mock: { calls: unknown[][] } }, callIndex: number): string {
+  const users = messagesFromCall(fetchFn, callIndex).filter((message) => message.role === "user");
+  return users[users.length - 1]?.content ?? "";
 }
 
 describe("Integration: LLM commander worker pause + relay", () => {
@@ -264,6 +269,62 @@ describe("Integration: LLM commander worker pause + relay", () => {
     const thirdUsers = thirdMessages.filter((message) => message.role === "user");
     expect(thirdUsers).toHaveLength(1);
     expect(thirdUsers[0]?.content).toContain('"kind":"snapshot"');
+  });
+
+  it("rebuilds a full snapshot after a progressive placement changes the layout generation", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const fetchFn = vi.fn(async () => responseWithContent("[]"));
+    gw.fetch = fetchFn as unknown as typeof fetch;
+    gw.self = mockSelf;
+    await import("@/commanders/CommanderWorker.js");
+    await deliver({ type: "start", kind: "llm", config: makeConfig() });
+    setup();
+
+    const withLayout = (generation: number): CommanderSnapshotSlice => {
+      const slice = snapshotWithState(GameState.PLAYING) as unknown as CommanderSnapshotSlice;
+      slice.gridLayout = [
+        [1, 2],
+        [3, 1],
+      ];
+      slice.meta.layoutGeneration = generation;
+      return slice;
+    };
+
+    // First layout: full snapshot primes the transcript.
+    vi.advanceTimersByTime(1000);
+    await deliver({ type: "observation", slice: withLayout(0) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(lastUserContent(fetchFn, 0)).toContain('"kind":"snapshot"');
+
+    // Same generation, no layout re-ship: the next turn is a delta.
+    vi.advanceTimersByTime(1000);
+    await deliver({ type: "observation", slice: snapshotWithState(GameState.PLAYING) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(lastUserContent(fetchFn, 1)).toContain('"kind":"delta"');
+
+    // A placement re-indexes every tile (origin shift): the tile-keyed transcript is
+    // stale, so the worker drops it and the next decide sends a full snapshot again.
+    // The bumped slice arrives without the rectangle here (feed-off timing) and must
+    // still drop at once, not one relay tick later.
+    vi.advanceTimersByTime(1000);
+    const bumpedWithoutLayout = snapshotWithState(GameState.PLAYING) as unknown as CommanderSnapshotSlice;
+    bumpedWithoutLayout.meta.layoutGeneration = 1;
+    await deliver({ type: "observation", slice: bumpedWithoutLayout });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+    expect(lastUserContent(fetchFn, 2)).toContain('"kind":"snapshot"');
+
+    // The generation settled (no relay applies the feed-off in this harness, so the
+    // slice must carry generation 1 explicitly or the engine's gen-0 layout would
+    // look like another placement): back to deltas.
+    vi.advanceTimersByTime(1000);
+    await deliver({ type: "observation", slice: withLayout(1) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchFn).toHaveBeenCalledTimes(4);
+    expect(lastUserContent(fetchFn, 3)).toContain('"kind":"delta"');
   });
 
   it("notifies and keeps deciding after an observation throws", async () => {
@@ -633,6 +694,32 @@ describe("Unit: LLM brain round-trip + malformed", () => {
     expect(delta.changedEnemies.find((enemy) => enemy.id === 2)?.routingMode).toBe("hold");
   });
 
+  it("keys tower deltas by stable id across an origin shift", async () => {
+    const fetchFn = vi.fn(async () => responseWithContent("[]"));
+    const brain = createLlmBrain(makeConfig(), { fetchFn: fetchFn as unknown as typeof fetch });
+    const memory = makeMemory();
+    const first = makeObservation();
+    first.towers = [{ id: "tower-a", tileX: 2, tileY: 3, level: 1, hp: 20, maxHp: 20 }];
+    await brain.decide(first, memory);
+
+    const second = makeObservation();
+    // A west/north progressive placement lowers the origin and re-indexes every
+    // surviving tower. Keyed by id, the tower diffs as moved, not removed + new.
+    second.towers = [{ id: "tower-a", tileX: 5, tileY: 3, level: 1, hp: 20, maxHp: 20 }];
+    await brain.decide(second, memory);
+
+    const deltaMessage = lastUserContent(fetchFn, 1);
+    expect(deltaMessage).toContain('"kind":"delta"');
+    const delta = JSON.parse(deltaMessage.split("\n\n")[0] ?? "") as {
+      newTowers: unknown[];
+      removedTowers: unknown[];
+      changedTowers: { x: number; y: number }[];
+    };
+    expect(delta.removedTowers).toEqual([]);
+    expect(delta.newTowers).toEqual([]);
+    expect(delta.changedTowers).toEqual([expect.objectContaining({ x: 5, y: 3 })]);
+  });
+
   it("rebuilds a full snapshot once the context budget is exceeded", async () => {
     const fetchFn = vi.fn(async () => responseWithContent("[]", 100));
     const config = makeConfig();
@@ -668,6 +755,46 @@ describe("Unit: LLM brain round-trip + malformed", () => {
     expect(messages.map((message) => message.role)).toEqual(["system", "user"]);
     expect(messages[1]?.content).toContain('"kind":"snapshot"');
     expect(messages[1]?.content).not.toContain("Previous reply was rejected");
+  });
+
+  it("keeps a mid-request transcript drop clean instead of appending onto it", async () => {
+    let firstCall = true;
+    let resolveFirst: (value: unknown) => void = () => {};
+    const fetchMock = vi.fn(() => {
+      if (firstCall) {
+        firstCall = false;
+        return new Promise((resolve) => {
+          resolveFirst = resolve;
+        });
+      }
+      return Promise.resolve(responseWithContent("[]"));
+    });
+    const brain = createLlmBrain(makeConfig(), { fetchFn: fetchMock as unknown as typeof fetch });
+    const memory = makeMemory();
+    memory.pendingPlayerMessages.push("hold north");
+    const inFlight = brain.decide(makeObservation(), memory);
+
+    // The worker drops the transcript mid-request (run restart / progressive placement).
+    memory.conversation = [];
+    memory.lastObservation = null;
+    memory.isCompressing = false;
+    memory.rejectionNote = null;
+
+    resolveFirst(responseWithContent("[]"));
+    const commands = await inFlight;
+    expect(commands).toEqual([]);
+    // No dangling assistant reply on the fresh context, and the player message that
+    // never reached it is re-delivered next turn.
+    expect(memory.conversation).toEqual([]);
+    expect(memory.pendingPlayerMessages).toEqual(["hold north"]);
+
+    // The next decide rebuilds the full snapshot and coalesces the player text.
+    await brain.decide(makeObservation(), memory);
+    const messages = messagesFromCall(fetchMock, 1);
+    expect(messages.map((message) => message.role)).toEqual(["system", "user"]);
+    const rebuilt = messages[messages.length - 1]?.content ?? "";
+    expect(rebuilt).toContain('"kind":"snapshot"');
+    expect(rebuilt).toContain("Player message:\nhold north");
   });
 
   it("applies valid sibling commands when one entry is rejected", async () => {

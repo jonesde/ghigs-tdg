@@ -45,6 +45,8 @@ const memory: CommanderMemory = {
 };
 let gridLayoutToggleSent = false;
 let cachedLayoutGeneration = -1;
+// The layout generation the live LLM transcript was built on. -1 = no transcript yet.
+let conversationLayoutGeneration = -1;
 // The run the cached layout belongs to (GameEngine.runId). On a run restart the
 // previous layout is stale and the one-shot feed-off toggle must re-arm, so the
 // engine's freshly re-enabled feed is turned back off after the new map is cached.
@@ -88,6 +90,7 @@ function resetMemory(): void {
   memory.rejectionNote = null;
   gridLayoutToggleSent = false;
   cachedLayoutGeneration = -1;
+  conversationLayoutGeneration = -1;
   lastRunId = null;
   deciding = false;
   lastDecisionTimeMs = 0;
@@ -224,6 +227,7 @@ async function dispatchCommanderMessage(message: MainToCommanderMessage): Promis
         memory.heights = undefined;
         gridLayoutToggleSent = false;
         cachedLayoutGeneration = -1;
+        conversationLayoutGeneration = -1;
         memory.phase = "idle";
         memory.seenByWave = new Map<number, Set<number>>();
         memory.lastRushWaveNumber = null;
@@ -237,13 +241,37 @@ async function dispatchCommanderMessage(message: MainToCommanderMessage): Promis
         // it names the previous run's enemies, so a sim runId bump drops it. The
         // rejection note describes that transcript, so it is dropped with it.
       }
+      // Progressive placements bump layoutGeneration on every snapshot meta, but
+      // the rectangle itself ships only while the one-shot gridLayout feed is on.
+      // Compare the generation (not the layout) so a bumped slice that arrives
+      // after the feed-off still drops the stale tile-keyed transcript at once
+      // instead of one relay tick later.
+      const generation = slice.meta.layoutGeneration ?? 0;
+      if (
+        brainKind === "llm" &&
+        memory.conversation.length > 0 &&
+        conversationLayoutGeneration !== -1 &&
+        generation !== conversationLayoutGeneration
+      ) {
+        // A placement west/north re-indexes every tile (origin shift). The transcript is
+        // tile-keyed, so its coordinates and map image are stale, and stale hold/waypoint
+        // tiles from earlier turns pass the bounds filter onto shifted physical tiles.
+        // Drop the transcript so the next decide rebuilds the full snapshot on the new
+        // rectangle. Already-applied orders need no shift — the engine moves route and
+        // order tiles, and world positions stay put.
+        memory.conversation = [];
+        memory.tokenCount = 0;
+        memory.lastObservation = null;
+        memory.isCompressing = false;
+        memory.rejectionNote = null;
+      }
+      conversationLayoutGeneration = generation;
       if (slice.gridLayout) {
         memory.gridLayout = slice.gridLayout;
         if (slice.heights) memory.heights = slice.heights;
         // Normal maps ship the layout once. A progressive placement bumps
         // layoutGeneration and re-enables the feed, so the worker caches the new
         // rectangle and turns the feed off again.
-        const generation = slice.meta.layoutGeneration ?? 0;
         if (!gridLayoutToggleSent || generation !== cachedLayoutGeneration) {
           cachedLayoutGeneration = generation;
           gridLayoutToggleSent = true;

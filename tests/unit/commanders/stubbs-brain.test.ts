@@ -270,4 +270,38 @@ describe("StubbsBrain", () => {
     // Tower behind the fallback tile (9 > 5) is left on the default path.
     expect(brain.decide(terrainObservation({ x: 1, y: 1 }, 9), freshMemory())).toHaveLength(0);
   });
+
+  it("keeps the ahead filter for flyers via the height-aware per-enemy distance", () => {
+    const brain = createStubbsBrain() as unknown as SyncBrain;
+    // All-terrain map: the representative tile cannot snap to a path tile and the
+    // ground field reads -1 everywhere, so the filter used to drop silently and
+    // siege the highest-hp tower regardless of position. The per-enemy distance is
+    // height-aware (flight field for flyers), so ahead-of-front still filters.
+    const terrainMap: number[][] = Array.from({ length: 4 }, () => Array(4).fill(0) as number[]);
+    const distances: number[][] = Array.from({ length: 4 }, () => Array(4).fill(-1) as number[]);
+    distances[3]![3] = 2;
+    distances[0]![0] = 9;
+    const flyerNear = { ...enemy(1, 1, 1), flyingHeight: 2, distanceToBase: 4 };
+    const flyerFar = { ...enemy(2, 2, 2), flyingHeight: 2, distanceToBase: 8 };
+    const commands = brain.decide(
+      {
+        map: terrainMap,
+        enemies: [flyerNear, flyerFar],
+        towers: [tower(3, 3, 100), tower(0, 0, 300)],
+        wave: {
+          currentWave: 1,
+          pendingEnemyCount: 0,
+          spawnStates: [],
+          remainingScheduledSpawns: 0,
+          active: true,
+          baseHealth: 20,
+          maxBaseHealth: 20,
+          countdownRemaining: null,
+        },
+        nav: { pathVersion: 0, distanceToBase: distances, spawnReachable: [true] },
+      },
+      freshMemory(),
+    );
+    expect(siegeTowerTile(commands)).toEqual({ x: 3, y: 3 });
+  });
 });

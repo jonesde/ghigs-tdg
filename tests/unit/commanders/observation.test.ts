@@ -82,6 +82,12 @@ describe("buildObservation", () => {
     expect(observation.towers[0]).not.toHaveProperty("maxHealth");
   });
 
+  it("carries the stable tower id into the semantic view", () => {
+    const slice = makeSlice({ towers: [{ ...fakeTower(2, 3, 42, 60), id: "tower-9" }] as TowerSnapshot[] });
+    const observation = buildObservation(slice);
+    expect(observation.towers[0]?.id).toBe("tower-9");
+  });
+
   it("sums spawnStates.pendingCount into wave.pendingEnemyCount", () => {
     const spawnStates: SpawnStateSnapshot[] = [
       { visualState: "open", closeTransitionTimer: 0, pendingCount: 5 },

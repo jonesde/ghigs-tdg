@@ -25,6 +25,9 @@ export interface ObservationEnemy {
 }
 
 export interface ObservationTower {
+  // Stable across progressive origin shifts (tile coords re-index when the grid
+  // grows). Optional so hand-built test observations can omit it.
+  id?: string;
   type?: string;
   tileX: number;
   tileY: number;
@@ -102,6 +105,7 @@ export function buildObservation(slice: CommanderSnapshotSlice): CommanderObserv
   });
   const towers: ObservationTower[] = slice.towers.map((tower) => {
     const observationTower: ObservationTower = {
+      id: tower.id,
       tileX: tower.tileX,
       tileY: tower.tileY,
       level: tower.level,

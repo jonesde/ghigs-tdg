@@ -34,9 +34,33 @@ let nextId = 1;
 // shoves the same body out every tick; warn once per id instead of spamming.
 const warnedOutOfBoundsIds = new Set<number>();
 
+// Enemy ids that already emitted the unreachable-flight-goal warning. A walled-off
+// goal leaves the polyline at [start] and the flyer hovering in place every tick;
+// warn once per id until a plan with an actual route succeeds again.
+const warnedUnreachableFlightIds = new Set<number>();
+
+// A sustained force-field bias can shove a flyer out of its tile every tick.
+// Containment must re-teleport each time, but the polyline clear + rebuild behind
+// it is throttled to this cadence so the oscillation cannot force a BFS per tick.
+const FLIGHT_CONTAINMENT_REPLAN_COOLDOWN_SECONDS = 0.25;
+
 export function resetEnemyId() {
   nextId = 1;
   warnedOutOfBoundsIds.clear();
+  warnedUnreachableFlightIds.clear();
+}
+
+// Warn-once ids are per-run and per-enemy-id; resetEnemyId covers run restarts.
+// Deaths inside a run recycle nothing (nextId only grows), so the per-id entry is
+// dropped here to bound the set by live enemies rather than by run kills.
+export function forgetUnreachableFlightWarning(enemyId: number): void {
+  warnedUnreachableFlightIds.delete(enemyId);
+}
+
+function warnUnreachableFlightOnce(enemy: Enemy, detail: string): void {
+  if (warnedUnreachableFlightIds.has(enemy.id)) return;
+  warnedUnreachableFlightIds.add(enemy.id);
+  console.warn("Flight goal unreachable; hovering until the map changes", enemy.id, enemy.type, detail);
 }
 
 export interface AttackTarget {
@@ -256,8 +280,6 @@ export class Enemy {
   routeWorld: { x: number; y: number } | null = null;
   // Siege target tower (live); cleared on ghost/sell/release.
   siegeTower: Tower | null = null;
-  // True once a `hold` enemy has reached its hold tile (used only for hold mode).
-  arrived: boolean = false;
   preStepAttackingBase: boolean = false;
   targetingMode: string | null = null;
   // Impulse knockback window: crowd does not overwrite linvel while > 0.
@@ -271,6 +293,8 @@ export class Enemy {
   flightPoints: { x: number; y: number }[] = [];
   flightCursor: number = 0;
   flightBuiltPathVersion: number = -1;
+  // Counts down until a containment event may clear + rebuild the polyline again.
+  containmentReplanCooldownSeconds: number = 0;
   // Waypoints kept for this flyer, including the appended base. Re-filtered when the polyline rebuilds.
   routeTiles: TilePoint[] = [];
   strafeOccupancyKey: string | null = null;
@@ -511,7 +535,6 @@ export class Enemy {
       return;
     }
     this.routingMode = mode;
-    this.arrived = false;
     this.siegeTower = null;
     this.motionLock = "none";
     this.clearMoveTargetCache();
@@ -532,7 +555,6 @@ export class Enemy {
     }
     this.routingMode = "siege";
     this.siegeTower = tower;
-    this.arrived = false;
     this.motionLock = "none";
     this.clearMoveTargetCache();
     if (this.flyingHeight > 0) {
@@ -546,7 +568,6 @@ export class Enemy {
   releaseToDefault(): void {
     if (this.attackingBase) return;
     this.routingMode = "default";
-    this.arrived = false;
     this.holdWorld = null;
     this.routeWorld = null;
     this.siegeTower = null;
@@ -850,8 +871,10 @@ export class Enemy {
 
     // The rectangle above includes the progressive void margin. That margin is not
     // drawn and is not a flight tile, so a center that lands there is moved onto
-    // the nearest placed tile. Clearing the polyline makes the next intent rebuild.
+    // the nearest placed tile. Clearing the polyline makes the next intent rebuild,
+    // throttled so a sustained force-field bias cannot force a rebuild every tick.
     if (this.flyingHeight > 0) {
+      this.containmentReplanCooldownSeconds = Math.max(0, this.containmentReplanCooldownSeconds - dt);
       const occupied = this.currentTile();
       if (!canTraverseTile(this.grid, occupied.x, occupied.y, this.flyingHeight, this.liveTowerAt)) {
         const recover = nearestTraversableTile(this.grid, occupied.x, occupied.y, this.flyingHeight, this.liveTowerAt);
@@ -865,7 +888,18 @@ export class Enemy {
             this.body.setTranslation({ x: world.x, y: world.y }, true);
             this.body.setLinvel({ x: 0, y: 0 }, true);
           }
-          this.clearFlightPolyline();
+          if (this.containmentReplanCooldownSeconds <= 0) {
+            this.clearFlightPolyline();
+            this.containmentReplanCooldownSeconds = FLIGHT_CONTAINMENT_REPLAN_COOLDOWN_SECONDS;
+          }
+        } else {
+          // No traversable tile exists at this height. Drop the stale polyline that was
+          // steering into the void and stamp the current pathVersion so the empty-polyline
+          // state does not rescan until the map changes.
+          this.flightPoints = [];
+          this.flightCursor = 0;
+          this.flightBuiltPathVersion = this.grid.pathVersion;
+          warnUnreachableFlightOnce(this, "no traversable tile in the flight grid");
         }
       }
     }
@@ -910,7 +944,6 @@ export class Enemy {
       const holdTile = routePath[0]!;
       if (!canTraverseTile(this.grid, holdTile.x, holdTile.y, this.flyingHeight, this.liveTowerAt)) return;
       this.routingMode = "hold";
-      this.arrived = false;
       this.siegeTower = null;
       this.motionLock = "none";
       this.clearMoveTargetCache();
@@ -924,7 +957,6 @@ export class Enemy {
       canTraverseTile(this.grid, tile.x, tile.y, this.flyingHeight, this.liveTowerAt),
     );
     this.routingMode = "route";
-    this.arrived = false;
     this.siegeTower = null;
     this.motionLock = "none";
     this.clearMoveTargetCache();
@@ -937,7 +969,10 @@ export class Enemy {
 
   private computeFlightIntent(enemyManager: EnemyManagerRef | null): void {
     this.applyFlightEngagement(enemyManager);
-    if (this.flightPoints.length === 0 || this.flightBuiltPathVersion !== this.grid.pathVersion) {
+    // Version-only gate: clearFlightPolyline stamps -1 so a cleared polyline rebuilds on
+    // the next intent, while a failed plan (empty points at the current pathVersion) does
+    // not force a recovery rescan every tick until the map changes.
+    if (this.flightBuiltPathVersion !== this.grid.pathVersion) {
       this.rebuildFlightPolyline();
     }
     this.advanceFlightCursor();
@@ -1019,12 +1054,23 @@ export class Enemy {
         this.flightPoints = [];
         this.flightCursor = 0;
         this.flightBuiltPathVersion = this.grid.pathVersion;
+        warnUnreachableFlightOnce(this, `mode ${this.routingMode}, no traversable tile to recover onto`);
         return;
       }
       recoveryPoints.push(this.grid.tileToWorld(recover.x, recover.y));
       planStart = recover;
     }
     const route = planFlightRoute(this.grid, planStart, goals, height, liveTowerAt);
+    // planFlightRoute drops goals it cannot reach, leaving [start]: the flyer would hover
+    // with no signal. A 1-point plan is only legitimate when every goal is the tile the
+    // flyer already occupies (hold/park in place). Any tower build/sell/ghost/restore
+    // bumps pathVersion and replans, so a real hover resolves once the wall changes.
+    const distantGoal = goals.some((goal) => goal.x !== planStart.x || goal.y !== planStart.y);
+    if (route.length <= 1 && distantGoal) {
+      warnUnreachableFlightOnce(this, `mode ${this.routingMode}, goals ${goals.length}`);
+    } else {
+      warnedUnreachableFlightIds.delete(this.id);
+    }
     this.flightPoints = recovering ? recoveryPoints.concat(route.slice(1)) : route;
     this.flightCursor = 0;
     this.flightBuiltPathVersion = this.grid.pathVersion;

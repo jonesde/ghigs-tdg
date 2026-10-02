@@ -224,6 +224,11 @@ export function planFlightRoute(
   return tiles.map((tile) => grid.tileToWorld(tile.x, tile.y));
 }
 
+// Expanding Chebyshev rings produce the same tile the full-grid scan would: the
+// running best is final once no later ring can beat or tie it, because every
+// tile in ring r+1 has squared distance >= (r+1)^2. Containment events call this
+// per flyer, so the typical cost is the small ball around the lost tile instead
+// of width * height.
 export function nearestTraversableTile(
   grid: FlightGrid,
   tileX: number,
@@ -234,52 +239,79 @@ export function nearestTraversableTile(
   if (canTraverseTile(grid, tileX, tileY, flyingHeight, liveTowerAt)) return { x: tileX, y: tileY };
   let best: TilePoint | null = null;
   let bestDistance = Infinity;
-  for (let row = 0; row < grid.height; row++) {
-    for (let column = 0; column < grid.width; column++) {
-      if (!canTraverseTile(grid, column, row, flyingHeight, liveTowerAt)) continue;
-      const deltaX = column - tileX;
-      const deltaY = row - tileY;
-      const squared = deltaX * deltaX + deltaY * deltaY;
-      const closer =
-        squared < bestDistance ||
-        (squared === bestDistance && best !== null && (row < best.y || (row === best.y && column < best.x)));
-      if (!closer) continue;
-      bestDistance = squared;
-      best = { x: column, y: row };
+  // Ring radius covers out-of-bounds queries too: the farthest in-bounds cell sits
+  // within rectangle-gap + rectangle-diagonal Chebyshev steps of the query.
+  const rectangleGap = Math.max(0, -tileX, tileX - (grid.width - 1), -tileY, tileY - (grid.height - 1));
+  const maxRadius = rectangleGap + Math.max(grid.width, grid.height);
+  for (let radius = 1; radius <= maxRadius; radius++) {
+    const minimumX = tileX - radius;
+    const maximumX = tileX + radius;
+    const minimumY = tileY - radius;
+    const maximumY = tileY + radius;
+    for (let row = minimumY; row <= maximumY; row++) {
+      for (let column = minimumX; column <= maximumX; column++) {
+        const onBorder = row === minimumY || row === maximumY || column === minimumX || column === maximumX;
+        if (!onBorder) continue;
+        if (column < 0 || row < 0 || column >= grid.width || row >= grid.height) continue;
+        if (!canTraverseTile(grid, column, row, flyingHeight, liveTowerAt)) continue;
+        const deltaX = column - tileX;
+        const deltaY = row - tileY;
+        const squared = deltaX * deltaX + deltaY * deltaY;
+        const closer =
+          squared < bestDistance ||
+          (squared === bestDistance && best !== null && (row < best.y || (row === best.y && column < best.x)));
+        if (!closer) continue;
+        bestDistance = squared;
+        best = { x: column, y: row };
+      }
     }
+    if (best && bestDistance < (radius + 1) * (radius + 1)) break;
   }
   return best;
 }
 
-function nearestOffset(
+function traversableOffsets(
   grid: FlightGrid,
   tileX: number,
   tileY: number,
   flyingHeight: number,
   liveTowerAt: LiveTowerAt,
-  fromTile: TilePoint,
   offsets: readonly TilePoint[],
-): TilePoint | null {
-  let best: TilePoint | null = null;
-  let bestDistance = Infinity;
+): TilePoint[] {
+  const candidates: TilePoint[] = [];
   for (const offset of offsets) {
     const nextX = tileX + offset.x;
     const nextY = tileY + offset.y;
     if (!canTraverseTile(grid, nextX, nextY, flyingHeight, liveTowerAt)) continue;
-    const deltaX = nextX - fromTile.x;
-    const deltaY = nextY - fromTile.y;
+    candidates.push({ x: nextX, y: nextY });
+  }
+  return candidates;
+}
+
+function selectClosestTile(candidates: readonly TilePoint[], fromTile: TilePoint): TilePoint | null {
+  let best: TilePoint | null = null;
+  let bestDistance = Infinity;
+  for (const candidate of candidates) {
+    const deltaX = candidate.x - fromTile.x;
+    const deltaY = candidate.y - fromTile.y;
     const squared = deltaX * deltaX + deltaY * deltaY;
     const closer =
       squared < bestDistance ||
-      (squared === bestDistance && best !== null && (nextY < best.y || (nextY === best.y && nextX < best.x)));
+      (squared === bestDistance &&
+        best !== null &&
+        (candidate.y < best.y || (candidate.y === best.y && candidate.x < best.x)));
     if (!closer) continue;
     bestDistance = squared;
-    best = { x: nextX, y: nextY };
+    best = candidate;
   }
   return best;
 }
 
-// Orthogonal neighbors first. The diagonal ring is used only when that ring is closed.
+// Orthogonal neighbors first; the diagonal ring is used only when that ring is closed.
+// Within the diagonal ring a candidate whose straight segment from fromTile touches
+// only traversable tiles wins — the others force a BFS detour or cut an untraversable
+// corner at plan time. A corner-cutting diagonal is still returned when nothing clean
+// remains, so the substitution never shrinks reachability.
 export function nearestTraversableNeighbor(
   grid: FlightGrid,
   tileX: number,
@@ -288,10 +320,15 @@ export function nearestTraversableNeighbor(
   liveTowerAt: LiveTowerAt,
   fromTile: TilePoint,
 ): TilePoint | null {
-  return (
-    nearestOffset(grid, tileX, tileY, flyingHeight, liveTowerAt, fromTile, ORTHOGONAL_OFFSETS) ??
-    nearestOffset(grid, tileX, tileY, flyingHeight, liveTowerAt, fromTile, DIAGONAL_OFFSETS)
+  const orthogonal = selectClosestTile(
+    traversableOffsets(grid, tileX, tileY, flyingHeight, liveTowerAt, ORTHOGONAL_OFFSETS),
+    fromTile,
   );
+  if (orthogonal) return orthogonal;
+  const diagonals = traversableOffsets(grid, tileX, tileY, flyingHeight, liveTowerAt, DIAGONAL_OFFSETS);
+  if (diagonals.length === 0) return null;
+  const clean = diagonals.filter((tile) => straightLeg(grid, fromTile, tile, flyingHeight, liveTowerAt) !== null);
+  return selectClosestTile(clean.length > 0 ? clean : diagonals, fromTile);
 }
 
 export function flightDistanceGrid(grid: FlightGrid, flyingHeight: number, liveTowerAt: LiveTowerAt): number[][] {

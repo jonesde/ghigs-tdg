@@ -167,17 +167,19 @@ export class CrowdManager {
       }
 
       if (enemy.routingMode === "hold") {
+        // Ground hold parks in this same first gate (unlike flyingSteer.ts, where
+        // hold and live siege each own their park/unpark). Deliberate: a ground
+        // hold tile is never height-blocked the way a flight tile is, so there is
+        // no neighbor substitution to re-evaluate while parked.
         const holdTarget = enemy.holdWorld;
         const holdArrivalRadius = this.tileSize * 0.35;
         const arrivedAtHold =
           !holdTarget || Math.hypot(enemy.x - holdTarget.x, enemy.y - holdTarget.y) <= holdArrivalRadius;
         if (arrivedAtHold) {
-          enemy.arrived = true;
           enemy.motionLock = "park";
           enemy.body.setLinvel({ x: 0, y: 0 }, true);
           continue;
         }
-        enemy.arrived = false;
         enemy.motionLock = "none";
       }
 

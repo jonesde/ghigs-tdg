@@ -217,7 +217,9 @@ describe("worker round-trip", () => {
     posted.length = 0;
     await import("@/sim/WorkerEntry.js");
     sendInit();
-    await wait(40);
+    // waitFor instead of a fixed wait: a starved loop can post the baseline after a
+    // fixed window, which would count it against the command's forced post below.
+    await waitFor(() => snapshotCount() > 0);
 
     // Paused + idle: only the baseline snapshot was posted.
     const before = snapshotCount();
@@ -225,6 +227,9 @@ describe("worker round-trip", () => {
 
     // A state-mutating command (selectBuildType) must force exactly one post.
     sendCommand({ commandId: 3, type: "action:selectBuildType", towerType: "basic" });
+    await waitFor(() => snapshotCount() >= before + 1);
+    expect(snapshotCount()).toBe(before + 1);
+    // Duplicates would arrive within a few loop ticks; give the window a beat.
     await wait(40);
     expect(snapshotCount()).toBe(before + 1);
     sendDispose();

@@ -12,9 +12,15 @@ import enemiesContent from "@/content/data/enemies.json";
 import { EnemyMetaSchema } from "@/content/schemas/enemies.js";
 import { ENEMY_TYPES, FIXED_DT } from "@/sim/Constants.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
-import { Enemy as EnemyEntity } from "@/sim/enemies/Enemy.js";
+import { Enemy as EnemyEntity, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
-import { canTraverseTile, readFlyingHeight, tilesTouchedBySegment } from "@/sim/enemies/flightGrid.js";
+import {
+  canTraverseTile,
+  nearestTraversableNeighbor,
+  nearestTraversableTile,
+  readFlyingHeight,
+  tilesTouchedBySegment,
+} from "@/sim/enemies/flightGrid.js";
 import { writeFlightVelocities } from "@/sim/enemies/flyingSteer.js";
 import { selectTargetingTower } from "@/sim/enemies/targeting.js";
 import { Grid } from "@/sim/grid/Grid.js";
@@ -658,6 +664,334 @@ describe("flying wave rolls", () => {
     expect(sawFlyer).toBe(true);
     expect(sawJet).toBe(true);
     expect(sawAegis).toBe(true);
+  });
+});
+
+describe("flight recovery", () => {
+  function unreachableWarnings(warnSpy: { mock: { calls: unknown[][] } }): unknown[] {
+    return warnSpy.mock.calls.filter((call) => String(call[0]).includes("Flight goal unreachable"));
+  }
+
+  function runFlightTicks(
+    flyer: Enemy,
+    grid: Grid,
+    physics: PhysicsWorld,
+    maxTicks: number,
+    stopWhenParked: boolean,
+  ): void {
+    for (let tick = 0; tick < maxTicks; tick++) {
+      flyer.computeIntent(FIXED_DT, null);
+      writeFlightVelocities([flyer], grid, FIXED_DT, null);
+      physics.step();
+      flyer.postPhysics(FIXED_DT);
+      if (stopWhenParked && flyer.motionLock === "park") return;
+    }
+  }
+
+  it("parks a held flyer beside a tower built on the hold tile and resumes when the tower leaves", () => {
+    resetEnemyId();
+    const grid = laneGrid();
+    const physics = new PhysicsWorld(grid);
+    try {
+      const flyer = new EnemyEntity("flyer", 1, 0, grid, 1);
+      physics.addEnemy(flyer);
+      flyer.liveTowerAt = () => false;
+      // Stored height 2: enterable for the flyer bare, blocked once a tower adds 1.
+      grid.tiles[1]![2]!.height = 2;
+      placeEnemy(flyer, 0, 1);
+      flyer.applyRoute([{ x: 2, y: 1 }], "hold");
+      runFlightTicks(flyer, grid, physics, 900, true);
+      expect(flyer.motionLock).toBe("park");
+      expect(flyer.currentTile()).toEqual({ x: 2, y: 1 });
+
+      // A tower lands on the hold tile: the flyer parks on the nearest enterable
+      // neighbor instead of idling against a blocked tile forever.
+      flyer.liveTowerAt = (tileX, tileY) => tileX === 2 && tileY === 1;
+      grid.pathVersion += 1;
+      runFlightTicks(flyer, grid, physics, 120, true);
+      expect(flyer.motionLock).toBe("park");
+      expect(flyer.currentTile()).toEqual({ x: 2, y: 0 });
+
+      // Selling the tower resumes the original hold point.
+      flyer.liveTowerAt = () => false;
+      grid.pathVersion += 1;
+      runFlightTicks(flyer, grid, physics, 900, true);
+      expect(flyer.motionLock).toBe("park");
+      expect(flyer.currentTile()).toEqual({ x: 2, y: 1 });
+    } finally {
+      physics.dispose();
+    }
+  });
+
+  it("re-parks a besieging flyer when its neighbor tile is built on", () => {
+    resetEnemyId();
+    const grid = laneGrid();
+    const physics = new PhysicsWorld(grid);
+    // The siege tower's own tile is too tall to hover: the besieging flyer
+    // parks on a neighbor, and a second build on that neighbor must move it.
+    // Neighbor (3,1) sits at stored height 2: bare it is enterable (2 <= 2),
+    // towered it closes (2 + 1 > 2).
+    grid.tiles[1]![4]!.height = 3;
+    grid.tiles[1]![3]!.height = 2;
+    try {
+      const flyer = new EnemyEntity("flyer", 1, 0, grid, 1);
+      physics.addEnemy(flyer);
+      const siegeTower = damageTower(4, 1);
+      siegeTower.x = grid.tileToWorld(4, 1).x;
+      siegeTower.y = grid.tileToWorld(4, 1).y;
+      bindTower(flyer, siegeTower);
+      placeEnemy(flyer, 0, 1);
+      flyer.applySiege(siegeTower);
+      runFlightTicks(flyer, grid, physics, 900, true);
+      expect(flyer.motionLock).toBe("park");
+
+      // A tower lands on the parked neighbor: the siege re-evaluation must run
+      // even while parked, so the flyer leaves the now-blocked tile instead of
+      // staying parked on it forever.
+      const parkedTile = { ...flyer.currentTile() };
+      expect(parkedTile).toEqual({ x: 3, y: 1 });
+      flyer.liveTowerAt = (tileX, tileY) => tileX === parkedTile.x && tileY === parkedTile.y;
+      grid.pathVersion += 1;
+      flyer.motionLock = "none";
+      runFlightTicks(flyer, grid, physics, 240, false);
+      expect(flyer.motionLock).toBe("park");
+      expect(flyer.currentTile()).not.toEqual(parkedTile);
+    } finally {
+      physics.dispose();
+    }
+  });
+
+  it("warns once per unreachable goal and warns again only after a plan succeeds", () => {
+    resetEnemyId();
+    const grid = laneGrid();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const sealHeights = (): void => {
+        for (let row = 0; row < grid.height; row++) {
+          for (let column = 0; column < grid.width; column++) grid.tiles[row]![column]!.height = 4;
+        }
+        grid.tiles[1]![0]!.height = 1;
+      };
+      const openHeights = (): void => {
+        for (let row = 0; row < grid.height; row++) {
+          for (let column = 0; column < grid.width; column++) grid.tiles[row]![column]!.height = 1;
+        }
+      };
+
+      sealHeights();
+      const flyer = new EnemyEntity("flyer", 1, 0, grid, 1);
+      placeEnemy(flyer, 0, 1);
+      flyer.computeIntent(FIXED_DT, null);
+      expect(flyer.flightPoints).toHaveLength(1);
+      expect(flyer.flightBuiltPathVersion).toBe(grid.pathVersion);
+      expect(unreachableWarnings(warnSpy)).toHaveLength(1);
+
+      // Same pathVersion: no replan, no repeat warning.
+      flyer.computeIntent(FIXED_DT, null);
+      flyer.computeIntent(FIXED_DT, null);
+      expect(unreachableWarnings(warnSpy)).toHaveLength(1);
+
+      openHeights();
+      grid.pathVersion += 1;
+      flyer.computeIntent(FIXED_DT, null);
+      expect(flyer.flightPoints.length).toBeGreaterThan(1);
+      expect(unreachableWarnings(warnSpy)).toHaveLength(1);
+
+      // Blocked again after a success: the id was un-warned, so a fresh warning fires.
+      sealHeights();
+      grid.pathVersion += 1;
+      flyer.computeIntent(FIXED_DT, null);
+      expect(flyer.flightPoints).toHaveLength(1);
+      expect(unreachableWarnings(warnSpy)).toHaveLength(2);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("does not warn when a hold order targets the tile the flyer already occupies", () => {
+    resetEnemyId();
+    const grid = laneGrid();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const flyer = new EnemyEntity("flyer", 1, 0, grid, 1);
+      placeEnemy(flyer, 2, 1);
+      flyer.applyRoute([{ x: 2, y: 1 }], "hold");
+      flyer.computeIntent(FIXED_DT, null);
+      expect(flyer.flightPoints).toHaveLength(1);
+      expect(unreachableWarnings(warnSpy)).toHaveLength(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("drops the polyline and stops rescanning when no traversable tile exists", () => {
+    resetEnemyId();
+    const grid = laneGrid();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const physics = new PhysicsWorld(grid);
+    try {
+      const flyer = new EnemyEntity("flyer", 1, 0, grid, 1);
+      physics.addEnemy(flyer);
+      placeEnemy(flyer, 2, 1);
+      flyer.computeIntent(FIXED_DT, null);
+      expect(flyer.flightPoints.length).toBeGreaterThan(1);
+
+      for (let row = 0; row < grid.height; row++) {
+        for (let column = 0; column < grid.width; column++) grid.tiles[row]![column]!.height = 4;
+      }
+      grid.pathVersion += 1;
+      flyer.postPhysics(FIXED_DT);
+      expect(flyer.flightPoints).toHaveLength(0);
+      expect(flyer.flightBuiltPathVersion).toBe(grid.pathVersion);
+      expect(unreachableWarnings(warnSpy)).toHaveLength(1);
+
+      for (let tick = 0; tick < 10; tick++) {
+        flyer.computeIntent(FIXED_DT, null);
+        writeFlightVelocities([flyer], grid, FIXED_DT, null);
+        flyer.postPhysics(FIXED_DT);
+      }
+      expect(unreachableWarnings(warnSpy)).toHaveLength(1);
+      expect(flyer.flightPoints).toHaveLength(0);
+      const velocity = flyer.body!.linvel();
+      expect(Math.hypot(velocity.x, velocity.y)).toBeLessThan(1e-6);
+    } finally {
+      physics.dispose();
+      warnSpy.mockRestore();
+    }
+  });
+});
+
+describe("nearestTraversableTile ring scan", () => {
+  it("matches a brute-force nearest scan on random grids", () => {
+    let seed = 987654321;
+    const random = (): number => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed / 2147483648;
+    };
+    const bruteForce = (
+      grid: Grid,
+      tileX: number,
+      tileY: number,
+      flyingHeight: number,
+      towerAt: (tileX: number, tileY: number) => boolean,
+    ): { x: number; y: number } | null => {
+      let best: { x: number; y: number } | null = null;
+      let bestDistance = Infinity;
+      for (let row = 0; row < grid.height; row++) {
+        for (let column = 0; column < grid.width; column++) {
+          if (!canTraverseTile(grid, column, row, flyingHeight, towerAt)) continue;
+          const deltaX = column - tileX;
+          const deltaY = row - tileY;
+          const squared = deltaX * deltaX + deltaY * deltaY;
+          const closer =
+            squared < bestDistance ||
+            (squared === bestDistance && best !== null && (row < best.y || (row === best.y && column < best.x)));
+          if (!closer) continue;
+          bestDistance = squared;
+          best = { x: column, y: row };
+        }
+      }
+      return best;
+    };
+
+    for (let iteration = 0; iteration < 25; iteration++) {
+      const width = 1 + Math.floor(random() * 7);
+      const height = 1 + Math.floor(random() * 7);
+      const grid = new Grid(
+        makeMapData({ width, height, spawns: [{ x: 0, y: 0 }], base: { x: width - 1, y: height - 1 } }),
+      );
+      for (let row = 0; row < height; row++) {
+        for (let column = 0; column < width; column++) {
+          const tile = grid.tiles[row]![column]!;
+          if (random() < 0.2) {
+            tile.type = "void";
+            tile.height = 1;
+          } else {
+            tile.height = 1 + Math.floor(random() * 4);
+          }
+        }
+      }
+      const flyingHeight = 1 + Math.floor(random() * 3);
+      const towerAt = (tileX: number, tileY: number) => (tileX * 7 + tileY * 13 + iteration * 5) % 6 === 0;
+      for (let queryY = -1; queryY <= height; queryY++) {
+        for (let queryX = -1; queryX <= width; queryX++) {
+          expect(nearestTraversableTile(grid, queryX, queryY, flyingHeight, towerAt)).toEqual(
+            bruteForce(grid, queryX, queryY, flyingHeight, towerAt),
+          );
+        }
+      }
+    }
+  });
+});
+
+describe("nearestTraversableNeighbor diagonals", () => {
+  interface TilePointLite {
+    x: number;
+    y: number;
+  }
+
+  function straightLegOpen(
+    grid: Grid,
+    from: TilePointLite,
+    to: TilePointLite,
+    flyingHeight: number,
+    towerAt: (tileX: number, tileY: number) => boolean,
+  ): boolean {
+    const fromWorld = grid.tileToWorld(from.x, from.y);
+    const toWorld = grid.tileToWorld(to.x, to.y);
+    return tilesTouchedBySegment(fromWorld.x, fromWorld.y, toWorld.x, toWorld.y, grid.tileSize).every((tile) =>
+      canTraverseTile(grid, tile.x, tile.y, flyingHeight, towerAt),
+    );
+  }
+
+  function selectClosest(candidates: TilePointLite[], fromTile: TilePointLite): TilePointLite {
+    let best = candidates[0]!;
+    let bestDistance = Infinity;
+    for (const candidate of candidates) {
+      const deltaX = candidate.x - fromTile.x;
+      const deltaY = candidate.y - fromTile.y;
+      const squared = deltaX * deltaX + deltaY * deltaY;
+      const closer =
+        squared < bestDistance ||
+        (squared === bestDistance && (candidate.y < best.y || (candidate.y === best.y && candidate.x < best.x)));
+      if (!closer) continue;
+      bestDistance = squared;
+      best = candidate;
+    }
+    return best;
+  }
+
+  it("returns a diagonal with a clear straight leg when one exists, else the closest diagonal", () => {
+    const diagonalCandidates = [
+      { x: 1, y: 1 },
+      { x: 3, y: 1 },
+      { x: 1, y: 3 },
+      { x: 3, y: 3 },
+    ];
+    for (const cornersBlocked of [true, false]) {
+      const grid = new Grid(makeBastionMap());
+      const flyingHeight = 1;
+      // Seal the orthogonal ring of (2,2) and the tile itself so only diagonals
+      // remain; the corner tiles (1,0)/(0,1) decide whether the closest diagonal
+      // (1,1) reaches cleanly from (0,0).
+      const blocked = new Set(["1,2", "3,2", "2,1", "2,3", "2,2"]);
+      if (cornersBlocked) {
+        blocked.add("1,0");
+        blocked.add("0,1");
+      }
+      for (const key of blocked) {
+        const [tileX = 0, tileY = 0] = key.split(",").map(Number);
+        grid.tiles[tileY]![tileX]!.height = 2;
+      }
+      const towerAt = (tileX: number, tileY: number) => blocked.has(`${tileX},${tileY}`);
+      const fromTile = { x: 0, y: 0 };
+      const traversable = diagonalCandidates.filter((tile) =>
+        canTraverseTile(grid, tile.x, tile.y, flyingHeight, towerAt),
+      );
+      const clean = traversable.filter((tile) => straightLegOpen(grid, fromTile, tile, flyingHeight, towerAt));
+      const expected = selectClosest(clean.length > 0 ? clean : traversable, fromTile);
+      expect(nearestTraversableNeighbor(grid, 2, 2, flyingHeight, towerAt, fromTile)).toEqual(expected);
+    }
   });
 });
 

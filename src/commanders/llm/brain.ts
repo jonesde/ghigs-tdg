@@ -108,8 +108,11 @@ function buildFullSnapshotMessage(observation: CommanderObservation): string {
   });
 }
 
-function towerKey(tower: { tileX: number; tileY: number }): string {
-  return `${tower.tileX},${tower.tileY}`;
+// Key by the stable tower id when present: a progressive origin shift re-indexes
+// every tile, so tile coords would diff every surviving tower as removed + new.
+// Tile coords remain the fallback for observations built without ids.
+function towerKey(tower: { id?: string; tileX: number; tileY: number }): string {
+  return tower.id ?? `${tower.tileX},${tower.tileY}`;
 }
 
 function enemyChanged(previous: ObservationEnemy, enemy: ObservationEnemy): boolean {
@@ -133,6 +136,8 @@ function towerChanged(
   observation: CommanderObservation,
 ): boolean {
   return (
+    previous.tileX !== tower.tileX ||
+    previous.tileY !== tower.tileY ||
     previous.hp !== tower.hp ||
     previous.maxHp !== tower.maxHp ||
     previous.level !== tower.level ||
@@ -464,8 +469,17 @@ export function createLlmBrain(config: LlmCommanderConfig, callbacks: LlmBrainCa
 
       const systemPrompt = memory.conversation[0]?.content ?? buildSystemPrompt(config, memory.commanderInstructions);
       const transcript = coalesceRoles(memory.conversation.slice(1));
+      // Array identity of the transcript this turn was built on. The worker drops the
+      // transcript mid-request on a run restart or a progressive placement (layout
+      // generation change); the built turn then belongs to the dropped context and
+      // must not be restored or appended onto the replacement.
+      const conversationAtStart = memory.conversation;
 
       function restoreTurn(): void {
+        if (memory.conversation !== conversationAtStart) {
+          memory.pendingPlayerMessages.unshift(...queuedPlayerMessages);
+          return;
+        }
         memory.conversation = previousConversation;
         memory.lastObservation = previousLastObservation;
         memory.isCompressing = previousIsCompressing;
@@ -517,28 +531,34 @@ export function createLlmBrain(config: LlmCommanderConfig, callbacks: LlmBrainCa
         return [];
       }
 
-      memory.conversation.push({ role: "assistant", content: result.content });
-      memory.rejectionNote = null;
-      lastNotifiedFailure = null;
-      if (combinedError) {
-        const correctiveHint = droppedText
-          ? `LLM response rejected: ${combinedError}. Use only live enemyIds and tiles within map bounds.`
-          : `LLM response rejected: ${combinedError}`;
-        memory.rejectionNote = correctiveHint;
-        noteFailure(`LLM response rejected: ${combinedError}`, true);
-      }
       const commandSummary = summarizeLlmCommands(semantic.filteredCommands, combinedError);
       trace(result.content, withObservationTag(commandSummary, observation));
       if (parsed.chat) callbacks.onChat?.(parsed.chat);
 
-      const tokenCount = result.promptTokens > 0 ? result.promptTokens : estimateTokens(systemPrompt, transcript);
-      memory.tokenCount = tokenCount;
-      if (tokenCount + ESTIMATED_NEXT_PROMPT_TOKENS >= config.contextLimit) {
-        memory.isCompressing = true;
-        memory.lastObservation = null;
+      if (memory.conversation === conversationAtStart) {
+        memory.conversation.push({ role: "assistant", content: result.content });
+        memory.rejectionNote = null;
+        if (combinedError) {
+          const correctiveHint = droppedText
+            ? `LLM response rejected: ${combinedError}. Use only live enemyIds and tiles within map bounds.`
+            : `LLM response rejected: ${combinedError}`;
+          memory.rejectionNote = correctiveHint;
+          noteFailure(`LLM response rejected: ${combinedError}`, true);
+        }
+        const tokenCount = result.promptTokens > 0 ? result.promptTokens : estimateTokens(systemPrompt, transcript);
+        memory.tokenCount = tokenCount;
+        if (tokenCount + ESTIMATED_NEXT_PROMPT_TOKENS >= config.contextLimit) {
+          memory.isCompressing = true;
+          memory.lastObservation = null;
+        } else {
+          memory.lastObservation = observation;
+        }
       } else {
-        memory.lastObservation = observation;
+        // The transcript was dropped mid-request. Commands still apply to the current
+        // state; the player messages never reached the new context, so re-queue them.
+        memory.pendingPlayerMessages.unshift(...queuedPlayerMessages);
       }
+      lastNotifiedFailure = null;
 
       return semantic.filteredCommands.map(translateCommand);
     },
