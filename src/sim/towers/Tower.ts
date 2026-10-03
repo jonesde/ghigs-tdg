@@ -40,6 +40,7 @@ import {
   TOWER_ADDON_EFFECTS,
   TOWER_BASE,
   TOWER_LEVEL_DMG_MULT,
+  TOWER_LEVEL_HEALTH_MULT,
   TOWER_LEVEL_RANGE_MULT,
   TOWER_LEVEL_RATE_MULT,
   TOWER_LEVEL_SPLASH_MULT,
@@ -820,12 +821,13 @@ export class Tower {
   // Recomputes max health from base + level + variant health multiplier. Used so
   // that upgraded towers (and the Shotgun Tank "Reinforced" variant) become
   // tankier. Current health is scaled by the previous ratio to avoid fully
-  // healing on every level/rank change.
+  // healing on every level/rank change. The per-level growth is independent of
+  // the damage growth (levelDmgMult vs levelHealthMult), tuned separately.
   computeMaxHealth(): number {
     const healthMult = this.stats?.healthMult ?? 1;
     return (
       resolveEffectiveBase(this.base, this.type as TowerId, this.variant).health *
-      TOWER_LEVEL_DMG_MULT ** (this.level - 1) *
+      TOWER_LEVEL_HEALTH_MULT ** (this.level - 1) *
       healthMult
     );
   }

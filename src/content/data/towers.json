@@ -32,6 +32,7 @@
   "tuning": {
     "projectileSpeedMultiplier": 0.25,
     "levelDmgMult": 1.8,
+    "levelHealthMult": 3.0,
     "levelRateMult": 1.3,
     "levelRangeMult": 1.1,
     "levelSplashMult": 1.2,

@@ -80,6 +80,7 @@ export const TOWER_BASE: Record<string, TowerBase> = towers.base as Record<strin
 
 export const PROJECTILE_SPEED_MULTIPLIER = tuning.projectileSpeedMultiplier;
 export const TOWER_LEVEL_DMG_MULT = tuning.levelDmgMult;
+export const TOWER_LEVEL_HEALTH_MULT = tuning.levelHealthMult;
 export const TOWER_LEVEL_RATE_MULT = tuning.levelRateMult;
 export const TOWER_LEVEL_RANGE_MULT = tuning.levelRangeMult;
 export const TOWER_LEVEL_SPLASH_MULT = tuning.levelSplashMult;

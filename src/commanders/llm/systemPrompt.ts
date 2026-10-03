@@ -1,15 +1,17 @@
-import { formatEnemyLevelHpMult } from "@/content/formulas.js";
+import { formatEnemyLevelMult } from "@/content/formulas.js";
 import { getGameContent } from "@/content/gameContent.js";
 import {
   BETWEEN_WAVES_TIMER,
   ENEMY_TYPES,
   ENEMY_WAVE_DAMAGE_MULT,
+  ENEMY_WAVE_HP_MULT,
   PRE_EMPTIVE_WAVE_TIMER,
   VICTORY_WAVE,
 } from "@/sim/Constants.js";
 import {
   TOWER_BASE,
   TOWER_LEVEL_DMG_MULT,
+  TOWER_LEVEL_HEALTH_MULT,
   TOWER_LEVEL_RANGE_MULT,
   TOWER_LEVEL_RATE_MULT,
   TOWER_META,
@@ -66,13 +68,14 @@ You command the enemy army in a tile-based tower-defense game. Your objective is
 
 ${describeEnemyTypes()}
 
-Enemy HP scales by level and wave: hp = baseHp * (${formatEnemyLevelHpMult(getGameContent().enemies.levelHpMult)}) * (1 + ${ENEMY_WAVE_DAMAGE_MULT} * (wave - 1)).
+Enemy HP scales by level and wave: hp = baseHp * (${formatEnemyLevelMult(getGameContent().enemies.levelHpMult)}) * (1 + ${ENEMY_WAVE_HP_MULT} * (wave - 1)).
+Enemy damage scales by level and wave with its own coefficients: damage = attackDamage * (${formatEnemyLevelMult(getGameContent().enemies.levelDamageMult)}) * (1 + ${ENEMY_WAVE_DAMAGE_MULT} * (wave - 1)).
 
 # Tower types (base level 1 stats)
 
 ${describeTowerTypes()}
 
-Towers scale per level: damage * ${TOWER_LEVEL_DMG_MULT}^(level-1), fireRate * ${TOWER_LEVEL_RATE_MULT}^(level-1), range * ${TOWER_LEVEL_RANGE_MULT}^(level-1).
+Towers scale per level: damage * ${TOWER_LEVEL_DMG_MULT}^(level-1), fireRate * ${TOWER_LEVEL_RATE_MULT}^(level-1), range * ${TOWER_LEVEL_RANGE_MULT}^(level-1), health * ${TOWER_LEVEL_HEALTH_MULT}^(level-1).
 
 # Waves
 

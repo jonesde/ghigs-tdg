@@ -10,6 +10,7 @@ import {
   TERRAIN_HEIGHT_BONUS_PCT,
   TOWER_BASE,
   TOWER_LEVEL_DMG_MULT,
+  TOWER_LEVEL_HEALTH_MULT,
   TOWER_LEVEL_RANGE_MULT,
   TOWER_LEVEL_RATE_MULT,
   TOWER_LEVEL_SPLASH_MULT,
@@ -168,6 +169,15 @@ describe("Tower", () => {
       tower.level = 3;
       const expectedRange = TOWER_BASE.basic.range * TOWER_LEVEL_RANGE_MULT ** 2;
       expect(tower.stats.range).toBeCloseTo(expectedRange, 4);
+    });
+
+    it("scales damage and max health with their own level multipliers", () => {
+      const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
+      tower.level = 4;
+      tower.recomputeMaxHealth();
+      expect(tower.stats.damage).toBeCloseTo(TOWER_BASE.basic.damage * TOWER_LEVEL_DMG_MULT ** 3, 4);
+      expect(tower.maxHealth).toBeCloseTo(TOWER_BASE.basic.health * TOWER_LEVEL_HEALTH_MULT ** 3, 4);
+      expect(tower.health).toBeCloseTo(tower.maxHealth, 4);
     });
 
     it("computes stats for all tower types at level 1", () => {

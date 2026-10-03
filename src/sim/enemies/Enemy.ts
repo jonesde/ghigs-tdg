@@ -7,9 +7,11 @@ import {
   BOSS_STUN_REDUCTION,
   BREACH_HYSTERESIS_SECONDS,
   BREACH_REEVAL_SECONDS,
+  ENEMY_LEVEL_DAMAGE_MULT,
   ENEMY_LEVEL_HP_MULT,
   ENEMY_TYPES,
   ENEMY_WAVE_DAMAGE_MULT,
+  ENEMY_WAVE_HP_MULT,
   enemyLevelBounty,
   MAX_BURN_STACKS,
   MIN_SLOW_FACTOR,
@@ -319,7 +321,8 @@ export class Enemy {
   attackingBase: boolean = false;
   // The base attack target, wired by the EnemyManager/engine. Null until set at spawn.
   baseTarget: AttackTarget | null = null;
-  // Attack ability (scaled per Phase 0; damage scales with wave/level like HP).
+  // Attack ability. Damage scales with level and wave through its own
+  // coefficients, independent of the HP coefficients above.
   attackDamage: number = 0;
   attackSpeed: number = 0;
   attackTimer: number = 0;
@@ -416,13 +419,14 @@ export class Enemy {
     this.heal = meta.heal || 0;
     this.healRange = (meta.healRange || 0) * grid.tileSize;
 
-    const waveMult = 1 + ENEMY_WAVE_DAMAGE_MULT * (wave - 1);
+    const waveHpMult = 1 + ENEMY_WAVE_HP_MULT * (wave - 1);
+    const waveDamageMult = 1 + ENEMY_WAVE_DAMAGE_MULT * (wave - 1);
     const diffMult = (difficultyTick || 0) * DIFFICULTY_MULT_TICK + 1;
-    this.maxHp = meta.baseHp * ENEMY_LEVEL_HP_MULT(level) * waveMult * diffMult;
+    this.maxHp = meta.baseHp * ENEMY_LEVEL_HP_MULT(level) * waveHpMult * diffMult;
     this.hp = this.maxHp;
     this.speed = meta.speed;
     this.bounty = enemyLevelBounty(meta.bounty, level, wave);
-    this.attackDamage = meta.attackDamage * ENEMY_LEVEL_HP_MULT(level) * waveMult * diffMult;
+    this.attackDamage = meta.attackDamage * ENEMY_LEVEL_DAMAGE_MULT(level) * waveDamageMult * diffMult;
     this.attackSpeed = meta.attackSpeed;
     this.attackTimer = 0;
     this.blockedByTower = null;

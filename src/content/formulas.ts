@@ -1,6 +1,6 @@
 import type { EnemiesContent } from "./schemas/enemies.js";
 
-export function enemyLevelHpMult(level: number, coeffs: EnemiesContent["levelHpMult"]): number {
+export function enemyLevelMult(level: number, coeffs: EnemiesContent["levelHpMult"]): number {
   return coeffs.intercept + coeffs.slopePerLevel * (level - 1);
 }
 
@@ -20,6 +20,6 @@ export function enemyBounty(
   return Math.ceil(baseBounty * levelFactor * waveFactor);
 }
 
-export function formatEnemyLevelHpMult(coeffs: EnemiesContent["levelHpMult"]): string {
+export function formatEnemyLevelMult(coeffs: EnemiesContent["levelHpMult"]): string {
   return `${coeffs.intercept} + ${coeffs.slopePerLevel}*(level-1)`;
 }

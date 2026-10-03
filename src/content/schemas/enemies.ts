@@ -19,6 +19,8 @@ export const EnemyMetaSchema = z.object({
 export const EnemiesContentSchema = z.object({
   types: z.record(z.string(), EnemyMetaSchema),
   levelHpMult: z.object({ intercept: z.number(), slopePerLevel: z.number() }),
+  waveHpMult: z.number(),
+  levelDamageMult: z.object({ intercept: z.number(), slopePerLevel: z.number() }),
   waveDamageMult: z.number(),
   bountyLevelGrowth: z.number(),
   bountyFullThroughWave: z.number(),

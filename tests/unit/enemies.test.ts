@@ -7,9 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
 import {
   BOSS_STUN_REDUCTION,
+  ENEMY_LEVEL_DAMAGE_MULT,
   ENEMY_LEVEL_HP_MULT,
   ENEMY_TYPES,
   ENEMY_WAVE_DAMAGE_MULT,
+  ENEMY_WAVE_HP_MULT,
   enemyLevelBounty,
   MIN_SLOW_FACTOR,
   STUCK_RECOVERY_SECONDS,
@@ -88,7 +90,7 @@ describe("Enemy", () => {
       const level = 2;
       const diffTick = 0;
       const enemy = new Enemy("minion", level, 0, grid, wave, diffTick);
-      const waveMult = 1 + ENEMY_WAVE_DAMAGE_MULT * (wave - 1);
+      const waveMult = 1 + ENEMY_WAVE_HP_MULT * (wave - 1);
       const diffMult = 1 + DIFFICULTY_MULT_TICK * diffTick;
       const expected = ENEMY_TYPES.minion.baseHp * ENEMY_LEVEL_HP_MULT(level) * waveMult * diffMult;
       expect(enemy.maxHp).toBeCloseTo(expected, 4);
@@ -98,7 +100,7 @@ describe("Enemy", () => {
     it("scales HP with wave number", () => {
       const enemy1 = new Enemy("minion", 1, 0, grid, 1, 0);
       const enemy2 = new Enemy("minion", 1, 0, grid, 11, 0);
-      const expectedRatio = (1 + ENEMY_WAVE_DAMAGE_MULT * 10) / (1 + ENEMY_WAVE_DAMAGE_MULT * 0);
+      const expectedRatio = (1 + ENEMY_WAVE_HP_MULT * 10) / (1 + ENEMY_WAVE_HP_MULT * 0);
       expect(enemy2.maxHp / enemy1.maxHp).toBeCloseTo(expectedRatio, 4);
     });
 
@@ -114,6 +116,43 @@ describe("Enemy", () => {
       const enemy2 = new Enemy("minion", 1, 0, grid, 1, 4);
       const expectedRatio = (1 + DIFFICULTY_MULT_TICK * 4) / (1 + DIFFICULTY_MULT_TICK * 0);
       expect(enemy2.maxHp / enemy1.maxHp).toBeCloseTo(expectedRatio, 4);
+    });
+
+    it("computes attack damage using the damage formula", () => {
+      const wave = 10;
+      const level = 2;
+      const diffTick = 2;
+      const enemy = new Enemy("minion", level, 0, grid, wave, diffTick);
+      const waveMult = 1 + ENEMY_WAVE_DAMAGE_MULT * (wave - 1);
+      const diffMult = 1 + DIFFICULTY_MULT_TICK * diffTick;
+      const expected = ENEMY_TYPES.minion.attackDamage * ENEMY_LEVEL_DAMAGE_MULT(level) * waveMult * diffMult;
+      expect(enemy.attackDamage).toBeCloseTo(expected, 4);
+    });
+
+    it("scales attack damage with wave using the damage wave coefficient, not the HP one", () => {
+      const enemy1 = new Enemy("minion", 1, 0, grid, 1, 0);
+      const enemy2 = new Enemy("minion", 1, 0, grid, 11, 0);
+      const expectedDamageRatio = (1 + ENEMY_WAVE_DAMAGE_MULT * 10) / (1 + ENEMY_WAVE_DAMAGE_MULT * 0);
+      const expectedHpRatio = (1 + ENEMY_WAVE_HP_MULT * 10) / (1 + ENEMY_WAVE_HP_MULT * 0);
+      expect(enemy2.attackDamage / enemy1.attackDamage).toBeCloseTo(expectedDamageRatio, 4);
+      expect(enemy2.maxHp / enemy1.maxHp).toBeCloseTo(expectedHpRatio, 4);
+    });
+
+    it("scales attack damage with enemy level using the damage level coefficient, not the HP one", () => {
+      const enemy1 = new Enemy("minion", 1, 0, grid, 1, 0);
+      const enemy2 = new Enemy("minion", 3, 0, grid, 1, 0);
+      expect(enemy2.attackDamage / enemy1.attackDamage).toBeCloseTo(
+        ENEMY_LEVEL_DAMAGE_MULT(3) / ENEMY_LEVEL_DAMAGE_MULT(1),
+        4,
+      );
+      expect(enemy2.maxHp / enemy1.maxHp).toBeCloseTo(ENEMY_LEVEL_HP_MULT(3) / ENEMY_LEVEL_HP_MULT(1), 4);
+    });
+
+    it("scales attack damage with difficulty tick", () => {
+      const enemy1 = new Enemy("minion", 1, 0, grid, 1, 0);
+      const enemy2 = new Enemy("minion", 1, 0, grid, 1, 4);
+      const expectedRatio = (1 + DIFFICULTY_MULT_TICK * 4) / (1 + DIFFICULTY_MULT_TICK * 0);
+      expect(enemy2.attackDamage / enemy1.attackDamage).toBeCloseTo(expectedRatio, 4);
     });
 
     it("applies bounty level growth, full through wave 10 and discounted after", () => {

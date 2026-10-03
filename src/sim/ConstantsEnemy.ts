@@ -1,4 +1,4 @@
-import { enemyBounty as computeEnemyBounty, enemyLevelHpMult as computeEnemyLevelHpMult } from "@/content/formulas.js";
+import { enemyBounty as computeEnemyBounty, enemyLevelMult as computeEnemyLevelMult } from "@/content/formulas.js";
 import { getGameContent } from "@/content/gameContent.js";
 
 export interface EnemyMeta {
@@ -22,9 +22,16 @@ const enemies = getGameContent().enemies;
 
 export const ENEMY_TYPES: Record<string, EnemyMeta> = enemies.types as Record<string, EnemyMeta>;
 
-// HP = baseHp * ENEMY_LEVEL_HP_MULT(level) * (1 + waveDamageMult*(wave-1))
+// HP and damage scale independently: each has its own level coefficients
+// (linear in level) and its own wave coefficient (linear in wave), both listed
+// in enemies.json. Difficulty is a single shared multiplier over both.
+// HP = baseHp * ENEMY_LEVEL_HP_MULT(level) * (1 + ENEMY_WAVE_HP_MULT*(wave-1)) * diffMult
+// Damage = attackDamage * ENEMY_LEVEL_DAMAGE_MULT(level) * (1 + ENEMY_WAVE_DAMAGE_MULT*(wave-1)) * diffMult
 export const ENEMY_LEVEL_HP_MULT = (level: number): number =>
-  computeEnemyLevelHpMult(level, getGameContent().enemies.levelHpMult);
+  computeEnemyLevelMult(level, getGameContent().enemies.levelHpMult);
+
+export const ENEMY_LEVEL_DAMAGE_MULT = (level: number): number =>
+  computeEnemyLevelMult(level, getGameContent().enemies.levelDamageMult);
 
 export interface EnemyTierThreshold {
   minWave: number;
@@ -37,6 +44,7 @@ export interface EnemyTierThreshold {
 export const ENEMY_TIER_THRESHOLDS: EnemyTierThreshold[] = enemies.tierThresholds;
 export const HEALER_MIN_GAP = enemies.healerMinGap;
 
+export const ENEMY_WAVE_HP_MULT = enemies.waveHpMult;
 export const ENEMY_WAVE_DAMAGE_MULT = enemies.waveDamageMult;
 export const BOUNTY_LEVEL_GROWTH = enemies.bountyLevelGrowth;
 export const BOUNTY_FULL_THROUGH_WAVE = enemies.bountyFullThroughWave;

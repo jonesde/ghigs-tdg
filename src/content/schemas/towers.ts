@@ -59,6 +59,7 @@ export const TowerVariantDefSchema = z.object({
 export const TowerTuningSchema = z.object({
   projectileSpeedMultiplier: z.number(),
   levelDmgMult: z.number(),
+  levelHealthMult: z.number(),
   levelRateMult: z.number(),
   levelRangeMult: z.number(),
   levelSplashMult: z.number(),
