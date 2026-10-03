@@ -30,6 +30,11 @@ describe("PersistStore", () => {
       expect(store.difficulty.multiplierTick).toBe(0);
     });
 
+    it("starts with default lastSelectedThemeId and a null lastSelectedMapIndex", () => {
+      expect(store.lastSelectedThemeId).toBe("default");
+      expect(store.lastSelectedMapIndex).toBeNull();
+    });
+
     it("starts with all general addons null", () => {
       expect(store.generalAddons.extraHealth).toBeNull();
       expect(store.generalAddons.startingGold).toBeNull();

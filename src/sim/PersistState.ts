@@ -2,7 +2,7 @@ import { TOTAL_MAPS } from "@/sim/Constants.js";
 import type { GeneralAddons, TowerUnlocks } from "@/stores/persist.js";
 
 // Authoritative persist state — ALL fields enumerated explicitly. The
-// randomMap* / progressiveMap* / lastSelectedThemeId fields aren't written by
+// randomMap* / progressiveMap* / lastSelected* fields aren't written by
 // the engine, but they MUST be present so the full PersistState round-trips
 // through localStorage correctly.
 export interface PersistState {
@@ -28,6 +28,7 @@ export interface PersistState {
   progressiveMapEntries: number;
   progressiveMapSeed: number | null;
   lastSelectedThemeId: string;
+  lastSelectedMapIndex: number | null;
 }
 
 const CURRENT_SAVE_VERSION = 2;
@@ -94,6 +95,7 @@ export function createDefaultPersistState(): PersistState {
     progressiveMapEntries: 1,
     progressiveMapSeed: null,
     lastSelectedThemeId: "default",
+    lastSelectedMapIndex: null,
   };
 }
 

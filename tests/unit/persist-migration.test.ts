@@ -191,6 +191,20 @@ describe("PersistStore save migration pauseForCommander backfill", () => {
   });
 });
 
+describe("PersistStore save migration lastSelectedMapIndex backfill", () => {
+  it("keeps save version 4 and fills lastSelectedMapIndex as null when a v4 save omits it", () => {
+    const result = migrateToCurrent({ saveVersion: 4, gems: 10 });
+    expect(result.saveVersion).toBe(4);
+    expect(result.lastSelectedMapIndex).toBeNull();
+  });
+
+  it("keeps a saved lastSelectedMapIndex", () => {
+    const result = migrateToCurrent({ saveVersion: 4, gems: 10, lastSelectedMapIndex: 15 });
+    expect(result.saveVersion).toBe(4);
+    expect(result.lastSelectedMapIndex).toBe(15);
+  });
+});
+
 describe("PersistStore save migration progressiveThirdChoice backfill", () => {
   it("keeps save version 4 and fills progressiveThirdChoice when a v4 save omits it", () => {
     const result = migrateToCurrent({ saveVersion: 4, gems: 10, generalAddons: { extraHealth: null } });

@@ -24,7 +24,7 @@ src/
 │   └── index.ts                 # Route definitions + navigation guards (dispose engine on route change)
 ├── stores/
 │   ├── game.ts                  # Volatile per-run state: lives, gold, wave, game state, selection, camera, tower/panel positions, hover state, frame id, run gem/boss counters, milestone breakdown, end-screen data, random-map params, worker reference
-│   ├── persist.ts               # Persistent meta-progression: gems, unlocks, difficulty, map progress, random-map and progressive-map preferences, last-selected theme (localStorage)
+│   ├── persist.ts               # Persistent meta-progression: gems, unlocks, difficulty, map progress, random-map and progressive-map preferences, last-selected theme and map (localStorage)
 │   ├── ui.ts                    # UI overlay state: confirm dialogs, notifications, menu/skill-tree/stats/help/minimap context, debug panel, enemy commander selection, random-map panel, wasPlaying flags for pause/skill-tree/help
 │   └── mapTheme.ts              # Map theme state: activeTheme, defaultTheme, availableThemes, preload/load actions
 ├── composables/
@@ -43,7 +43,7 @@ src/
 │   ├── ProgressivePlacement.vue # Between-wave block offer: height-shaded 5×5 previews, rotation, site hint
 │   ├── HelpDialog.vue           # Help/controls overlay (toggled from in-game menu)
 │   ├── MainMenu.vue             # Main menu: large theme buttons (faded menuBackground preview per theme, persisted select), new game, skill tree, commanders, run history, difficulty slider
-│   ├── MapSelect.vue            # Map selection: region tabs + themed region map with level/progressive markers + header dialogs for Generated Map / Progressive Map custom runs
+│   ├── MapSelect.vue            # Map selection: region tabs + themed region map with level/progressive markers (last map index persisted, region tab derived from it, first level pre-selected when none) + header dialogs for Generated Map / Progressive Map custom runs
 │   ├── RegionMap.vue            # Region map SVG renderer: mapImage background, connection lines, level/progressive markers with tooltips, select/start events
 │   ├── SkillTree.vue            # Skill tree: tower levels, specializations, add-ons, general upgrades
 │   ├── EndScreen.vue            # Game over / victory screen: gem breakdown and navigation
@@ -187,7 +187,7 @@ The SVG structure is:
 ### Four Pinia Stores
 
 - **`gameStore`** — reactive mirror/projection of the simulation `SimulationSnapshot`. The worker is authoritative for simulation state; `gameStore` holds the subset the Vue UI binds to (lives, gold, wave, game state, selection, time scale, dialog visibility, frame id, run gem/boss counters, milestone breakdown, end-screen data) and is updated by snapshot diffs each frame. Main-thread-only state (camera, hover tile, hover-upgrade-button, tower/panel positions, random-map params, worker reference) also lives here. Reset when starting a new map.
-- **`persistStore`** — persistent meta-progression (gems, unlocked skills, map progress, difficulty, general add-ons, random-map and progressive-map preferences, last-selected theme) and LLM commander configurations (`llmCommanders` array). Auto-saved to `localStorage` via manual `save()` calls.
+- **`persistStore`** — persistent meta-progression (gems, unlocked skills, map progress, difficulty, general add-ons, random-map and progressive-map preferences, last-selected theme and map) and LLM commander configurations (`llmCommanders` array). Auto-saved to `localStorage` via manual `save()` calls.
 - **`uiStore`** — UI overlay visibility and confirm dialog state, plus notifications, minimap toggle, enemy commander selection ("none"/"stubby"/"stubbs"), random-map panel visibility, and wasPlaying flags for pause/skill-tree/help (so closing these overlays restores the prior playing/paused state).
 - **`mapThemeStore`** — map theme state: `defaultTheme` (preloaded at app init for synchronous access by non-game screens) and `activeTheme` (resolved for the current run), plus `availableThemes` and preload/load actions.
 
@@ -430,7 +430,7 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 | File | Description |
 |---|---|
 | `src/stores/game.ts` | Volatile game state: lives, gold, wave, selection, time scale, camera, tower/panel positions, hover state, frame id, run gem/boss counters, milestone breakdown, end-screen data, random-map params, worker reference |
-| `src/stores/persist.ts` | Persistent state: gems, unlocks, difficulty, map progress, random-map and progressive-map preferences, last-selected theme, localStorage I/O |
+| `src/stores/persist.ts` | Persistent state: gems, unlocks, difficulty, map progress, random-map and progressive-map preferences, last-selected theme and map, localStorage I/O |
 | `src/stores/ui.ts` | UI state: confirm dialog, notifications, main menu / skill tree / stats / help / minimap overlay flags, debug panel visibility, enemy commander selection, random-map panel, wasPlaying flags for pause/skill-tree/help |
 | `src/stores/mapTheme.ts` | Map theme state: activeTheme, defaultTheme (preloaded at app init), availableThemes, preload/load actions |
 
@@ -456,7 +456,7 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 | `src/components/PauseMenu.vue` | Pause menu overlay: resume, skill tree, difficulty adjustment, quit to main menu |
 | `src/components/HelpDialog.vue` | Help/controls overlay (toggled from the in-game pause menu) |
 | `src/components/MainMenu.vue` | Main menu: large theme buttons (faded `menuBackground` preview per theme, persisted selection), new game, skill tree, commanders, run history, difficulty slider |
-| `src/components/MapSelect.vue` | Map selection screen: header row with the 3 region tabs on the left and theme drop-down / "Generate" / "Progressive" / Back controls on the right (narrow screens stack to two centered rows with the controls above the tabs); each tab shows a `RegionMap` with 12 level + 4 progressive markers (unlock status, best waves, gem multipliers in tooltips); click selects a marker (details panel with Play button plus an on-map play button under the marker), double-click plays, locked markers never start; awaits theme resolution before navigation; "Generate" / "Progressive" buttons open dialogs (teleported to body) with the custom-run forms — "Generated Map" (style/width/height/seed) and "Progressive Map" (base entries/seed) |
+| `src/components/MapSelect.vue` | Map selection screen: header row with the 3 region tabs on the left and theme drop-down / "Generate" / "Progressive" / Back controls on the right (narrow screens stack to two centered rows with the controls above the tabs); each tab shows a `RegionMap` with 12 level + 4 progressive markers (unlock status, best waves, gem multipliers in tooltips); click selects a marker (details panel with Play button plus an on-map play button under the marker), double-click plays, locked markers never start; the selected map index persists (region tab derived from it; switching tabs pre-selects that region's first map level, so the details panel always shows a map) and restores on load, falling back to the default region's first level when nothing was saved; awaits theme resolution before navigation; "Generate" / "Progressive" buttons open dialogs (teleported to body) with the custom-run forms — "Generated Map" (style/width/height/seed) and "Progressive Map" (base entries/seed) |
 | `src/components/RegionMap.vue` | Region map SVG renderer: theme `mapImage` background (nested `<svg>` via `v-html`), connection lines resolved from `RegionMapLayout.connections`, per-node markers (`RegionMapNodeView`: label, tooltip, locked/selected/progressive states, `tabindex`/`role`); emits `select(mapIndex)` on click/Enter, `start(mapIndex)` on double-click or the on-map play button under the selected marker (never for locked markers) |
 | `src/components/SkillTree.vue` | Skill tree: tower level unlocks, specializations, add-ons, general upgrades; reads default theme (not active theme) |
 | `src/components/EndScreen.vue` | Victory/game-over screen: gem breakdown, wave count, navigation buttons; reads default theme for region names |

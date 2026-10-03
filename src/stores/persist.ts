@@ -61,6 +61,7 @@ interface PersistStateShape {
   progressiveMapEntries: number;
   progressiveMapSeed: number | null;
   lastSelectedThemeId: string;
+  lastSelectedMapIndex: number | null;
   llmCommanders: LlmCommanderConfig[];
 }
 
@@ -140,6 +141,7 @@ function defaultState(): PersistStateShape {
     progressiveMapEntries: 1,
     progressiveMapSeed: null,
     lastSelectedThemeId: "default",
+    lastSelectedMapIndex: null,
     llmCommanders: [],
   };
 }

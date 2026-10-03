@@ -9,6 +9,8 @@ import {
   MAP_GEM_MULTIPLIERS,
   MAPS_PER_REGION,
   type MapStyle,
+  PROGRESSIVE_MAP_COUNT,
+  PROGRESSIVE_MAP_INDEX_BASE,
 } from "@/sim/Constants.js";
 import { generateRandomMap, getMap, getMapDisplayName } from "@/sim/grid/Map.js";
 import {
@@ -132,8 +134,41 @@ function getFullEntry(index: number) {
   return mapEntries.value[index];
 }
 
-const activeRegionTab = ref(Math.min(Math.floor(persistStore.highestUnlockedMap / MAPS_PER_REGION), 2));
-const selectedMapIndex = ref<number | null>(null);
+function regionIdForMapIndex(mapIndex: number): number | null {
+  if (mapIndex < PROGRESSIVE_MAP_INDEX_BASE) return Math.floor(mapIndex / MAPS_PER_REGION);
+  return progressiveConfigForIndex(mapIndex)?.regionId ?? null;
+}
+
+function firstMapIndexForRegion(regionId: number): number {
+  return regionId * MAPS_PER_REGION;
+}
+
+function defaultRegionTab(): number {
+  return Math.min(Math.floor(persistStore.highestUnlockedMap / MAPS_PER_REGION), 2);
+}
+
+function savedMapIndexIsValid(mapIndex: number | null): mapIndex is number {
+  return (
+    typeof mapIndex === "number" &&
+    Number.isInteger(mapIndex) &&
+    mapIndex >= 0 &&
+    mapIndex < PROGRESSIVE_MAP_INDEX_BASE + PROGRESSIVE_MAP_COUNT
+  );
+}
+
+// The region tab is derived from the selected map index so the two can never
+// disagree; a missing/invalid saved index falls back to the default region.
+const savedMapIndex = persistStore.lastSelectedMapIndex;
+const initialMapIndex = savedMapIndexIsValid(savedMapIndex) ? savedMapIndex : null;
+const activeRegionTab = ref(
+  initialMapIndex !== null ? (regionIdForMapIndex(initialMapIndex) ?? defaultRegionTab()) : defaultRegionTab(),
+);
+const selectedMapIndex = ref<number | null>(initialMapIndex ?? firstMapIndexForRegion(activeRegionTab.value));
+
+watch(selectedMapIndex, (value) => {
+  persistStore.lastSelectedMapIndex = value;
+  persistStore.save();
+});
 
 const activeRegionLayout = computed(() => {
   const theme = themeStore.activeTheme ?? themeStore.defaultTheme;
@@ -193,7 +228,7 @@ const selectedEntry = computed(() => (selectedMapIndex.value === null ? null : g
 
 function selectRegionTab(regionId: number) {
   activeRegionTab.value = regionId;
-  selectedMapIndex.value = null;
+  selectedMapIndex.value = firstMapIndexForRegion(regionId);
 }
 
 function selectNode(mapIndex: number) {
@@ -421,7 +456,6 @@ function startProgressiveMap() {
           {{ selectedEntry.locked ? "Locked" : "Play" }}
         </button>
       </template>
-      <div v-else class="details-hint">Select a map marker to see its details</div>
     </div>
 
     <Teleport to="body">
@@ -677,11 +711,6 @@ function startProgressiveMap() {
 }
 
 .details-meta {
-  font-size: var(--font-lg);
-  color: var(--color-text-dim);
-}
-
-.details-hint {
   font-size: var(--font-lg);
   color: var(--color-text-dim);
 }

@@ -70,19 +70,70 @@ describe("MapSelect", () => {
     expect(wrapper.findAll(".map-node.progressive").length).toBe(4);
   });
 
-  it("switches region tabs, clears the selection, and shows that region's maps", async () => {
+  it("switches region tabs, pre-selects the first map level, and shows that region's maps", async () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    await markerByLabel(wrapper, "1")!.trigger("click");
-    expect(wrapper.find(".details-name").exists()).toBe(true);
+    await markerByLabel(wrapper, "3")!.trigger("click");
+    expect(persistStore.lastSelectedMapIndex).toBe(2);
     await wrapper.findAll(".region-tab")[2].trigger("click");
     await wrapper.vm.$nextTick();
     expect(wrapper.findAll(".region-tab")[2].classes()).toContain("active");
-    expect(wrapper.find(".details-hint").exists()).toBe(true);
+    expect(wrapper.find(".details-hint").exists()).toBe(false);
+    expect(wrapper.find(".details-name").text()).toContain("Thornpeak Wilds Map 1");
     expect(wrapper.findAll(".map-node").length).toBe(16);
     const firstMarker = wrapper.findAll(".map-node")[0];
+    expect(firstMarker.classes()).toContain("selected");
     expect(firstMarker.find("title").text()).toContain("Thornpeak Wilds");
+    expect(persistStore.lastSelectedMapIndex).toBe(24);
+  });
+
+  it("pre-selects the first map level and shows its details when no map level is remembered", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    expect(wrapper.findAll(".region-tab")[0].classes()).toContain("active");
+    expect(markerByLabel(wrapper, "1")!.classes()).toContain("selected");
+    expect(wrapper.find(".details-hint").exists()).toBe(false);
+    expect(wrapper.find(".details-name").text()).toContain("Verdant Marches Map 1");
+  });
+
+  it("restores the remembered map level on its region tab", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    persistStore.lastSelectedMapIndex = 15;
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    expect(wrapper.findAll(".region-tab")[1].classes()).toContain("active");
+    expect(markerByLabel(wrapper, "4")!.classes()).toContain("selected");
+    expect(wrapper.find(".details-name").text()).toContain("Sunscorch Coast Map 4");
+  });
+
+  it("restores a remembered progressive map index on its region tab", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    persistStore.lastSelectedMapIndex = 41;
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    expect(wrapper.findAll(".region-tab")[1].classes()).toContain("active");
+    expect(markerByLabel(wrapper, "P2")!.classes()).toContain("selected");
+    expect(wrapper.find(".details-name").text()).toContain("Sunscorch Coast Progressive 2");
+  });
+
+  it("falls back to the default region and first map level for an invalid remembered index", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    persistStore.lastSelectedMapIndex = 99;
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    expect(wrapper.findAll(".region-tab")[0].classes()).toContain("active");
+    expect(markerByLabel(wrapper, "1")!.classes()).toContain("selected");
+    expect(wrapper.find(".details-name").text()).toContain("Verdant Marches Map 1");
+  });
+
+  it("persists the selected map index when a marker is clicked", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
+    const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
+    await markerByLabel(wrapper, "3")!.trigger("click");
+    expect(persistStore.lastSelectedMapIndex).toBe(2);
   });
 
   it("shows locked state for locked markers", () => {
@@ -128,12 +179,11 @@ describe("MapSelect", () => {
     expect(router.currentRoute.value.path).toBe("/game");
   });
 
-  it("shows an on-map play button under the selection and starts from it", async () => {
+  it("shows an on-map play button under the pre-selected map level and starts from it", async () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
-    expect(wrapper.find(".map-play-button").exists()).toBe(false);
-    await markerByLabel(wrapper, "1")!.trigger("click");
+    expect(markerByLabel(wrapper, "1")!.classes()).toContain("selected");
     const playButton = wrapper.find(".map-play-button");
     expect(playButton.exists()).toBe(true);
     await playButton.trigger("click");
