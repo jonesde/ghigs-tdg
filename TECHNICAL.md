@@ -116,7 +116,6 @@ src/
 │   │       └── the-aftermath.json       # Alternate "Aftermath" theme data
 │   └── svg/
 │       ├── EnemyManager.ts      # Enemy rendering pool: <use> elements, hit flash, slow filters
-│       ├── EnemyWalk.ts         # Base enemy shape vertex generation (cached per shape/radius) + path-d conversion
 │       ├── TowerManager.ts      # Tower rendering pool: <use> elements, barrel rotation, level pips
 │       ├── ProjectileManager.ts # Projectile rendering pool: <circle> bullets, <line> beams
 │       ├── ParticleManager.ts   # Particle rendering pool: <circle> elements
@@ -519,7 +518,6 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 | File | Description |
 |---|---|
 | `src/render/svg/EnemyManager.ts` | Enemy rendering pool: `<use>` elements with `<symbol>` href animation, hit flash circles, slow filter application |
-| `src/render/svg/EnemyWalk.ts` | Base enemy shape vertex generation (cached per shape/radius, frozen results) and path-d string conversion |
 | `src/render/svg/TowerManager.ts` | Tower rendering pool: `<use>` elements with barrel rotation, level pip `<circle>` elements |
 | `src/render/svg/ProjectileManager.ts` | Projectile rendering pool: `<circle>` bullets, `<line>` beams |
 | `src/render/svg/ParticleManager.ts` | Particle rendering pool: `<circle>` elements with fade/expansion |
@@ -679,7 +677,7 @@ All component styles use `<style scoped>` to prevent leakage.
 
 | Directory | Description |
 |---|---|
-| `tests/unit/` | Unit test files covering all source modules (includes `map-theme.test.ts`, `spawn-manager.test.ts`, `enemy-attack.test.ts`, `enemy-walk.test.ts`, `snapshot-store.test.ts`, `snapshot-merge.test.ts`, `text-grid-builder.test.ts`, `text-render.test.ts`) |
+| `tests/unit/` | Unit test files covering all source modules (includes `map-theme.test.ts`, `spawn-manager.test.ts`, `enemy-attack.test.ts`, `snapshot-store.test.ts`, `snapshot-merge.test.ts`, `text-grid-builder.test.ts`, `text-render.test.ts`) |
 | `tests/unit/sim/` | Simulation unit tests: `applyCommand.test.ts`, `enemy-routing.test.ts`, `snapshot.test.ts`, `balance-wall.test.ts` (map-0 placement oracle), `gem-income.test.ts` (per-wave gem award paths) |
 | `tests/unit/commanders/` | Commander unit tests: `observation.test.ts`, `stubby-brain.test.ts`, `stubbs-brain.test.ts` |
 | `tests/unit/components/` | Vue component tests (15 files, includes `pause-menu.test.ts`, `text-game-root.test.ts`) |
