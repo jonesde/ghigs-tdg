@@ -150,6 +150,20 @@ describe("SnapshotStore selectedTower mirroring", () => {
     }
   });
 
+  it("mirrors progressiveUndoAvailable from snapshot meta", () => {
+    const gameStore = createTestGameStore();
+    const store = new SnapshotStore(gameStore as never);
+    const engine = createTestEngine();
+
+    engine.progressivePlacementUndo = { stampCount: 0, offer: [0] };
+    store.apply(buildSnapshot(engine, nextCommandId++));
+    expect(gameStore.progressiveUndoAvailable).toBe(true);
+
+    engine.progressivePlacementUndo = null;
+    store.apply(buildSnapshot(engine, nextCommandId++));
+    expect(gameStore.progressiveUndoAvailable).toBe(false);
+  });
+
   it("does not rewrite waveCountdown when remaining/nextWave are numerically unchanged", () => {
     const gameStore = createTestGameStore();
     const store = new SnapshotStore(gameStore as never);

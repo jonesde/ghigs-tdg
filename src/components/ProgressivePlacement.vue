@@ -30,6 +30,10 @@ const rerollCost = computed(() => {
 });
 const rerollDisabled = computed(() => gameStore.gold < rerollCost.value);
 
+const showPanel = computed(
+  () => gameStore.progressivePlacementHold || (gameStore.progressiveUndoAvailable && gameStore.isPaused),
+);
+
 function onOfferClick(index: number) {
   clearBuildAndTowerForProgressive(gameStore);
   if (index === gameStore.progressiveSelectedOffer) {
@@ -42,6 +46,10 @@ function onOfferClick(index: number) {
 function rerollOffer() {
   if (rerollDisabled.value) return;
   dispatchCommand({ commandId: 0, type: "action:rerollProgressiveOffer" });
+}
+
+function undoPlacement() {
+  dispatchCommand({ commandId: 0, type: "action:undoProgressivePlacement" });
 }
 
 function previewCells(templateIndex: number): string {
@@ -72,39 +80,55 @@ function previewCells(templateIndex: number): string {
 </script>
 
 <template>
-  <div v-if="gameStore.progressivePlacementHold" class="progressive-placement">
-    <div class="progressive-title">Place a block</div>
-    <div class="progressive-cards">
+  <div v-if="showPanel" class="progressive-placement">
+    <template v-if="gameStore.progressivePlacementHold">
+      <div class="progressive-title">Place a block</div>
+      <div class="progressive-cards">
+        <button
+          v-for="(templateIndex, index) in gameStore.progressiveOffer"
+          :key="`${templateIndex}-${index}`"
+          type="button"
+          class="progressive-card"
+          :class="{ selected: index === gameStore.progressiveSelectedOffer }"
+          @mousedown.prevent
+          @keydown.enter.prevent
+          @keydown.space.prevent
+          @click="onOfferClick(index)"
+        >
+          <svg viewBox="0 0 5 5" width="72" height="72" aria-hidden="true" v-html="previewCells(templateIndex)"></svg>
+          <span>{{ index + 1 }}</span>
+        </button>
+      </div>
       <button
-        v-for="(templateIndex, index) in gameStore.progressiveOffer"
-        :key="`${templateIndex}-${index}`"
         type="button"
-        class="progressive-card"
-        :class="{ selected: index === gameStore.progressiveSelectedOffer }"
+        class="progressive-reroll"
+        :disabled="gameStore.gold < rerollCost"
         @mousedown.prevent
         @keydown.enter.prevent
         @keydown.space.prevent
-        @click="onOfferClick(index)"
+        @click="rerollOffer"
       >
-        <svg viewBox="0 0 5 5" width="72" height="72" aria-hidden="true" v-html="previewCells(templateIndex)"></svg>
-        <span>{{ index + 1 }}</span>
+        Re-roll {{ rerollCost }}g
       </button>
-    </div>
-    <button
-      type="button"
-      class="progressive-reroll"
-      :disabled="gameStore.gold < rerollCost"
-      @mousedown.prevent
-      @keydown.enter.prevent
-      @keydown.space.prevent
-      @click="rerollOffer"
-    >
-      Re-roll {{ rerollCost }}g
-    </button>
-    <div class="progressive-hint">
-      Tab cycles. Click the selected block or press R to rotate. Arrows move the space. Enter or a click on a pattern
-      places.
-    </div>
+      <div class="progressive-hint">
+        Tab cycles. Right-click a placement space, press R, or click the selected block to rotate. Arrows move the
+        space. Enter or a left click on a pattern places.
+      </div>
+    </template>
+    <template v-else>
+      <div class="progressive-title">Block placed</div>
+      <button
+        type="button"
+        class="progressive-undo"
+        @mousedown.prevent
+        @keydown.enter.prevent
+        @keydown.space.prevent
+        @click="undoPlacement"
+      >
+        Undo placement
+      </button>
+      <div class="progressive-hint">Paused. The undo goes away as soon as you resume.</div>
+    </template>
   </div>
 </template>
 
@@ -168,6 +192,15 @@ function previewCells(templateIndex: number): string {
 .progressive-reroll:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+.progressive-undo {
+  padding: 6px 12px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-accent);
+  border-radius: 8px;
+  cursor: pointer;
 }
 
 .progressive-hint {

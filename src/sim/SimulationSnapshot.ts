@@ -185,6 +185,9 @@ export interface SnapshotMeta {
   // The serializer always sets them. worldOrigin defaults to 0 for normal maps.
   progressivePlacementHold?: boolean;
   progressiveOffer?: number[];
+  // True only while the paused undo window after a placement is open; the worker
+  // clears it on the unpause that resumes the run.
+  progressiveUndoAvailable?: boolean;
   worldOriginX?: number;
   worldOriginY?: number;
   layoutGeneration?: number;

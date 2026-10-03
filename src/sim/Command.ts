@@ -87,6 +87,9 @@ export type Command =
       blockY: number;
     }
   | { commandId: number; type: "action:rerollProgressiveOffer" }
+  // Reverts the placement made in the current paused undo window. The worker
+  // checks the stash and the paused state before truncating the stamp log.
+  | { commandId: number; type: "action:undoProgressivePlacement" }
 
   // ---- Lifecycle ----
   | {

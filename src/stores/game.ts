@@ -184,6 +184,10 @@ export interface GameStoreLike {
   baseDefense: BasePanelState | null;
   hoverTile: HoverTile | null;
   camera: CameraState;
+  map?: GeneratedMap | null;
+  // Structural rather than Grid: Pinia unwraps state types, which drops Grid's
+  // private fields, so the store instance would not satisfy `grid?: Grid | null`.
+  grid?: { worldToTile(worldX: number, worldY: number): { x: number; y: number } } | null;
   zoomCamera(magnificationFactor: number, focalWorldX: number | null, focalWorldY: number | null): void;
   panCameraByFraction(xFraction: number, yFraction: number): void;
   revealCameraPoint(worldX: number, worldY: number): void;
@@ -197,6 +201,7 @@ export interface GameStoreLike {
   progressiveRotation?: number;
   progressiveSelectedOffer?: number;
   progressiveSelectedSite?: { blockX: number; blockY: number } | null;
+  progressivePlacements?: ProgressiveStamp[];
   rotateProgressiveBlock?: () => void;
   selectProgressiveOffer?: (index: number) => void;
   moveProgressiveSite?: (direction: ProgressiveSiteDirection) => void;
@@ -241,6 +246,7 @@ interface GameStateShape {
   progressiveSelectedOffer: number;
   progressiveSelectedSite: { blockX: number; blockY: number } | null;
   progressivePlacements: ProgressiveStamp[];
+  progressiveUndoAvailable: boolean;
   layoutGeneration: number;
 }
 
@@ -289,6 +295,7 @@ export const useGameStore = defineStore("game", {
     progressiveSelectedOffer: 0,
     progressiveSelectedSite: null,
     progressivePlacements: [],
+    progressiveUndoAvailable: false,
     layoutGeneration: 0,
   }),
 
@@ -399,6 +406,7 @@ export const useGameStore = defineStore("game", {
       this.progressiveSelectedOffer = 0;
       this.progressiveSelectedSite = null;
       this.progressivePlacements = [];
+      this.progressiveUndoAvailable = false;
       this.layoutGeneration = 0;
     },
 
@@ -610,6 +618,7 @@ export const useGameStore = defineStore("game", {
       this.progressiveSelectedOffer = 0;
       this.progressiveSelectedSite = null;
       this.progressivePlacements = [];
+      this.progressiveUndoAvailable = false;
       this.layoutGeneration = 0;
     },
   },

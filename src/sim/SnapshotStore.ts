@@ -326,6 +326,8 @@ export class SnapshotStore {
       gs.progressiveSelectedSite = null;
       progressiveCursorDirty = true;
     }
+    const undoAvailable = meta.progressiveUndoAvailable === true;
+    if (gs.progressiveUndoAvailable !== undoAvailable) gs.progressiveUndoAvailable = undoAvailable;
     if (progressiveCursorDirty && gs.progressivePlacementHold) gs.syncProgressiveCursor();
     if (
       meta.layoutGeneration !== undefined &&

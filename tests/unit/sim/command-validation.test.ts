@@ -58,6 +58,10 @@ describe("validateCommand (pure)", () => {
     expect(validateCommand({ commandId: 1, type: "input:click", worldX: 40, worldY: 40 }, TEST_GRID)).toBeNull();
   });
 
+  it("accepts undoProgressivePlacement", () => {
+    expect(validateCommand({ commandId: 1, type: "action:undoProgressivePlacement" }, TEST_GRID)).toBeNull();
+  });
+
   it("rejects a bad targeting mode and an invalid variant/dir", () => {
     expect(validateCommand({ commandId: 1, type: "action:setTargeting", mode: "bogus" })).toMatch(/mode/);
     expect(validateCommand({ commandId: 1, type: "action:specialize", variant: "C" as unknown as "A" })).toMatch(
@@ -164,6 +168,11 @@ describe("command intake through applyCommand", () => {
     expect(applyCommand(engine, { commandId: 13, type: "input:click", worldX: outsideX, worldY: 10 })).toBe(false);
     expect(engine.runState.gold).toBe(goldBefore);
     expect(engine.runState.selectedTowerType).toBeNull();
+  });
+
+  it("rejects undoProgressivePlacement when there is no undo stash", () => {
+    expect(engine.progressivePlacementUndo).toBeNull();
+    expect(applyCommand(engine, { commandId: 17, type: "action:undoProgressivePlacement" })).toBe(false);
   });
 
   it("rejects a bad tower targeting mode without mutating state", () => {

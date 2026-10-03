@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { describe, expect, it, vi } from "vitest";
 import ProgressivePlacement from "@/components/ProgressivePlacement.vue";
 import { progressivePatternMarkup, progressivePreviewFill } from "@/components/progressivePreview.js";
+import { GameState } from "@/sim/Constants.js";
 import * as commandBus from "@/sim/commandBus.js";
 import {
   generateProgressiveCatalog,
@@ -117,6 +118,62 @@ describe("ProgressivePlacement offer cards", () => {
     gameStore.gold = 10;
     await wrapper.vm.$nextTick();
     expect(button.disabled).toBe(false);
+  });
+});
+
+describe("ProgressivePlacement undo", () => {
+  function mountPanel() {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const gameStore = useGameStore();
+    const dispatch = vi.spyOn(commandBus, "dispatchCommand");
+    dispatch.mockClear();
+    const wrapper = mount(ProgressivePlacement, { global: { plugins: [pinia] } });
+    return { gameStore, dispatch, wrapper };
+  }
+
+  it("shows the undo button only in the paused window and dispatches undo", async () => {
+    const { gameStore, dispatch, wrapper } = mountPanel();
+    gameStore.state = GameState.PAUSED;
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(".progressive-undo").exists()).toBe(false);
+
+    gameStore.progressiveUndoAvailable = true;
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(".progressive-undo").exists()).toBe(true);
+    expect(wrapper.find(".progressive-card").exists()).toBe(false);
+
+    const undo = wrapper.get(".progressive-undo");
+    const undoEnter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    undo.element.dispatchEvent(undoEnter);
+    expect(undoEnter.defaultPrevented).toBe(true);
+    expect(dispatch).not.toHaveBeenCalled();
+
+    await undo.trigger("click");
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "action:undoProgressivePlacement" }));
+
+    gameStore.progressiveUndoAvailable = false;
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(".progressive-undo").exists()).toBe(false);
+  });
+
+  it("hides the undo button while the run is playing", async () => {
+    const { gameStore, wrapper } = mountPanel();
+    gameStore.state = GameState.PLAYING;
+    gameStore.progressiveUndoAvailable = true;
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(".progressive-undo").exists()).toBe(false);
+  });
+
+  it("keeps the offer cards on screen while a hold is open, even with a stale undo flag", async () => {
+    const { gameStore, wrapper } = mountPanel();
+    gameStore.state = GameState.PAUSED;
+    gameStore.progressivePlacementHold = true;
+    gameStore.progressiveOffer = [0, 1];
+    gameStore.progressiveUndoAvailable = true;
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(".progressive-card").exists()).toBe(true);
+    expect(wrapper.find(".progressive-undo").exists()).toBe(false);
   });
 });
 

@@ -310,10 +310,12 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
               <tr>
                 <td><kbd>Tab</kbd> / <kbd>R</kbd> / arrows / <kbd>Enter</kbd></td>
                 <td>
-                  During a block placement the view zooms out to the whole map. Tab cycles the block choices, R or a
-                  second click on the selected choice rotates it, the arrow keys move the placement space (the view pans
-                  when that site comes within 20% of the screen width of an edge), and Enter places that block. Re-roll
-                  spends {{ PROGRESSIVE_REROLL_GOLD_PER_WAVE }} gold times the wave number and redraws every choice.
+                  During a block placement the view zooms out to the whole map. Tab cycles the block choices, R, a right
+                  click on a placement space, or a second click on the selected choice rotates it, the arrow keys move
+                  the placement space (the view pans when that site comes within 20% of the screen width of an edge),
+                  and Enter places that block. Re-roll spends {{ PROGRESSIVE_REROLL_GOLD_PER_WAVE }} gold times the wave
+                  number and redraws every choice. After a placement the run stays paused with an Undo button that
+                  disappears as soon as you resume.
                 </td>
               </tr>
               <tr>
@@ -347,6 +349,10 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
               <tr>
                 <td>Click a tower</td>
                 <td>Select it to view stats, upgrade, or sell</td>
+              </tr>
+              <tr>
+                <td>Right-click a placement space</td>
+                <td>During a block placement, rotate the block</td>
               </tr>
               <tr>
                 <td>Mouse wheel</td>

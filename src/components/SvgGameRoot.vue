@@ -20,6 +20,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useInput } from "@/composables/Input.js";
+import { progressivePlacementCommand, rotateProgressiveBlockAt } from "@/composables/progressivePlacement.js";
 import { fitFrame, frameFromCenter, TILE_SIZE, wheelZoomFactor } from "@/render/svg/cameraFrame.js";
 import { type ClickEffectInput, clickHasEffect } from "@/render/svg/clickHasEffect.js";
 import { EffectManager } from "@/render/svg/EffectManager.js";
@@ -49,8 +50,6 @@ import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
 import { TOWER_BASE, TOWER_META, type TowerId, TowerIds } from "@/sim/ConstantsTower.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
 import {
-  blockCoordinateForTile,
-  placementLegal,
   progressiveBlockWorldCorner,
   progressiveConfigFromMap,
   replayProgressiveBoard,
@@ -502,7 +501,7 @@ function clickHasEffectAt(worldX: number, worldY: number): boolean {
   const towerType = gameStore.selectedTowerType;
   const input: ClickEffectInput = {
     progressivePlacementHold: gameStore.progressivePlacementHold,
-    placementSiteHit: progressivePlacementCommand(worldX, worldY) !== null,
+    placementSiteHit: progressivePlacementCommand(gameStore, worldX, worldY) !== null,
     upgradeButtonHit: computeHoverUpgradeBtn(worldX, worldY),
     inBounds: false,
     towerOnTile: false,
@@ -535,48 +534,13 @@ const onMouseMove = (e: MouseEvent): void => {
 
 const dispatchClick = (worldX: number, worldY: number): void => {
   if (!dispatcher) return;
-  const placement = progressivePlacementCommand(worldX, worldY);
+  const placement = progressivePlacementCommand(gameStore, worldX, worldY);
   if (placement) {
     dispatcher.dispatch({ commandId: nextClickCommandId++, ...placement });
     return;
   }
   dispatcher.dispatch({ commandId: nextClickCommandId++, type: "input:click", worldX, worldY });
 };
-
-function progressivePlacementCommand(
-  worldX: number,
-  worldY: number,
-): {
-  type: "action:placeProgressiveBlock";
-  templateIndex: number;
-  rotation: number;
-  blockX: number;
-  blockY: number;
-} | null {
-  if (!gameStore.progressivePlacementHold || !gameStore.map || !gameStore.grid) return null;
-  const config = progressiveConfigFromMap(gameStore.map);
-  const templateIndex = gameStore.progressiveOffer[gameStore.progressiveSelectedOffer];
-  if (!config || templateIndex === undefined) return null;
-  const tile = gameStore.grid.worldToTile(worldX, worldY);
-  const block = blockCoordinateForTile(gameStore.map.originTileX ?? 0, gameStore.map.originTileY ?? 0, tile.x, tile.y);
-  const replayed = replayProgressiveBoard(config, gameStore.progressivePlacements);
-  const legal = placementLegal(
-    replayed.board,
-    replayed.catalog,
-    templateIndex,
-    gameStore.progressiveRotation,
-    block.blockX,
-    block.blockY,
-  );
-  if (!legal) return null;
-  return {
-    type: "action:placeProgressiveBlock",
-    templateIndex,
-    rotation: gameStore.progressiveRotation,
-    blockX: block.blockX,
-    blockY: block.blockY,
-  };
-}
 
 let panLastClientX = 0;
 let panLastClientY = 0;
@@ -645,6 +609,10 @@ const onWheel = (event: WheelEvent): void => {
 };
 
 const onMouseDown = (e: MouseEvent): void => {
+  if (e.button === 2 && gameStore.progressivePlacementHold) {
+    const world = clientToWorld(e.clientX, e.clientY);
+    if (world && rotateProgressiveBlockAt(gameStore, world.x, world.y)) return;
+  }
   if (isPanButton(e)) {
     startPan(e);
     return;
@@ -661,6 +629,9 @@ const onMouseDown = (e: MouseEvent): void => {
 };
 
 const onClick = (e: MouseEvent): void => {
+  // Only the primary button pairs with the mousedown gesture latch; a non-primary
+  // click must never dispatch a placement.
+  if (e.button !== 0) return;
   // mousedown already handled this press (as a click or a pan start) — skip the
   // paired click so we don't process the same tile twice. If mousedown was
   // somehow missed, fall through and dispatch here so the click is never dropped.

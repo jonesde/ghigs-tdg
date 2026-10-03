@@ -37,6 +37,7 @@ import {
   type ProgressiveConfig,
   type ProgressiveStamp,
   progressiveConfigFromMap,
+  replayProgressiveBoard,
   resolveGeneratedMap,
 } from "@/sim/grid/ProgressiveMap.js";
 import type { HostBindings, ThemeBundle } from "@/sim/HostBindings.js";
@@ -191,6 +192,11 @@ export class GameEngine {
   progressiveResumeMode: "countdown" | "expire-advance" | null = null;
   progressiveOffer: number[] = [];
   progressivePlacements: ProgressiveStamp[] = [];
+  // Undo stash for the paused window between a placement and the first unpause:
+  // the stamp-log length before the placement plus the offer that was open, so
+  // undo can truncate the log and re-open that same hold. Cleared on unpause,
+  // when a hold opens, and on (re)load.
+  progressivePlacementUndo: { stampCount: number; offer: number[] } | null = null;
   layoutGeneration = 0;
   lastPostedLayoutGeneration = -1;
   private progressiveBoard: ProgressiveBoard | null = null;
@@ -289,6 +295,7 @@ export class GameEngine {
     this.progressiveResumeMode = null;
     this.progressiveOffer = [];
     this.progressivePlacements = [];
+    this.progressivePlacementUndo = null;
     this.layoutGeneration = 0;
     this.lastPostedLayoutGeneration = -1;
     this.progressiveBoard = null;
@@ -1307,10 +1314,9 @@ export class GameEngine {
   }
 
   private skipWave(): void {
-    if (this.progressivePlacementHold) {
-      this.releasePlacementHold();
-      setGameState(this.runState, GameState.PLAYING);
-    }
+    const holdWasOpen = this.progressivePlacementHold;
+    this.releasePlacementHold();
+    if (holdWasOpen) setGameState(this.runState, GameState.PLAYING);
     this.waveManager?.startNextWave();
   }
 
@@ -1482,6 +1488,7 @@ export class GameEngine {
   togglePause(): void {
     if (this.progressivePlacementHold) return;
     togglePauseState(this.runState);
+    if (this.runState.state === GameState.PLAYING) this.applyPendingProgressiveResume();
   }
 
   cycleSpeed(): number {
@@ -1595,7 +1602,7 @@ export class GameEngine {
     // The commander feed turns off after the first layout. A stamp has to ship
     // the new rectangle, so the feed is armed again until the worker caches it.
     this.gridLayoutEnabled = true;
-    this.resumeAfterPlacement();
+    this.completeProgressivePlacement(stampCount);
     return true;
   }
 
@@ -1629,9 +1636,15 @@ export class GameEngine {
       this.progressiveRng,
     );
     if (offer.length === 0) return false;
+    this.openPlacementHold(offer, mode);
+    return true;
+  }
+
+  private openPlacementHold(offer: number[], mode: "countdown" | "expire-advance"): void {
     this.progressiveOffer = offer;
     this.progressivePlacementHold = true;
     this.progressiveResumeMode = mode;
+    this.progressivePlacementUndo = null;
     if (this.waveManager) {
       this.waveManager.advanceHeld = true;
       this.waveManager.betweenWaves = true;
@@ -1642,7 +1655,6 @@ export class GameEngine {
     this.runState.selectedTowerId = null;
     setGameState(this.runState, GameState.PAUSED);
     this.runState.waveCountdown = null;
-    return true;
   }
 
   rerollProgressiveOffer(): boolean {
@@ -1670,32 +1682,111 @@ export class GameEngine {
     this.progressivePlacementHold = false;
     this.progressiveResumeMode = null;
     this.progressiveOffer = [];
+    this.progressivePlacementUndo = null;
     if (this.waveManager) this.waveManager.advanceHeld = false;
   }
 
-  private resumeAfterPlacement(): void {
-    const mode = this.progressiveResumeMode;
+  // Placement succeeded: close the offer UI and stash the undo record. The run
+  // stays paused and progressiveResumeMode stays pending, so the countdown or the
+  // expiry wave launch only runs when togglePause resumes the clock — which also
+  // closes the undo window.
+  private completeProgressivePlacement(stampCount: number): void {
+    this.progressivePlacementUndo = { stampCount, offer: [...this.progressiveOffer] };
     this.progressivePlacementHold = false;
     this.progressiveOffer = [];
+  }
+
+  // The only path that applies a pending resume, reached from togglePause so every
+  // player-facing unpause (HUD button, Space, dialog closes) runs it exactly once.
+  private applyPendingProgressiveResume(): void {
+    const mode = this.progressiveResumeMode;
     this.progressiveResumeMode = null;
-    if (this.waveManager) this.waveManager.advanceHeld = false;
-    setGameState(this.runState, GameState.PLAYING);
+    this.progressivePlacementUndo = null;
+    if (mode === null || !this.waveManager) return;
+    this.waveManager.advanceHeld = false;
     if (mode === "expire-advance") {
-      this.waveManager?.startNextWave();
-      this.onWaveStart(this.waveManager?.currentWave ?? this.runState.currentWave);
+      this.waveManager.startNextWave();
+      this.onWaveStart(this.waveManager.currentWave);
       return;
     }
-    if (this.waveManager) {
-      this.waveManager.betweenWaves = true;
-      this.waveManager.countdownActive = true;
-      this.waveManager.countdownTimer = BETWEEN_WAVES_TIMER;
-      this.waveManager.betweenTimer = BETWEEN_WAVES_TIMER;
-      this.waveManager.active = false;
-    }
+    this.waveManager.betweenWaves = true;
+    this.waveManager.countdownActive = true;
+    this.waveManager.countdownTimer = BETWEEN_WAVES_TIMER;
+    this.waveManager.betweenTimer = BETWEEN_WAVES_TIMER;
+    this.waveManager.active = false;
     this.runState.waveCountdown = {
       remaining: Math.ceil(BETWEEN_WAVES_TIMER),
-      nextWave: (this.waveManager?.currentWave ?? this.runState.currentWave) + 1,
+      nextWave: this.waveManager.currentWave + 1,
     };
+  }
+
+  // Reverts the last placement inside the paused undo window: truncate the stamp
+  // log to the stash, replay it into a board, and run the placement tail in
+  // reverse (grid swap, keeper navmesh, index re-keys, corridor/crowd install),
+  // then re-open the same hold so the player can pick again.
+  undoProgressivePlacement(): boolean {
+    const undo = this.progressivePlacementUndo;
+    const config = progressiveConfigFromMap(this.runState.map);
+    const grid = this.grid;
+    const previousMap = this.runState.map;
+    if (
+      !undo ||
+      this.progressivePlacementHold ||
+      this.runState.state !== GameState.PAUSED ||
+      this.progressiveResumeMode === null ||
+      !config ||
+      !grid ||
+      !previousMap ||
+      !this.waveManager ||
+      !this.enemyManager ||
+      !this.towerManager ||
+      !this.physicsWorld
+    ) {
+      return false;
+    }
+    const resumeMode = this.progressiveResumeMode;
+    const replayed = replayProgressiveBoard(config, this.progressivePlacements.slice(0, undo.stampCount));
+    const nextMap = boardToGeneratedMap(config, replayed.board, replayed.catalog);
+    const previousLength = this.progressivePlacements.length;
+    const previousBoard = this.progressiveBoard;
+    const capturedLayout = grid.captureLayout();
+    this.progressivePlacements.length = undo.stampCount;
+    this.progressiveBoard = replayed.board;
+    this.runState.map = nextMap;
+    const previousSpawns = previousMap.spawns;
+    const shift = grid.replaceFromMap(nextMap);
+    const keeper = new NavMeshBuilder(grid);
+    if (!keeper.isSuccess() || !keeper.getNavMesh()) {
+      const buildError = keeper.getError() ?? "unknown navmesh error";
+      keeper.destroy();
+      grid.restoreLayout(capturedLayout);
+      this.progressiveBoard = previousBoard;
+      this.progressivePlacements.length = previousLength;
+      this.runState.map = previousMap;
+      return this.refuseUndo(buildError);
+    }
+    this.towerManager.shiftLayoutIndices(shift.shiftX, shift.shiftY);
+    this.enemyManager.shiftLayoutIndices(shift.shiftX, shift.shiftY);
+    this.enemyManager.reindexSpawns(previousSpawns, nextMap.spawns);
+    this.waveManager.map = nextMap;
+    this.waveManager.resizeSpawnStatesById(previousSpawns, nextMap.spawns);
+    invalidateNearestWalkableCache(grid);
+    this.installWalkMesh(keeper);
+    this.layoutGeneration += 1;
+    this.gridLayoutCache = null;
+    this.gridHeightsCache = null;
+    this.gridLayoutEnabled = true;
+    this.openPlacementHold(undo.offer, resumeMode);
+    return true;
+  }
+
+  private refuseUndo(buildError: string): false {
+    console.error("Navmesh build failed:", buildError);
+    this.host.notifyUi({
+      type: "showNotification",
+      message: "That placement cannot be undone. The walk mesh failed to build.",
+    });
+    return false;
   }
 
   private installWalkMesh(builder: NavMeshBuilder): void {

@@ -193,6 +193,7 @@ function buildMeta(engine: GameEngine, receipt: SnapshotCommandReceipt): Snapsho
     lastFailedCommandId: receipt.failedCommandId,
     progressivePlacementHold: engine.progressivePlacementHold,
     progressiveOffer: engine.progressiveOffer,
+    progressiveUndoAvailable: engine.progressivePlacementUndo !== null,
     worldOriginX: engine.grid?.worldOriginX ?? 0,
     worldOriginY: engine.grid?.worldOriginY ?? 0,
     layoutGeneration: engine.layoutGeneration,

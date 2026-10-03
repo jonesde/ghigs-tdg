@@ -1,5 +1,6 @@
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { applyCommand } from "@/sim/applyCommand.js";
 import { GameState, PRE_EMPTIVE_WAVE_TIMER, PROGRESSIVE_REROLL_GOLD_PER_WAVE } from "@/sim/Constants.js";
 import { GameEngine } from "@/sim/GameEngine.js";
 import {
@@ -78,7 +79,7 @@ describe("progressive placement hold", () => {
     expect(engine.waveManager?.currentWave).toBe(100);
   });
 
-  it("places a legal offered block and starts the between-waves countdown", () => {
+  it("keeps the run paused after a placement and applies the pending resume on unpause", () => {
     engine.debug("setWave", 3);
     const config = progressiveConfigForIndex(36);
     if (!config) throw new Error("progressive config 36 missing");
@@ -87,11 +88,98 @@ describe("progressive placement hold", () => {
     if (templateIndex === undefined) throw new Error("offer was empty");
     const site = legalSites(started.board, started.catalog, templateIndex)[0];
     expect(site).toBeTruthy();
+    const offer = engine.progressiveOffer.slice();
+    const stampsBefore = engine.progressivePlacements.length;
     const placed = engine.placeProgressiveBlock(templateIndex, site!.rotation, site!.blockX, site!.blockY);
     expect(placed).toBe(true);
     expect(engine.progressivePlacementHold).toBe(false);
+    expect(engine.runState.state).toBe(GameState.PAUSED);
+    expect(engine.runState.waveCountdown).toBeNull();
+    expect(engine.progressiveResumeMode).toBe("countdown");
+    expect(engine.progressivePlacementUndo).toEqual({ stampCount: stampsBefore, offer });
+
+    engine.togglePause();
     expect(engine.runState.state).toBe(GameState.PLAYING);
     expect(engine.runState.waveCountdown?.nextWave).toBe(4);
+    expect(engine.progressivePlacementUndo).toBeNull();
+    expect(engine.progressiveResumeMode).toBeNull();
+  });
+
+  it("launches the expiry wave on unpause instead of at placement", () => {
+    reachWave(3);
+    const manager = waveManager();
+    manager._waveGameTime = PRE_EMPTIVE_WAVE_TIMER;
+    engine.update(1 / 60);
+    expect(engine.progressivePlacementHold).toBe(true);
+    expect(engine.progressiveResumeMode).toBe("expire-advance");
+    const site = currentOfferSite();
+    const placed = engine.placeProgressiveBlock(site.templateIndex, site.rotation, site.blockX, site.blockY);
+    expect(placed).toBe(true);
+    expect(engine.runState.state).toBe(GameState.PAUSED);
+    expect(manager.currentWave).toBe(3);
+    expect(manager.active).toBe(false);
+
+    engine.togglePause();
+    expect(engine.runState.state).toBe(GameState.PLAYING);
+    expect(manager.currentWave).toBe(4);
+    expect(engine.progressivePlacementUndo).toBeNull();
+  });
+
+  it("undoes the last placement and re-opens the same offer", () => {
+    const site = firstOfferedSite();
+    const offer = engine.progressiveOffer.slice();
+    const stampsBefore = engine.progressivePlacements.length;
+    const generationBefore = engine.layoutGeneration;
+    const originBefore = { x: engine.grid?.worldOriginX, y: engine.grid?.worldOriginY };
+    const widthBefore = engine.grid?.width;
+    const placed = engine.placeProgressiveBlock(site.templateIndex, site.rotation, site.blockX, site.blockY);
+    expect(placed).toBe(true);
+    expect(engine.progressivePlacements.length).toBeGreaterThan(stampsBefore);
+    expect(engine.layoutGeneration).toBe(generationBefore + 1);
+
+    expect(applyCommand(engine, { commandId: 42, type: "action:undoProgressivePlacement" })).toBe(true);
+    expect(engine.progressivePlacementHold).toBe(true);
+    expect(engine.progressiveOffer).toEqual(offer);
+    expect(engine.progressiveResumeMode).toBe("countdown");
+    expect(engine.progressivePlacements).toHaveLength(stampsBefore);
+    expect(engine.progressivePlacementUndo).toBeNull();
+    expect(engine.grid?.width).toBe(widthBefore);
+    expect(engine.grid?.worldOriginX).toBe(originBefore.x);
+    expect(engine.grid?.worldOriginY).toBe(originBefore.y);
+    expect(engine.layoutGeneration).toBe(generationBefore + 2);
+    expect(engine.runState.state).toBe(GameState.PAUSED);
+    expect(engine.undoProgressivePlacement()).toBe(false);
+  });
+
+  it("closes the undo window on unpause", () => {
+    const site = firstOfferedSite();
+    const placed = engine.placeProgressiveBlock(site.templateIndex, site.rotation, site.blockX, site.blockY);
+    expect(placed).toBe(true);
+    expect(engine.progressivePlacementUndo).not.toBeNull();
+    engine.togglePause();
+    expect(engine.runState.state).toBe(GameState.PLAYING);
+    expect(engine.progressivePlacementUndo).toBeNull();
+    expect(engine.undoProgressivePlacement()).toBe(false);
+  });
+
+  it("rejects undo before any placement and while the offer hold is open", () => {
+    expect(engine.progressivePlacementUndo).toBeNull();
+    expect(engine.undoProgressivePlacement()).toBe(false);
+    engine.debug("setWave", 3);
+    expect(engine.progressivePlacementHold).toBe(true);
+    expect(engine.undoProgressivePlacement()).toBe(false);
+  });
+
+  it("drops the pending resume and the undo stash on a debug wave skip", () => {
+    const site = firstOfferedSite();
+    const placed = engine.placeProgressiveBlock(site.templateIndex, site.rotation, site.blockX, site.blockY);
+    expect(placed).toBe(true);
+    engine.debug("skipWave");
+    expect(engine.progressivePlacementUndo).toBeNull();
+    expect(engine.progressiveResumeMode).toBeNull();
+    expect(engine.progressivePlacementHold).toBe(false);
+    expect(waveManager().advanceHeld).toBe(false);
+    expect(waveManager().currentWave).toBe(4);
   });
 
   it("re-keys tower tiles when a placement shifts the grid origin and sells the tower cleanly", () => {
@@ -133,8 +221,7 @@ describe("progressive placement hold", () => {
     expect(grid.blocked.has(towerKey) || grid.terrainTowers.has(towerKey)).toBe(false);
   });
 
-  function firstOfferedSite(): { templateIndex: number; rotation: number; blockX: number; blockY: number } {
-    engine.debug("setWave", 3);
+  function currentOfferSite(): { templateIndex: number; rotation: number; blockX: number; blockY: number } {
     const config = progressiveConfigForIndex(36);
     if (!config) throw new Error("progressive config 36 missing");
     const started = createProgressiveBoard(config);
@@ -143,6 +230,11 @@ describe("progressive placement hold", () => {
     const site = legalSites(started.board, started.catalog, templateIndex)[0];
     if (!site) throw new Error("no legal site");
     return { templateIndex, rotation: site.rotation, blockX: site.blockX, blockY: site.blockY };
+  }
+
+  function firstOfferedSite(): { templateIndex: number; rotation: number; blockX: number; blockY: number } {
+    engine.debug("setWave", 3);
+    return currentOfferSite();
   }
 
   function notifications(): string[] {
