@@ -207,11 +207,11 @@ export const WAVE_GRAPH_DOT_OPACITY = 0.2;
 export const WAVE_GRAPH_DOT_OPACITY_WAVE_START = 0.5;
 export const WAVE_GRAPH_MAIN_OPACITY = 0.3;
 
-export const WAVE_GRAPH_COLOR_DAMAGE = "#aaaaff";
-export const WAVE_GRAPH_COLOR_MAX_ENEMY_HEALTH = "#ff4444";
-export const WAVE_GRAPH_COLOR_GOLD_EARNED = "#ffd700";
-export const WAVE_GRAPH_COLOR_GEMS_EARNED = "#4488ff";
+export const WAVE_GRAPH_COLOR_DAMAGE = "#e8dcc0";
+export const WAVE_GRAPH_COLOR_MAX_ENEMY_HEALTH = "#e05548";
+export const WAVE_GRAPH_COLOR_GOLD_EARNED = "#ffd84d";
+export const WAVE_GRAPH_COLOR_GEMS_EARNED = "#9be7ff";
 
-export const WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN = "#5fff8a";
+export const WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN = "#5ec46a";
 export const WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW = "#ffd84d";
-export const WAVE_GRAPH_COLOR_BASE_HEALTH_RED = "#ff4444";
+export const WAVE_GRAPH_COLOR_BASE_HEALTH_RED = "#e05548";

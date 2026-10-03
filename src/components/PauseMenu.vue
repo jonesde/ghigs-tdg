@@ -112,7 +112,7 @@ function handleCommanderChange(event: Event) {
   align-items: center;
   justify-content: center;
   z-index: 100;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--color-scrim);
 }
 
 .menu-content {
@@ -138,27 +138,31 @@ function handleCommanderChange(event: Event) {
   padding: 12px 24px;
   font-size: var(--font-lg);
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface);
   color: var(--color-text);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .menu-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--color-surface-hover);
 }
 
 .menu-btn.primary {
-  background: rgba(95, 208, 255, 0.15);
+  background: var(--color-accent-soft);
   border-color: var(--color-accent);
   color: var(--color-accent);
+}
+
+.menu-btn.primary:hover {
+  background: var(--color-accent-hover);
 }
 
 .difficulty-section {
   width: 100%;
   padding: 12px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--color-surface-subtle);
   border-radius: 8px;
 }
 
@@ -190,7 +194,7 @@ function handleCommanderChange(event: Event) {
 .commander-section {
   width: 100%;
   padding: 12px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--color-surface-subtle);
   border-radius: 8px;
 }
 
@@ -206,8 +210,8 @@ function handleCommanderChange(event: Event) {
   padding: 8px;
   font-size: var(--font-md);
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background-color: #141721;
+  border: 1px solid var(--color-line-strong);
+  background-color: var(--color-bg);
   color: var(--color-text);
   cursor: pointer;
   /* Chrome paints the opened list from color-scheme, not from the page background.
@@ -216,7 +220,7 @@ function handleCommanderChange(event: Event) {
 }
 
 .commander-select option {
-  background-color: #141721;
+  background-color: var(--color-bg);
   color: var(--color-text);
 }
 </style>

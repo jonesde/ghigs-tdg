@@ -62,7 +62,7 @@ function renderBaseSvg(params: BaseSvgParams): string {
       const highlightX = gemX - gemSize * 0.25;
       const highlightY = gemY - gemSize * 0.25;
       return (
-        `<circle cx="${gemX}" cy="${gemY}" r="${gemSize}" fill="#5fd0ff" stroke="rgba(95,208,255,0.6)" stroke-width="1"/>` +
+        `<circle cx="${gemX}" cy="${gemY}" r="${gemSize}" fill="var(--color-gem)" stroke="var(--color-gem)" stroke-opacity="0.6" stroke-width="1"/>` +
         `<circle cx="${highlightX}" cy="${highlightY}" r="${highlightR}" fill="rgba(255,255,255,0.5)"/>`
       );
     })
@@ -92,11 +92,11 @@ function renderBaseSvg(params: BaseSvgParams): string {
 
   return (
     `<g id="base-structure">` +
-    `<path d="${mainPath}" fill="url(#base-gradient)" stroke="#5fd0ff" stroke-width="2.5"/>` +
-    `<path d="${innerStrokePath}" fill="none" stroke="rgba(95,208,255,0.3)" stroke-width="1"/>` +
+    `<path d="${mainPath}" fill="url(#base-gradient)" stroke="var(--color-accent)" stroke-width="2.5"/>` +
+    `<path d="${innerStrokePath}" fill="none" stroke="var(--color-accent)" stroke-opacity="0.3" stroke-width="1"/>` +
     gemCircles +
-    `<polygon points="${hexPointsMain.join(" ")}" fill="rgba(95,208,255,0.15)" stroke="#5fd0ff" stroke-width="1.5"/>` +
-    `<polygon points="${hexPointsInner.join(" ")}" fill="#5fd0ff"/>` +
+    `<polygon points="${hexPointsMain.join(" ")}" fill="var(--color-accent-soft)" stroke="var(--color-accent)" stroke-width="1.5"/>` +
+    `<polygon points="${hexPointsInner.join(" ")}" fill="var(--color-accent)"/>` +
     `<circle cx="${highlightX}" cy="${highlightY}" r="${highlightR}" fill="rgba(255,255,255,0.45)"/>` +
     `</g>`
   );
@@ -293,8 +293,8 @@ export function useSvgStaticContent(
     const tileSymbols = buildTileSymbols(activeTheme);
     return (
       `<linearGradient id="base-gradient" x1="0%" y1="0%" x2="100%" y2="100%">` +
-      `<stop offset="0%" stop-color="#2a3a4a" />` +
-      `<stop offset="100%" stop-color="#1a2a3a" />` +
+      `<stop offset="0%" stop-color="#4a3e2c" />` +
+      `<stop offset="100%" stop-color="#241d14" />` +
       `</linearGradient>` +
       tileSymbols
     );

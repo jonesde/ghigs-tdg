@@ -184,7 +184,7 @@ function hpPercent(enemy: EnemyStat) {
 .stats-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--color-scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -214,8 +214,8 @@ function hpPercent(enemy: EnemyStat) {
 }
 
 .stats-close {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
   color: var(--color-text);
   width: 28px;
   height: 28px;
@@ -229,7 +229,7 @@ function hpPercent(enemy: EnemyStat) {
 }
 
 .stats-close:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--color-surface-hover);
 }
 
 .stats-section {
@@ -275,8 +275,8 @@ function hpPercent(enemy: EnemyStat) {
   align-items: center;
   gap: 5px;
   padding: 4px 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-line);
   border-radius: 6px;
   font-size: var(--font-md);
 }
@@ -318,7 +318,7 @@ function hpPercent(enemy: EnemyStat) {
   align-items: center;
   gap: 6px;
   padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--color-surface-subtle);
   border-radius: 4px;
   font-size: var(--font-sm);
 }
@@ -345,7 +345,7 @@ function hpPercent(enemy: EnemyStat) {
 .enemy-hp-bar {
   flex: 1;
   height: 8px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--color-surface);
   border-radius: 4px;
   overflow: hidden;
   min-width: 60px;
@@ -373,8 +373,8 @@ function hpPercent(enemy: EnemyStat) {
 }
 
 .stat-card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-line);
   border-radius: 8px;
   padding: 12px;
   display: flex;

@@ -661,13 +661,30 @@ Game progress (gems, unlocks, difficulty, map progress) is saved to `localStorag
 
 ## CSS Theming
 
-CSS custom properties are defined in `App.vue` for consistent theming:
+CSS custom properties are defined in `App.vue` for consistent theming. The UI palette is
+warm: a dark warm neutral scale with a single brass accent (`--color-accent`), plus status
+and map tokens:
 
 ```css
---color-bg, --color-panel, --color-border, --color-accent,
---color-gold, --color-gem, --color-danger, --color-success,
+/* surfaces and lines */
+--color-bg, --color-panel, --color-panel-soft, --color-border,
+--color-surface, --color-surface-subtle, --color-surface-hover,
+--color-line, --color-line-strong, --color-scrim, --color-scrim-heavy
+/* accent (one solid primary per screen; tinted secondary via -soft/-border) */
+--color-accent, --color-accent-soft, --color-accent-hover,
+--color-accent-border, --color-accent-strong, --color-on-accent
+/* status */
+--color-gold, --color-gem, --color-danger, --color-danger-soft,
+--color-danger-border, --color-danger-hover, --color-success, --color-success-soft,
+--color-success-border, --color-warning, --color-region-0/1/2
+/* text and fonts */
 --color-text, --color-text-dim, --font-main
 ```
+
+Theme JSON files hold map art colors only; gameplay effect colors (lightning, HP ramp,
+build validity) are intentionally not tokenized. Wave-graph series constants in
+`src/sim/Constants.ts` stay hex (sim-adjacent) but their values track the gold, gem,
+danger, and success palette values.
 
 All component styles use `<style scoped>` to prevent leakage.
 

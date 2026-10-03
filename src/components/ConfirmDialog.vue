@@ -27,7 +27,7 @@ const uiStore = useUiStore();
 .confirm-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--color-scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -66,24 +66,28 @@ const uiStore = useUiStore();
 .confirm-btn {
   padding: 8px 16px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--color-line-strong);
   cursor: pointer;
   font-size: var(--font-md);
   transition: background 0.15s;
 }
 
 .confirm-btn.cancel {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--color-surface);
   color: var(--color-text);
 }
 
+.confirm-btn.cancel:hover {
+  background: var(--color-surface-hover);
+}
+
 .confirm-btn.confirm {
-  background: rgba(95, 208, 255, 0.15);
+  background: var(--color-accent-soft);
   border-color: var(--color-accent);
   color: var(--color-accent);
 }
 
-.confirm-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
+.confirm-btn.confirm:hover {
+  background: var(--color-accent-hover);
 }
 </style>

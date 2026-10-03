@@ -113,7 +113,7 @@ function dbgSpeed() {
   position: absolute;
   padding: 4px;
   background: var(--color-panel);
-  border: 1px solid rgba(255, 68, 68, 0.3);
+  border: 1px solid var(--color-danger-border);
   border-radius: 8px;
   z-index: 20;
   display: flex;
@@ -148,8 +148,8 @@ function dbgSpeed() {
 
 .debug-close {
   margin-left: auto;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
   color: var(--color-text);
   width: 18px;
   height: 18px;
@@ -165,13 +165,13 @@ function dbgSpeed() {
 }
 
 .debug-close:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--color-surface-hover);
 }
 
 .debug-panel button {
   padding: 3px 6px;
-  background: rgba(255, 68, 68, 0.1);
-  border: 1px solid rgba(255, 68, 68, 0.2);
+  background: var(--color-danger-soft);
+  border: 1px solid var(--color-danger-border);
   color: var(--color-text);
   border-radius: 4px;
   cursor: pointer;
@@ -180,6 +180,6 @@ function dbgSpeed() {
 }
 
 .debug-panel button:hover {
-  background: rgba(255, 68, 68, 0.2);
+  background: var(--color-danger-hover);
 }
 </style>

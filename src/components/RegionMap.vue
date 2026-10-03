@@ -129,7 +129,7 @@ function startNode(node: RegionMapNodeView) {
 }
 
 .region-map-connection {
-  stroke: rgba(255, 255, 255, 0.32);
+  stroke: var(--color-line-strong);
   stroke-width: 6;
   stroke-linecap: round;
 }
@@ -148,8 +148,8 @@ function startNode(node: RegionMapNodeView) {
 }
 
 .map-node-circle {
-  fill: rgba(95, 208, 255, 0.16);
-  stroke: rgba(95, 208, 255, 0.75);
+  fill: var(--color-accent-soft);
+  stroke: var(--color-accent-strong);
   stroke-width: 5;
 }
 
@@ -158,11 +158,11 @@ function startNode(node: RegionMapNodeView) {
 }
 
 .map-node:hover:not(.locked) .map-node-circle {
-  fill: rgba(95, 208, 255, 0.32);
+  fill: var(--color-accent-hover);
 }
 
 .map-node.selected .map-node-circle {
-  fill: rgba(95, 208, 255, 0.4);
+  fill: var(--color-accent-hover);
   stroke-width: 9;
 }
 
@@ -178,17 +178,15 @@ function startNode(node: RegionMapNodeView) {
 }
 
 .map-play-rect {
-  fill: rgba(68, 170, 255, 0.3);
-  stroke: rgba(68, 170, 255, 0.8);
-  stroke-width: 4;
+  fill: var(--color-accent);
 }
 
 .map-play-button:hover .map-play-rect {
-  fill: rgba(68, 170, 255, 0.5);
+  filter: brightness(1.1);
 }
 
 .map-play-icon {
-  fill: var(--color-text);
+  fill: var(--color-on-accent);
   pointer-events: none;
 }
 </style>

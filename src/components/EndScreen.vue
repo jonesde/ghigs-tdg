@@ -144,7 +144,7 @@ function formatBreakdown(section: string) {
 .overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.85);
+  background: var(--color-scrim-heavy);
 }
 
 .end-card {
@@ -208,7 +208,7 @@ function formatBreakdown(section: string) {
 .breakdown-section {
   margin-top: 16px;
   padding: 12px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--color-surface-subtle);
   border-radius: 6px;
   text-align: left;
 }
@@ -229,8 +229,8 @@ function formatBreakdown(section: string) {
 }
 
 .first-clear {
-  background: rgba(68, 255, 68, 0.06);
-  border: 1px solid rgba(68, 255, 68, 0.15);
+  background: var(--color-success-soft);
+  border: 1px solid var(--color-success-border);
 }
 
 .btn-group {
@@ -245,23 +245,24 @@ function formatBreakdown(section: string) {
   font-size: var(--font-md);
   font-weight: 600;
   border-radius: 6px;
-  border: 1px solid var(--color-border);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
   color: var(--color-text);
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .end-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--color-surface-hover);
 }
 
 .end-btn.primary {
-  background: rgba(68, 170, 255, 0.2);
-  border-color: rgba(68, 170, 255, 0.4);
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent-border);
+  color: var(--color-accent);
 }
 
 .end-btn.primary:hover {
-  background: rgba(68, 170, 255, 0.35);
+  background: var(--color-accent-hover);
 }
 </style>

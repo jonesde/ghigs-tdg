@@ -257,7 +257,7 @@ function openSkillTree() {
   color: var(--color-text);
   text-shadow:
     0 1px 10px rgba(0, 0, 0, 0.8),
-    0 0 24px rgba(95, 208, 255, 0.25);
+    0 0 24px var(--color-accent-border);
 }
 
 .game-title-lo {
@@ -304,13 +304,13 @@ function openSkillTree() {
 }
 
 .upgrades-btn {
-  background: rgba(95, 208, 255, 0.2);
+  background: var(--color-accent-soft);
   color: var(--color-accent);
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
 }
 
 .upgrades-btn:hover {
-  filter: brightness(1.2);
+  background: var(--color-accent-hover);
 }
 
 .gem-count {
@@ -319,13 +319,13 @@ function openSkillTree() {
 }
 
 .ghost-btn {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--color-surface);
   color: var(--color-text);
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
 }
 
 .ghost-btn:hover {
-  filter: brightness(1.25);
+  background: var(--color-surface-hover);
 }
 
 .home-grid {
@@ -349,7 +349,7 @@ function openSkillTree() {
   border-radius: 12px;
   border: none;
   background: var(--color-accent);
-  color: #0b1622;
+  color: var(--color-on-accent);
   cursor: pointer;
   transition: filter 0.15s;
 }
@@ -364,7 +364,7 @@ function openSkillTree() {
   gap: 10px;
   margin-top: 20px;
   padding-top: 32px;
-  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  border-top: 1px solid var(--color-line);
 }
 
 .new-game-section.custom-row {
@@ -379,15 +379,15 @@ function openSkillTree() {
   font-size: var(--font-md);
   border-radius: 8px;
   border: none;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--color-surface);
   color: var(--color-text);
   cursor: pointer;
-  transition: filter 0.15s;
+  transition: background 0.15s;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
 }
 
 .custom-btn:hover {
-  filter: brightness(1.25);
+  background: var(--color-surface-hover);
 }
 
 .difficulty-row {
@@ -437,7 +437,7 @@ function openSkillTree() {
   text-align: left;
   border: none;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--color-surface-subtle);
   color: var(--color-text);
   cursor: pointer;
   transition: box-shadow 0.15s;
@@ -517,7 +517,7 @@ function openSkillTree() {
   border-radius: 999px;
   border: none;
   background: var(--color-accent);
-  color: #0b1622;
+  color: var(--color-on-accent);
   cursor: pointer;
   transition: filter 0.15s;
 }
@@ -534,7 +534,7 @@ function openSkillTree() {
 .world-card.selected {
   box-shadow:
     0 0 0 2px var(--color-accent),
-    0 0 20px rgba(95, 208, 255, 0.3);
+    0 0 20px var(--color-accent-hover);
 }
 
 @media (max-width: 900px) {

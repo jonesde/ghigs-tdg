@@ -141,13 +141,13 @@ describe("progressivePatternMarkup", () => {
     expect(selected).toContain('width="36"');
     expect(selected).toContain('fill="#d7b072"');
     expect(selected).toContain('opacity="0.75"');
-    expect(selected).toContain('stroke="#5fd0ff"');
+    expect(selected).toContain('stroke="var(--color-accent)"');
     expect(selected).not.toContain("rgba(95,208,255,0.22)");
     const fills = new Set([...selected.matchAll(/fill="(#[0-9a-f]{6})"/g)].map((match) => match[1]));
     expect(fills.has("#d7b072")).toBe(true);
     expect([...fills].filter((fill) => fill !== "#d7b072").length).toBeGreaterThanOrEqual(2);
     const plain = progressivePatternMarkup(catalog, templateIndex, 1, 0, 0, 36, false);
     expect(plain).toContain('opacity="0.45"');
-    expect(plain).not.toContain('stroke="#5fd0ff"');
+    expect(plain).not.toContain('stroke="var(--color-accent)"');
   });
 });

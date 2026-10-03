@@ -182,8 +182,8 @@ onUnmounted(() => {
   width: 100%;
   padding: 4px;
   margin: 4px 0;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
   color: var(--color-text);
   border-radius: 4px;
   font-size: var(--font-sm);
@@ -193,8 +193,8 @@ onUnmounted(() => {
   width: 100%;
   margin-top: 6px;
   padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
   color: var(--color-text);
   border-radius: 4px;
   cursor: pointer;
@@ -202,7 +202,7 @@ onUnmounted(() => {
 }
 
 .action-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--color-surface-hover);
 }
 
 .action-btn:disabled {
@@ -212,7 +212,7 @@ onUnmounted(() => {
 
 .downgrade-btn {
   color: var(--color-accent);
-  border-color: rgba(95, 208, 255, 0.3);
+  border-color: var(--color-accent-border);
 }
 
 .btn-content {

@@ -42,7 +42,7 @@ export function progressivePatternMarkup(
   }
   const size = PROGRESSIVE_BLOCK_SIZE * cellSize;
   const stroke = selected
-    ? `<rect x="${originX}" y="${originY}" width="${size}" height="${size}" fill="none" stroke="#5fd0ff" stroke-width="3" />`
+    ? `<rect x="${originX}" y="${originY}" width="${size}" height="${size}" fill="none" stroke="var(--color-accent)" stroke-width="3" />`
     : "";
   const opacity = selected ? 0.75 : 0.45;
   return `<g opacity="${opacity}">${cells}${stroke}</g>`;

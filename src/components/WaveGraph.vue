@@ -330,7 +330,7 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   height: 1px;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--color-line-strong);
   pointer-events: none;
 }
 
@@ -342,8 +342,8 @@ onUnmounted(() => {
 
 .wave-graph-tooltip {
   position: absolute;
-  background: rgba(10, 10, 20, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--color-panel);
+  border: 1px solid var(--color-line-strong);
   border-radius: 4px;
   padding: 4px 8px;
   font-size: var(--font-xs);
@@ -365,7 +365,7 @@ onUnmounted(() => {
   justify-content: center;
   padding-bottom: 2px;
   margin-bottom: 2px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--color-line);
 }
 
 .wg-title-label {

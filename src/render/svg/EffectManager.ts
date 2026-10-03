@@ -159,8 +159,8 @@ export class EffectManager {
     this.upgradeButtonEl.style.visibility = "hidden";
 
     this.upgradeButtonBgEl = document.createElementNS(SVG_NS, "rect");
-    this.upgradeButtonBgEl.setAttribute("fill", "#00004a");
-    this.upgradeButtonBgEl.setAttribute("stroke", "#40a0ff");
+    this.upgradeButtonBgEl.setAttribute("fill", "var(--color-bg)");
+    this.upgradeButtonBgEl.setAttribute("stroke", "var(--color-accent)");
     this.upgradeButtonBgEl.setAttribute("stroke-width", "1");
     this.upgradeButtonBgEl.setAttribute("rx", "2");
     this.upgradeButtonBgEl.setAttribute("ry", "2");
@@ -181,7 +181,7 @@ export class EffectManager {
 
     this.selectedTileRectEl = document.createElementNS(SVG_NS, "rect");
     this.selectedTileRectEl.setAttribute("fill", "none");
-    this.selectedTileRectEl.setAttribute("stroke", "rgba(95,208,255,0.8)");
+    this.selectedTileRectEl.setAttribute("stroke", "var(--color-accent-strong)");
     this.selectedTileRectEl.setAttribute("stroke-width", "2");
     this.selectedTileRectEl.style.visibility = "hidden";
     layer.appendChild(this.selectedTileRectEl);

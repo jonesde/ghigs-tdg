@@ -206,13 +206,13 @@ watch(
   gap: 4px;
   padding: 2px 8px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--color-surface-subtle);
   font-size: var(--font-md);
   font-weight: 600;
 }
 
 .hud-stat.base-health {
-  color: #5fff8a;
+  color: var(--color-success);
 }
 
 .hud-stat.critical {
@@ -221,7 +221,7 @@ watch(
 }
 
 .hud-stat.warning {
-  color: #ffd84d;
+  color: var(--color-warning);
 }
 
 .hud-stat.gold {
@@ -235,7 +235,7 @@ watch(
 .hud-btn.wave-counter {
   font-size: var(--font-xl);
   font-weight: 500;
-  color: #d0d0ff;
+  color: var(--color-text);
   gap: 6px;
   height: 28px;
   padding: 4px 10px;
@@ -255,7 +255,7 @@ watch(
 }
 
 .commander-hold {
-  color: #ffd84d;
+  color: var(--color-gold);
   font-size: var(--font-sm);
   font-weight: 600;
 }
@@ -265,8 +265,8 @@ watch(
 }
 
 .hud-btn {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
   color: var(--color-text);
   padding: 4px 10px;
   border-radius: 4px;
@@ -282,13 +282,13 @@ watch(
 }
 
   .hud-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
+    background: var(--color-surface-hover);
   }
 
   .hud-btn.minimap-btn.active {
-    background: rgba(95, 208, 255, 0.3);
-    border-color: rgba(95, 208, 255, 0.6);
-    color: #5fd0ff;
+    background: var(--color-accent-hover);
+    border-color: var(--color-accent-strong);
+    color: var(--color-accent);
   }
 
   .hud-btn.sound-btn.muted {

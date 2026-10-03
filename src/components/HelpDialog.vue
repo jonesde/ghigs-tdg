@@ -370,7 +370,7 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
 .help-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--color-scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -401,8 +401,8 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
 }
 
 .help-close {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
   color: var(--color-text);
   width: 28px;
   height: 28px;
@@ -416,7 +416,7 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
 }
 
 .help-close:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--color-surface-hover);
 }
 
 .help-section {
@@ -457,7 +457,7 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
 }
 
 .help-table tr {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--color-line);
 }
 
 .help-table tr:last-child {
@@ -483,8 +483,8 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
 kbd {
   font-family: inherit;
   font-size: var(--font-sm);
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
   padding: 2px 6px;
   border-radius: 4px;
   color: var(--color-text);
@@ -502,13 +502,13 @@ kbd {
 }
 
 .kb-key {
-  fill: rgba(255, 255, 255, 0.06);
-  stroke: rgba(255, 255, 255, 0.15);
+  fill: var(--color-surface-subtle);
+  stroke: var(--color-line-strong);
   stroke-width: 1;
 }
 
 .kb-key-hl {
-  fill: rgba(95, 208, 255, 0.12);
+  fill: var(--color-accent-soft);
   stroke: var(--color-accent);
 }
 

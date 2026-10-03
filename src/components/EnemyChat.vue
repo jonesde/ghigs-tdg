@@ -352,7 +352,7 @@ onBeforeUnmount(() => {
   padding: 2px 8px;
   border-radius: 6px;
   border: 1px solid var(--color-accent);
-  background: rgba(95, 208, 255, 0.15);
+  background: var(--color-accent-soft);
   color: var(--color-accent);
   cursor: pointer;
   font-size: var(--font-sm);
@@ -397,8 +397,8 @@ onBeforeUnmount(() => {
   font-size: var(--font-sm);
   padding: 6px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface);
   color: var(--color-text);
 }
 
@@ -442,8 +442,8 @@ onBeforeUnmount(() => {
   flex: 1;
   padding: 6px 8px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface);
   color: var(--color-text);
   font-size: var(--font-sm);
 }
@@ -452,7 +452,7 @@ onBeforeUnmount(() => {
   padding: 6px 12px;
   border-radius: 6px;
   border: 1px solid var(--color-accent);
-  background: rgba(95, 208, 255, 0.15);
+  background: var(--color-accent-soft);
   color: var(--color-accent);
   cursor: pointer;
   font-size: var(--font-sm);

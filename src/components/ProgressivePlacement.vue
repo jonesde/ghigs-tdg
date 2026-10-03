@@ -121,8 +121,8 @@ function previewCells(templateIndex: number): string {
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
-  background: rgba(20, 23, 33, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: var(--color-panel-soft);
+  border: 1px solid var(--color-line-strong);
   border-radius: 10px;
   color: var(--color-text);
   max-width: calc(100vw - 24px);
@@ -145,22 +145,22 @@ function previewCells(templateIndex: number): string {
   align-items: center;
   gap: 4px;
   padding: 6px;
-  background: #141721;
+  background: var(--color-bg);
   color: var(--color-text);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid var(--color-line-strong);
   border-radius: 8px;
   cursor: pointer;
 }
 
 .progressive-card.selected {
-  border-color: #5fd0ff;
+  border-color: var(--color-accent);
 }
 
 .progressive-reroll {
   padding: 6px 12px;
-  background: #141721;
+  background: var(--color-bg);
   color: var(--color-text);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid var(--color-line-strong);
   border-radius: 8px;
   cursor: pointer;
 }

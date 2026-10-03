@@ -1101,15 +1101,15 @@ def map_overlay_elements(layout: dict) -> str:
         start = positions[(connection["from"]["kind"], connection["from"]["level"])]
         end = positions[(connection["to"]["kind"], connection["to"]["level"])]
         branch = connection["from"]["kind"] == "progressive" or connection["to"]["kind"] == "progressive"
-        parts.append(line(start[0], start[1], end[0], end[1], "rgba(255,255,255,0.32)", 6,
+        parts.append(line(start[0], start[1], end[0], end[1], "rgba(236,228,214,0.26)", 6,
                           dash="16 12" if branch else None))
     for node in layout["nodes"]:
         progressive = node["kind"] == "progressive"
-        parts.append(circle(node["x"], node["y"], 34, "rgba(95,208,255,0.16)",
-                            "rgba(95,208,255,0.75)", 5,
+        parts.append(circle(node["x"], node["y"], 34, "rgba(217,164,65,0.16)",
+                            "rgba(217,164,65,0.75)", 5,
                             dash="14 10" if progressive else None))
         label = f"P{node['level']}" if progressive else str(node["level"])
-        parts.append(text_element(node["x"], node["y"] + 10, label, "#e8e0d4", 30, 1,
+        parts.append(text_element(node["x"], node["y"] + 10, label, "#ece4d6", 30, 1,
                                   "middle", None, 700))
     return "".join(parts)
 

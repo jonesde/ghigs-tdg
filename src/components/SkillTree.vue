@@ -191,7 +191,7 @@ function getNodeLabel(towerId: TowerId, tier: string, index: number) {
 function flashElement(element: HTMLElement) {
   if (!element) return;
   element.style.transition = "background 0.1s";
-  element.style.background = "#5a2030";
+  element.style.background = "color-mix(in srgb, var(--color-danger) 30%, var(--color-bg))";
   setTimeout(() => {
     element.style.background = "";
   }, 200);
@@ -482,8 +482,8 @@ function showRefundAllConfirm() {
 .back-btn {
   margin-left: auto;
   padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
   color: var(--color-text);
   border-radius: 6px;
   cursor: pointer;
@@ -491,7 +491,7 @@ function showRefundAllConfirm() {
 }
 
 .back-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--color-surface-hover);
 }
 
 /* Category headers */
@@ -526,10 +526,10 @@ function showRefundAllConfirm() {
 }
 
 .category-economy .category-label { color: var(--color-gold); }
-.category-economy .category-divider { background: linear-gradient(to right, rgba(255, 200, 80, 0.4), transparent); }
+.category-economy .category-divider { background: linear-gradient(to right, color-mix(in srgb, var(--color-gold) 40%, transparent), transparent); }
 
-.category-base .category-label { color: #6abf6a; }
-.category-base .category-divider { background: linear-gradient(to right, rgba(106, 191, 106, 0.4), transparent); }
+.category-base .category-label { color: var(--color-success); }
+.category-base .category-divider { background: linear-gradient(to right, color-mix(in srgb, var(--color-success) 40%, transparent), transparent); }
 
 .skill-top {
   display: grid;
@@ -570,7 +570,7 @@ function showRefundAllConfirm() {
 }
 
 .category-damage .category-label { color: var(--color-danger); }
-.category-damage .category-divider { background: linear-gradient(to right, rgba(255, 80, 80, 0.4), transparent); }
+.category-damage .category-divider { background: linear-gradient(to right, color-mix(in srgb, var(--color-danger) 40%, transparent), transparent); }
 
 /* General Add-ons */
 .general-addons {
@@ -587,8 +587,8 @@ function showRefundAllConfirm() {
   width: 150px;
   padding: 10px;
   margin-left: 16px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-line);
   border-radius: 8px;
 }
 
@@ -609,8 +609,8 @@ function showRefundAllConfirm() {
   width: 100%;
   padding: 6px 8px;
   margin-top: 4px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
   color: var(--color-text);
   border-radius: 4px;
   cursor: pointer;
@@ -619,17 +619,17 @@ function showRefundAllConfirm() {
 }
 
 .addon-btn:hover:not(.unavailable) {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--color-surface-hover);
 }
 
 .addon-btn.unlocked {
-  background: rgba(68, 255, 68, 0.1);
-  border-color: rgba(68, 255, 68, 0.3);
+  background: var(--color-success-soft);
+  border-color: var(--color-success-border);
   color: var(--color-success);
 }
 
 .addon-btn.active {
-  background: #1f4a36;
+  background: color-mix(in srgb, var(--color-success) 35%, var(--color-bg));
   border-color: var(--color-success);
 }
 
@@ -656,8 +656,8 @@ function showRefundAllConfirm() {
 
 .skill-col {
   padding: 12px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-line);
   border-radius: 10px;
 }
 
@@ -685,25 +685,25 @@ function showRefundAllConfirm() {
 .skill-node {
   padding: 6px 8px;
   margin-bottom: 4px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-line);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .skill-node:hover:not(.unavailable) {
-  background: rgba(95, 208, 255, 0.1);
+  background: var(--color-accent-soft);
   border-color: var(--color-accent);
 }
 
 .skill-node.unlocked {
-  background: rgba(68, 255, 68, 0.08);
-  border-color: rgba(68, 255, 68, 0.2);
+  background: var(--color-success-soft);
+  border-color: var(--color-success-border);
 }
 
 .skill-node.unavailable {
-  opacity: 0.3;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
@@ -735,22 +735,22 @@ function showRefundAllConfirm() {
 .reset-btn {
   padding: 6px 12px;
   font-size: var(--font-xs);
-  background: rgba(255, 68, 68, 0.1);
-  border: 1px solid rgba(255, 68, 68, 0.2);
+  background: var(--color-danger-soft);
+  border: 1px solid var(--color-danger-border);
   color: var(--color-danger);
   border-radius: 4px;
   cursor: pointer;
 }
 
 .reset-btn:hover {
-  background: rgba(255, 68, 68, 0.2);
+  background: var(--color-danger-hover);
 }
 
 .refund-all-btn {
   padding: 6px 12px;
   font-size: var(--font-xs);
-  background: rgba(255, 68, 68, 0.1);
-  border: 1px solid rgba(255, 68, 68, 0.2);
+  background: var(--color-danger-soft);
+  border: 1px solid var(--color-danger-border);
   color: var(--color-danger);
   border-radius: 4px;
   cursor: pointer;
@@ -758,6 +758,6 @@ function showRefundAllConfirm() {
 }
 
 .refund-all-btn:hover {
-  background: rgba(255, 68, 68, 0.2);
+  background: var(--color-danger-hover);
 }
 </style>

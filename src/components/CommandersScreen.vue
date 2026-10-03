@@ -368,7 +368,7 @@ function goBack() {
   align-items: center;
   justify-content: center;
   z-index: 100;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--color-bg);
   overflow-y: auto;
 }
 
@@ -409,8 +409,8 @@ function goBack() {
   gap: 8px;
   padding: 12px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--color-line);
+  background: var(--color-surface-subtle);
 }
 
 .card-name {
@@ -435,15 +435,15 @@ function goBack() {
 .card-btn {
   padding: 6px 12px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface);
   color: var(--color-text);
   cursor: pointer;
   font-size: var(--font-sm);
 }
 
 .card-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--color-surface-hover);
 }
 
 .card-btn.danger {
@@ -454,7 +454,7 @@ function goBack() {
 .active-badge {
   padding: 4px 8px;
   border-radius: 6px;
-  background: rgba(95, 208, 255, 0.15);
+  background: var(--color-accent-soft);
   border: 1px solid var(--color-accent);
   color: var(--color-accent);
   font-size: var(--font-xs);
@@ -471,28 +471,36 @@ function goBack() {
   padding: 10px 18px;
   border-radius: 8px;
   border: 1px solid var(--color-accent);
-  background: rgba(95, 208, 255, 0.12);
+  background: var(--color-accent-soft);
   color: var(--color-accent);
   cursor: pointer;
   align-self: flex-start;
   font-size: var(--font-md);
 }
 
+.new-btn:hover {
+  background: var(--color-accent-hover);
+}
+
 .back-btn {
   padding: 10px 18px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface);
   color: var(--color-text);
   cursor: pointer;
   align-self: center;
   font-size: var(--font-md);
 }
 
+.back-btn:hover {
+  background: var(--color-surface-hover);
+}
+
 .form-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--color-scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -544,8 +552,8 @@ function goBack() {
   width: 100%;
   padding: 6px 8px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface);
   color: var(--color-text);
   font-size: var(--font-sm);
   font-family: var(--font-main);
@@ -570,14 +578,18 @@ function goBack() {
 .form-btn {
   padding: 8px 16px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--color-line-strong);
   cursor: pointer;
   font-size: var(--font-md);
 }
 
 .form-btn.cancel {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--color-surface);
   color: var(--color-text);
+}
+
+.form-btn.cancel:hover {
+  background: var(--color-surface-hover);
 }
 
 .commander-toast {
@@ -595,8 +607,12 @@ function goBack() {
 }
 
 .form-btn.confirm {
-  background: rgba(95, 208, 255, 0.15);
+  background: var(--color-accent-soft);
   border-color: var(--color-accent);
   color: var(--color-accent);
+}
+
+.form-btn.confirm:hover {
+  background: var(--color-accent-hover);
 }
 </style>

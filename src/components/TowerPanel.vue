@@ -369,7 +369,7 @@ function handleFixedAim(dir: string | null) {
   font-size: var(--font-xs);
   color: var(--color-success);
   padding: 4px;
-  background: rgba(68, 255, 68, 0.08);
+  background: var(--color-success-soft);
   border-radius: 4px;
 }
 
@@ -377,8 +377,8 @@ function handleFixedAim(dir: string | null) {
   width: 100%;
   padding: 4px;
   margin: 4px 0;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
   color: var(--color-text);
   border-radius: 4px;
   font-size: var(--font-sm);
@@ -397,8 +397,8 @@ function handleFixedAim(dir: string | null) {
   width: 100%;
   margin-top: 6px;
   padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
   color: var(--color-text);
   border-radius: 4px;
   cursor: pointer;
@@ -407,7 +407,7 @@ function handleFixedAim(dir: string | null) {
 }
 
 .action-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--color-surface-hover);
 }
 
 .action-btn:disabled {
@@ -417,17 +417,17 @@ function handleFixedAim(dir: string | null) {
 
 .sell-btn {
   color: var(--color-danger);
-  border-color: rgba(255, 68, 68, 0.3);
+  border-color: var(--color-danger-border);
 }
 
 .cancel-btn {
   color: var(--color-success);
-  border-color: rgba(68, 255, 68, 0.3);
+  border-color: var(--color-success-border);
 }
 
 .downgrade-btn {
   color: var(--color-accent);
-  border-color: rgba(95, 208, 255, 0.3);
+  border-color: var(--color-accent-border);
 }
 
 .btn-content {
@@ -440,8 +440,8 @@ function handleFixedAim(dir: string | null) {
 kbd {
   font-family: inherit;
   font-size: var(--font-xs);
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
   padding: 2px 6px;
   border-radius: 4px;
   color: var(--color-text);
@@ -476,8 +476,8 @@ kbd {
   height: 24px;
   margin: 2px;
   padding: 0;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
   color: var(--color-text);
   border-radius: 4px;
   cursor: pointer;
@@ -487,13 +487,13 @@ kbd {
 }
 
 .aim-dot:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--color-surface-hover);
 }
 
 .aim-dot.active {
-  background: rgba(95, 208, 255, 0.3);
-  border-color: rgba(95, 208, 255, 0.6);
-  color: #5fd0ff;
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-strong);
+  color: var(--color-accent);
 }
 
 .auto-dot {

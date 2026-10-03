@@ -172,7 +172,7 @@ onUnmounted(() => window.removeEventListener("keydown", onWindowKeydown));
 .form-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--color-scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -218,14 +218,14 @@ onUnmounted(() => window.removeEventListener("keydown", onWindowKeydown));
   line-height: 26px;
   font-size: 18px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface);
   color: var(--color-text);
   cursor: pointer;
 }
 
 .form-close:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--color-surface-hover);
 }
 
 .random-map-form {
@@ -256,8 +256,8 @@ onUnmounted(() => window.removeEventListener("keydown", onWindowKeydown));
 
 .form-field input {
   padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
   border-radius: 6px;
   color: var(--color-text);
   font-size: var(--font-md);
@@ -270,11 +270,11 @@ onUnmounted(() => window.removeEventListener("keydown", onWindowKeydown));
      caret is drawn in CSS instead: appearance none + right-positioned background icon. */
   appearance: none;
   padding: 8px 36px 8px 10px;
-  background-color: rgba(255, 255, 255, 0.08);
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0h10L5 6z' fill='%23e6edf5' opacity='0.8'/></svg>");
+  background-color: var(--color-surface);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0h10L5 6z' fill='%23ece4d6' opacity='0.8'/></svg>");
   background-repeat: no-repeat;
   background-position: right 12px center;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--color-line-strong);
   border-radius: 6px;
   color: var(--color-text);
   font-size: var(--font-md);
@@ -285,7 +285,7 @@ onUnmounted(() => window.removeEventListener("keydown", onWindowKeydown));
 }
 
 .form-field select option {
-  background-color: #141721;
+  background-color: var(--color-bg);
   color: var(--color-text);
 }
 
@@ -293,7 +293,7 @@ onUnmounted(() => window.removeEventListener("keydown", onWindowKeydown));
 .form-field select:focus {
   outline: none;
   border-color: var(--color-accent);
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--color-surface-hover);
 }
 
 .form-field input::placeholder {
@@ -311,14 +311,14 @@ onUnmounted(() => window.removeEventListener("keydown", onWindowKeydown));
   font-size: var(--font-md);
   font-weight: 700;
   border-radius: 6px;
-  border: 1px solid rgba(68, 170, 255, 0.4);
-  background: rgba(68, 170, 255, 0.2);
-  color: var(--color-accent);
+  border: none;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: filter 0.15s;
 }
 
 .random-play-btn:hover {
-  background: rgba(68, 170, 255, 0.35);
+  filter: brightness(1.1);
 }
 </style>

@@ -224,7 +224,7 @@ onUnmounted(() => {
 .build-bar {
   position: absolute;
   z-index: 10;
-  background: rgba(20, 24, 50, 0.7);
+  background: var(--color-panel-soft);
   border-radius: 6px 6px 0 0;
   border: 1px solid var(--color-border);
   overflow: visible;
@@ -274,19 +274,19 @@ onUnmounted(() => {
   height: 48px;
   padding: 0 10px;
   border-radius: 6px;
-  border: 2px solid rgba(20, 40, 50, 1);
-  background: rgba(20, 40, 50, 0.5);
+  border: 2px solid var(--color-line);
+  background: var(--color-surface);
   cursor: pointer;
   transition: all 0.15s;
   user-select: none;
 }
 
 .shop-tower:hover {
-  background: rgba(40, 80, 100, 1);
+  background: var(--color-surface-hover);
 }
 
 .shop-tower.selected {
-  background: #1a5c2a;
+  background: color-mix(in srgb, var(--color-success) 25%, transparent);
   border-color: var(--color-success);
 }
 

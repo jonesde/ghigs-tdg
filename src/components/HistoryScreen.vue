@@ -224,8 +224,8 @@ async function replayRun(entry: Record<string, unknown>) {
 
 .back-btn {
   padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
   color: var(--color-text);
   border-radius: 6px;
   cursor: pointer;
@@ -233,7 +233,7 @@ async function replayRun(entry: Record<string, unknown>) {
 }
 
 .back-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--color-surface-hover);
 }
 
 .empty-state {
@@ -256,14 +256,14 @@ async function replayRun(entry: Record<string, unknown>) {
 
 .history-card {
   padding: 10px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-line);
   border-radius: 8px;
   transition: all 0.15s;
 }
 
 .history-card:hover {
-  background: rgba(95, 208, 255, 0.08);
+  background: var(--color-accent-soft);
   border-color: var(--color-accent);
 }
 
@@ -295,15 +295,15 @@ async function replayRun(entry: Record<string, unknown>) {
 }
 
 .badge-victory {
-  background: rgba(68, 255, 68, 0.15);
+  background: var(--color-success-soft);
   color: var(--color-success);
-  border: 1px solid rgba(68, 255, 68, 0.3);
+  border: 1px solid var(--color-success-border);
 }
 
 .badge-defeat {
-  background: rgba(255, 68, 68, 0.15);
+  background: var(--color-danger-soft);
   color: var(--color-danger);
-  border: 1px solid rgba(255, 68, 68, 0.3);
+  border: 1px solid var(--color-danger-border);
 }
 
 .card-meta {
@@ -329,7 +329,7 @@ async function replayRun(entry: Record<string, unknown>) {
   gap: 24px;
   margin-bottom: 6px;
   padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--color-surface-subtle);
   border-radius: 6px;
 }
 
@@ -374,7 +374,7 @@ async function replayRun(entry: Record<string, unknown>) {
 .breakdown-section {
   margin-top: 0;
   padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--color-surface-subtle);
   border-radius: 4px;
   text-align: left;
   flex: 1 1 auto;
@@ -397,8 +397,8 @@ async function replayRun(entry: Record<string, unknown>) {
 }
 
 .first-clear {
-  background: rgba(68, 255, 68, 0.04);
-  border: 1px solid rgba(68, 255, 68, 0.1);
+  background: var(--color-success-soft);
+  border: 1px solid var(--color-success-border);
 }
 
 .play-btn {
@@ -406,8 +406,8 @@ async function replayRun(entry: Record<string, unknown>) {
   font-size: var(--font-xs);
   font-weight: 700;
   border-radius: 4px;
-  border: 1px solid rgba(68, 170, 255, 0.4);
-  background: rgba(68, 170, 255, 0.15);
+  border: 1px solid var(--color-accent-border);
+  background: var(--color-accent-soft);
   color: var(--color-accent);
   cursor: pointer;
   transition: background 0.15s;
@@ -415,6 +415,6 @@ async function replayRun(entry: Record<string, unknown>) {
 }
 
 .play-btn:hover {
-  background: rgba(68, 170, 255, 0.3);
+  background: var(--color-accent-hover);
 }
 </style>

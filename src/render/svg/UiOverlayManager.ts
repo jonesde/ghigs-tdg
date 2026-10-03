@@ -86,7 +86,7 @@ export class UiOverlayManager {
       bg.style.visibility = "hidden";
       bg.setAttribute("width", "24");
       bg.setAttribute("height", "3");
-      bg.setAttribute("fill", "#00004a");
+      bg.setAttribute("fill", "var(--color-bg)");
       bg.setAttribute("opacity", "0.6");
       layer.appendChild(bg);
 
@@ -201,7 +201,7 @@ export class UiOverlayManager {
     for (let i = 0; i < WAVE_TOP_MEDALS.length; i++) {
       const text = document.createElementNS(SVG_NS, "text");
       text.style.visibility = "hidden";
-      text.setAttribute("fill", "#ffd700");
+      text.setAttribute("fill", "var(--color-gold)");
       text.setAttribute("font-size", "12");
       text.setAttribute("font-family", "sans-serif");
       text.setAttribute("text-anchor", "middle");

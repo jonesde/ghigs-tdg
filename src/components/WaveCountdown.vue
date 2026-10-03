@@ -46,7 +46,7 @@ const isLast = computed(() => gameStore.waveCountdown?.remaining === 1);
 .wave-countdown-number {
   font-size: var(--font-display);
   font-weight: 700;
-  color: #ffd84d;
+  color: var(--color-gold);
   opacity: 0.5;
   transition: opacity 0.3s ease, transform 0.3s ease;
   line-height: 1;
@@ -54,6 +54,6 @@ const isLast = computed(() => gameStore.waveCountdown?.remaining === 1);
 }
 
 .countdown-final {
-  color: #ff4d4d;
+  color: var(--color-danger);
 }
 </style>
