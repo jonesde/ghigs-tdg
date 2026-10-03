@@ -286,7 +286,7 @@ describe("EffectManager", () => {
         tileX: 2,
         tileY: 2,
         stats: { splash: 0.5 },
-      } as unknown as { x: number; y: number; type: string; level: number };
+      };
       manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60, grid as never);
       const splash = splashCircle();
       expect(splash.style.visibility).toBe("visible");
@@ -306,7 +306,7 @@ describe("EffectManager", () => {
         tileX: 2,
         tileY: 2,
         stats: { splash: 0.5 },
-      } as unknown as { x: number; y: number; type: string; level: number };
+      };
       manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60, grid as never);
       const splash = splashCircle();
       expect(splash.style.visibility).toBe("visible");
@@ -324,7 +324,7 @@ describe("EffectManager", () => {
         tileX: 2,
         tileY: 2,
         stats: { splash: 0 },
-      } as unknown as { x: number; y: number; type: string; level: number };
+      };
       manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60, grid as never);
       expect(splashCircle().style.visibility).toBe("hidden");
     });
@@ -340,7 +340,7 @@ describe("EffectManager", () => {
         tileX: 2,
         tileY: 2,
         stats: { splash: 0.5 },
-      } as unknown as { x: number; y: number; type: string; level: number };
+      };
       manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60);
       expect(splashCircle().style.visibility).toBe("visible");
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
@@ -360,7 +360,7 @@ describe("EffectManager", () => {
         tileX: 2,
         tileY: 2,
         stats: { splash: 0.5 },
-      } as unknown as { x: number; y: number; type: string; level: number };
+      };
       manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60, null);
       const splash = splashCircle();
       expect(splash.style.visibility).toBe("visible");
@@ -384,7 +384,7 @@ describe("EffectManager", () => {
         tileX: 2,
         tileY: 2,
         stats: { splash: 0, range: 4.75 },
-      } as unknown as { x: number; y: number; type: string; level: number };
+      };
       manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60);
       const solid = circleWithDash(null);
       expect(solid.getAttribute("stroke-dasharray")).toBeNull();

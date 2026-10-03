@@ -1,6 +1,7 @@
 import type { ViewRect } from "@/render/svg/viewBoxTween.js";
+import { GRID_TILE_SIZE } from "./types.js";
 
-export const TILE_SIZE = 36;
+export const TILE_SIZE = GRID_TILE_SIZE;
 export const ZOOM_STEP = 1.2;
 export const MIN_VIEW_TILES = 4;
 export const MIN_VIEW_HEIGHT = MIN_VIEW_TILES * TILE_SIZE;

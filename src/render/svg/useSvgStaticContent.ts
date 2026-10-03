@@ -4,6 +4,7 @@ import type { Grid } from "@/sim/grid/Grid.js";
 import { mulberry32 } from "@/sim/grid/Map.js";
 import { progressiveTileRotation } from "@/sim/grid/ProgressiveMap.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
+import { GRID_TILE_SIZE as TILE_SIZE } from "./types.js";
 
 interface BaseSvgParams {
   x: number;
@@ -124,8 +125,6 @@ interface MapInfo {
   originTileX?: number;
   originTileY?: number;
 }
-
-const TILE_SIZE = 36;
 
 function stripSvgWrapper(svgText: string): string {
   const openTagMatch = svgText.match(/^<svg[^>]*>/);

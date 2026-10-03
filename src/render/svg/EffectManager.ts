@@ -1,5 +1,5 @@
 import { TOWER_BASE, TOWER_LEVEL_RANGE_MULT } from "@/sim/ConstantsTower.js";
-import { GRID_TILE_SIZE, LIGHTNING_POOL_SIZE, STUN_POOL_SIZE, SVG_NS } from "./types.js";
+import { LIGHTNING_POOL_SIZE, STUN_POOL_SIZE, SVG_NS, GRID_TILE_SIZE as TILE_SIZE } from "./types.js";
 
 interface LightningEffect {
   id: string;
@@ -31,6 +31,19 @@ interface SplashGridQuery {
   worldOriginY?: number;
 }
 
+// Structural view of the selected tower that syncUpgradeButton needs. Both
+// TowerSnapshot and the sim Tower satisfy it, so callers pass either without a cast.
+interface SelectedTowerView {
+  x: number;
+  y: number;
+  type: string;
+  level: number;
+  id?: string;
+  tileX: number;
+  tileY: number;
+  stats?: { range?: number; splash?: number };
+}
+
 const LIGHTNING_SEGMENTS = 5;
 const LIGHTNING_STROKE_WIDTH = 2;
 const LIGHTNING_LIFE_SECONDS = 1 / 3;
@@ -47,8 +60,6 @@ const STUN_COLOR_INNER = "#ffffff";
 const STUN_STROKE_OUTER = 2.5;
 const STUN_STROKE_INNER = 1.5;
 const STUN_STROKE_OPACITY_SCALE = 0.5;
-
-const TILE_SIZE = 36;
 
 export class EffectManager {
   private lightningPool: SVGPolylineElement[] = [];
@@ -200,7 +211,7 @@ export class EffectManager {
     buildTilePos: { tileX: number; tileY: number } | null,
     selectedTowerType: string | null,
     buildPreviewColor: string | null,
-    selectedTower: { x: number; y: number; type: string; level: number } | null,
+    selectedTower: SelectedTowerView | null,
     buildValid: boolean,
     dt: number,
     grid?: SplashGridQuery | null,
@@ -210,13 +221,6 @@ export class EffectManager {
     this.syncStun(dt);
     this.syncBuildPreview(buildTilePos, selectedTowerType, buildPreviewColor, buildValid, grid, buildRangeTiles);
     this.syncUpgradeButton(selectedTower, grid);
-  }
-
-  // Returns the splash radius (in tiles) from the tower's computed stats.splash,
-  // which already includes base value + per-level scaling + variant tier + addons.
-  // Mirrors ProjectileManager, so the previewed circle matches the actual AoE.
-  private computeSplashRadiusTiles(statsSplash: number): number {
-    return statsSplash ?? 0;
   }
 
   // Finds the nearest unoccupied path tile to a tower so the splash circle sits
@@ -474,7 +478,7 @@ export class EffectManager {
           this.buildPreviewSpriteEl.setAttribute("href", `#${spriteId}`);
           this.buildPreviewSpriteLastId = spriteId;
         }
-        const previewSize = GRID_TILE_SIZE * 0.56;
+        const previewSize = TILE_SIZE * 0.56;
         const halfPreview = previewSize / 2;
         const spriteTransform = `translate(${centerX - halfPreview}, ${centerY - halfPreview})`;
         if (spriteTransform !== this.buildPreviewSpriteLastTransform) {
@@ -512,7 +516,7 @@ export class EffectManager {
         this.buildRangeCircleEl.setAttribute("stroke", buildValid ? "rgba(0,255,0,0.6)" : "rgba(255,0,0,0.6)");
       }
 
-      const splashTiles = this.computeSplashRadiusTiles(TOWER_BASE[selectedTowerType]?.splash ?? 0);
+      const splashTiles = TOWER_BASE[selectedTowerType]?.splash ?? 0;
       this.buildSplashVisible = splashTiles > 0;
       if (this.splashCircleEl) {
         if (splashTiles > 0) {
@@ -543,20 +547,7 @@ export class EffectManager {
     }
   }
 
-  private syncUpgradeButton(
-    selectedTower: { x: number; y: number; type: string; level: number } | null,
-    grid?: SplashGridQuery | null,
-  ): void {
-    const tower = selectedTower as {
-      x: number;
-      y: number;
-      type: string;
-      level: number;
-      id?: string;
-      tileX: number;
-      tileY: number;
-      stats?: { splash: number; range?: number };
-    } | null;
+  private syncUpgradeButton(tower: SelectedTowerView | null, grid?: SplashGridQuery | null): void {
     if (tower) {
       const towerId = tower.id ?? null;
       const statsRange = tower.stats?.range;
@@ -614,7 +605,7 @@ export class EffectManager {
 
       // Splash circle: recomputed every frame because its anchor depends on nearby
       // path-tile occupancy, which changes when towers are built/sold around it.
-      const splashTiles = this.computeSplashRadiusTiles(tower.stats?.splash ?? 0);
+      const splashTiles = tower.stats?.splash ?? 0;
       if (this.splashCircleEl) {
         if (splashTiles > 0) {
           const anchor = (grid ? this.findSplashAnchor(grid, tower.tileX, tower.tileY) : null) ?? {
