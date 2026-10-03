@@ -377,6 +377,8 @@ describe("Menu background", () => {
       const theme = RawMapThemeSchema.parse(raw);
       expect(theme.menuBackground).toBeDefined();
       expect(theme.menuBackground!.startsWith("<svg")).toBe(true);
+      expect(theme.menuBackground!.includes("url(#")).toBe(false);
+      expect(theme.menuBackground!.includes("<filter")).toBe(false);
     });
   }
 
@@ -402,6 +404,8 @@ describe("Region map layouts", () => {
         for (const region of theme.regions) {
           expect(region.mapImage.startsWith("<svg")).toBe(true);
           expect(region.mapImage).toContain(`viewBox="${region.mapLayout.viewBox}"`);
+          expect(region.mapImage.includes("url(#")).toBe(false);
+          expect(region.mapImage.includes("<filter")).toBe(false);
           expect(region.mapLayout.nodes).toHaveLength(16);
           expect(region.mapLayout.connections).toHaveLength(15);
         }

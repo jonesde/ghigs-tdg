@@ -12,9 +12,15 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
+import sys
 from typing import Callable
 
 SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIRECTORY)
+import menu_background_art  # noqa: E402
+import region_map_art  # noqa: E402
+
 THEME_PATH = os.path.normpath(os.path.join(SCRIPT_DIRECTORY, "..", "data", "the-aftermath.json"))
 SHEET_PATH = os.path.normpath(os.path.join(SCRIPT_DIRECTORY, "..", "..", "..", "..", "tmp", "aftermath-contact.html"))
 
@@ -1486,13 +1492,35 @@ def build_theme() -> dict:
             "attack": animation_record(attack_duration, animations["attack"]),
         }
     regions = [
-        {"id": 0, "name": "Rustbloom Wastes", "tiles": rustbloom_tiles(), "base": rustbloom_base()},
-        {"id": 1, "name": "Sand and Regret", "tiles": sand_tiles(), "base": sand_base()},
-        {"id": 2, "name": "Ashen Highs", "tiles": ash_tiles(), "base": ash_base()},
+        {
+            "id": 0,
+            "name": "Rustbloom Wastes",
+            "tiles": rustbloom_tiles(),
+            "base": rustbloom_base(),
+            "mapImage": region_map_art.rustbloom_wastes_map(),
+            "mapLayout": region_map_art.AFTERMATH_MAP_LAYOUTS[0],
+        },
+        {
+            "id": 1,
+            "name": "Sand and Regret",
+            "tiles": sand_tiles(),
+            "base": sand_base(),
+            "mapImage": region_map_art.sand_and_regret_map(),
+            "mapLayout": region_map_art.AFTERMATH_MAP_LAYOUTS[1],
+        },
+        {
+            "id": 2,
+            "name": "Ashen Highs",
+            "tiles": ash_tiles(),
+            "base": ash_base(),
+            "mapImage": region_map_art.ashen_highs_map(),
+            "mapLayout": region_map_art.AFTERMATH_MAP_LAYOUTS[2],
+        },
     ]
     return {
         "id": "the-aftermath",
         "label": "Aftermath",
+        "menuBackground": menu_background_art.aftermath_menu_background(),
         "towers": towers,
         "enemies": enemies,
         "regions": regions,
@@ -1503,6 +1531,7 @@ def build_theme() -> dict:
 def validate_theme(theme: dict) -> None:
     if theme["id"] != "the-aftermath" or theme["label"] != "Aftermath":
         raise SystemExit("theme id/label drifted")
+    menu_background_art.assert_menu_paint(theme["menuBackground"], "menu background")
     for tower_id, name, color, icon, fire_duration, walk_duration in TOWER_META:
         tower = theme["towers"][tower_id]
         frames = tower["animation"]["frames"]
@@ -1531,10 +1560,13 @@ def validate_theme(theme: dict) -> None:
                 assert_paint(frame["image"], enemy_id)
     if [region["name"] for region in theme["regions"]] != ["Rustbloom Wastes", "Sand and Regret", "Ashen Highs"]:
         raise SystemExit("region names drifted")
-    for region in theme["regions"]:
+    for region_index, region in enumerate(theme["regions"]):
         for tile_name, tile_image in region["tiles"].items():
             assert_paint(tile_image, f"{region['name']} {tile_name}")
         assert_paint(region["base"], region["name"])
+        if region["mapLayout"] != region_map_art.AFTERMATH_MAP_LAYOUTS[region_index]:
+            raise SystemExit(f"map layout drifted: {region['name']}")
+        region_map_art.assert_map_paint(region["mapImage"], f"{region['name']} map image")
     for spawn_name, spawn_image in theme["spawns"].items():
         assert_paint(spawn_image, spawn_name)
 
@@ -1544,10 +1576,31 @@ def assert_paint(image: str, label: str) -> None:
         raise SystemExit(f"paint constraint failed for {label}")
 
 
+NODE_PATTERN = re.compile(r'\{\s*"kind": "(\w+)",\s*"level": (\d+),\s*"x": (\d+),\s*"y": (\d+)\s*\}')
+CONNECTION_PATTERN = re.compile(
+    r'\{\s*"from": \{\s*"kind": "(\w+)",\s*"level": (\d+)\s*\},\s*'
+    r'"to": \{\s*"kind": "(\w+)",\s*"level": (\d+)\s*\}\s*\}'
+)
+
+
+def collapse_layout_lines(text: str) -> str:
+    def collapse_node(match: re.Match[str]) -> str:
+        kind, level, x, y = match.groups()
+        return f'{{ "kind": "{kind}", "level": {level}, "x": {x}, "y": {y} }}'
+
+    def collapse_connection(match: re.Match[str]) -> str:
+        from_kind, from_level, to_kind, to_level = match.groups()
+        return (f'{{ "from": {{ "kind": "{from_kind}", "level": {from_level} }}, '
+                f'"to": {{ "kind": "{to_kind}", "level": {to_level} }} }}')
+
+    text = NODE_PATTERN.sub(collapse_node, text)
+    return CONNECTION_PATTERN.sub(collapse_connection, text)
+
+
 def write_theme(theme: dict) -> None:
+    dumped = collapse_layout_lines(json.dumps(theme, indent=2, ensure_ascii=False))
     with open(THEME_PATH, "w", encoding="utf-8") as theme_file:
-        json.dump(theme, theme_file, indent=2, ensure_ascii=False)
-        theme_file.write("\n")
+        theme_file.write(dumped + "\n")
 
 
 def sheet_svg(image: str, size: float) -> str:
@@ -1565,6 +1618,8 @@ def contact_sheet(theme: dict) -> str:
         ".cap{font-size:11px;color:#b8b0a4;}",
         ".seam{display:flex;background:#ff00ff;}",
         ".seam svg{display:block;}",
+        ".region-map{padding:4px 12px;}",
+        ".region-map svg{display:block;width:1100px;height:700px;}",
         "</style></head><body>",
         "<h2>Towers at 27px and 81px, plus Bastion Wall at -45</h2>",
     ]
@@ -1619,7 +1674,14 @@ def contact_sheet(theme: dict) -> str:
     for spawn_name in ("closed", "transition", "open"):
         cell = f'<div class="cell">{sheet_svg(theme["spawns"][spawn_name], 72)}<div class="cap">{spawn_name}</div></div>'
         parts.append(cell)
-    parts.append("</div></body></html>")
+    parts.append("</div>")
+    parts.append("<h2>Region maps with node overlay</h2>")
+    for region in theme["regions"]:
+        overlay = region_map_art.map_overlay_elements(region["mapLayout"])
+        parts.append(f'<div class="region-map">{region["mapImage"].replace("</svg>", overlay + "</svg>")}</div>')
+    parts.append("<h2>Menu background</h2>")
+    parts.append(f'<div class="region-map">{theme["menuBackground"]}</div>')
+    parts.append("</body></html>")
     os.makedirs(os.path.dirname(SHEET_PATH), exist_ok=True)
     html = "".join(parts)
     with open(SHEET_PATH, "w", encoding="utf-8") as sheet_file:
