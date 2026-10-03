@@ -521,6 +521,14 @@ function showRefundAllConfirm() {
   grid-template-columns: repeat(auto-fit, minmax(220px, 220px));
   justify-content: center;
   gap: 16px;
+  max-width: 928px;
+  margin-inline: auto;
+}
+
+@media (max-width: 1000px) {
+  .tower-skills {
+    max-width: 456px;
+  }
 }
 
 .skill-col {
