@@ -17,12 +17,20 @@ import { type GeneratedMap, getMap, type MapSpawnPoint, mulberry32 } from "@/sim
 export const PROGRESSIVE_BLOCK_SIZE = 5;
 const BLOCK_CENTER = 2;
 const MARGIN_BLOCKS = 1;
-const TERRAIN_TEMPLATE_INDEXES = [8, 9];
-const TWO_OPENING_TEMPLATE_COUNT = 4;
+const TERRAIN_TEMPLATE_INDEXES = [10, 11];
+const TWO_OPENING_TEMPLATE_COUNT = 6;
 
 export type BlockEdge = "N" | "E" | "S" | "W";
-export type PathPattern = "straight" | "elbowRight" | "elbowLeft" | "tee" | "plus" | "terrain";
-export type HeightPattern = "flat" | "ramp" | "ridge" | "peak";
+export type PathPattern =
+  | "straight"
+  | "straightJog"
+  | "elbowRight"
+  | "elbowLeft"
+  | "elbowRing"
+  | "tee"
+  | "plus"
+  | "terrain";
+export type HeightPattern = "slope" | "peak" | "roughSlope" | "scatter";
 export type ProgressiveTileType = "terrain" | "path" | "base" | "spawn" | "void";
 
 export interface TemplateTile {
@@ -106,13 +114,14 @@ const MOUTH_LOCAL: Record<BlockEdge, { x: number; y: number }> = {
   W: { x: 0, y: BLOCK_CENTER },
 };
 const ENTRY_EDGES: BlockEdge[][] = [["N"], ["N", "S"], ["N", "E", "S"], ["N", "E", "S", "W"]];
-const HEIGHT_PATTERNS: HeightPattern[] = ["flat", "ramp", "ridge", "peak"];
-const RAMP_HEIGHT = [1, 2, 2, 3, 4];
+const HEIGHT_PATTERNS: HeightPattern[] = ["slope", "peak", "roughSlope", "scatter"];
 const CATALOG_PATTERNS: Array<{ pattern: PathPattern; open: boolean }> = [
   { pattern: "straight", open: false },
   { pattern: "straight", open: true },
+  { pattern: "straightJog", open: false },
   { pattern: "elbowRight", open: false },
   { pattern: "elbowLeft", open: true },
+  { pattern: "elbowRing", open: false },
   { pattern: "tee", open: false },
   { pattern: "tee", open: true },
   { pattern: "plus", open: false },
@@ -177,8 +186,8 @@ export function rotateEdge(edge: BlockEdge, quarterTurns: number): BlockEdge {
 }
 
 function mouthsForPattern(pattern: PathPattern): BlockEdge[] {
-  if (pattern === "straight") return ["N", "S"];
-  if (pattern === "elbowRight") return ["N", "E"];
+  if (pattern === "straight" || pattern === "straightJog") return ["N", "S"];
+  if (pattern === "elbowRight" || pattern === "elbowRing") return ["N", "E"];
   if (pattern === "elbowLeft") return ["N", "W"];
   if (pattern === "tee") return ["N", "E", "S"];
   if (pattern === "plus") return ["N", "E", "S", "W"];
@@ -193,7 +202,20 @@ function closedPathKeys(pattern: PathPattern): Set<string> {
   const addRow = () => {
     for (let localX = 0; localX < PROGRESSIVE_BLOCK_SIZE; localX++) keys.add(`${localX},${BLOCK_CENTER}`);
   };
+  const addTiles = (tiles: Array<[number, number]>) => {
+    for (const [tileX, tileY] of tiles) keys.add(`${tileX},${tileY}`);
+  };
   if (pattern === "straight") addColumn();
+  if (pattern === "straightJog")
+    addTiles([
+      [2, 4],
+      [2, 3],
+      [1, 3],
+      [1, 2],
+      [1, 1],
+      [2, 1],
+      [2, 0],
+    ]);
   if (pattern === "elbowRight") {
     for (let localY = 0; localY <= BLOCK_CENTER; localY++) keys.add(`${BLOCK_CENTER},${localY}`);
     for (let localX = BLOCK_CENTER + 1; localX < PROGRESSIVE_BLOCK_SIZE; localX++)
@@ -203,6 +225,18 @@ function closedPathKeys(pattern: PathPattern): Set<string> {
     for (let localY = 0; localY <= BLOCK_CENTER; localY++) keys.add(`${BLOCK_CENTER},${localY}`);
     for (let localX = 0; localX < BLOCK_CENTER; localX++) keys.add(`${localX},${BLOCK_CENTER}`);
   }
+  if (pattern === "elbowRing")
+    addTiles([
+      [2, 0],
+      [2, 1],
+      [1, 1],
+      [1, 2],
+      [1, 3],
+      [2, 3],
+      [3, 3],
+      [3, 2],
+      [4, 2],
+    ]);
   if (pattern === "tee") {
     addColumn();
     keys.add(`${BLOCK_CENTER + 1},${BLOCK_CENTER}`);
@@ -215,6 +249,26 @@ function closedPathKeys(pattern: PathPattern): Set<string> {
   return keys;
 }
 
+const PEAK_CORNERS = [
+  { x: 0, y: 0 },
+  { x: PROGRESSIVE_BLOCK_SIZE - 1, y: 0 },
+  { x: PROGRESSIVE_BLOCK_SIZE - 1, y: PROGRESSIVE_BLOCK_SIZE - 1 },
+  { x: 0, y: PROGRESSIVE_BLOCK_SIZE - 1 },
+];
+
+function slopeHeightAt(peak: { x: number; y: number }, localX: number, localY: number): number {
+  const offsetX = peak.x === 0 ? localX : PROGRESSIVE_BLOCK_SIZE - 1 - localX;
+  const offsetY = peak.y === 0 ? localY : PROGRESSIVE_BLOCK_SIZE - 1 - localY;
+  const maxDistance = 2 * (PROGRESSIVE_BLOCK_SIZE - 1);
+  return 4 - Math.round(((offsetX + offsetY) * 3) / maxDistance);
+}
+
+// A pure tile hash, not the placement RNG, so worker and main-thread replays agree.
+function terrainJitter(seed: number, localX: number, localY: number): number {
+  const mixed = (Math.imul(seed ^ (localX + 0x9e37), 0x45d9f3b) ^ Math.imul(localY + 0x27d4, 0x27d4eb2d)) >>> 0;
+  return (mixed % 3) - 1;
+}
+
 function terrainHeightAt(
   pattern: HeightPattern,
   flatHeight: number,
@@ -222,17 +276,18 @@ function terrainHeightAt(
   localX: number,
   localY: number,
 ): number {
-  if (pattern === "flat") return flatHeight;
-  if (pattern === "ramp") return RAMP_HEIGHT[localX] ?? 1;
-  if (pattern === "ridge") return localX === BLOCK_CENTER || localY === BLOCK_CENTER ? 4 : 2;
-  const corners = [
-    { x: 0, y: 0 },
-    { x: PROGRESSIVE_BLOCK_SIZE - 1, y: 0 },
-    { x: PROGRESSIVE_BLOCK_SIZE - 1, y: PROGRESSIVE_BLOCK_SIZE - 1 },
-    { x: 0, y: PROGRESSIVE_BLOCK_SIZE - 1 },
-  ];
-  const peak = corners[peakCorner] ?? corners[0]!;
-  const opposite = corners[(peakCorner + 2) % 4] ?? corners[2]!;
+  const peak = PEAK_CORNERS[peakCorner] ?? PEAK_CORNERS[0]!;
+  const jitterSeed = (peakCorner + 1) * 5 + flatHeight;
+  if (pattern === "slope") return slopeHeightAt(peak, localX, localY);
+  if (pattern === "roughSlope") {
+    const height = slopeHeightAt(peak, localX, localY) + terrainJitter(jitterSeed, localX, localY);
+    return Math.min(4, Math.max(1, height));
+  }
+  if (pattern === "scatter") {
+    const height = flatHeight + terrainJitter(jitterSeed, localX, localY);
+    return Math.min(4, Math.max(1, height));
+  }
+  const opposite = PEAK_CORNERS[(peakCorner + 2) % 4] ?? PEAK_CORNERS[2]!;
   if (localX === peak.x && localY === peak.y) return 4;
   if (localX === opposite.x && localY === opposite.y) return 1;
   const besidePeak =
@@ -242,7 +297,7 @@ function terrainHeightAt(
 }
 
 function rollHeight(rng: () => number): { heightPattern: HeightPattern; flatHeight: number; peakCorner: number } {
-  const heightPattern = HEIGHT_PATTERNS[Math.floor(rng() * HEIGHT_PATTERNS.length)] ?? "flat";
+  const heightPattern = HEIGHT_PATTERNS[Math.floor(rng() * HEIGHT_PATTERNS.length)] ?? "slope";
   const flatHeight = 1 + Math.floor(rng() * 4);
   const peakCorner = Math.floor(rng() * 4);
   return { heightPattern, flatHeight, peakCorner };
@@ -260,6 +315,8 @@ function buildTemplateTiles(
     for (let localY = 1; localY <= 3; localY++) {
       for (let localX = 1; localX <= 3; localX++) pathKeys.add(`${localX},${localY}`);
     }
+    // The carved center stays terrain, including where a closed cross ran through it.
+    pathKeys.delete(`${BLOCK_CENTER},${BLOCK_CENTER}`);
   }
   const tiles: TemplateTile[][] = [];
   for (let localY = 0; localY < PROGRESSIVE_BLOCK_SIZE; localY++) {
@@ -462,7 +519,7 @@ function catalogBlock(
     blockY,
     fill,
     entryEdges: [],
-    heightPattern: "flat",
+    heightPattern: "slope",
     flatHeight: 1,
     peakCorner: 0,
   };
@@ -640,7 +697,7 @@ export function commitPlacement(
     const mouthCount = mouthsIntoComponent(next, catalog, component);
     if (mouthCount > 1) continue;
     for (const cell of component) {
-      const terrainIndex = TERRAIN_TEMPLATE_INDEXES[Math.floor(rng() * TERRAIN_TEMPLATE_INDEXES.length)] ?? 8;
+      const terrainIndex = TERRAIN_TEMPLATE_INDEXES[Math.floor(rng() * TERRAIN_TEMPLATE_INDEXES.length)] ?? 10;
       const fillRotation = Math.floor(rng() * 4);
       const fill = catalogBlock(terrainIndex, fillRotation, cell.x, cell.y, true);
       next.blocks.push(fill);

@@ -201,8 +201,8 @@ export function validateCommand(command: Command, grid?: CommandGridInfo | null)
     case "action:undoProgressivePlacement":
       return null;
     case "action:placeProgressiveBlock": {
-      if (!Number.isInteger(command.templateIndex) || command.templateIndex < 0 || command.templateIndex > 9) {
-        return "action:placeProgressiveBlock templateIndex must be an integer 0-9";
+      if (!Number.isInteger(command.templateIndex) || command.templateIndex < 0 || command.templateIndex > 11) {
+        return "action:placeProgressiveBlock templateIndex must be an integer 0-11";
       }
       if (!Number.isInteger(command.rotation) || command.rotation < 0 || command.rotation > 3) {
         return "action:placeProgressiveBlock rotation must be an integer 0-3";

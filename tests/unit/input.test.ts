@@ -1176,12 +1176,12 @@ describe("useInput", () => {
       gameStore.progressivePlacementHold = true;
       // A one-opening board has a single path cell. Terrain fits on several closed edges,
       // so the arrow cursor has more than one space to move between.
-      gameStore.progressiveOffer = [8, 0];
+      gameStore.progressiveOffer = [10, 0];
       gameStore.progressiveSelectedOffer = 0;
       gameStore.progressiveRotation = 0;
       gameStore.progressivePlacements = [];
       gameStore.syncProgressiveCursor();
-      const sites = sitesAtRotation(started.board, started.catalog, 8, gameStore.progressiveRotation);
+      const sites = sitesAtRotation(started.board, started.catalog, 10, gameStore.progressiveRotation);
       const origin = sites.find((site) => sites.some((other) => other.blockX > site.blockX));
       expect(origin).toBeTruthy();
       gameStore.progressiveSelectedSite = { blockX: origin!.blockX, blockY: origin!.blockY };
@@ -1193,7 +1193,7 @@ describe("useInput", () => {
       expect(site).toBeTruthy();
       handler(makeEvent("Enter"));
       expect(lastOfType("action:placeProgressiveBlock")).toMatchObject({
-        templateIndex: 8,
+        templateIndex: 10,
         rotation: gameStore.progressiveRotation,
         blockX: site!.blockX,
         blockY: site!.blockY,
@@ -1572,12 +1572,12 @@ describe("useInput", () => {
       gameStore.mapIndex = 36;
       gameStore.setState(GameState.PAUSED);
       gameStore.progressivePlacementHold = true;
-      gameStore.progressiveOffer = [8, 0];
+      gameStore.progressiveOffer = [10, 0];
       gameStore.progressiveSelectedOffer = 0;
       gameStore.progressiveRotation = 0;
       gameStore.progressivePlacements = [];
       gameStore.syncProgressiveCursor();
-      const sites = sitesAtRotation(started.board, started.catalog, 8, gameStore.progressiveRotation);
+      const sites = sitesAtRotation(started.board, started.catalog, 10, gameStore.progressiveRotation);
       const origin = sites.find((site) => sites.some((other) => other.blockX > site.blockX));
       expect(origin).toBeTruthy();
       const destination = chooseAdjacentSite(sites, origin!, "right");

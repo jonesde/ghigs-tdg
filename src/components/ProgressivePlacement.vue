@@ -63,7 +63,7 @@ function previewCells(templateIndex: number): string {
     blockY: 0,
     fill: false,
     entryEdges: [],
-    heightPattern: "flat",
+    heightPattern: "slope",
     flatHeight: 1,
     peakCorner: 0,
   };

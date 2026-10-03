@@ -62,6 +62,17 @@ describe("validateCommand (pure)", () => {
     expect(validateCommand({ commandId: 1, type: "action:undoProgressivePlacement" }, TEST_GRID)).toBeNull();
   });
 
+  it("bounds the progressive block template index at the catalog size", () => {
+    const base = { commandId: 1, rotation: 0, blockX: 1, blockY: 1 } as const;
+    expect(validateCommand({ ...base, type: "action:placeProgressiveBlock", templateIndex: 11 }, TEST_GRID)).toBeNull();
+    expect(validateCommand({ ...base, type: "action:placeProgressiveBlock", templateIndex: 12 }, TEST_GRID)).toMatch(
+      /0-11/,
+    );
+    expect(validateCommand({ ...base, type: "action:placeProgressiveBlock", templateIndex: -1 }, TEST_GRID)).toMatch(
+      /0-11/,
+    );
+  });
+
   it("rejects a bad targeting mode and an invalid variant/dir", () => {
     expect(validateCommand({ commandId: 1, type: "action:setTargeting", mode: "bogus" })).toMatch(/mode/);
     expect(validateCommand({ commandId: 1, type: "action:specialize", variant: "C" as unknown as "A" })).toMatch(
