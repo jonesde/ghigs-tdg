@@ -158,7 +158,7 @@ function openSkillTree() {
             @keydown="selectThemeFromKeyboard($event, theme.id)"
           >
             <span class="world-card-bg" v-html="themeStore.loadedThemes[theme.id]?.menuBackground" />
-            <span class="world-card-shade" aria-hidden="true"></span>
+            <span class="world-card-scrim" aria-hidden="true"></span>
             <span class="world-card-body">
               <span class="world-card-info">
                 <span class="world-card-label">{{ theme.label }}</span>
@@ -454,20 +454,26 @@ function openSkillTree() {
   display: block;
   width: 100%;
   height: 100%;
-  opacity: 0.6;
-  transition: opacity 0.15s;
+  transform: scale(1);
+  transition: transform 0.2s;
 }
 
 .world-card:hover .world-card-bg :deep(svg) {
-  opacity: 0.8;
+  transform: scale(1.04);
 }
 
-.world-card-shade {
+.world-card-scrim {
   position: absolute;
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  background: linear-gradient(90deg, rgba(0, 0, 0, 0.68) 0%, rgba(0, 0, 0, 0.28) 100%);
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.82) 0%,
+    rgba(0, 0, 0, 0.66) 24%,
+    rgba(0, 0, 0, 0.34) 44%,
+    rgba(0, 0, 0, 0) 66%
+  );
 }
 
 .world-card-body {
