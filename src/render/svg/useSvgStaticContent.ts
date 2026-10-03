@@ -193,12 +193,15 @@ function buildSymbolsFromConstants(themeOverride?: MapThemeData | null): string 
   return symbolParts.join("\n");
 }
 
-function buildStaticFiltersContent(): string {
+// Level i (1..9) maps to saturate 0.9 down to 0.1 (full grayscale at max slow).
+const SLOW_SATURATE_LEVELS: readonly number[] = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1];
+
+export function buildStaticFiltersContent(): string {
   const glowFilter = `<filter id="glow"><feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="blurred" /><feMerge><feMergeNode in="blurred" /><feMergeNode in="SourceGraphic" /></feMerge></filter>`;
 
   const slowFilters: string[] = [];
   for (let i = 1; i <= 9; i++) {
-    const saturateValue = 0.1 + i * 0.1;
+    const saturateValue = SLOW_SATURATE_LEVELS[i - 1]!;
     const slowFilter = `<filter id="slow-${i}"><feColorMatrix type="saturate" values="${saturateValue}" /></filter>`;
     slowFilters.push(slowFilter);
   }
