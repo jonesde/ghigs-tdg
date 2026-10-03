@@ -120,10 +120,7 @@ function openSkillTree() {
 
       <main class="home-grid">
         <section class="play-panel" aria-label="New Game">
-          <div class="panel-label section-label">New Game</div>
           <button class="play-primary" @click="newGame()">Select Map</button>
-          <div class="play-hint">Browse every region and level, or jump straight back in from a world.</div>
-
           <div class="custom-group">
             <div class="new-game-section custom-row">
               <button class="custom-btn" @click="openProgressiveDialog()">Progressive Run</button>
@@ -149,7 +146,6 @@ function openSkillTree() {
         </section>
 
         <section class="world-rail" aria-label="Worlds">
-          <div class="rail-label">Worlds</div>
           <div
             v-for="theme in themeStore.availableThemes"
             :key="theme.id"
@@ -249,6 +245,7 @@ function openSkillTree() {
 .home-header {
   display: flex;
   justify-content: center;
+  margin-bottom: 52px;
 }
 
 .game-title {
@@ -345,16 +342,6 @@ function openSkillTree() {
   padding: 4px 2px;
 }
 
-.panel-label,
-.rail-label {
-  font-size: var(--font-sm);
-  font-weight: bold;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  color: var(--color-text-dim);
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
-}
-
 .play-primary {
   padding: 16px 24px;
   font-size: var(--font-xl);
@@ -371,18 +358,12 @@ function openSkillTree() {
   filter: brightness(1.1);
 }
 
-.play-hint {
-  font-size: var(--font-sm);
-  color: var(--color-text-dim);
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
-}
-
 .custom-group {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: 10px;
-  padding-top: 16px;
+  margin-top: 20px;
+  padding-top: 32px;
   border-top: 1px solid rgba(255, 255, 255, 0.14);
 }
 
@@ -413,6 +394,7 @@ function openSkillTree() {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  margin-top: 22px;
   cursor: pointer;
 }
 
@@ -553,6 +535,10 @@ function openSkillTree() {
   .menu-home {
     padding: 24px 20px 32px;
     gap: 22px;
+  }
+
+  .home-header {
+    margin-bottom: 58px;
   }
 
   .home-footer {

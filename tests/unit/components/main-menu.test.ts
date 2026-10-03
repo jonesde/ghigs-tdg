@@ -69,7 +69,8 @@ describe("MainMenu", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMainMenu();
     const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
-    expect(wrapper.find(".section-label").text()).toBe("New Game");
+    expect(wrapper.find(".section-label").exists()).toBe(false);
+    expect(wrapper.text()).not.toMatch(/New Game|Worlds|Browse every region/);
     expect(wrapper.find(".play-primary").text()).toBe("Select Map");
     const customButtons = wrapper.findAll(".custom-row button");
     expect(customButtons.map((button) => button.text())).toEqual(["Progressive Run", "Generate Map"]);
