@@ -303,11 +303,6 @@ def region_frame(accent: str) -> str:
     return rect(16, 16, MAP_WIDTH - 32, MAP_HEIGHT - 32, 24, "none", accent, 4, 0.35)
 
 
-def place_label(x: float, y: float, content: str, color: str, size: float = 17,
-                opacity: float = 0.55, spacing: float = 1.5) -> str:
-    return text_element(x, y, content, color, size, opacity, "middle", spacing, 600)
-
-
 def symbol_text(x: float, y: float, entity: str, color: str, size: float,
                 opacity: float) -> str:
     return text_element(x, y, entity, color, size, opacity, "middle", None, 600)
@@ -877,7 +872,6 @@ def rustbloom_wastes_map() -> str:
     parts.append(tractor_unit(268, 646, "#7a5a3a"))
     parts.append(windmill_unit(455, 676, 44, "#5c5248"))
     parts.append(fence_run(470, 660, 540, 656, SCRAP_WOOD))
-    parts.append(place_label(235, 626, "Rustbloom Farms", accent))
     parts.append(water_tank_unit(515, 676, 30, 56, "#7a6a5c", INK))
     for shop_x, shop_wall, shop_front_color in (
         (545, "#6a4e38", SCRAP_WOOD_LIGHT),
@@ -887,7 +881,6 @@ def rustbloom_wastes_map() -> str:
     ):
         parts.append(shop_front(shop_x, 646, 46, 34, shop_wall, shop_front_color, INK))
     parts.append(church_unit(760, 606, 34, 70, "#5a4a3a", "#3a2a1c", INK))
-    parts.append(place_label(660, 640, "Fallow", accent))
     for street_x in (950, 1000, 1048):
         parts.append(line(street_x, 490, street_x, 676, "#120e0c", 5, 0.3))
     for street_y in (545, 600, 655):
@@ -912,7 +905,6 @@ def rustbloom_wastes_map() -> str:
                           "#1f130c", None, None, 0.9))
     for window_x, window_y in ((748, 82), (766, 96), (870, 74), (888, 96), (990, 68), (1006, 90)):
         parts.append(rect(window_x, window_y, 3.5, 4, 0.5, "#b87333", None, None, 0.3))
-    parts.append(place_label(1005, 275, "Dunmore", accent, 19))
     parts.append(line(190, 352, 360, 352, "#120e0c", 8, 0.4))
     for house_x, house_wall, house_roof in (
         (196, SCRAP_WOOD, SCRAP_WOOD_DARK), (232, "#5a4a3a", SCRAP_WOOD_DARK),
@@ -922,7 +914,6 @@ def rustbloom_wastes_map() -> str:
         parts.append(pitched_house(house_x, 322, 26, 24, house_wall, house_roof, INK))
     parts.append(pitched_house(214, 364, 24, 20, "#5a4a3a", SCRAP_WOOD_DARK, INK))
     parts.append(pitched_house(250, 364, 24, 20, SCRAP_WOOD, SCRAP_WOOD_DARK, INK))
-    parts.append(place_label(270, 296, "Mercer Row", accent, 16, 0.5))
     for tree_x, tree_y, tree_height in ((80, 258, 30), (560, 188, 28), (1005, 152, 26),
                                         (620, 132, 30)):
         parts.append(dead_tree_unit(tree_x, tree_y, tree_height, "#4a3a2c"))
@@ -960,7 +951,6 @@ def sand_and_regret_map() -> str:
     parts.append(fence_run(206, 560, 262, 560, SCRAP_WOOD))
     parts.append(fence_run(206, 560, 206, 592, SCRAP_WOOD))
     parts.append(fence_run(262, 560, 262, 592, SCRAP_WOOD))
-    parts.append(place_label(105, 452, "Sandhill Ranch", accent, 16, 0.5))
     parts.append(rect(246, 470, 64, 10, 1, "#c45a48", INK, 1.0))
     parts.append(line(250, 480, 250, 498, SCRAP_WOOD_DARK, 2))
     parts.append(line(306, 480, 306, 498, SCRAP_WOOD_DARK, 2))
@@ -976,7 +966,6 @@ def sand_and_regret_map() -> str:
     parts.append(rect(243, 527, 18, 8, 0, BONE, None, None, 0.8))
     parts.append(dead_tree_unit(288, 585, 26, "#4a3a2c"))
     parts.append(dead_tree_unit(372, 570, 30, "#4a3a2c"))
-    parts.append(place_label(312, 420, "Two Trees", accent, 16, 0.5))
     parts.append(line(410, 632, 795, 632, "#141009", 5, 0.35))
     parts.append(line(410, 668, 795, 668, "#141009", 5, 0.35))
     for house_x, house_wall in ((420, SCRAP_WOOD), (480, "#5a4a3a"), (540, SCRAP_WOOD),
@@ -988,7 +977,6 @@ def sand_and_regret_map() -> str:
     parts.append(conifer_unit(752, 626, 20, 26, "#5a6a44", "#4a3a2c"))
     parts.append(conifer_unit(768, 654, 16, 20, "#5a6a44", "#4a3a2c"))
     parts.append(ellipse(730, 660, 14, 6, "#3a4a4a", opacity=0.5))
-    parts.append(place_label(600, 598, "Driftwood", accent, 16, 0.5))
     parts.append(line(1015, 592, 1015, 676, "#141009", 5, 0.3))
     parts.append(line(1045, 592, 1045, 676, "#141009", 5, 0.3))
     for block_x, block_y, block_width, block_height, block_wall, block_columns, block_rows in (
@@ -1006,7 +994,6 @@ def sand_and_regret_map() -> str:
         parts.append(line(1070, mast_y, 1082, mast_y, STEEL_LIGHT, 1.2, 0.8))
     parts.append(ellipse(968, 620, 10, 8, STEEL, INK, 1.0))
     parts.append(ellipse(968, 644, 10, 8, STEEL, INK, 1.0))
-    parts.append(place_label(1030, 218, "Regret", accent, 18))
     for cactus_x, cactus_y, cactus_height in ((480, 268, 26), (720, 146, 24), (860, 268, 28),
                                               (56, 274, 24), (900, 584, 26)):
         parts.append(cactus_unit(cactus_x, cactus_y, cactus_height, "#5a6a44", 0.8))
@@ -1056,14 +1043,12 @@ def ashen_highs_map() -> str:
     parts.append(crop_field(30, 660, 140, 16, "#3f4a34", 0.4, "#5a6a44", 5))
     parts.append(pitched_house(34, 634, 34, 24, "#5a4638", SCRAP_WOOD_DARK, INK))
     parts.append(silo_tank(138, 630, 14, 40, "#6a6058", "#7a7068", INK))
-    parts.append(place_label(102, 673, "Kilnfall", accent, 15))
     parts.append(pitched_house(248, 462, 26, 20, "#5a4638", SCRAP_WOOD_DARK, INK))
     parts.append(pitched_house(284, 478, 26, 20, "#4a4038", "#241c16", INK))
     parts.append(pitched_house(318, 458, 24, 18, "#5a4638", SCRAP_WOOD_DARK, INK))
     parts.append(headframe_unit(344, 470, 26, 46, "#6a665e", INK))
     parts.append(ellipse(300, 542, 42, 13, "#4a4844", opacity=0.5))
     parts.append(scatter_dots(300, 538, 36, 16, "#6a665e", 0.3))
-    parts.append(place_label(296, 436, "Charrow", accent, 16))
     for conifer_x, conifer_y, conifer_width, conifer_height in ((505, 306, 18, 26),
                                                                 (768, 356, 16, 24),
                                                                 (430, 326, 16, 22)):
@@ -1079,7 +1064,6 @@ def ashen_highs_map() -> str:
     ):
         parts.append(pitched_house(house_x, house_y, house_width, house_height, house_wall,
                                    house_roof, INK))
-    parts.append(place_label(742, 556, "Drift Hollow", accent, 16))
     parts.append(pitched_house(960, 646, 54, 30, "#4a4038", "#2a221c", INK))
     parts.append(smokestack_unit(1058, 678, 14, 10, 44, "#5c5248", INK))
     parts.append(smokestack_unit(1042, 678, 12, 9, 30, "#5c5248", INK))
@@ -1087,7 +1071,6 @@ def ashen_highs_map() -> str:
     parts.append(pitched_house(996, 664, 20, 14, "#5a4638", "#2a221c", INK))
     parts.append(smoke_wisp(1051, 630, accent, 0.4))
     parts.append(smoke_wisp(1048, 644, accent, 0.3))
-    parts.append(place_label(1015, 638, "Ashen Mill", accent, 14))
     parts.append(birds_unit(700, 100, "#8a9090", 2))
     parts.append(birds_unit(250, 214, "#8a9090", 2))
     parts.append(region_frame("#8a9099"))
