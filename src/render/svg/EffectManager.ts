@@ -106,7 +106,6 @@ export class EffectManager {
 
     for (let i = 0; i < STUN_POOL_SIZE; i++) {
       const group = document.createElementNS(SVG_NS, "g");
-      group.setAttribute("filter", "url(#glow)");
       group.style.visibility = "hidden";
       layer.appendChild(group);
       this.stunPool.push(group);

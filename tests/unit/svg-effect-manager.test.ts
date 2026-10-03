@@ -32,7 +32,7 @@ describe("EffectManager", () => {
     });
 
     it("creates STUN_POOL_SIZE group elements in the layer", () => {
-      const groups = Array.from(layer.querySelectorAll("g")).filter((g) => g.getAttribute("filter") === "url(#glow)");
+      const groups = Array.from(layer.querySelectorAll("g")).filter((g) => g.childElementCount === 0);
       expect(groups.length).toBe(STUN_POOL_SIZE);
     });
 
@@ -152,6 +152,19 @@ describe("EffectManager", () => {
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
       const polylines = groups[0]!.querySelectorAll("polyline");
       expect(polylines.length).toBe(2);
+    });
+
+    it("glows each stun arc once (per-arc filter, no group-level filter)", () => {
+      manager.addStunEffect(10, 10, 0.3);
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+
+      const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
+      expect(groups[0]!.getAttribute("filter")).toBeNull();
+      const polylines = Array.from(groups[0]!.querySelectorAll("polyline"));
+      expect(polylines.length).toBe(2);
+      for (const polyline of polylines) {
+        expect(polyline.getAttribute("filter")).toBe("url(#glow)");
+      }
     });
 
     it("draws the stun ring at half stroke opacity and keeps the life fade", () => {

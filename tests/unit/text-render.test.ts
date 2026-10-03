@@ -172,6 +172,24 @@ describe("TextOverlayRenderer", () => {
     // Two lines per bar (background + foreground) for the single damaged tower.
     expect(mockCtx.lineTo).toHaveBeenCalledTimes(2);
   });
+
+  it("draws next-corner debug lines only when showPhysicsDebug is true", () => {
+    const ctx = makeCtx();
+    (mockCtx.moveTo as ReturnType<typeof vi.fn>).mockClear();
+    (mockCtx.lineTo as ReturnType<typeof vi.fn>).mockClear();
+    const manager = new TextOverlayRenderer();
+    const snapshot = {
+      enemies: [{ id: 1, x: 40, y: 50, hp: 10, maxHp: 10, radius: 8, nextCorner: { x: 80, y: 90 } } as never],
+      projectiles: [],
+      lightningEffects: [],
+      stunEffects: [],
+    } as never;
+    manager.render(ctx, snapshot, scale, false);
+    expect(mockCtx.moveTo).not.toHaveBeenCalled();
+    manager.render(ctx, snapshot, scale, true);
+    expect(mockCtx.moveTo).toHaveBeenCalledWith(40, 50);
+    expect(mockCtx.lineTo).toHaveBeenCalledWith(80, 90);
+  });
 });
 
 describe("TextPathRenderer", () => {
@@ -197,5 +215,36 @@ describe("TextPathRenderer", () => {
     (mockCtx.moveTo as ReturnType<typeof vi.fn>).mockClear();
     manager.render(ctx, { navMeshCorridor: undefined } as never, scale);
     expect(mockCtx.moveTo).toHaveBeenCalledWith(0, 0);
+  });
+
+  it("strokes only boundary edges once per corridor (shared interior edge omitted)", () => {
+    const ctx = makeCtx();
+    (mockCtx.moveTo as ReturnType<typeof vi.fn>).mockClear();
+    (mockCtx.lineTo as ReturnType<typeof vi.fn>).mockClear();
+    (mockCtx.stroke as ReturnType<typeof vi.fn>).mockClear();
+    const manager = new TextPathRenderer();
+    // Unit square split along the (0,0)-(10,10) diagonal: triangles (0,1,2) and
+    // (0,2,3) share edge 0-2, leaving the 4 perimeter edges as the boundary.
+    const snapshot = {
+      navMeshCorridor: { positions: [0, 0, 10, 0, 10, 10, 0, 10], indices: [0, 1, 2, 0, 2, 3] },
+    } as never;
+    manager.render(ctx, snapshot, scale);
+    expect(mockCtx.moveTo).toHaveBeenCalledTimes(4);
+    expect(mockCtx.lineTo).toHaveBeenCalledTimes(4);
+    expect(mockCtx.stroke).toHaveBeenCalledTimes(1);
+  });
+
+  it("rebuilds the segment cache when a new corridor object arrives", () => {
+    const ctx = makeCtx();
+    (mockCtx.moveTo as ReturnType<typeof vi.fn>).mockClear();
+    (mockCtx.lineTo as ReturnType<typeof vi.fn>).mockClear();
+    const manager = new TextPathRenderer();
+    manager.render(ctx, { navMeshCorridor: { positions: [0, 0, 10, 0, 0, 10], indices: [0, 1, 2] } } as never, scale);
+    (mockCtx.moveTo as ReturnType<typeof vi.fn>).mockClear();
+    (mockCtx.lineTo as ReturnType<typeof vi.fn>).mockClear();
+    manager.render(ctx, { navMeshCorridor: { positions: [0, 0, 20, 0, 0, 20], indices: [0, 1, 2] } } as never, scale);
+    expect(mockCtx.moveTo).toHaveBeenCalledWith(0, 0);
+    expect(mockCtx.lineTo).toHaveBeenCalledWith(20, 0);
+    expect(mockCtx.lineTo).not.toHaveBeenCalledWith(10, 0);
   });
 });

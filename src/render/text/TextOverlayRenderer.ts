@@ -16,8 +16,10 @@ export class TextOverlayRenderer {
     scale: TextRenderScale,
     showPhysicsDebug = false,
   ): void {
-    if (showPhysicsDebug) this.renderPhysicsDebug(ctx, snapshot, scale);
-    this.renderNextCorners(ctx, snapshot, scale);
+    if (showPhysicsDebug) {
+      this.renderPhysicsDebug(ctx, snapshot, scale);
+      this.renderNextCorners(ctx, snapshot, scale);
+    }
     this.renderProjectiles(ctx, snapshot, scale);
     this.renderHealthBars(ctx, snapshot, scale);
     this.renderLightning(ctx, snapshot, scale);
