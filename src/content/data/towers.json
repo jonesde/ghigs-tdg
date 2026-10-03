@@ -135,14 +135,14 @@
   },
   "baseDefense": {
     "shortRange": [
-      { "range": 1.5, "damage": 12, "fireRate": 0.9, "projSpeed": 12 },
-      { "range": 1.75, "damage": 21, "fireRate": 1.2, "projSpeed": 12 },
-      { "range": 2.0, "damage": 39, "fireRate": 1.5, "projSpeed": 12 }
+      { "range": 2, "damage": 12, "fireRate": 0.9, "projSpeed": 12 },
+      { "range": 2.5, "damage": 25, "fireRate": 1.2, "projSpeed": 12 },
+      { "range": 3, "damage": 50, "fireRate": 1.5, "projSpeed": 12 }
     ],
     "longRange": [
-      { "range": 3.5, "damage": 30, "fireRate": 0.4, "projSpeed": 22 },
-      { "range": 4.0, "damage": 55, "fireRate": 0.5, "projSpeed": 24 },
-      { "range": 4.5, "damage": 100, "fireRate": 0.65, "projSpeed": 26 }
+      { "range": 4, "damage": 30, "fireRate": 0.5, "projSpeed": 22 },
+      { "range": 5, "damage": 60, "fireRate": 0.6, "projSpeed": 24 },
+      { "range": 6, "damage": 120, "fireRate": 0.75, "projSpeed": 26 }
     ],
     "levelSevenDamageMultiplier": 2
   }
