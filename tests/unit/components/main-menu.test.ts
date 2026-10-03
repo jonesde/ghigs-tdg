@@ -65,14 +65,14 @@ describe("MainMenu", () => {
     document.body.innerHTML = "";
   });
 
-  it("renders the New Game section label with the Select Map, Progressive Run, and Generate Map buttons", () => {
+  it("renders the New Game panel with a primary Select Map button and custom map buttons", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMainMenu();
     const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
     expect(wrapper.find(".section-label").text()).toBe("New Game");
-    const buttons = wrapper.findAll(".new-game-section button");
-    expect(buttons.map((button) => button.text())).toEqual(["Select Map", "Progressive Run", "Generate Map"]);
-    expect(buttons[0].classes()).toContain("primary");
+    expect(wrapper.find(".play-primary").text()).toBe("Select Map");
+    const customButtons = wrapper.findAll(".custom-row button");
+    expect(customButtons.map((button) => button.text())).toEqual(["Progressive Run", "Generate Map"]);
   });
 
   it("renders skill tree button", () => {
@@ -116,12 +116,16 @@ describe("MainMenu", () => {
     expect(parseInt((slider.element as HTMLInputElement).value, 10)).toBe(8);
   });
 
-  it("displays gem count", () => {
+  it("displays the gem count inside the upgrades button", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMainMenu();
     persistStore.gems = 250;
     const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
-    expect(wrapper.text()).toContain("250");
+    const upgradesButton = wrapper.find(".upgrades-btn");
+    expect(upgradesButton.exists()).toBe(true);
+    expect(upgradesButton.text()).toContain("Upgrades!");
+    expect(upgradesButton.find(".gem-count").text()).toContain("250");
+    expect(wrapper.find(".gems-display").exists()).toBe(false);
   });
 
   it("navigates to /map-select on Select Map click", async () => {
@@ -144,29 +148,29 @@ describe("MainMenu", () => {
     expect(router.currentRoute.value.path).toBe("/skill-tree");
   });
 
-  it("renders a theme card for every theme in the manifest", () => {
+  it("renders a world card for every theme in the manifest", () => {
     const { pinia, themeStore, router } = mountMainMenu();
     const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
-    const cards = wrapper.findAll(".theme-card");
+    const cards = wrapper.findAll(".world-card");
     expect(cards.length).toBe(themeStore.availableThemes.length);
     expect(cards.length).toBe(2);
   });
 
-  it("highlights the currently selected theme card", () => {
+  it("highlights the currently selected world card", () => {
     const { pinia, persistStore, router } = mountMainMenu();
     persistStore.lastSelectedThemeId = "the-aftermath";
     const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
-    const selected = wrapper.findAll(".theme-card").find((card) => card.classes("selected"));
+    const selected = wrapper.findAll(".world-card").find((card) => card.classes("selected"));
     expect(selected).toBeDefined();
-    expect(selected!.find(".theme-card-label").text()).toBe("Aftermath");
-    expect(selected!.find(".theme-card-progress").text()).toBe("Region 1 · Map 1");
+    expect(selected!.find(".world-card-label").text()).toBe("Aftermath");
+    expect(selected!.find(".world-play-btn").text()).toBe("▶ Play Region 1 · Map 1");
   });
 
-  it("selecting a theme card persists the theme id and loads it", async () => {
+  it("selecting a world card persists the theme id and loads it", async () => {
     const { pinia, persistStore, themeStore, router } = mountMainMenu();
     persistStore.lastSelectedThemeId = "the-aftermath";
     const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
-    const card = wrapper.findAll(".theme-card").find((c) => c.text().includes("Polymath"))!;
+    const card = wrapper.findAll(".world-card").find((c) => c.text().includes("Polymath"))!;
     await card.trigger("click");
     expect(persistStore.lastSelectedThemeId).toBe("default");
     expect(themeStore.activeThemeId).toBe("default");
@@ -180,13 +184,45 @@ describe("MainMenu", () => {
     expect(background.html()).toContain("themebgmarker");
   });
 
-  it("renders each theme card's menu background as a preview", () => {
+  it("renders each world card's menu background as a preview", () => {
     const { pinia, router } = mountMainMenu();
     const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
-    const card = wrapper.findAll(".theme-card").find((c) => c.text().includes("Polymath"))!;
-    const cardBackground = card.find(".theme-card-bg");
+    const card = wrapper.findAll(".world-card").find((c) => c.text().includes("Polymath"))!;
+    const cardBackground = card.find(".world-card-bg");
     expect(cardBackground.exists()).toBe(true);
     expect(cardBackground.html()).toContain("themebgmarker");
+  });
+
+  it("starts the highest unlocked map from a world card and activates that world", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: themeStore prepared by mount helper
+    const { pinia, gameStore, persistStore, themeStore, router } = mountMainMenu();
+    persistStore.lastSelectedThemeId = "the-aftermath";
+    persistStore.ensureThemeProgress("the-aftermath").highestUnlockedMap = 13;
+    const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
+    const card = wrapper.findAll(".world-card").find((c) => c.text().includes("Polymath"))!;
+    const playButton = card.find(".world-play-btn");
+    expect(playButton.text()).toBe("▶ Play Region 1 · Map 1");
+    await playButton.trigger("click");
+    await flushNavigation();
+    expect(persistStore.lastSelectedThemeId).toBe("default");
+    expect(persistStore.lastSelectedMapIndex).toBe(0);
+    expect(gameStore.mapIndex).toBe(0);
+    expect(gameStore.map).not.toBeNull();
+    expect(router.currentRoute.value.path).toBe("/game");
+  });
+
+  it("starts the active world's farthest map without switching worlds", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: themeStore prepared by mount helper
+    const { pinia, gameStore, persistStore, themeStore, router } = mountMainMenu();
+    persistStore.ensureThemeProgress("default").highestUnlockedMap = 14;
+    const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
+    const card = wrapper.findAll(".world-card").find((c) => c.text().includes("Polymath"))!;
+    await card.find(".world-play-btn").trigger("click");
+    await flushNavigation();
+    expect(persistStore.lastSelectedThemeId).toBe("default");
+    expect(persistStore.lastSelectedMapIndex).toBe(14);
+    expect(gameStore.mapIndex).toBe(14);
+    expect(router.currentRoute.value.path).toBe("/game");
   });
 
   it("hides the custom map dialogs until a New Game section button opens them", () => {

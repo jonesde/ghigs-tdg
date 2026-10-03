@@ -254,8 +254,7 @@ onUnmounted(() => window.removeEventListener("keydown", onWindowKeydown));
   letter-spacing: 0.5px;
 }
 
-.form-field input,
-.form-field select {
+.form-field input {
   padding: 8px 10px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -263,6 +262,25 @@ onUnmounted(() => window.removeEventListener("keydown", onWindowKeydown));
   color: var(--color-text);
   font-size: var(--font-md);
   cursor: pointer;
+  color-scheme: dark;
+}
+
+.form-field select {
+  /* Native select arrows hug the right border and absorb padding on their left, so the
+     caret is drawn in CSS instead: appearance none + right-positioned background icon. */
+  appearance: none;
+  padding: 8px 36px 8px 10px;
+  background-color: rgba(255, 255, 255, 0.08);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0h10L5 6z' fill='%23e6edf5' opacity='0.8'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-size: var(--font-md);
+  cursor: pointer;
+  /* Chrome paints the opened list from color-scheme, not from the page background.
+     Dark scheme keeps that popup dark so the light option text stays readable. */
   color-scheme: dark;
 }
 

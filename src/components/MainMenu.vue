@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import GeneratedMapDialog from "@/components/GeneratedMapDialog.vue";
 import ProgressiveMapDialog from "@/components/ProgressiveMapDialog.vue";
 import { DIFFICULTY_MULT_GEM_BASE, DIFFICULTY_MULT_TICK, MAPS_PER_REGION } from "@/sim/Constants.js";
+import { resolveGeneratedMap } from "@/sim/grid/ProgressiveMap.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -37,12 +38,41 @@ function selectTheme(themeId: string) {
   themeStore.loadActive(themeId).catch((err) => console.error("Failed to load theme:", err));
 }
 
-// Farthest unlocked campaign map in a world's progress bucket, shown as
-// "Region N · Map M" on the theme card.
-function worldProgressLabel(themeId: string): string {
+function highestUnlockedIndex(themeId: string): number {
   const progress = persistStore.getThemeProgress(themeId);
-  const index = Math.min(Math.max(progress.highestUnlockedMap, 0), MAPS_PER_REGION * 3 - 1);
+  return Math.min(Math.max(progress.highestUnlockedMap, 0), MAPS_PER_REGION * 3 - 1);
+}
+
+// Farthest unlocked campaign map in a world's progress bucket, shown as
+// "Region N · Map M" on the world card play button.
+function worldProgressLabel(themeId: string): string {
+  const index = highestUnlockedIndex(themeId);
   return `Region ${Math.floor(index / MAPS_PER_REGION) + 1} · Map ${(index % MAPS_PER_REGION) + 1}`;
+}
+
+function selectThemeFromKeyboard(event: KeyboardEvent, themeId: string) {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    selectTheme(themeId);
+  }
+}
+
+async function playThemeHighestMap(themeId: string) {
+  const mapIndex = highestUnlockedIndex(themeId);
+  // Starting a run touches persist, theme, and run state in one gesture, so follow
+  // MapSelect.startMap ordering: resolve the world first, then record the map choice.
+  if (themeId !== persistStore.lastSelectedThemeId) {
+    persistStore.lastSelectedThemeId = themeId;
+    persistStore.save();
+    await themeStore.loadActive(themeId).catch((err) => console.error("Failed to load theme:", err));
+  }
+  persistStore.lastSelectedMapIndex = mapIndex;
+  persistStore.save();
+  persistStore.clearActiveWave(themeId, mapIndex);
+  await themeStore.ensureActiveTheme();
+  const mapData = resolveGeneratedMap(mapIndex, themeStore.resolvedMaps);
+  gameStore.initMap(mapIndex, mapData, null);
+  router.push("/game");
 }
 
 function newGame() {
@@ -79,69 +109,88 @@ function openSkillTree() {
 <template>
   <div class="main-menu">
     <div class="menu-background" v-html="menuBackgroundSvg"></div>
-    <div class="menu-row">
-      <div class="menu-content">
-        <h1 class="game-title">Lo! Yet Another TDG</h1>
+    <div class="menu-scrim" aria-hidden="true"></div>
+    <div class="menu-home">
+      <header class="home-header">
+        <h1 class="game-title">
+          <span class="game-title-lo">Lo!</span>
+          <span class="game-title-sub">Yet Another TDG</span>
+        </h1>
+      </header>
 
-        <div class="new-game-section">
-          <div class="section-label">New Game</div>
-          <button class="menu-btn primary" @click="newGame()">
-            Select Map
-          </button>
-          <button class="menu-btn" @click="openProgressiveDialog()">
-            Progressive Run
-          </button>
-          <button class="menu-btn" @click="openRandomDialog()">
-            Generate Map
-          </button>
-        </div>
+      <main class="home-grid">
+        <section class="play-panel" aria-label="New Game">
+          <div class="panel-label section-label">New Game</div>
+          <button class="play-primary" @click="newGame()">Select Map</button>
+          <div class="play-hint">Browse every region and level, or jump straight back in from a world.</div>
 
-        <div class="menu-buttons">
-          <button class="menu-btn" @click="openSkillTree()">
-            Upgrades!
-          </button>
-          <button class="menu-btn" @click="router.push('/commanders')">
-            Commanders
-          </button>
-          <button class="menu-btn" @click="router.push('/history')">
-            Run History
-          </button>
-        </div>
-
-        <div class="difficulty-section">
-          <div class="diff-header">Difficulty</div>
-          <input
-            type="range"
-            min="0"
-            max="12"
-            :value="diffTick"
-            @input="onDiffSliderInput"
-            class="diff-slider"
-          />
-          <div class="diff-values">
-            <span>Enemy: ×{{ diffMult.toFixed(2) }}</span>
-            <span>Gems: ×{{ gemMult.toFixed(2) }}</span>
+          <div class="custom-group">
+            <div class="new-game-section custom-row">
+              <button class="custom-btn" @click="openProgressiveDialog()">Progressive Run</button>
+              <button class="custom-btn" @click="openRandomDialog()">Generate Map</button>
+            </div>
+            <label class="difficulty-row" for="home-difficulty">
+              <span class="difficulty-name">Difficulty</span>
+              <input
+                id="home-difficulty"
+                type="range"
+                min="0"
+                max="12"
+                :value="diffTick"
+                @input="onDiffSliderInput"
+                class="diff-slider"
+              />
+              <span class="diff-values">
+                <span>Enemy: ×{{ diffMult.toFixed(2) }}</span>
+                <span>Gems: ×{{ gemMult.toFixed(2) }}</span>
+              </span>
+            </label>
           </div>
-        </div>
+        </section>
 
-        <div class="gems-display">💎 {{ persistStore.gems }}</div>
-      </div>
+        <section class="world-rail" aria-label="Worlds">
+          <div class="rail-label">Worlds</div>
+          <div
+            v-for="theme in themeStore.availableThemes"
+            :key="theme.id"
+            class="world-card"
+            :class="{ selected: theme.id === persistStore.lastSelectedThemeId }"
+            role="button"
+            tabindex="0"
+            :aria-label="`Select world ${theme.label}`"
+            @click="selectTheme(theme.id)"
+            @keydown="selectThemeFromKeyboard($event, theme.id)"
+          >
+            <span class="world-card-bg" v-html="themeStore.loadedThemes[theme.id]?.menuBackground" />
+            <span class="world-card-shade" aria-hidden="true"></span>
+            <span class="world-card-body">
+              <span class="world-card-info">
+                <span class="world-card-label">{{ theme.label }}</span>
+                <span v-if="theme.id === persistStore.lastSelectedThemeId" class="world-active-tag">
+                  Active world
+                </span>
+              </span>
+              <button
+                class="world-play-btn"
+                :disabled="themeStore.loading"
+                @click.stop="playThemeHighestMap(theme.id)"
+              >
+                ▶ Play {{ worldProgressLabel(theme.id) }}
+              </button>
+            </span>
+          </div>
+        </section>
+      </main>
 
-      <div class="theme-cards">
-        <button
-          v-for="theme in themeStore.availableThemes"
-          :key="theme.id"
-          class="theme-card"
-          :class="{ selected: theme.id === persistStore.lastSelectedThemeId }"
-          @click="selectTheme(theme.id)"
-        >
-          <span class="theme-card-bg" v-html="themeStore.loadedThemes[theme.id]?.menuBackground"></span>
-          <span class="theme-card-text">
-            <span class="theme-card-label">{{ theme.label }}</span>
-            <span class="theme-card-progress">{{ worldProgressLabel(theme.id) }}</span>
-          </span>
-        </button>
-      </div>
+      <footer class="home-footer">
+        <nav class="footer-actions" aria-label="Meta">
+          <button class="action-btn upgrades-btn" @click="openSkillTree()">
+            Upgrades! <span class="gem-count">💎 {{ persistStore.gems }}</span>
+          </button>
+          <button class="action-btn ghost-btn" @click="router.push('/commanders')">Commanders</button>
+          <button class="action-btn ghost-btn" @click="router.push('/history')">Run History</button>
+        </nav>
+      </footer>
     </div>
 
     <GeneratedMapDialog :show="showRandomDialog" @close="closeRandomDialog" />
@@ -154,15 +203,14 @@ function openSkillTree() {
   position: absolute;
   inset: 0;
   display: flex;
-  align-items: center;
   justify-content: center;
   z-index: 100;
-  overflow: hidden;
+  overflow-y: auto;
   background: var(--color-bg);
 }
 
 .menu-background {
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 0;
   pointer-events: none;
@@ -174,174 +222,349 @@ function openSkillTree() {
   height: 100%;
 }
 
-.menu-row {
-  position: relative;
+.menu-scrim {
+  position: fixed;
+  inset: 0;
   z-index: 1;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-  gap: 24px;
-  width: min(1064px, 100%);
-  align-items: center;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.62) 0%,
+    rgba(0, 0, 0, 0.38) 42%,
+    rgba(0, 0, 0, 0.66) 100%
+  );
 }
 
-.menu-content {
+.menu-home {
+  position: relative;
+  z-index: 2;
+  width: min(1120px, 100%);
+  margin: auto 0;
+  padding: 32px 36px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.home-header {
+  display: flex;
+  justify-content: center;
+}
+
+.game-title {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
-  padding: 40px;
-  background: var(--color-panel);
-  border: 1px solid var(--color-border);
-  border-radius: 16px;
-  min-width: 360px;
+  text-align: center;
+  line-height: 1;
+  color: var(--color-text);
+  text-shadow:
+    0 1px 10px rgba(0, 0, 0, 0.8),
+    0 0 24px rgba(95, 208, 255, 0.25);
 }
 
-.theme-cards {
+.game-title-lo {
+  font-size: var(--font-display);
+  font-weight: 900;
+  letter-spacing: 1px;
+}
+
+.game-title-sub {
+  font-size: var(--font-title);
+  font-weight: 700;
+  letter-spacing: 4px;
+}
+
+.home-footer {
+  margin-top: 12px;
+}
+
+.footer-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+}
+
+.action-btn {
+  padding: 10px 18px;
+  font-size: var(--font-md);
+  font-weight: bold;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+
+.action-btn:focus-visible,
+.play-primary:focus-visible,
+.custom-btn:focus-visible,
+.world-card:focus-visible,
+.world-play-btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.upgrades-btn {
+  background: rgba(95, 208, 255, 0.2);
+  color: var(--color-accent);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+.upgrades-btn:hover {
+  filter: brightness(1.2);
+}
+
+.gem-count {
+  color: var(--color-gem);
+  white-space: nowrap;
+}
+
+.ghost-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+.ghost-btn:hover {
+  filter: brightness(1.25);
+}
+
+.home-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 400px) minmax(360px, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+
+.play-panel {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  width: 100%;
+  padding: 4px 2px;
 }
 
-.theme-card {
+.panel-label,
+.rail-label {
+  font-size: var(--font-sm);
+  font-weight: bold;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+}
+
+.play-primary {
+  padding: 16px 24px;
+  font-size: var(--font-xl);
+  font-weight: 800;
+  border-radius: 12px;
+  border: none;
+  background: var(--color-accent);
+  color: #0b1622;
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+
+.play-primary:hover {
+  filter: brightness(1.1);
+}
+
+.play-hint {
+  font-size: var(--font-sm);
+  color: var(--color-text-dim);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+}
+
+.custom-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.new-game-section.custom-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.custom-btn {
+  flex: 1 1 140px;
+  padding: 10px 16px;
+  font-size: var(--font-md);
+  border-radius: 8px;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: filter 0.15s;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+.custom-btn:hover {
+  filter: brightness(1.25);
+}
+
+.difficulty-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.difficulty-name {
+  font-size: var(--font-md);
+  font-weight: bold;
+  color: var(--color-text-dim);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+}
+
+.diff-slider {
+  width: 100%;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.diff-values {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-sm);
+  color: var(--color-text-dim);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+}
+
+.world-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.world-card {
   position: relative;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 123px;
   width: 100%;
+  min-height: 132px;
   overflow: hidden;
-  font-size: var(--font-xl);
-  font-weight: bold;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  border: none;
+  border-radius: 14px;
   background: rgba(255, 255, 255, 0.06);
   color: var(--color-text);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: box-shadow 0.15s;
 }
 
-.theme-card-bg {
+.world-card-bg {
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
 }
 
-.theme-card-bg :deep(svg) {
+.world-card-bg :deep(svg) {
   display: block;
   width: 100%;
   height: 100%;
-  opacity: 0.55;
+  opacity: 0.6;
   transition: opacity 0.15s;
 }
 
-.theme-card:hover .theme-card-bg :deep(svg) {
-  opacity: 0.75;
+.world-card:hover .world-card-bg :deep(svg) {
+  opacity: 0.8;
 }
 
-.theme-card-text {
-  position: relative;
+.world-card-shade {
+  position: absolute;
+  inset: 0;
   z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.68) 0%, rgba(0, 0, 0, 0.28) 100%);
 }
 
-.theme-card-progress {
-  font-size: var(--font-sm);
-  font-weight: normal;
-  color: var(--color-text-dim);
-}
-
-.theme-card.selected {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-  box-shadow: 0 0 16px rgba(95, 208, 255, 0.25);
-}
-
-.theme-card.selected .theme-card-bg :deep(svg) {
-  opacity: 0.7;
-}
-
-.game-title {
-  font-size: var(--font-title);
-  color: var(--color-accent);
-  text-shadow: 0 0 20px rgba(95, 208, 255, 0.3);
-}
-
-.menu-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-}
-
-.menu-btn {
-  padding: 12px 24px;
-  font-size: var(--font-lg);
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--color-text);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.menu-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-.menu-btn.primary {
-  background: rgba(95, 208, 255, 0.15);
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-}
-
-.new-game-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-}
-
-.section-label {
-  font-size: var(--font-md);
-  font-weight: bold;
-  color: var(--color-text-dim);
-}
-
-.difficulty-section {
-  width: 100%;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 8px;
-}
-
-.diff-header {
-  font-size: var(--font-md);
-  font-weight: bold;
-  color: var(--color-text-dim);
-  margin-bottom: 8px;
-}
-
-.diff-slider {
-  width: 100%;
-  accent-color: var(--color-accent);
-}
-
-.diff-values {
+.world-card-body {
+  position: relative;
+  z-index: 2;
   display: flex;
   justify-content: space-between;
-  margin-top: 8px;
-  font-size: var(--font-sm);
-  color: var(--color-text-dim);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 18px 20px;
 }
 
-.gems-display {
+.world-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.world-card-label {
   font-size: var(--font-xl);
-  color: var(--color-gem);
+  font-weight: bold;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.7);
+}
+
+.world-active-tag {
+  font-size: var(--font-xs);
+  font-weight: bold;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+}
+
+.world-play-btn {
+  flex-shrink: 0;
+  padding: 10px 18px;
+  font-size: var(--font-md);
+  font-weight: 800;
+  border-radius: 999px;
+  border: none;
+  background: var(--color-accent);
+  color: #0b1622;
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+
+.world-play-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.world-play-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.world-card.selected {
+  box-shadow:
+    0 0 0 2px var(--color-accent),
+    0 0 20px rgba(95, 208, 255, 0.3);
+}
+
+@media (max-width: 900px) {
+  .menu-home {
+    padding: 24px 20px 32px;
+    gap: 22px;
+  }
+
+  .home-footer {
+    margin-top: 12px;
+  }
+
+  .home-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .world-card-body {
+    flex-wrap: wrap;
+  }
 }
 </style>
