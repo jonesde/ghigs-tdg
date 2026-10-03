@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import GeneratedMapDialog from "@/components/GeneratedMapDialog.vue";
+import ProgressiveMapDialog from "@/components/ProgressiveMapDialog.vue";
 import { DIFFICULTY_MULT_GEM_BASE, DIFFICULTY_MULT_TICK, MAPS_PER_REGION } from "@/sim/Constants.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
@@ -48,6 +50,27 @@ function newGame() {
   router.push("/map-select");
 }
 
+const showRandomDialog = ref(false);
+const showProgressiveDialog = ref(false);
+
+function openRandomDialog() {
+  showRandomDialog.value = true;
+  showProgressiveDialog.value = false;
+}
+
+function openProgressiveDialog() {
+  showProgressiveDialog.value = true;
+  showRandomDialog.value = false;
+}
+
+function closeRandomDialog() {
+  showRandomDialog.value = false;
+}
+
+function closeProgressiveDialog() {
+  showProgressiveDialog.value = false;
+}
+
 function openSkillTree() {
   router.push("/skill-tree");
 }
@@ -60,10 +83,20 @@ function openSkillTree() {
       <div class="menu-content">
         <h1 class="game-title">Lo! Yet Another TDG</h1>
 
-        <div class="menu-buttons">
+        <div class="new-game-section">
+          <div class="section-label">New Game</div>
           <button class="menu-btn primary" @click="newGame()">
-            New Game
+            Select Map
           </button>
+          <button class="menu-btn" @click="openProgressiveDialog()">
+            Progressive Run
+          </button>
+          <button class="menu-btn" @click="openRandomDialog()">
+            Generate Map
+          </button>
+        </div>
+
+        <div class="menu-buttons">
           <button class="menu-btn" @click="openSkillTree()">
             Upgrades!
           </button>
@@ -110,6 +143,9 @@ function openSkillTree() {
         </button>
       </div>
     </div>
+
+    <GeneratedMapDialog :show="showRandomDialog" @close="closeRandomDialog" />
+    <ProgressiveMapDialog :show="showProgressiveDialog" @close="closeProgressiveDialog" />
   </div>
 </template>
 
@@ -262,6 +298,19 @@ function openSkillTree() {
   background: rgba(95, 208, 255, 0.15);
   border-color: var(--color-accent);
   color: var(--color-accent);
+}
+
+.new-game-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.section-label {
+  font-size: var(--font-md);
+  font-weight: bold;
+  color: var(--color-text-dim);
 }
 
 .difficulty-section {

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import type { MapsContent } from "@/content/schemas/maps.js";
 import { RawMapThemeSchema } from "@/content/schemas/theme.js";
 import { useSvgStaticContent } from "@/render/svg/useSvgStaticContent.js";
 import defaultTheme from "@/render/themes/data/default-map-theme.json";
 import aftermathTheme from "@/render/themes/data/the-aftermath.json";
 import { DEFAULT_THEME_ID, MAP_THEME_MANIFEST, type MapThemeData } from "@/render/themes/index.js";
 import { normalizeThemeImages } from "@/render/themes/normalize.js";
+import { usePersistStore } from "@/stores/persist.js";
 import { createTestMapThemeStore } from "../helpers/mock-stores";
 import { makeMockRegionMapLayout, mockRegionMapImage } from "../helpers/regionMap";
 
@@ -255,6 +257,49 @@ describe("Map Theme System", () => {
       const active = await store.loadActive("the-aftermath");
       expect(active).toBe(loaded);
       expect(store.activeTheme).toBe(loaded);
+    });
+
+    it("regionNames resolves from the active theme with per-region fallbacks", () => {
+      const store = createTestMapThemeStore();
+      expect(store.regionNames).toEqual(["Verdant Marches", "Sunscorch Coast", "Thornpeak Wilds"]);
+      store.activeTheme = null;
+      expect(store.regionNames).toEqual(["Verdant Marches", "Sunscorch Coast", "Thornpeak Wilds"]);
+      store.defaultTheme = null;
+      expect(store.regionNames).toEqual(["Region 1", "Region 2", "Region 3"]);
+    });
+
+    it("resolvedMaps exposes the active world's maps catalog or undefined", () => {
+      const store = createTestMapThemeStore();
+      expect(store.resolvedMaps).toBeUndefined();
+      const catalog = { marker: true } as unknown as MapsContent;
+      store.activeTheme = { ...store.defaultTheme!, maps: catalog };
+      expect(store.resolvedMaps).toStrictEqual(catalog);
+      store.activeTheme = null;
+      expect(store.resolvedMaps).toBeUndefined();
+    });
+
+    it("ensureActiveTheme is a no-op when the active theme already matches the selected world", async () => {
+      const store = createTestMapThemeStore();
+      const activeBefore = store.activeTheme;
+      await store.ensureActiveTheme();
+      expect(store.activeTheme).toBe(activeBefore);
+    });
+
+    it("ensureActiveTheme falls back to the preloaded default theme for the default world", async () => {
+      const store = createTestMapThemeStore();
+      store.activeTheme = null;
+      await store.ensureActiveTheme();
+      expect(store.activeTheme).toBe(store.defaultTheme);
+    });
+
+    it("ensureActiveTheme loads the active theme for a selected non-default world", async () => {
+      const store = createTestMapThemeStore();
+      const persistStore = usePersistStore();
+      persistStore.lastSelectedThemeId = "the-aftermath";
+      store.activeTheme = null;
+      await store.ensureActiveTheme();
+      const activeThemeAfter = store.activeTheme as MapThemeData | null;
+      expect(activeThemeAfter?.id).toBe("the-aftermath");
     });
   });
 });

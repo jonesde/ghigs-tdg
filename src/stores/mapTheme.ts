@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
+import type { MapsContent } from "../content/schemas/maps.js";
 import type {
   EnemyVisualMeta,
   MapThemeData,
@@ -95,6 +96,38 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
     return loadedThemes.value[id] ?? data;
   }
 
+  // The active world's effective maps catalog (theme override merged over the
+  // default content). Absent when the theme carries no override — the generators
+  // then fall back to the default catalog.
+  const resolvedMaps = computed<MapsContent | undefined>(() => (activeTheme.value ?? defaultTheme.value)?.maps);
+
+  const regionNames = computed<string[]>(() => {
+    const names: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const activeRegion = activeTheme.value?.regions.find((r) => r.id === i);
+      const defaultRegion = defaultTheme.value?.regions.find((r) => r.id === i);
+      names.push(activeRegion?.name ?? defaultRegion?.name ?? `Region ${i + 1}`);
+    }
+    return names;
+  });
+
+  // Resolves the active theme to the selected world before a run starts: the
+  // worker re-resolves from its own copy of the same theme bundle, so both
+  // sides must use the active world's catalog to stay tile-for-tile identical.
+  async function ensureActiveTheme(): Promise<void> {
+    const persistStore = usePersistStore();
+    const themeId = persistStore.lastSelectedThemeId;
+    if (activeTheme.value && activeTheme.value.id === themeId) {
+      return;
+    }
+    if (defaultTheme.value && themeId === defaultTheme.value.id) {
+      // Use preloaded default theme
+      activeTheme.value = defaultTheme.value;
+      return;
+    }
+    await loadActive(themeId).catch((err) => console.error("Failed to load theme:", err));
+  }
+
   const availableThemes = computed<MapThemeManifestEntry[]>(() => MAP_THEME_MANIFEST);
   const activeThemeLabel = computed(() => {
     return MAP_THEME_MANIFEST.find((e) => e.id === activeThemeId.value)?.label || "Unknown";
@@ -164,6 +197,9 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
     preloadDefault,
     loadActive,
     ensureThemeLoaded,
+    ensureActiveTheme,
+    resolvedMaps,
+    regionNames,
     availableThemes,
     activeThemeLabel,
     getTowerVisual,
