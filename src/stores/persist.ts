@@ -71,6 +71,7 @@ interface PersistStateShape {
   lastSelectedThemeId: string;
   lastSelectedMapIndex: number | null;
   llmCommanders: LlmCommanderConfig[];
+  soundEnabled: boolean;
 }
 
 function blankTower(): TowerUnlocks {
@@ -152,6 +153,7 @@ function defaultState(): PersistStateShape {
     lastSelectedThemeId: "default",
     lastSelectedMapIndex: null,
     llmCommanders: [],
+    soundEnabled: true,
   };
 }
 
@@ -426,6 +428,11 @@ export const usePersistStore = defineStore("persist", {
 
     setDifficultyTick(tick: number) {
       this.difficulty = { multiplierTick: tick };
+      this.save();
+    },
+
+    toggleSoundEnabled() {
+      this.soundEnabled = !this.soundEnabled;
       this.save();
     },
 

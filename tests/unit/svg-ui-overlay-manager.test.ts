@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { SVG_NS, TOWER_HP_BAR_POOL_SIZE } from "@/render/svg/types.js";
+import { HP_BAR_POOL_SIZE, SHIELD_BAR_POOL_SIZE, SVG_NS, TOWER_HP_BAR_POOL_SIZE } from "@/render/svg/types.js";
 import { UiOverlayManager } from "@/render/svg/UiOverlayManager.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import { buildTestTower, createTestEngine } from "../helpers/engine-snapshot.js";
@@ -50,6 +50,50 @@ function towerBarBg(layer: SVGGElement, groupIndex: number): SVGRectElement {
   const rects = Array.from(layer.querySelectorAll("rect"));
   const block = rects.slice(rects.length - TOWER_HP_BAR_POOL_SIZE * 3);
   return block[groupIndex * 3]!;
+}
+
+function enemySnapshot(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 1,
+    type: "runner",
+    x: 100,
+    y: 100,
+    radius: 8,
+    hp: 50,
+    maxHp: 100,
+    shield: 0,
+    maxShield: 0,
+    angle: 0,
+    level: 1,
+    removed: false,
+    slowFactor: 1,
+    slowTimer: 0,
+    burnTimer: 0,
+    gameSeconds: 0,
+    hitAnimTime: 0,
+    attackAnimTime: 0,
+    isBoss: false,
+    statusEffects: [],
+    ...overrides,
+  } as never;
+}
+
+// The enemy HP bars are the first HP_BAR_POOL_SIZE * 3 <rect> elements appended
+// to the layer during init (shield/boss/pending/base/tower elements follow).
+function enemyBarFg(layer: SVGGElement, groupIndex: number): SVGRectElement {
+  const rects = Array.from(layer.querySelectorAll("rect"));
+  return rects.slice(0, HP_BAR_POOL_SIZE * 3)[groupIndex * 3 + 2]!;
+}
+
+function enemyBarBg(layer: SVGGElement, groupIndex: number): SVGRectElement {
+  const rects = Array.from(layer.querySelectorAll("rect"));
+  return rects.slice(0, HP_BAR_POOL_SIZE * 3)[groupIndex * 3]!;
+}
+
+function shieldBarFg(layer: SVGGElement, groupIndex: number): SVGRectElement {
+  const rects = Array.from(layer.querySelectorAll("rect"));
+  const block = rects.slice(HP_BAR_POOL_SIZE * 3, (HP_BAR_POOL_SIZE + SHIELD_BAR_POOL_SIZE) * 3);
+  return block[groupIndex * 3 + 2]!;
 }
 
 describe("UiOverlayManager tower health bars", () => {
@@ -128,5 +172,72 @@ describe("UiOverlayManager tower health bars", () => {
     expect(layer.contains(fg)).toBe(true);
     manager.dispose();
     expect(layer.contains(fg)).toBe(false);
+  });
+});
+
+describe("UiOverlayManager enemy health bars", () => {
+  let manager: UiOverlayManager;
+  let layer: SVGGElement;
+
+  beforeEach(() => {
+    layer = makeLayer();
+    manager = new UiOverlayManager();
+    manager.init(layer);
+  });
+
+  it("shows a bar above a damaged enemy with width proportional to hp", () => {
+    manager.syncFromGameEngine([enemySnapshot({ hp: 50, maxHp: 100 })], null);
+    const fg = enemyBarFg(layer, 0);
+    expect(fg.style.visibility).toBe("visible");
+    expect(fg.getAttribute("width")).toBe("12");
+    expect(fg.getAttribute("transform")).toContain("88"); // x - 12
+  });
+
+  it("colors the bar yellow below 50% and red below 25%", () => {
+    manager.syncFromGameEngine([enemySnapshot({ hp: 30, maxHp: 100 })], null);
+    expect(enemyBarFg(layer, 0).getAttribute("fill")).toBe("#ffff00");
+    manager.syncFromGameEngine([enemySnapshot({ hp: 10, maxHp: 100 })], null);
+    expect(enemyBarFg(layer, 0).getAttribute("fill")).toBe("#ff0000");
+  });
+
+  it("hides the bar for a full-hp enemy", () => {
+    manager.syncFromGameEngine([enemySnapshot({ hp: 100, maxHp: 100 })], null);
+    expect(enemyBarFg(layer, 0).style.visibility).toBe("hidden");
+    expect(enemyBarBg(layer, 0).style.visibility).toBe("hidden");
+  });
+
+  it("hides the bar once an enemy heals back to full hp", () => {
+    manager.syncFromGameEngine([enemySnapshot({ id: 1, hp: 50, maxHp: 100 })], null);
+    expect(enemyBarFg(layer, 0).style.visibility).toBe("visible");
+    manager.syncFromGameEngine([enemySnapshot({ id: 1, hp: 100, maxHp: 100 })], null);
+    expect(enemyBarFg(layer, 0).style.visibility).toBe("hidden");
+  });
+
+  it("keeps the shield bar visible when the hp bar is hidden", () => {
+    manager.syncFromGameEngine([enemySnapshot({ hp: 100, maxHp: 100, shield: 25, maxShield: 50 })], null);
+    expect(enemyBarFg(layer, 0).style.visibility).toBe("hidden");
+    expect(shieldBarFg(layer, 0).style.visibility).toBe("visible");
+  });
+
+  it("shows a boss hp bar only while the boss is damaged", () => {
+    manager.syncFromGameEngine([enemySnapshot({ id: 1, type: "boss", hp: 100, maxHp: 100 })], null);
+    expect(enemyBarFg(layer, 0).style.visibility).toBe("hidden");
+    manager.syncFromGameEngine([enemySnapshot({ id: 1, type: "boss", hp: 60, maxHp: 100 })], null);
+    expect(enemyBarFg(layer, 0).style.visibility).toBe("visible");
+    expect(Number(enemyBarFg(layer, 0).getAttribute("width"))).toBeCloseTo(14.4);
+  });
+
+  it("hides leftover bars when the damaged enemy count drops", () => {
+    manager.syncFromGameEngine(
+      [enemySnapshot({ id: 1, hp: 50, maxHp: 100 }), enemySnapshot({ id: 2, hp: 40, maxHp: 100 })],
+      null,
+    );
+    expect(enemyBarFg(layer, 1).style.visibility).toBe("visible");
+    // Second enemy now at full hp: only the first bar stays up.
+    manager.syncFromGameEngine(
+      [enemySnapshot({ id: 1, hp: 50, maxHp: 100 }), enemySnapshot({ id: 2, hp: 100, maxHp: 100 })],
+      null,
+    );
+    expect(enemyBarFg(layer, 1).style.visibility).toBe("hidden");
   });
 });

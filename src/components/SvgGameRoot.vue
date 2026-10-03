@@ -800,6 +800,9 @@ let host: MainThreadHostBindings;
 onMounted(async () => {
   const sound = new SoundManager();
   soundManager.value = sound;
+  // A fresh manager defaults to enabled; apply the persisted preference so a
+  // muted player stays muted across runs.
+  sound.enabled = persistStore.soundEnabled;
   host = new MainThreadHostBindings(sound);
 
   worker = new GameWorker();
@@ -902,6 +905,15 @@ watch(
     gameStore.grid = new Grid(map);
     await nextTick();
     spawnManager.init(svgRoot.value, map.spawns.length);
+  },
+);
+
+// The HUD sound button flips the persisted preference mid-run; mirror it onto
+// the live manager so the next playSound respects the toggle.
+watch(
+  () => persistStore.soundEnabled,
+  (soundEnabled) => {
+    if (soundManager.value) soundManager.value.enabled = soundEnabled;
   },
 );
 

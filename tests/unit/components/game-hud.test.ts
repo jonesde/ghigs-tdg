@@ -102,6 +102,22 @@ describe("GameHud", () => {
     expect(gameStore.timeScale).toBe(2);
   });
 
+  it("toggles sound on sound button click", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore } = mountGameHud();
+    const wrapper = mount(GameHud, { global: { plugins: [pinia] } });
+    const soundBtn = wrapper.find("#soundBtn");
+    expect(persistStore.soundEnabled).toBe(true);
+    expect(soundBtn.text()).toBe("🔊");
+    expect(soundBtn.classes()).not.toContain("muted");
+    await soundBtn.trigger("click");
+    expect(persistStore.soundEnabled).toBe(false);
+    expect(wrapper.find("#soundBtn").text()).toBe("🔇");
+    expect(wrapper.find("#soundBtn").classes()).toContain("muted");
+    await wrapper.find("#soundBtn").trigger("click");
+    expect(persistStore.soundEnabled).toBe(true);
+  });
+
   it("toggles pause on pause button click", async () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, commands } = mountGameHud();

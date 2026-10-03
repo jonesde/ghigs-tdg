@@ -118,6 +118,9 @@ watch(
         <button class="hud-btn" id="speedBtn" @click="gameStore.cycleSpeed(); dispatchCommand({ commandId: 0, type: 'action:cycleSpeed', direction: 1 })">
           {{ gameStore.timeScale }}×
         </button>
+        <button class="hud-btn sound-btn" :class="{ muted: !persistStore.soundEnabled }" id="soundBtn" @click="persistStore.toggleSoundEnabled()">
+          {{ persistStore.soundEnabled ? "🔊" : "🔇" }}
+        </button>
         <button class="hud-btn stats-btn" @click="uiStore.toggleStatsPanel()">∑</button>
         <button class="hud-btn minimap-btn" :class="{ active: uiStore.showMinimap }" id="minimapBtn" @click="uiStore.toggleMinimap()">🗺</button>
         <button class="hud-btn" id="helpBtn" @click="uiStore.toggleHelpDialog()">🛈</button>
@@ -286,6 +289,10 @@ watch(
     background: rgba(95, 208, 255, 0.3);
     border-color: rgba(95, 208, 255, 0.6);
     color: #5fd0ff;
+  }
+
+  .hud-btn.sound-btn.muted {
+    opacity: 0.5;
   }
 
 @keyframes pulse {

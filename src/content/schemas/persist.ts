@@ -78,6 +78,7 @@ export const PersistStateSchema = z.object({
   lastSelectedThemeId: z.string(),
   lastSelectedMapIndex: z.number().nullable(),
   llmCommanders: z.array(LlmCommanderConfigSchema),
+  soundEnabled: z.boolean(),
 });
 
 export type PersistStateParsed = z.infer<typeof PersistStateSchema>;

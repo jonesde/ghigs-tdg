@@ -18,10 +18,10 @@
       "speed": 0.8,
       "bounty": 4,
       "radius": 0.16,
-      "heal": 0.05,
+      "heal": 0.02,
       "healRange": 2.5,
       "attackDamage": 3,
-      "attackSpeed": 0.5,
+      "attackSpeed": 0.3,
       "flyingHeight": 0
     },
     "boss": {

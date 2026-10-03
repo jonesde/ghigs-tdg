@@ -26,6 +26,7 @@ export interface PersistState {
   progressiveMapSeed: number | null;
   lastSelectedThemeId: string;
   lastSelectedMapIndex: number | null;
+  soundEnabled: boolean;
 }
 
 const CURRENT_SAVE_VERSION = 5;
@@ -90,6 +91,7 @@ export function createDefaultPersistState(): PersistState {
     progressiveMapSeed: null,
     lastSelectedThemeId: "default",
     lastSelectedMapIndex: null,
+    soundEnabled: true,
   };
 }
 

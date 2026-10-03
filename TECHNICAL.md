@@ -24,7 +24,7 @@ src/
 │   └── index.ts                 # Route definitions + navigation guards (dispose engine on route change)
 ├── stores/
 │   ├── game.ts                  # Volatile per-run state: lives, gold, wave, game state, selection, camera, tower/panel positions, hover state, frame id, run gem/boss counters, milestone breakdown, end-screen data, random-map params, worker reference
-│   ├── persist.ts               # Persistent meta-progression: gems, unlocks, difficulty, map progress, random-map and progressive-map preferences, last-selected theme and map (localStorage)
+│   ├── persist.ts               # Persistent meta-progression: gems, unlocks, difficulty, map progress, random-map and progressive-map preferences, last-selected theme and map, sound preference (localStorage)
 │   ├── ui.ts                    # UI overlay state: confirm dialogs, notifications, menu/skill-tree/stats/help/minimap context, debug panel, enemy commander selection, random-map panel, wasPlaying flags for pause/skill-tree/help
 │   └── mapTheme.ts              # Map theme state: activeTheme, defaultTheme, availableThemes, preload/load actions, resolvedMaps (active world's maps catalog), regionNames, ensureActiveTheme
 ├── composables/
@@ -34,7 +34,7 @@ src/
 │   ├── SvgGameRoot.vue          # Single SVG root: creates the simulation Web Worker, owns SnapshotStore (render loop reads snapshots) and WorkerCommandDispatcher, imperative DOM rendering, SpawnManager
 │   ├── TextGameRoot.vue         # Second passive renderer: monospaced <pre> static base grid + canvas overlay; own rAF loop reads getLatestSnapshot() (no worker, no ack, no input)
 │   ├── MinimapPanel.vue         # Movable hovering panel (copy of TowerPanel drag pattern) hosting TextGameRoot; toggled by uiStore.showMinimap
-│   ├── GameHud.vue              # Top HUD bar: lives, gold, gems, wave, speed/pause/menu buttons
+│   ├── GameHud.vue              # Top HUD bar: lives, gold, gems, wave, speed/sound/pause/menu buttons
 │   ├── GameShop.vue             # Tower shop bar: build selection with cost display and discount support
 │   ├── TowerPanel.vue           # Tower detail panel: stats, targeting, upgrade/sell, specialization
 │   ├── WaveCountdown.vue        # Inter-wave countdown overlay shown before each wave spawns
@@ -432,7 +432,7 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 | File | Description |
 |---|---|
 | `src/stores/game.ts` | Volatile game state: lives, gold, wave, selection, time scale, camera, tower/panel positions, hover state, frame id, run gem/boss counters, milestone breakdown, end-screen data, random-map params, worker reference |
-| `src/stores/persist.ts` | Persistent state: gems, unlocks, difficulty, map progress, random-map and progressive-map preferences, last-selected theme and map, localStorage I/O |
+| `src/stores/persist.ts` | Persistent state: gems, unlocks, difficulty, map progress, random-map and progressive-map preferences, last-selected theme and map, sound on/off preference, localStorage I/O |
 | `src/stores/ui.ts` | UI state: confirm dialog, notifications, main menu / skill tree / stats / help / minimap overlay flags, debug panel visibility, enemy commander selection, random-map panel, wasPlaying flags for pause/skill-tree/help |
 | `src/stores/mapTheme.ts` | Map theme state: activeTheme, defaultTheme (preloaded at app init), availableThemes, preload/load actions |
 
@@ -450,7 +450,7 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 |---|---|
 | `src/components/GameScreen.vue` | Game layout container: SvgGameRoot, HUD, shop, tower panel, wave countdown, debug panel, wave graph, pause menu overlay |
 | `src/components/SvgGameRoot.vue` | Single SVG root: RAF loop, GameEngine lifecycle (receives active theme), imperative DOM rendering, CTM-based input, SpawnManager initialization |
-| `src/components/GameHud.vue` | Top bar: lives, gold, gems, wave counter, speed/pause/menu controls; uses `getMapDisplayName` for map label |
+| `src/components/GameHud.vue` | Top bar: lives, gold, gems, wave counter, speed/sound/pause/menu controls (sound toggles `persistStore.soundEnabled`, mirrored onto the live SoundManager by SvgGameRoot); uses `getMapDisplayName` for map label |
 | `src/components/GameShop.vue` | Bottom bar: tower build selection with cost (from constants) and themed name/color/icon (from active theme) |
 | `src/components/TowerPanel.vue` | Right panel: tower stats, targeting mode, upgrade/sell, specialization; themed name/color/icon from active theme |
 | `src/components/WaveCountdown.vue` | Inter-wave countdown overlay shown before each wave spawns |
@@ -524,7 +524,7 @@ The SVG fit rectangle is `originTile * 36, size * 36`. On a progressive origin o
 | `src/render/svg/ProjectileManager.ts` | Projectile rendering pool: `<circle>` bullets, `<line>` beams |
 | `src/render/svg/ParticleManager.ts` | Particle rendering pool: `<circle>` elements with fade/expansion |
 | `src/render/svg/EffectManager.ts` | Lightning paths, stun aura paths, build preview rect, range circle, upgrade button SVG elements |
-| `src/render/svg/UiOverlayManager.ts` | HP bars, shield bars, boss HP text as pooled `<rect>` and `<text>` elements |
+| `src/render/svg/UiOverlayManager.ts` | HP bars (enemy bars only while hp < maxHp, matching the text renderer; tower bars only while damaged), shield bars, boss HP text as pooled `<rect>` and `<text>` elements |
 | `src/render/svg/SpawnManager.ts` | Spawn point rendering pool: `<use>` elements for spawn location indicators |
 | `src/render/svg/useSvgStaticContent.ts` | Composable: builds `<defs>` (symbols from active theme's tower/enemy frames, region gradients, filters) and grid layer SVG strings (tile images + base art from theme) |
 | `src/render/svg/cameraFrame.ts` | Pure view-frame math: `fitFrame`, `zoomFrame`, `panFrame`, `revealPoint`, `wheelZoomFactor`, plus frame constants (`EDGE_BUFFER_FRACTION`, `ARROW_PAN_FRACTION`, zoom/step limits). `SvgGameRoot` writes the result into the SVG `viewBox` |

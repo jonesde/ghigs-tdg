@@ -118,6 +118,39 @@ describe("PersistStore", () => {
     });
   });
 
+  describe("soundEnabled", () => {
+    it("starts with sound enabled", () => {
+      expect(store.soundEnabled).toBe(true);
+    });
+
+    it("toggleSoundEnabled flips the flag and persists via save()", () => {
+      store.toggleSoundEnabled();
+      expect(store.soundEnabled).toBe(false);
+      expect(localStorage.setItem).toHaveBeenCalled();
+      store.toggleSoundEnabled();
+      expect(store.soundEnabled).toBe(true);
+    });
+
+    it("survives a save/load round-trip", () => {
+      store.toggleSoundEnabled();
+      store.save();
+      const persisted = JSON.parse((localStorage.setItem as ReturnType<typeof vi.fn>).mock.calls[0]![1]);
+      expect(persisted.soundEnabled).toBe(false);
+      localStorage.getItem = vi.fn().mockReturnValue(JSON.stringify(persisted));
+      store.load();
+      expect(store.soundEnabled).toBe(false);
+    });
+
+    it("backfills enabled from defaults for pre-sound saves", () => {
+      store.save();
+      const persisted = JSON.parse((localStorage.setItem as ReturnType<typeof vi.fn>).mock.calls[0]![1]);
+      delete persisted.soundEnabled;
+      localStorage.getItem = vi.fn().mockReturnValue(JSON.stringify(persisted));
+      store.load();
+      expect(store.soundEnabled).toBe(true);
+    });
+  });
+
   describe("updateBestWave", () => {
     it("stores best wave for a map", () => {
       store.updateBestWave("default", 0, 10);

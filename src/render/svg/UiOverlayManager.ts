@@ -242,20 +242,26 @@ export class UiOverlayManager {
         fg.setAttribute("transform", barTransform);
         this.hpLastTransform[hpGroupIdx] = barTransform;
       }
-      bg.style.visibility = "visible";
-      border.style.visibility = "visible";
-      fg.style.visibility = "visible";
+      // Full-HP enemies render no bar (matches the text renderer and the
+      // damaged-only tower bars); the pool slot stays reserved so group
+      // indices remain pinned to enemy order for the dirty checks.
+      const hpPercent = enemy.maxHp > 0 ? Math.max(0, Math.min(1, enemy.hp / enemy.maxHp)) : 0;
+      const showHpBar = hpPercent < 1;
+      bg.style.visibility = showHpBar ? "visible" : "hidden";
+      border.style.visibility = showHpBar ? "visible" : "hidden";
+      fg.style.visibility = showHpBar ? "visible" : "hidden";
 
-      const hpPercent = Math.max(0, enemy.hp / enemy.maxHp);
-      const hpWidth = `${24 * hpPercent}`;
-      const hpFill = hpPercent > 0.5 ? "#00ff00" : hpPercent > 0.25 ? "#ffff00" : "#ff0000";
-      if (this.hpLastWidth[hpGroupIdx] !== hpWidth) {
-        fg.setAttribute("width", hpWidth);
-        this.hpLastWidth[hpGroupIdx] = hpWidth;
-      }
-      if (this.hpLastFill[hpGroupIdx] !== hpFill) {
-        fg.setAttribute("fill", hpFill);
-        this.hpLastFill[hpGroupIdx] = hpFill;
+      if (showHpBar) {
+        const hpWidth = `${24 * hpPercent}`;
+        const hpFill = hpPercent > 0.5 ? "#00ff00" : hpPercent > 0.25 ? "#ffff00" : "#ff0000";
+        if (this.hpLastWidth[hpGroupIdx] !== hpWidth) {
+          fg.setAttribute("width", hpWidth);
+          this.hpLastWidth[hpGroupIdx] = hpWidth;
+        }
+        if (this.hpLastFill[hpGroupIdx] !== hpFill) {
+          fg.setAttribute("fill", hpFill);
+          this.hpLastFill[hpGroupIdx] = hpFill;
+        }
       }
       hpBarGroup++;
 
