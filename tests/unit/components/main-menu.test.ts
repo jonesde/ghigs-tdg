@@ -143,7 +143,8 @@ describe("MainMenu", () => {
     const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
     const selected = wrapper.findAll(".theme-card").find((card) => card.classes("selected"));
     expect(selected).toBeDefined();
-    expect(selected!.text()).toBe("Aftermath");
+    expect(selected!.find(".theme-card-label").text()).toBe("Aftermath");
+    expect(selected!.find(".theme-card-progress").text()).toBe("Region 1 · Map 1");
   });
 
   it("selecting a theme card persists the theme id and loads it", async () => {

@@ -1,3 +1,5 @@
+import type { MapsContent } from "@/content/schemas/maps.js";
+
 export const DEFAULT_THEME_ID = "default";
 
 export interface MapThemeManifestEntry {
@@ -88,6 +90,10 @@ export interface MapThemeData {
   enemies: Record<string, EnemyVisualMeta>;
   regions: RegionVisualMeta[];
   spawns?: SpawnPointVisualMeta;
+  // Effective maps catalog for this world: the default maps content merged with
+  // the theme's optional `maps` override (see resolveThemeMaps). Absent when the
+  // theme carries no override — consumers then fall back to the default catalog.
+  maps?: MapsContent;
 }
 
 export interface MapThemeLoader {

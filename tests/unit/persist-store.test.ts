@@ -18,12 +18,17 @@ describe("PersistStore", () => {
       expect(store.gems).toBe(0);
     });
 
-    it("starts with highestUnlockedMap = 0", () => {
-      expect(store.highestUnlockedMap).toBe(0);
+    it("starts with an empty themeProgress record", () => {
+      expect(store.themeProgress).toEqual({});
     });
 
-    it("starts with empty bestWaves", () => {
-      expect(store.bestWaves).toEqual({});
+    it("returns a blank progress bucket for an unknown world", () => {
+      expect(store.getThemeProgress("default")).toEqual({
+        highestUnlockedMap: 0,
+        bestWaves: {},
+        firstTimeMilestones: {},
+        firstClears: {},
+      });
     });
 
     it("starts with default difficulty tick 0", () => {
@@ -115,110 +120,142 @@ describe("PersistStore", () => {
 
   describe("updateBestWave", () => {
     it("stores best wave for a map", () => {
-      store.updateBestWave(0, 10);
-      expect(store.bestWaves.best_0).toBe(10);
+      store.updateBestWave("default", 0, 10);
+      expect(store.themeProgress.default.bestWaves.best_0).toBe(10);
     });
 
     it("only improves (does not lower) the best wave", () => {
-      store.updateBestWave(0, 10);
-      store.updateBestWave(0, 5);
-      expect(store.bestWaves.best_0).toBe(10);
+      store.updateBestWave("default", 0, 10);
+      store.updateBestWave("default", 0, 5);
+      expect(store.themeProgress.default.bestWaves.best_0).toBe(10);
     });
 
     it("updates when new wave is higher", () => {
-      store.updateBestWave(0, 10);
-      store.updateBestWave(0, 15);
-      expect(store.bestWaves.best_0).toBe(15);
+      store.updateBestWave("default", 0, 10);
+      store.updateBestWave("default", 0, 15);
+      expect(store.themeProgress.default.bestWaves.best_0).toBe(15);
     });
 
     it("handles different maps independently", () => {
-      store.updateBestWave(0, 10);
-      store.updateBestWave(1, 20);
-      expect(store.bestWaves.best_0).toBe(10);
-      expect(store.bestWaves.best_1).toBe(20);
+      store.updateBestWave("default", 0, 10);
+      store.updateBestWave("default", 1, 20);
+      expect(store.themeProgress.default.bestWaves.best_0).toBe(10);
+      expect(store.themeProgress.default.bestWaves.best_1).toBe(20);
+    });
+
+    it("keeps different worlds independent", () => {
+      store.updateBestWave("default", 0, 10);
+      store.updateBestWave("aftermath", 0, 30);
+      expect(store.themeProgress.default.bestWaves.best_0).toBe(10);
+      expect(store.themeProgress.aftermath.bestWaves.best_0).toBe(30);
     });
   });
 
   describe("maybeUnlockNextMap", () => {
     it("increments highestUnlockedMap", () => {
-      store.highestUnlockedMap = 0;
-      store.maybeUnlockNextMap(0);
-      expect(store.highestUnlockedMap).toBe(1);
+      store.maybeUnlockNextMap("default", 0);
+      expect(store.themeProgress.default.highestUnlockedMap).toBe(1);
     });
 
     it("does not go beyond map 35", () => {
-      store.highestUnlockedMap = 35;
-      store.maybeUnlockNextMap(35);
-      expect(store.highestUnlockedMap).toBe(35);
+      store.setHighestUnlockedMap("default", 35);
+      store.maybeUnlockNextMap("default", 35);
+      expect(store.themeProgress.default.highestUnlockedMap).toBe(35);
     });
 
     it("does not unlock for negative map index", () => {
-      store.highestUnlockedMap = 0;
-      store.maybeUnlockNextMap(-1);
-      expect(store.highestUnlockedMap).toBe(0);
+      store.maybeUnlockNextMap("default", -1);
+      expect(store.themeProgress.default?.highestUnlockedMap ?? 0).toBe(0);
     });
 
     it("uses Math.max (does not go backward)", () => {
-      store.highestUnlockedMap = 5;
-      store.maybeUnlockNextMap(2);
-      expect(store.highestUnlockedMap).toBe(5);
+      store.setHighestUnlockedMap("default", 5);
+      store.maybeUnlockNextMap("default", 2);
+      expect(store.themeProgress.default.highestUnlockedMap).toBe(5);
+    });
+
+    it("keeps different worlds independent", () => {
+      store.setHighestUnlockedMap("aftermath", 10);
+      store.maybeUnlockNextMap("default", 0);
+      expect(store.themeProgress.default.highestUnlockedMap).toBe(1);
+      expect(store.themeProgress.aftermath.highestUnlockedMap).toBe(10);
     });
   });
 
   describe("active waves", () => {
     it("saves and retrieves active wave", () => {
-      store.saveActiveWave(0, 15);
-      expect(store.activeWaves[0]).toBe(15);
+      store.saveActiveWave("default", 0, 15);
+      expect(store.activeWaves["default:0"]).toBe(15);
     });
 
     it("clears active wave on game end", () => {
-      store.saveActiveWave(0, 15);
-      store.clearActiveWave(0);
-      expect(store.activeWaves[0]).toBeUndefined();
+      store.saveActiveWave("default", 0, 15);
+      store.clearActiveWave("default", 0);
+      expect(store.activeWaves["default:0"]).toBeUndefined();
     });
 
     it("handles clearing non-existent wave gracefully", () => {
-      expect(() => store.clearActiveWave(99)).not.toThrow();
+      expect(() => store.clearActiveWave("default", 99)).not.toThrow();
+    });
+
+    it("keeps different worlds independent", () => {
+      store.saveActiveWave("default", 0, 15);
+      store.saveActiveWave("the-aftermath", 0, 20);
+      store.clearActiveWave("default", 0);
+      expect(store.activeWaves["default:0"]).toBeUndefined();
+      expect(store.activeWaves["the-aftermath:0"]).toBe(20);
     });
   });
 
   describe("first-time milestones", () => {
     it("returns false before marking (not yet claimed)", () => {
-      expect(store.hasClaimedMilestone(0, 15)).toBe(false);
+      expect(store.hasClaimedMilestone("default", 0, 15)).toBe(false);
     });
 
     it("returns true after marking", () => {
-      store.markFirstTimeMilestone(0, 15);
-      expect(store.hasClaimedMilestone(0, 15)).toBe(true);
+      store.markFirstTimeMilestone("default", 0, 15);
+      expect(store.hasClaimedMilestone("default", 0, 15)).toBe(true);
     });
 
     it("tracks different maps independently", () => {
-      store.markFirstTimeMilestone(0, 15);
-      expect(store.hasClaimedMilestone(0, 15)).toBe(true);
-      expect(store.hasClaimedMilestone(1, 15)).toBe(false);
+      store.markFirstTimeMilestone("default", 0, 15);
+      expect(store.hasClaimedMilestone("default", 0, 15)).toBe(true);
+      expect(store.hasClaimedMilestone("default", 1, 15)).toBe(false);
     });
 
     it("tracks different waves independently", () => {
-      store.markFirstTimeMilestone(0, 15);
-      expect(store.hasClaimedMilestone(0, 15)).toBe(true);
-      expect(store.hasClaimedMilestone(0, 30)).toBe(false);
+      store.markFirstTimeMilestone("default", 0, 15);
+      expect(store.hasClaimedMilestone("default", 0, 15)).toBe(true);
+      expect(store.hasClaimedMilestone("default", 0, 30)).toBe(false);
+    });
+
+    it("keeps different worlds independent", () => {
+      store.markFirstTimeMilestone("default", 0, 15);
+      expect(store.hasClaimedMilestone("default", 0, 15)).toBe(true);
+      expect(store.hasClaimedMilestone("aftermath", 0, 15)).toBe(false);
     });
   });
 
   describe("first clears", () => {
     it("returns false before marking (not yet cleared)", () => {
-      expect(store.hasCleared(0)).toBe(false);
+      expect(store.hasCleared("default", 0)).toBe(false);
     });
 
     it("returns true after marking", () => {
-      store.markFirstClear(0);
-      expect(store.hasCleared(0)).toBe(true);
+      store.markFirstClear("default", 0);
+      expect(store.hasCleared("default", 0)).toBe(true);
     });
 
     it("tracks different maps independently", () => {
-      store.markFirstClear(0);
-      expect(store.hasCleared(0)).toBe(true);
-      expect(store.hasCleared(1)).toBe(false);
+      store.markFirstClear("default", 0);
+      expect(store.hasCleared("default", 0)).toBe(true);
+      expect(store.hasCleared("default", 1)).toBe(false);
+    });
+
+    it("keeps different worlds independent", () => {
+      store.markFirstClear("default", 0);
+      expect(store.hasCleared("default", 0)).toBe(true);
+      expect(store.hasCleared("aftermath", 0)).toBe(false);
     });
   });
 
@@ -236,7 +273,7 @@ describe("PersistStore", () => {
         .mockReturnValueOnce(JSON.stringify(testData)); // STORAGE_KEY
       store.load();
       expect(store.gems).toBe(50);
-      expect(store.highestUnlockedMap).toBe(3);
+      expect(store.themeProgress.default.highestUnlockedMap).toBe(3);
     });
 
     it("load merges with defaults for missing fields", () => {
@@ -246,7 +283,12 @@ describe("PersistStore", () => {
         .mockReturnValueOnce(JSON.stringify(testData)); // STORAGE_KEY
       store.load();
       expect(store.gems).toBe(50);
-      expect(store.bestWaves).toEqual({});
+      expect(store.themeProgress.default).toEqual({
+        highestUnlockedMap: 0,
+        bestWaves: {},
+        firstTimeMilestones: {},
+        firstClears: {},
+      });
     });
 
     it("reset restores default state", () => {
@@ -260,18 +302,18 @@ describe("PersistStore", () => {
 
   describe("schema migration on load", () => {
     it("includes saveVersion in default state", () => {
-      expect(store.saveVersion).toBe(4);
+      expect(store.saveVersion).toBe(5);
     });
 
-    it("migrates v1 data (no saveVersion) to current (v4)", () => {
+    it("migrates v1 data (no saveVersion) to current (v5)", () => {
       const oldData = { gems: 100, highestUnlockedMap: 5 };
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // OLD_STORAGE_KEY
         .mockReturnValueOnce(JSON.stringify(oldData)); // STORAGE_KEY
       store.load();
-      expect(store.saveVersion).toBe(4);
+      expect(store.saveVersion).toBe(5);
       expect(store.gems).toBe(100);
-      expect(store.highestUnlockedMap).toBe(5);
+      expect(store.themeProgress.default.highestUnlockedMap).toBe(5);
       expect(store.difficulty.multiplierTick).toBe(0);
       expect(store.generalAddons.extraHealth).toBeNull();
     });
@@ -282,12 +324,12 @@ describe("PersistStore", () => {
         .mockReturnValueOnce(null) // OLD_STORAGE_KEY
         .mockReturnValueOnce(JSON.stringify(v1Data)); // STORAGE_KEY
       store.load();
-      expect(store.saveVersion).toBe(4);
+      expect(store.saveVersion).toBe(5);
       expect(store.gems).toBe(200);
-      expect(store.bestWaves.best_3).toBe(45);
+      expect(store.themeProgress.default.bestWaves.best_3).toBe(45);
     });
 
-    it("loads v2 data and migrates forward to current (v4)", () => {
+    it("loads v2 data and migrates forward to current (v5)", () => {
       const v2Data = {
         saveVersion: 2,
         gems: 300,
@@ -308,7 +350,7 @@ describe("PersistStore", () => {
         .mockReturnValueOnce(null) // OLD_STORAGE_KEY
         .mockReturnValueOnce(JSON.stringify(v2Data)); // STORAGE_KEY
       store.load();
-      expect(store.saveVersion).toBe(4);
+      expect(store.saveVersion).toBe(5);
       expect(store.gems).toBe(300);
       expect(store.difficulty.multiplierTick).toBe(4);
       expect(store.generalAddons.extraHealth).toBe(10);
@@ -335,7 +377,7 @@ describe("PersistStore", () => {
         .mockReturnValueOnce(null)
         .mockReturnValueOnce(JSON.stringify(v3Data));
       store.load();
-      expect(store.saveVersion).toBe(4);
+      expect(store.saveVersion).toBe(5);
       expect(store.llmCommanders[0]?.requestTimeoutMs).toBe(30000);
       expect(store.llmCommanders[0]?.decisionIntervalMs).toBe(1000);
       expect(store.llmCommanders[0]?.name).toBe("Old");
@@ -381,10 +423,10 @@ describe("PersistStore", () => {
         .mockReturnValueOnce(JSON.stringify(v1Data)); // STORAGE_KEY
       store.load();
       expect(store.difficulty.multiplierTick).toBe(6);
-      expect(store.bestWaves.best_10).toBe(88);
-      expect(store.firstTimeMilestones["5_20"]).toBe(true);
-      expect(store.firstClears["7"]).toBe(true);
-      expect(store.bestWaves.best_0).toBeUndefined();
+      expect(store.themeProgress.default.bestWaves.best_10).toBe(88);
+      expect(store.themeProgress.default.firstTimeMilestones["5_20"]).toBe(true);
+      expect(store.themeProgress.default.firstClears["7"]).toBe(true);
+      expect(store.themeProgress.default.bestWaves.best_0).toBeUndefined();
     });
 
     it("handles corrupted save by resetting", () => {
@@ -467,7 +509,7 @@ describe("PersistStore", () => {
         .mockReturnValueOnce(JSON.stringify(migratedData)); // STORAGE_KEY (after migration)
       store.load();
       expect(store.gems).toBe(100);
-      expect(store.highestUnlockedMap).toBe(5);
+      expect(store.themeProgress.default.highestUnlockedMap).toBe(5);
       expect((localStorage.setItem as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("lol_ya_tdg_save_1");
       expect((localStorage.removeItem as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("gempath_save_v1");
     });

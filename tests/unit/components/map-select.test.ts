@@ -139,7 +139,7 @@ describe("MapSelect", () => {
   it("shows locked state for locked markers", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
-    persistStore.highestUnlockedMap = 0;
+    persistStore.ensureThemeProgress("default").highestUnlockedMap = 0;
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     expect(wrapper.findAll(".map-node.locked").length).toBe(14);
     expect(markerByLabel(wrapper, "1")!.classes()).not.toContain("locked");
@@ -148,7 +148,7 @@ describe("MapSelect", () => {
   it("shows best wave and gem reward in the marker tooltip", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
-    persistStore.bestWaves.best_0 = 15;
+    persistStore.ensureThemeProgress("default").bestWaves.best_0 = 15;
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     const tooltip = markerByLabel(wrapper, "1")!.find("title").text();
     expect(tooltip).toContain("Best Wave: 15");
@@ -194,7 +194,7 @@ describe("MapSelect", () => {
   it("keeps locked markers inert and disables the Play button", async () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
-    persistStore.highestUnlockedMap = 0;
+    persistStore.ensureThemeProgress("default").highestUnlockedMap = 0;
     await router.replace("/map-select");
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     await markerByLabel(wrapper, "2")!.trigger("click");
@@ -209,7 +209,7 @@ describe("MapSelect", () => {
   it("unlocks the level-1 progressive marker and keeps the level-5 branch locked", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
-    persistStore.highestUnlockedMap = 0;
+    persistStore.ensureThemeProgress("default").highestUnlockedMap = 0;
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     const oneEntry = markerByLabel(wrapper, "P1");
     const twoEntry = markerByLabel(wrapper, "P2");
@@ -224,10 +224,10 @@ describe("MapSelect", () => {
   it("reactively updates locked status when highestUnlockedMap changes", async () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
-    persistStore.highestUnlockedMap = 0;
+    persistStore.ensureThemeProgress("default").highestUnlockedMap = 0;
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     expect(wrapper.findAll(".map-node.locked").length).toBe(14);
-    persistStore.highestUnlockedMap = 5;
+    persistStore.ensureThemeProgress("default").highestUnlockedMap = 5;
     await wrapper.vm.$nextTick();
     expect(wrapper.findAll(".map-node.locked").length).toBe(8);
   });

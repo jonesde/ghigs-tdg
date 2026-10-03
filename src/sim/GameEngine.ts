@@ -1,4 +1,5 @@
 import type { MapThemeData, SpawnState } from "@/render/themes/index.js";
+import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
 import type { DebugKind } from "@/sim/Command.js";
 import { ICE_AURA_RANGE, STATIC_FIELD_RANGE } from "@/sim/ConstantsTower.js";
 import type { AttackTarget, Enemy } from "@/sim/enemies/Enemy.js";
@@ -204,6 +205,9 @@ export class GameEngine {
   private sellConfirmGrants = new Set<string>();
 
   theme: MapThemeData | null = null;
+  // World id the run's map progress keys on (themeProgress bucket). Defaults to
+  // the default world when the bundle carries no active theme.
+  themeId: string = DEFAULT_THEME_ID;
   themeBundle: ThemeBundle;
   mapIndex: number = 0;
   randomMapParams: Record<string, unknown> | null = null;
@@ -220,6 +224,7 @@ export class GameEngine {
     this.host = host;
     this.themeBundle = themeBundle;
     this.theme = themeBundle.active ?? null;
+    this.themeId = this.theme?.id ?? DEFAULT_THEME_ID;
     this.mapIndex = mapIndex;
     this.randomMapParams = (randomMapParams as Record<string, unknown> | null) ?? null;
 
@@ -245,15 +250,20 @@ export class GameEngine {
 
   setTheme(theme: MapThemeData | null): void {
     this.theme = theme;
+    this.themeId = theme?.id ?? DEFAULT_THEME_ID;
   }
 
   loadMap(mapIndex: number = this.mapIndex): void {
-    const mapData = resolveGeneratedMap(mapIndex);
+    // Theme worlds carry their own maps catalog (seeds / progressive variants);
+    // a theme without an override falls back to the default catalog.
+    const mapData = resolveGeneratedMap(mapIndex, this.theme?.maps);
     this._initMap(mapIndex, mapData, this.persistState);
   }
 
   loadRandomMap(width: number, height: number, level: number, style: string, regionId: number, seed: number): void {
-    const mapData = generateRandomMap(width, height, style, regionId, level, seed);
+    // Custom generated maps are not catalog entries, but they still take the
+    // active world's terrain noise scalars so a world's character holds.
+    const mapData = generateRandomMap(width, height, style, regionId, level, seed, this.theme?.maps);
     this._initMap(CUSTOM_RANDOM_MAP_INDEX, mapData, this.persistState);
   }
 
@@ -709,7 +719,7 @@ export class GameEngine {
 
         const hasClaimed =
           this.runState.mapIndex >= 0 &&
-          persistHasClaimedMilestone(this.persistState, this.runState.mapIndex, milestoneWave);
+          persistHasClaimedMilestone(this.persistState, this.themeId, this.runState.mapIndex, milestoneWave);
         const base = MILESTONE_GEMS[milestoneWave] ?? 0;
         const diffMult = getDifficultyMultiplier(this.persistState);
         const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
@@ -732,7 +742,7 @@ export class GameEngine {
         // Record the first-time 2x marker BEFORE crediting the gems, so the reward
         // can never be granted without the claim flag being persisted.
         if (!hasClaimed && this.runState.mapIndex >= 0) {
-          persistMarkFirstTimeMilestone(this.persistState, this.runState.mapIndex, milestoneWave);
+          persistMarkFirstTimeMilestone(this.persistState, this.themeId, this.runState.mapIndex, milestoneWave);
         }
 
         this.persistState.gems += afterFirstTime;
@@ -741,9 +751,9 @@ export class GameEngine {
     }
 
     if (this.runState.mapIndex >= 0) {
-      persistUpdateBestWave(this.persistState, this.runState.mapIndex, wave);
+      persistUpdateBestWave(this.persistState, this.themeId, this.runState.mapIndex, wave);
       if (wave >= 15) {
-        persistMaybeUnlockNextMap(this.persistState, this.runState.mapIndex);
+        persistMaybeUnlockNextMap(this.persistState, this.themeId, this.runState.mapIndex);
       }
     }
     this.persistDirty = true;
@@ -831,7 +841,7 @@ export class GameEngine {
     this.runState.hoverTile = null;
     this.enemyManager!.clear();
 
-    persistClearActiveWave(this.persistState, this.runState.mapIndex);
+    persistClearActiveWave(this.persistState, this.themeId, this.runState.mapIndex);
 
     const finalWave = this.waveManager!.currentWave;
     const lastLevel = Math.floor(finalWave / 10);
@@ -856,7 +866,7 @@ export class GameEngine {
     }
 
     if (victory && this.waveManager!.currentWave >= VICTORY_WAVE && this.runState.mapIndex >= 0) {
-      if (!persistHasCleared(this.persistState, this.runState.mapIndex)) {
+      if (!persistHasCleared(this.persistState, this.themeId, this.runState.mapIndex)) {
         const breakdown = this.runState.gemBreakdown;
         const subtotal =
           breakdown.bossKills.afterFirstTime +
@@ -866,7 +876,7 @@ export class GameEngine {
         this.runState.gemBreakdown.firstClearBonus = bonus;
         this.persistState.gems += bonus;
         this.runState.runGemsEarned += bonus;
-        persistMarkFirstClear(this.persistState, this.runState.mapIndex);
+        persistMarkFirstClear(this.persistState, this.themeId, this.runState.mapIndex);
       }
     }
 
@@ -874,6 +884,9 @@ export class GameEngine {
 
     const historyEntry: Record<string, unknown> = {
       mapIndex: this.runState.mapIndex,
+      // World the run took place in; replay resolves the map from that theme's
+      // catalog and keys progress on it. Pre-v5 entries lack this field.
+      themeId: this.themeId,
       victory,
       wave: this.waveManager!.currentWave,
       gems: this.runState.runGemsEarned,
@@ -1459,7 +1472,8 @@ export class GameEngine {
 
   private isProgressiveHoldWave(wave: number): boolean {
     if (this.runState.map?.style !== "progressive") return false;
-    return wave % PROGRESSIVE_PLACEMENT_INTERVAL === 0 && wave > 0 && wave < VICTORY_WAVE;
+    const placementInterval = this.theme?.maps?.progressive.placementInterval ?? PROGRESSIVE_PLACEMENT_INTERVAL;
+    return wave % placementInterval === 0 && wave > 0 && wave < VICTORY_WAVE;
   }
 
   private progressiveChoiceCount(): number {
@@ -1497,7 +1511,8 @@ export class GameEngine {
     const catalog = this.progressiveCatalog;
     const rng = this.progressiveRng;
     if (!board || !catalog || !rng) return false;
-    const cost = PROGRESSIVE_REROLL_GOLD_PER_WAVE * this.runState.currentWave;
+    const rerollGoldPerWave = this.theme?.maps?.progressive.rerollGoldPerWave ?? PROGRESSIVE_REROLL_GOLD_PER_WAVE;
+    const cost = rerollGoldPerWave * this.runState.currentWave;
     if (this.runState.gold < cost) {
       this.host.notifyUi({ type: "showNotification", message: "Not enough gold to re-roll." });
       return false;

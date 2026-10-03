@@ -393,8 +393,8 @@ describe("progressive economy", () => {
 
   it("does not advance the campaign from a progressive clear and refunds the third choice", () => {
     const save = createDefaultPersistState();
-    expect(maybeUnlockNextMap(save, 36)).toBe(false);
-    expect(save.highestUnlockedMap).toBe(0);
+    expect(maybeUnlockNextMap(save, "default", 36)).toBe(false);
+    expect(save.themeProgress.default?.highestUnlockedMap ?? 0).toBe(0);
     save.gems = 100;
     expect(tryUnlockGeneral(save, "progressiveThirdChoice", 0).ok).toBe(true);
     expect(save.generalAddons.progressiveThirdChoice).toBe(0);

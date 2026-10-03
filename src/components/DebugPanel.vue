@@ -76,8 +76,8 @@ function dbgWave() {
 }
 
 function dbgUnlockAll() {
-  persistStore.highestUnlockedMap = 35;
-  persistStore.save();
+  // Unlock applies to the selected world's progress bucket.
+  persistStore.setHighestUnlockedMap(persistStore.lastSelectedThemeId, 35);
 }
 
 function dbgSpeed() {

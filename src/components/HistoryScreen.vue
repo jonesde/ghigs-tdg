@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
+import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
 import { CUSTOM_PROGRESSIVE_MAP_INDEX, CUSTOM_RANDOM_MAP_INDEX } from "@/sim/Constants.js";
 import { generateRandomMap, getMapDisplayName, progressiveMapDisplayName } from "@/sim/grid/Map.js";
 import { generateProgressiveMap, type ProgressiveConfig, resolveGeneratedMap } from "@/sim/grid/ProgressiveMap.js";
@@ -57,29 +58,58 @@ interface MapInfo {
   name: string;
   region: string;
   style: string;
+  world: string;
+}
+
+function entryThemeId(entry: Record<string, unknown>): string {
+  return typeof entry.themeId === "string" ? entry.themeId : DEFAULT_THEME_ID;
+}
+
+function entryTheme(entry: Record<string, unknown>) {
+  const themeId = entryThemeId(entry);
+  return themeStore.loadedThemes[themeId] ?? themeStore.defaultTheme;
+}
+
+function entryWorldLabel(entry: Record<string, unknown>): string {
+  const themeId = entryThemeId(entry);
+  return themeStore.availableThemes.find((theme) => theme.id === themeId)?.label ?? entryTheme(entry)?.label ?? themeId;
 }
 
 function getMapInfo(entry: Record<string, unknown>): MapInfo | null {
+  const theme = entryTheme(entry);
+  const world = entryWorldLabel(entry);
   const mapIndex = entry.mapIndex as number;
   if (mapIndex === CUSTOM_PROGRESSIVE_MAP_INDEX && entry.progressiveMapParams) {
     const params = entry.progressiveMapParams as ProgressiveConfig;
     return {
-      name: progressiveMapDisplayName(params.regionId, params.entryCount, themeStore.defaultTheme),
+      name: progressiveMapDisplayName(params.regionId, params.entryCount, theme),
       region: regionNames.value[params.regionId] ?? "",
       style: "progressive",
+      world,
     };
   }
   if (mapIndex < 0) return null;
-  const map = resolveGeneratedMap(mapIndex);
+  const map = resolveGeneratedMap(mapIndex, theme?.maps);
   return {
-    name: getMapDisplayName(map, themeStore.defaultTheme),
+    name: getMapDisplayName(map, theme),
     region: regionNames.value[map.regionId] ?? "",
     style: map.style,
+    world,
   };
 }
 
-function replayRun(entry: Record<string, unknown>) {
+async function replayRun(entry: Record<string, unknown>) {
   gameStore.resetToMenu();
+
+  // Runs remember the world they took place in (save v5); pre-v5 entries fall
+  // back to the default world. Resolve that theme before generating the map so
+  // both sides of the worker boundary use the same catalog, and switch the
+  // selected world so the replay's visuals match the original run.
+  const themeId = typeof entry.themeId === "string" ? entry.themeId : DEFAULT_THEME_ID;
+  persistStore.lastSelectedThemeId = themeId;
+  persistStore.save();
+  const theme = await themeStore.loadActive(themeId).catch(() => themeStore.defaultTheme);
+
   if (entry.mapIndex === CUSTOM_RANDOM_MAP_INDEX && entry.randomMapParams) {
     const p = entry.randomMapParams as {
       width: number;
@@ -89,7 +119,7 @@ function replayRun(entry: Record<string, unknown>) {
       regionId: number;
       seed: number;
     };
-    const mapData = generateRandomMap(p.width, p.height, p.style, p.regionId, p.level, p.seed);
+    const mapData = generateRandomMap(p.width, p.height, p.style, p.regionId, p.level, p.seed, theme?.maps);
     gameStore.mapIndex = CUSTOM_RANDOM_MAP_INDEX;
     gameStore.map = mapData;
     gameStore.randomMapParams = p;
@@ -98,7 +128,7 @@ function replayRun(entry: Record<string, unknown>) {
     gameStore.mapIndex = CUSTOM_PROGRESSIVE_MAP_INDEX;
     gameStore.map = generateProgressiveMap(p);
   } else {
-    const mapData = resolveGeneratedMap(entry.mapIndex as number);
+    const mapData = resolveGeneratedMap(entry.mapIndex as number, theme?.maps);
     gameStore.mapIndex = entry.mapIndex as number;
     gameStore.map = mapData;
   }
@@ -128,7 +158,7 @@ function replayRun(entry: Record<string, unknown>) {
             <button class="play-btn" @click="replayRun(entry)">Play Again</button>
           </div>
           <div class="card-meta">
-            <span class="card-region">{{ getMapInfo(entry)?.region || '' }}</span>
+            <span class="card-region">{{ getMapInfo(entry)?.world || '' }} • {{ getMapInfo(entry)?.region || '' }}</span>
             <span class="card-date">{{ formatDate(entry.date) }}</span>
           </div>
         </div>

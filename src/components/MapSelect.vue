@@ -41,6 +41,15 @@ const regionNames = computed(() => {
   return names;
 });
 
+// The active world's effective maps catalog (theme override merged over the
+// default content). Absent when the theme carries no override — the generators
+// then fall back to the default catalog.
+const resolvedMaps = computed(() => (themeStore.activeTheme ?? themeStore.defaultTheme)?.maps);
+
+// Map progress is per-world; follow the selected world from the header dropdown,
+// which startMap also resolves before launching a run.
+const selectedThemeProgress = computed(() => persistStore.getThemeProgress(persistStore.lastSelectedThemeId));
+
 watch(
   () => persistStore.lastSelectedThemeId,
   (id) => {
@@ -91,12 +100,15 @@ interface MapEntry {
   bestWave: number;
 }
 
-// Computed map entries: reactive to highestUnlockedMap and bestWaves changes
+// Computed map entries: reactive to the selected world's progress bucket and
+// the active theme's maps catalog.
 const mapEntries = computed<Record<number, MapEntry>>(() => {
   const entries: Record<number, MapEntry> = {};
   const theme = themeStore.activeTheme ?? themeStore.defaultTheme;
+  const maps = resolvedMaps.value;
+  const progress = selectedThemeProgress.value;
   for (let i = 0; i < 36; i++) {
-    const map = getMap(i);
+    const map = getMap(i, maps);
     entries[i] = {
       name: getMapDisplayName(map, theme),
       region: regionNames.value[map.regionId],
@@ -104,16 +116,16 @@ const mapEntries = computed<Record<number, MapEntry>>(() => {
       gemReward: MAP_GEM_MULTIPLIERS[i],
       width: map.width,
       height: map.height,
-      locked: i > persistStore.highestUnlockedMap,
-      bestWave: typeof persistStore.bestWaves[`best_${i}`] === "number" ? persistStore.bestWaves[`best_${i}`] : 0,
+      locked: i > progress.highestUnlockedMap,
+      bestWave: typeof progress.bestWaves[`best_${i}`] === "number" ? progress.bestWaves[`best_${i}`] : 0,
     };
   }
   for (let regionId = 0; regionId < 3; regionId++) {
     for (let variantIndex = 0; variantIndex < 4; variantIndex++) {
       const index = progressiveMapIndex(regionId, variantIndex);
-      const config = progressiveConfigForIndex(index);
+      const config = progressiveConfigForIndex(index, maps);
       if (!config) continue;
-      const map = resolveGeneratedMap(index);
+      const map = resolveGeneratedMap(index, maps);
       const bestKey = `best_${index}`;
       entries[index] = {
         name: getMapDisplayName(map, theme),
@@ -122,8 +134,8 @@ const mapEntries = computed<Record<number, MapEntry>>(() => {
         gemReward: gemMultiplierForRegionLevel(map.regionId, map.level),
         width: map.width,
         height: map.height,
-        locked: persistStore.highestUnlockedMap < progressiveUnlockMapIndex(config),
-        bestWave: typeof persistStore.bestWaves[bestKey] === "number" ? persistStore.bestWaves[bestKey] : 0,
+        locked: progress.highestUnlockedMap < progressiveUnlockMapIndex(config),
+        bestWave: typeof progress.bestWaves[bestKey] === "number" ? progress.bestWaves[bestKey] : 0,
       };
     }
   }
@@ -136,7 +148,7 @@ function getFullEntry(index: number) {
 
 function regionIdForMapIndex(mapIndex: number): number | null {
   if (mapIndex < PROGRESSIVE_MAP_INDEX_BASE) return Math.floor(mapIndex / MAPS_PER_REGION);
-  return progressiveConfigForIndex(mapIndex)?.regionId ?? null;
+  return progressiveConfigForIndex(mapIndex, resolvedMaps.value)?.regionId ?? null;
 }
 
 function firstMapIndexForRegion(regionId: number): number {
@@ -144,7 +156,7 @@ function firstMapIndexForRegion(regionId: number): number {
 }
 
 function defaultRegionTab(): number {
-  return Math.min(Math.floor(persistStore.highestUnlockedMap / MAPS_PER_REGION), 2);
+  return Math.min(Math.floor(selectedThemeProgress.value.highestUnlockedMap / MAPS_PER_REGION), 2);
 }
 
 function savedMapIndexIsValid(mapIndex: number | null): mapIndex is number {
@@ -183,7 +195,7 @@ const activeRegionMapImage = computed(() => {
 function progressiveMapIndexForLevel(regionId: number, level: number): number | null {
   for (let variantIndex = 0; variantIndex < 4; variantIndex++) {
     const mapIndex = progressiveMapIndex(regionId, variantIndex);
-    const config = progressiveConfigForIndex(mapIndex);
+    const config = progressiveConfigForIndex(mapIndex, resolvedMaps.value);
     if (config && config.level === level) return mapIndex;
   }
   return null;
@@ -207,7 +219,7 @@ const activeRegionNodes = computed<RegionMapNodeView[]>(() => {
     if (!entry) continue;
     let label = `${node.level}`;
     if (node.kind === "progressive") {
-      const config = progressiveConfigForIndex(mapIndex);
+      const config = progressiveConfigForIndex(mapIndex, resolvedMaps.value);
       label = config ? `P${config.entryCount}` : "P";
     }
     nodeViews.push({
@@ -246,22 +258,29 @@ function playSelected() {
   startNode(selectedMapIndex.value);
 }
 
-async function startMap(index: number) {
-  persistStore.clearActiveWave(index);
-
-  // Ensure theme is resolved before navigating to /game
+// Ensure theme is resolved before generating or launching a map: the worker
+// re-resolves from its own copy of the same theme bundle, so both sides must
+// use the active world's catalog to stay tile-for-tile identical.
+async function ensureThemeResolved() {
   const themeId = persistStore.lastSelectedThemeId;
   if (themeStore.activeTheme && themeStore.activeTheme.id === themeId) {
-    // Theme already loaded and matches selected id
-  } else if (themeStore.defaultTheme && themeId === themeStore.defaultTheme.id) {
+    return;
+  }
+  if (themeStore.defaultTheme && themeId === themeStore.defaultTheme.id) {
     // Use preloaded default theme
     themeStore.activeTheme = themeStore.defaultTheme;
-  } else {
-    await themeStore.loadActive(themeId).catch((err) => console.error("Failed to load theme:", err));
+    return;
   }
+  await themeStore.loadActive(themeId).catch((err) => console.error("Failed to load theme:", err));
+}
 
-  // Load map data into the store so SvgGameRoot can pick it up
-  const mapData = resolveGeneratedMap(index);
+async function startMap(index: number) {
+  persistStore.clearActiveWave(persistStore.lastSelectedThemeId, index);
+
+  await ensureThemeResolved();
+
+  // Load map data into the store so SvgGameRoot can pick it up.
+  const mapData = resolveGeneratedMap(index, resolvedMaps.value);
   gameStore.initMap(index, mapData, null);
 
   router.push("/game");
@@ -338,7 +357,7 @@ const DIMENSION_OPTIONS = [15, 20, 25, 30, 35, 40, 45, 50] as const;
 const STYLE_OPTIONS: MapStyle[] = ["open", "canyon", "serpentine", "split", "bastion", "battlefield"];
 const ENTRY_COUNT_OPTIONS = [1, 2, 3, 4] as const;
 
-function startRandomMap() {
+async function startRandomMap() {
   const regionId = randomRegion.value - 1;
   const level = Number(randomLevel.value);
   const style = randomStyle.value;
@@ -363,7 +382,12 @@ function startRandomMap() {
     return;
   }
 
-  const mapData = generateRandomMap(width, height, style, regionId, level, seed);
+  await ensureThemeResolved();
+
+  // The worker regenerates this map in loadRandomMap with the active world's
+  // noise scalars; generating here with the same catalog keeps both grids
+  // identical.
+  const mapData = generateRandomMap(width, height, style, regionId, level, seed, resolvedMaps.value);
   const params = { regionId, level, style, seed, width, height };
 
   gameStore.initMap(CUSTOM_RANDOM_MAP_INDEX, mapData, null);

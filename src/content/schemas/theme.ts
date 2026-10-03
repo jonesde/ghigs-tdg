@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ThemeMapsOverrideSchema } from "./maps.js";
 
 const AnimationFrameSchema = z.object({ image: z.string() });
 
@@ -104,6 +105,7 @@ export const RawMapThemeSchema = z.object({
   enemies: z.record(z.string(), EnemyVisualSchema),
   regions: z.array(RegionVisualSchema),
   spawns: SpawnPointVisualSchema.optional(),
+  maps: ThemeMapsOverrideSchema.optional(),
 });
 
 export type RawMapTheme = z.infer<typeof RawMapThemeSchema>;

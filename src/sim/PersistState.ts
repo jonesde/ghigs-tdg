@@ -1,5 +1,5 @@
 import { TOTAL_MAPS } from "@/sim/Constants.js";
-import type { GeneralAddons, TowerUnlocks } from "@/stores/persist.js";
+import type { GeneralAddons, ThemeProgress, TowerUnlocks } from "@/stores/persist.js";
 
 // Authoritative persist state — ALL fields enumerated explicitly. The
 // randomMap* / progressiveMap* / lastSelected* fields aren't written by
@@ -8,12 +8,9 @@ import type { GeneralAddons, TowerUnlocks } from "@/stores/persist.js";
 export interface PersistState {
   saveVersion: number;
   gems: number;
-  highestUnlockedMap: number;
-  bestWaves: Record<string, number>;
+  themeProgress: Record<string, ThemeProgress>;
   activeWaves: Record<string, number>;
   difficulty: { multiplierTick: number };
-  firstTimeMilestones: Record<string, boolean>;
-  firstClears: Record<string, boolean>;
   generalAddons: GeneralAddons;
   unlocked: Record<string, TowerUnlocks>;
   runHistory: unknown[];
@@ -31,7 +28,7 @@ export interface PersistState {
   lastSelectedMapIndex: number | null;
 }
 
-const CURRENT_SAVE_VERSION = 2;
+const CURRENT_SAVE_VERSION = 5;
 
 function blankTower(): TowerUnlocks {
   return {
@@ -75,12 +72,9 @@ export function createDefaultPersistState(): PersistState {
   return {
     saveVersion: CURRENT_SAVE_VERSION,
     gems: 0,
-    highestUnlockedMap: 0,
-    bestWaves: {},
+    themeProgress: {},
     activeWaves: {},
     difficulty: { multiplierTick: 0 },
-    firstTimeMilestones: {},
-    firstClears: {},
     generalAddons: defaultGeneralAddons(),
     unlocked: defaultUnlocked(),
     runHistory: [],
@@ -100,42 +94,72 @@ export function createDefaultPersistState(): PersistState {
 }
 
 // Pure functions extracted from persist.ts actions. These mutate the plain
-// state and return a boolean indicating whether a save is needed.
+// state and return a boolean indicating whether a save is needed. Map progress
+// is keyed per world (theme id); ensureThemeProgress creates the bucket on
+// first write so callers never need to null-check.
 
-export function updateBestWave(state: PersistState, mapIndex: number, wave: number): boolean {
+export function ensureThemeProgress(state: PersistState, themeId: string): ThemeProgress {
+  let progress = state.themeProgress[themeId];
+  if (!progress) {
+    progress = { highestUnlockedMap: 0, bestWaves: {}, firstTimeMilestones: {}, firstClears: {} };
+    state.themeProgress[themeId] = progress;
+  }
+  return progress;
+}
+
+// Deep-clones the per-world progress buckets so a structured-clone (postMessage)
+// or host assignment is independent of later engine mutation.
+export function cloneThemeProgress(state: PersistState): Record<string, ThemeProgress> {
+  const cloned: Record<string, ThemeProgress> = {};
+  for (const [themeId, progress] of Object.entries(state.themeProgress)) {
+    cloned[themeId] = {
+      highestUnlockedMap: progress.highestUnlockedMap,
+      bestWaves: { ...progress.bestWaves },
+      firstTimeMilestones: { ...progress.firstTimeMilestones },
+      firstClears: { ...progress.firstClears },
+    };
+  }
+  return cloned;
+}
+
+export function updateBestWave(state: PersistState, themeId: string, mapIndex: number, wave: number): boolean {
+  const progress = ensureThemeProgress(state, themeId);
   const key = `best_${mapIndex}`;
-  const prev = typeof state.bestWaves[key] === "number" ? state.bestWaves[key] : 0;
+  const prev = typeof progress.bestWaves[key] === "number" ? progress.bestWaves[key] : 0;
   if (wave > prev) {
-    state.bestWaves[key] = wave;
+    progress.bestWaves[key] = wave;
     return true;
   }
   return false;
 }
 
-export function maybeUnlockNextMap(state: PersistState, mapIndex: number): boolean {
+export function maybeUnlockNextMap(state: PersistState, themeId: string, mapIndex: number): boolean {
   if (mapIndex >= 0 && mapIndex + 1 < TOTAL_MAPS) {
-    state.highestUnlockedMap = Math.max(state.highestUnlockedMap, mapIndex + 1);
+    const progress = ensureThemeProgress(state, themeId);
+    progress.highestUnlockedMap = Math.max(progress.highestUnlockedMap, mapIndex + 1);
     return true;
   }
   return false;
 }
 
-export function markFirstTimeMilestone(state: PersistState, mapIndex: number, wave: number): boolean {
-  state.firstTimeMilestones[`${mapIndex}_${wave}`] = true;
+export function markFirstTimeMilestone(state: PersistState, themeId: string, mapIndex: number, wave: number): boolean {
+  const progress = ensureThemeProgress(state, themeId);
+  progress.firstTimeMilestones[`${mapIndex}_${wave}`] = true;
   return true;
 }
 
-export function hasClaimedMilestone(state: PersistState, mapIndex: number, wave: number): boolean {
-  return !!state.firstTimeMilestones[`${mapIndex}_${wave}`];
+export function hasClaimedMilestone(state: PersistState, themeId: string, mapIndex: number, wave: number): boolean {
+  return !!state.themeProgress[themeId]?.firstTimeMilestones[`${mapIndex}_${wave}`];
 }
 
-export function markFirstClear(state: PersistState, mapIndex: number): boolean {
-  state.firstClears[String(mapIndex)] = true;
+export function markFirstClear(state: PersistState, themeId: string, mapIndex: number): boolean {
+  const progress = ensureThemeProgress(state, themeId);
+  progress.firstClears[String(mapIndex)] = true;
   return true;
 }
 
-export function hasCleared(state: PersistState, mapIndex: number): boolean {
-  return !!state.firstClears[String(mapIndex)];
+export function hasCleared(state: PersistState, themeId: string, mapIndex: number): boolean {
+  return !!state.themeProgress[themeId]?.firstClears[String(mapIndex)];
 }
 
 export function addRunToHistory(state: PersistState, entry: unknown): boolean {
@@ -159,8 +183,8 @@ export function stampRunHistoryDate(entry: unknown, nowMillis: number): void {
   }
 }
 
-export function clearActiveWave(state: PersistState, mapIndex: number): boolean {
-  delete state.activeWaves[String(mapIndex)];
+export function clearActiveWave(state: PersistState, themeId: string, mapIndex: number): boolean {
+  delete state.activeWaves[`${themeId}:${mapIndex}`];
   return true;
 }
 

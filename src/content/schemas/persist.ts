@@ -15,6 +15,14 @@ const TowerUnlocksSchema = z.object({
   addons: z.array(z.boolean()),
 });
 
+// Per-world map progress (save v5). Keyed by theme id under PersistStateSchema.themeProgress.
+const ThemeProgressSchema = z.object({
+  highestUnlockedMap: z.number(),
+  bestWaves: z.record(z.string(), z.number()),
+  firstTimeMilestones: z.record(z.string(), z.boolean()),
+  firstClears: z.record(z.string(), z.boolean()),
+});
+
 const GeneralAddonsSchema = z
   .object({
     extraHealth: z.number().nullable(),
@@ -51,12 +59,9 @@ const LlmCommanderConfigSchema = z.object({
 export const PersistStateSchema = z.object({
   saveVersion: z.number(),
   gems: z.number(),
-  highestUnlockedMap: z.number(),
-  bestWaves: z.record(z.string(), z.number()),
+  themeProgress: z.record(z.string(), ThemeProgressSchema),
   activeWaves: z.record(z.string(), z.number()),
   difficulty: z.object({ multiplierTick: z.number() }),
-  firstTimeMilestones: z.record(z.string(), z.boolean()),
-  firstClears: z.record(z.string(), z.boolean()),
   generalAddons: GeneralAddonsSchema,
   unlocked: z.record(z.string(), TowerUnlocksSchema),
   runHistory: z.array(z.unknown()),

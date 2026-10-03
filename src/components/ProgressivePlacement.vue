@@ -10,9 +10,11 @@ import {
   progressiveConfigFromMap,
 } from "@/sim/grid/ProgressiveMap.js";
 import { useGameStore } from "@/stores/game.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { progressivePreviewFill } from "./progressivePreview.js";
 
 const gameStore = useGameStore();
+const themeStore = useMapThemeStore();
 
 const catalog = computed(() => {
   const config = progressiveConfigFromMap(gameStore.map);
@@ -20,7 +22,12 @@ const catalog = computed(() => {
   return generateProgressiveCatalog(config.seed);
 });
 
-const rerollCost = computed(() => PROGRESSIVE_REROLL_GOLD_PER_WAVE * gameStore.currentWave);
+// Must match the engine's rerollProgressiveOffer, which reads the active
+// world's per-wave cost (theme override or default constant).
+const rerollCost = computed(() => {
+  const perWave = themeStore.activeTheme?.maps?.progressive.rerollGoldPerWave ?? PROGRESSIVE_REROLL_GOLD_PER_WAVE;
+  return perWave * gameStore.currentWave;
+});
 const rerollDisabled = computed(() => gameStore.gold < rerollCost.value);
 
 function onOfferClick(index: number) {

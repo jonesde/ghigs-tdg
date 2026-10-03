@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import { DIFFICULTY_MULT_GEM_BASE, DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
+import { DIFFICULTY_MULT_GEM_BASE, DIFFICULTY_MULT_TICK, MAPS_PER_REGION } from "@/sim/Constants.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -33,6 +33,14 @@ function selectTheme(themeId: string) {
   persistStore.lastSelectedThemeId = themeId;
   persistStore.save();
   themeStore.loadActive(themeId).catch((err) => console.error("Failed to load theme:", err));
+}
+
+// Farthest unlocked campaign map in a world's progress bucket, shown as
+// "Region N · Map M" on the theme card.
+function worldProgressLabel(themeId: string): string {
+  const progress = persistStore.getThemeProgress(themeId);
+  const index = Math.min(Math.max(progress.highestUnlockedMap, 0), MAPS_PER_REGION * 3 - 1);
+  return `Region ${Math.floor(index / MAPS_PER_REGION) + 1} · Map ${(index % MAPS_PER_REGION) + 1}`;
 }
 
 function newGame() {
@@ -95,7 +103,10 @@ function openSkillTree() {
           @click="selectTheme(theme.id)"
         >
           <span class="theme-card-bg" v-html="themeStore.loadedThemes[theme.id]?.menuBackground"></span>
-          <span class="theme-card-label">{{ theme.label }}</span>
+          <span class="theme-card-text">
+            <span class="theme-card-label">{{ theme.label }}</span>
+            <span class="theme-card-progress">{{ worldProgressLabel(theme.id) }}</span>
+          </span>
         </button>
       </div>
     </div>
@@ -193,10 +204,20 @@ function openSkillTree() {
   opacity: 0.75;
 }
 
-.theme-card-label {
+.theme-card-text {
   position: relative;
   z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+}
+
+.theme-card-progress {
+  font-size: var(--font-sm);
+  font-weight: normal;
+  color: var(--color-text-dim);
 }
 
 .theme-card.selected {

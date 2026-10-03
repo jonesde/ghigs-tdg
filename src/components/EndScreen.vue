@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
+import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
 import { CUSTOM_PROGRESSIVE_MAP_INDEX, CUSTOM_RANDOM_MAP_INDEX } from "@/sim/Constants.js";
 import { generateRandomMap } from "@/sim/grid/Map.js";
 import { generateProgressiveMap, type ProgressiveConfig, resolveGeneratedMap } from "@/sim/grid/ProgressiveMap.js";
 import { useGameStore } from "@/stores/game.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 
 const props = defineProps({ won: { type: Boolean, default: false } });
@@ -12,6 +14,7 @@ const props = defineProps({ won: { type: Boolean, default: false } });
 const router = useRouter();
 const gameStore = useGameStore();
 const persistStore = usePersistStore();
+const themeStore = useMapThemeStore();
 
 const title = computed(() => (props.won ? "VICTORY" : "GAME OVER"));
 const titleColor = computed(() => (props.won ? "var(--color-success)" : "var(--color-danger)"));
@@ -27,15 +30,25 @@ function navigate(to: string) {
   router.push(to);
 }
 
-function replay() {
-  const latest = persistStore.getLatestRun;
+async function replay() {
+  const latest = persistStore.getLatestRun as Record<string, unknown> | null;
   if (!latest) {
     navigate("/map-select");
     return;
   }
   gameStore.resetToMenu();
-  if (latest.mapIndex === CUSTOM_RANDOM_MAP_INDEX && (latest as Record<string, unknown>).randomMapParams) {
-    const p = (latest as Record<string, unknown>).randomMapParams as {
+
+  // Runs remember the world they took place in (save v5); pre-v5 entries fall
+  // back to the default world. Resolve that theme before generating the map so
+  // both sides of the worker boundary use the same catalog, and switch the
+  // selected world so the replay's visuals match the original run.
+  const themeId = typeof latest.themeId === "string" ? latest.themeId : DEFAULT_THEME_ID;
+  persistStore.lastSelectedThemeId = themeId;
+  persistStore.save();
+  const theme = await themeStore.loadActive(themeId).catch(() => themeStore.defaultTheme);
+
+  if (latest.mapIndex === CUSTOM_RANDOM_MAP_INDEX && latest.randomMapParams) {
+    const p = latest.randomMapParams as {
       width: number;
       height: number;
       level: number;
@@ -43,20 +56,17 @@ function replay() {
       regionId: number;
       seed: number;
     };
-    const mapData = generateRandomMap(p.width, p.height, p.style, p.regionId, p.level, p.seed);
+    const mapData = generateRandomMap(p.width, p.height, p.style, p.regionId, p.level, p.seed, theme?.maps);
     gameStore.mapIndex = CUSTOM_RANDOM_MAP_INDEX;
     gameStore.map = mapData;
     gameStore.randomMapParams = p;
-  } else if (
-    latest.mapIndex === CUSTOM_PROGRESSIVE_MAP_INDEX &&
-    (latest as Record<string, unknown>).progressiveMapParams
-  ) {
-    const p = (latest as Record<string, unknown>).progressiveMapParams as ProgressiveConfig;
+  } else if (latest.mapIndex === CUSTOM_PROGRESSIVE_MAP_INDEX && latest.progressiveMapParams) {
+    const p = latest.progressiveMapParams as ProgressiveConfig;
     gameStore.mapIndex = CUSTOM_PROGRESSIVE_MAP_INDEX;
     gameStore.map = generateProgressiveMap(p);
   } else {
-    const mapData = resolveGeneratedMap(latest.mapIndex);
-    gameStore.mapIndex = latest.mapIndex;
+    const mapData = resolveGeneratedMap(latest.mapIndex as number, theme?.maps);
+    gameStore.mapIndex = latest.mapIndex as number;
     gameStore.map = mapData;
   }
   router.push("/game");

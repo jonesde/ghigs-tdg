@@ -43,11 +43,10 @@ export class MainThreadHostBindings implements HostBindings {
     // Field-by-field assignment to preserve Pinia reactivity on each field.
     // Object.assign on $state can break reactivity in some Pinia versions.
     persistStore.gems = state.gems;
-    persistStore.highestUnlockedMap = state.highestUnlockedMap;
-    persistStore.bestWaves = { ...state.bestWaves };
+    // buildPersistSlice already deep-cloned every bucket, so the whole record
+    // can be replaced without aliasing the worker's live state.
+    persistStore.themeProgress = state.themeProgress;
     persistStore.activeWaves = { ...state.activeWaves };
-    persistStore.firstTimeMilestones = { ...state.firstTimeMilestones };
-    persistStore.firstClears = { ...state.firstClears };
     // Host-side wall-clock stamp: the worker stores WORKER_RUN_DATE_SENTINEL so
     // replays stay deterministic; the real date is applied here on receipt.
     for (const entry of state.runHistory) {

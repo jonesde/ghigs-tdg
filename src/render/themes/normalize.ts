@@ -1,3 +1,5 @@
+import type { MapsContent, ThemeMapsOverride } from "@/content/schemas/maps.js";
+import { resolveThemeMaps } from "@/content/themeMaps.js";
 import type {
   EnemyVisualMeta,
   MapThemeAnimation,
@@ -150,6 +152,7 @@ export async function normalizeThemeImages(raw: {
     mapLayout: RegionMapLayout;
   }>;
   spawns?: { closed: string; open: string; transition: string };
+  maps?: ThemeMapsOverride;
 }): Promise<MapThemeData> {
   const normalizedTowers: Record<string, TowerVisualMeta> = {};
   for (const [key, tower] of Object.entries(raw.towers)) {
@@ -175,6 +178,7 @@ export async function normalizeThemeImages(raw: {
     enemies: Record<string, EnemyVisualMeta>;
     regions: RegionVisualMeta[];
     spawns?: SpawnPointVisualMeta;
+    maps?: MapsContent;
   } = {
     id: raw.id,
     label: raw.label,
@@ -187,6 +191,9 @@ export async function normalizeThemeImages(raw: {
   }
   if (menuBackground) {
     result.menuBackground = menuBackground;
+  }
+  if (raw.maps) {
+    result.maps = resolveThemeMaps(raw.maps);
   }
   return result;
 }

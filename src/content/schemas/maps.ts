@@ -36,7 +36,14 @@ export const MapsContentSchema = z.object({
   }),
 });
 
+// A theme's optional `maps` entry: a one-level-deep override of the default
+// maps content. Each top-level field is optional; when present it replaces the
+// default field wholesale (so a partial `progressive` object is rejected — the
+// nested schema keeps every progressive field required).
+export const ThemeMapsOverrideSchema = MapsContentSchema.partial();
+
 export type MapsContent = z.infer<typeof MapsContentSchema>;
 export type MapLevelConfigData = z.infer<typeof MapLevelConfigSchema>;
 export type MapStyleData = z.infer<typeof MapStyleSchema>;
 export type ProgressiveVariantData = z.infer<typeof ProgressiveVariantSchema>;
+export type ThemeMapsOverride = z.infer<typeof ThemeMapsOverrideSchema>;

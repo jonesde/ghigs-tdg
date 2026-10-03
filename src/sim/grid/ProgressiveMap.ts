@@ -3,12 +3,13 @@
 // of it is negative. GeneratedMap normalizes those into a 0-based array plus
 // originTileX/originTileY so world positions stay put when the rectangle grows.
 
+import type { MapsContent } from "@/content/schemas/maps.js";
 import {
   MAP_GEM_MULTIPLIERS,
+  MAPS_CONTENT,
   MAPS_PER_REGION,
   PROGRESSIVE_MAP_COUNT,
   PROGRESSIVE_MAP_INDEX_BASE,
-  PROGRESSIVE_VARIANTS,
 } from "@/sim/Constants.js";
 import { BOSS_CADENCE } from "@/sim/ConstantsEnemy.js";
 import { type GeneratedMap, getMap, type MapSpawnPoint, mulberry32 } from "@/sim/grid/Map.js";
@@ -128,9 +129,12 @@ export function progressiveMapIndex(regionId: number, variantIndex: number): num
   return PROGRESSIVE_MAP_INDEX_BASE + regionId * 4 + variantIndex;
 }
 
-export function progressiveConfigForIndex(mapIndex: number): ProgressiveConfig | null {
+export function progressiveConfigForIndex(
+  mapIndex: number,
+  maps: MapsContent = MAPS_CONTENT,
+): ProgressiveConfig | null {
   if (!isProgressiveMapIndex(mapIndex)) return null;
-  const variant = PROGRESSIVE_VARIANTS[mapIndex - PROGRESSIVE_MAP_INDEX_BASE];
+  const variant = maps.progressive.variants[mapIndex - PROGRESSIVE_MAP_INDEX_BASE];
   if (!variant) return null;
   return { regionId: variant.regionId, level: variant.level, entryCount: variant.entryCount, seed: variant.seed };
 }
@@ -1038,19 +1042,24 @@ export function generateProgressiveMap(config: ProgressiveConfig, stamps: Progre
   return boardToGeneratedMap(config, replayed.board, replayed.catalog);
 }
 
-export function generateProgressiveMapByIndex(mapIndex: number, stamps: ProgressiveStamp[] = []): GeneratedMap | null {
-  const config = progressiveConfigForIndex(mapIndex);
+export function generateProgressiveMapByIndex(
+  mapIndex: number,
+  stamps: ProgressiveStamp[] = [],
+  maps: MapsContent = MAPS_CONTENT,
+): GeneratedMap | null {
+  const config = progressiveConfigForIndex(mapIndex, maps);
   if (!config) return null;
   return generateProgressiveMap(config, stamps);
 }
 
 // Normal indices stay on the cached generator. Progressive indices rebuild the
-// seeded start (placements are applied by the caller, not here).
-export function resolveGeneratedMap(mapIndex: number): GeneratedMap {
+// seeded start (placements are applied by the caller, not here). The maps
+// catalog selects which world's level configs / progressive variants resolve.
+export function resolveGeneratedMap(mapIndex: number, maps: MapsContent = MAPS_CONTENT): GeneratedMap {
   if (isProgressiveMapIndex(mapIndex)) {
-    const map = generateProgressiveMapByIndex(mapIndex);
+    const map = generateProgressiveMapByIndex(mapIndex, [], maps);
     if (!map) throw new Error(`Progressive map ${mapIndex} is not configured`);
     return map;
   }
-  return getMap(mapIndex);
+  return getMap(mapIndex, maps);
 }

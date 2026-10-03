@@ -35,11 +35,11 @@ export interface ConfirmPayload {
 // main-thread-owned (mutated only by the skill tree via persistStore). The
 // worker runs off a snapshot taken at init and would otherwise clobber
 // mid-run unlocks/addon changes when it flushes its (stale) copy back. They
-// reach the worker via action:syncPersist instead.
-export type PersistStateSlice = Pick<
-  PersistState,
-  "gems" | "highestUnlockedMap" | "bestWaves" | "activeWaves" | "firstTimeMilestones" | "firstClears" | "runHistory"
->;
+// reach the worker via action:syncPersist instead. `themeProgress` is the
+// per-world map progress (save v5); the worker only writes the bucket for its
+// own run's theme, and buildPersistSlice deep-clones every bucket so the host
+// can replace the whole record without aliasing live engine state.
+export type PersistStateSlice = Pick<PersistState, "gems" | "themeProgress" | "activeWaves" | "runHistory">;
 
 // Narrow interface for TowerManager/Tower — they only need playSound, not the full HostBindings.
 export interface SoundPlayer {

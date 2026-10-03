@@ -8,7 +8,7 @@ import { type GameContent, GameContentSchema } from "./schemas/gameContent.js";
 // Recursively freezes every object/array reachable from the parsed content.
 // A shallow Object.freeze left nested balance tables mutable at runtime, so a
 // stray writer could silently corrupt the shared content singleton.
-function deepFreeze<T>(value: T): T {
+export function deepFreeze<T>(value: T): T {
   if (value === null || typeof value !== "object") return value;
   if (Object.isFrozen(value)) return value;
   Object.freeze(value);

@@ -10,17 +10,28 @@ import {
   normalizeTemperature,
 } from "@/commanders/llm/types.js";
 import { PersistStateSchema } from "@/content/schemas/persist.js";
+import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
 import { useUiStore } from "@/stores/ui.js";
 
 const OLD_STORAGE_KEY = "gempath_save_v1";
 export const STORAGE_KEY = "lol_ya_tdg_save_1";
-const CURRENT_SAVE_VERSION = 4;
+const CURRENT_SAVE_VERSION = 5;
 
 export interface TowerUnlocks {
   levels: boolean[];
   variantA: boolean[];
   variantB: boolean[];
   addons: boolean[];
+}
+
+// Map-keyed progress for one world (theme). Save v5 moved these out of the
+// top level so each theme keeps its own campaign state; gems, difficulty, and
+// skill-tree unlocks stay shared across worlds.
+export interface ThemeProgress {
+  highestUnlockedMap: number;
+  bestWaves: Record<string, number>;
+  firstTimeMilestones: Record<string, boolean>;
+  firstClears: Record<string, boolean>;
 }
 
 export interface GeneralAddons {
@@ -41,12 +52,9 @@ export interface GeneralAddons {
 interface PersistStateShape {
   saveVersion: number;
   gems: number;
-  highestUnlockedMap: number;
-  bestWaves: Record<string, number>;
+  themeProgress: Record<string, ThemeProgress>;
   activeWaves: Record<string, number>;
   difficulty: { multiplierTick: number };
-  firstTimeMilestones: Record<string, boolean>;
-  firstClears: Record<string, boolean>;
   generalAddons: GeneralAddons;
   unlocked: Record<string, TowerUnlocks>;
   runHistory: unknown[];
@@ -117,16 +125,17 @@ function defaultGeneralAddons(): GeneralAddons {
   };
 }
 
+function blankThemeProgress(): ThemeProgress {
+  return { highestUnlockedMap: 0, bestWaves: {}, firstTimeMilestones: {}, firstClears: {} };
+}
+
 function defaultState(): PersistStateShape {
   return {
     saveVersion: CURRENT_SAVE_VERSION,
     gems: 0,
-    highestUnlockedMap: 0,
-    bestWaves: {},
+    themeProgress: {},
     activeWaves: {},
     difficulty: { multiplierTick: 0 },
-    firstTimeMilestones: {},
-    firstClears: {},
     generalAddons: defaultGeneralAddons(),
     unlocked: defaultUnlocked(),
     runHistory: [],
@@ -198,14 +207,62 @@ function fillCommanderTimeouts(commanders: unknown): LlmCommanderConfig[] {
   return filled;
 }
 
+// Save v4 and earlier kept map progress at the top level. Pre-world saves are
+// visual-theme-only, so that progress belongs to the default world's bucket.
+function legacyThemeProgress(parsed: Record<string, unknown>): ThemeProgress {
+  const asRecord = (value: unknown): Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  return {
+    highestUnlockedMap: typeof parsed.highestUnlockedMap === "number" ? parsed.highestUnlockedMap : 0,
+    bestWaves: asRecord(parsed.bestWaves) as Record<string, number>,
+    firstTimeMilestones: asRecord(parsed.firstTimeMilestones) as Record<string, boolean>,
+    firstClears: asRecord(parsed.firstClears) as Record<string, boolean>,
+  };
+}
+
+// Combines the legacy top-level progress (v4 and earlier) with any per-theme
+// buckets already present (v5). Saved buckets win over the legacy fallback so a
+// hand-edited save carrying both keeps its explicit theme data.
+function mergedThemeProgress(parsed: Record<string, unknown>): Record<string, ThemeProgress> {
+  const result: Record<string, ThemeProgress> = { [DEFAULT_THEME_ID]: legacyThemeProgress(parsed) };
+  const saved = parsed.themeProgress;
+  if (typeof saved === "object" && saved !== null && !Array.isArray(saved)) {
+    for (const [themeId, bucket] of Object.entries(saved as Record<string, unknown>)) {
+      if (typeof bucket !== "object" || bucket === null) continue;
+      result[themeId] = mergeWithDefaults(blankThemeProgress(), bucket);
+    }
+  }
+  return result;
+}
+
+// Bare numeric keys ("0", "-1") predate per-world resume state; they resolve to
+// the default world's bucket. Explicit "themeId:index" keys pass through.
+function migrateActiveWaves(saved: unknown): Record<string, number> {
+  const result: Record<string, number> = {};
+  if (typeof saved !== "object" || saved === null || Array.isArray(saved)) return result;
+  for (const [key, wave] of Object.entries(saved as Record<string, unknown>)) {
+    if (typeof wave !== "number") continue;
+    result[key.includes(":") ? key : `${DEFAULT_THEME_ID}:${key}`] = wave;
+  }
+  return result;
+}
+
+function stripLegacyProgressFields(shape: PersistStateShape): void {
+  const record = shape as unknown as Record<string, unknown>;
+  delete record.highestUnlockedMap;
+  delete record.bestWaves;
+  delete record.firstTimeMilestones;
+  delete record.firstClears;
+}
+
 function migrateV1ToV2(parsed: Record<string, unknown>): PersistStateShape {
   const defaults = defaultState();
   const result: PersistStateShape = { ...defaults, ...parsed, saveVersion: CURRENT_SAVE_VERSION };
   result.difficulty = mergeWithDefaults(defaults.difficulty, parsed.difficulty);
   result.generalAddons = mergeWithDefaults(defaults.generalAddons, parsed.generalAddons);
-  result.bestWaves = mergeWithDefaults(defaults.bestWaves, parsed.bestWaves);
-  result.firstTimeMilestones = mergeWithDefaults(defaults.firstTimeMilestones, parsed.firstTimeMilestones);
-  result.firstClears = mergeWithDefaults(defaults.firstClears, parsed.firstClears);
+  result.themeProgress = mergedThemeProgress(parsed);
+  result.activeWaves = migrateActiveWaves(parsed.activeWaves);
+  stripLegacyProgressFields(result);
   result.runHistory = Array.isArray(parsed.runHistory) ? parsed.runHistory : defaults.runHistory;
   result.unlocked = mergeWithDefaults(defaults.unlocked, parsed.unlocked) as Record<string, TowerUnlocks>;
   for (const towerId of Object.keys(defaults.unlocked)) {
@@ -222,9 +279,9 @@ function migrateCurrentVersion(parsed: Record<string, unknown>): PersistStateSha
   const result: PersistStateShape = { ...defaults, ...parsed };
   result.difficulty = mergeWithDefaults(defaults.difficulty, parsed.difficulty);
   result.generalAddons = mergeWithDefaults(defaults.generalAddons, parsed.generalAddons);
-  result.bestWaves = mergeWithDefaults(defaults.bestWaves, parsed.bestWaves);
-  result.firstTimeMilestones = mergeWithDefaults(defaults.firstTimeMilestones, parsed.firstTimeMilestones);
-  result.firstClears = mergeWithDefaults(defaults.firstClears, parsed.firstClears);
+  result.themeProgress = mergedThemeProgress(parsed);
+  result.activeWaves = migrateActiveWaves(parsed.activeWaves);
+  stripLegacyProgressFields(result);
   result.runHistory = Array.isArray(parsed.runHistory) ? parsed.runHistory : defaults.runHistory;
   result.unlocked = mergeWithDefaults(defaults.unlocked, parsed.unlocked) as Record<string, TowerUnlocks>;
   for (const towerId of Object.keys(defaults.unlocked)) {
@@ -241,9 +298,9 @@ function migrateV2ToV3(parsed: Record<string, unknown>): PersistStateShape {
   const result: PersistStateShape = { ...defaults, ...parsed };
   result.difficulty = mergeWithDefaults(defaults.difficulty, parsed.difficulty);
   result.generalAddons = mergeWithDefaults(defaults.generalAddons, parsed.generalAddons);
-  result.bestWaves = mergeWithDefaults(defaults.bestWaves, parsed.bestWaves);
-  result.firstTimeMilestones = mergeWithDefaults(defaults.firstTimeMilestones, parsed.firstTimeMilestones);
-  result.firstClears = mergeWithDefaults(defaults.firstClears, parsed.firstClears);
+  result.themeProgress = mergedThemeProgress(parsed);
+  result.activeWaves = migrateActiveWaves(parsed.activeWaves);
+  stripLegacyProgressFields(result);
   result.runHistory = Array.isArray(parsed.runHistory) ? parsed.runHistory : defaults.runHistory;
   result.unlocked = mergeWithDefaults(defaults.unlocked, parsed.unlocked) as Record<string, TowerUnlocks>;
   for (const towerId of Object.keys(defaults.unlocked)) {
@@ -262,6 +319,14 @@ function migrateV3ToV4(parsed: Record<string, unknown>): PersistStateShape {
   return result;
 }
 
+// v4 -> v5: moves the top-level map progress into themeProgress["default"]
+// (see legacyThemeProgress) and stamps the new version.
+function migrateV4ToV5(parsed: Record<string, unknown>): PersistStateShape {
+  const result = migrateCurrentVersion(parsed);
+  result.saveVersion = CURRENT_SAVE_VERSION;
+  return result;
+}
+
 export function migrateToCurrent(parsed: Record<string, unknown>): PersistStateShape {
   const version = parsed.saveVersion;
   if (version === undefined || version === null) {
@@ -275,6 +340,9 @@ export function migrateToCurrent(parsed: Record<string, unknown>): PersistStateS
   }
   if (version === 3) {
     return migrateV3ToV4(parsed);
+  }
+  if (version === 4) {
+    return migrateV4ToV5(parsed);
   }
   if (version === CURRENT_SAVE_VERSION) {
     return migrateCurrentVersion(parsed);
@@ -361,31 +429,52 @@ export const usePersistStore = defineStore("persist", {
       this.save();
     },
 
-    updateBestWave(mapIndex: number, wave: number) {
-      const key = `best_${mapIndex}`;
-      const prev = typeof this.bestWaves[key] === "number" ? this.bestWaves[key] : 0;
-      if (wave > prev) {
-        this.bestWaves[key] = wave;
-        this.save();
+    ensureThemeProgress(themeId: string): ThemeProgress {
+      let progress = this.themeProgress[themeId];
+      if (!progress) {
+        progress = blankThemeProgress();
+        this.themeProgress[themeId] = progress;
       }
+      return progress;
     },
 
-    maybeUnlockNextMap(mapIndex: number) {
-      if (mapIndex >= 0 && mapIndex + 1 < 36) {
-        this.highestUnlockedMap = Math.max(this.highestUnlockedMap, mapIndex + 1);
-        this.save();
-      }
+    getThemeProgress(themeId: string): ThemeProgress {
+      return this.themeProgress[themeId] ?? blankThemeProgress();
     },
 
-    saveActiveWave(mapIndex: number, wave: number) {
-      if (!this.activeWaves) this.activeWaves = {};
-      this.activeWaves[mapIndex] = wave;
+    setHighestUnlockedMap(themeId: string, index: number) {
+      const progress = this.ensureThemeProgress(themeId);
+      progress.highestUnlockedMap = Math.max(0, Math.min(index, 35));
       this.save();
     },
 
-    clearActiveWave(mapIndex: number) {
+    updateBestWave(themeId: string, mapIndex: number, wave: number) {
+      const progress = this.ensureThemeProgress(themeId);
+      const key = `best_${mapIndex}`;
+      const prev = typeof progress.bestWaves[key] === "number" ? progress.bestWaves[key] : 0;
+      if (wave > prev) {
+        progress.bestWaves[key] = wave;
+        this.save();
+      }
+    },
+
+    maybeUnlockNextMap(themeId: string, mapIndex: number) {
+      if (mapIndex >= 0 && mapIndex + 1 < 36) {
+        const progress = this.ensureThemeProgress(themeId);
+        progress.highestUnlockedMap = Math.max(progress.highestUnlockedMap, mapIndex + 1);
+        this.save();
+      }
+    },
+
+    saveActiveWave(themeId: string, mapIndex: number, wave: number) {
+      if (!this.activeWaves) this.activeWaves = {};
+      this.activeWaves[`${themeId}:${mapIndex}`] = wave;
+      this.save();
+    },
+
+    clearActiveWave(themeId: string, mapIndex: number) {
       if (this.activeWaves && mapIndex !== undefined) {
-        delete this.activeWaves[mapIndex];
+        delete this.activeWaves[`${themeId}:${mapIndex}`];
         this.save();
       }
     },
@@ -397,26 +486,28 @@ export const usePersistStore = defineStore("persist", {
       this.save();
     },
 
-    markFirstTimeMilestone(mapIndex: number, wave: number) {
+    markFirstTimeMilestone(themeId: string, mapIndex: number, wave: number) {
+      const progress = this.ensureThemeProgress(themeId);
       const key = `${mapIndex}_${wave}`;
-      this.firstTimeMilestones[key] = true;
+      progress.firstTimeMilestones[key] = true;
       this.save();
     },
 
-    hasClaimedMilestone(mapIndex: number, wave: number): boolean {
+    hasClaimedMilestone(themeId: string, mapIndex: number, wave: number): boolean {
       const key = `${mapIndex}_${wave}`;
-      return !!this.firstTimeMilestones[key];
+      return !!this.themeProgress[themeId]?.firstTimeMilestones[key];
     },
 
-    markFirstClear(mapIndex: number) {
+    markFirstClear(themeId: string, mapIndex: number) {
+      const progress = this.ensureThemeProgress(themeId);
       const key = String(mapIndex);
-      this.firstClears[key] = true;
+      progress.firstClears[key] = true;
       this.save();
     },
 
-    hasCleared(mapIndex: number): boolean {
+    hasCleared(themeId: string, mapIndex: number): boolean {
       const key = String(mapIndex);
-      return !!this.firstClears[key];
+      return !!this.themeProgress[themeId]?.firstClears[key];
     },
 
     addLlmCommander(config: LlmCommanderConfig): void {

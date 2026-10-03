@@ -45,9 +45,9 @@ describe("PersistStore save migration v2 -> v3", () => {
     };
   }
 
-  it("bumps saveVersion to 4", () => {
+  it("bumps saveVersion to 5", () => {
     const result = migrateToCurrent(v2ShapedSave());
-    expect(result.saveVersion).toBe(4);
+    expect(result.saveVersion).toBe(5);
   });
 
   it("backfills llmCommanders as an empty array (no data loss of the new field)", () => {
@@ -67,21 +67,25 @@ describe("PersistStore save migration v2 -> v3", () => {
   it("preserves top-level v2 fields through the deep merge", () => {
     const result = migrateToCurrent(v2ShapedSave());
     expect(result.gems).toBe(1234);
-    expect(result.highestUnlockedMap).toBe(5);
-    expect(result.bestWaves).toEqual({ best_3: 45 });
-    expect(result.activeWaves).toEqual({ 0: 12 });
+    expect(result.themeProgress.default.highestUnlockedMap).toBe(5);
+    expect(result.themeProgress.default.bestWaves).toEqual({ best_3: 45 });
+    expect(result.activeWaves).toEqual({ "default:0": 12 });
     expect(result.runHistory).toEqual([]);
     expect(result.lastSelectedThemeId).toBe("default");
   });
 
-  it("preserves nested v2 fields (difficulty, generalAddons, unlocked, milestones)", () => {
+  it("preserves nested v2 fields (difficulty, generalAddons, unlocked)", () => {
     const result = migrateToCurrent(v2ShapedSave());
     expect(result.difficulty.multiplierTick).toBe(4);
     expect(result.generalAddons.extraHealth).toBe(10);
-    expect(result.firstTimeMilestones["5_20"]).toBe(true);
-    expect(result.firstClears["7"]).toBe(true);
     expect(result.unlocked.basic.levels[0]).toBe(true);
     expect(result.unlocked.basic.levels[2]).toBe(false);
+  });
+
+  it("moves v2 map progress into the default world bucket", () => {
+    const result = migrateToCurrent(v2ShapedSave());
+    expect(result.themeProgress.default.firstTimeMilestones).toEqual({ "5_20": true });
+    expect(result.themeProgress.default.firstClears).toEqual({ "7": true });
   });
 
   it("carries v2 llmCommanders through backfill instead of wiping them", () => {
@@ -100,7 +104,7 @@ describe("PersistStore save migration v2 -> v3", () => {
       },
     ];
     const result = migrateToCurrent(saved);
-    expect(result.saveVersion).toBe(4);
+    expect(result.saveVersion).toBe(5);
     expect(result.llmCommanders).toHaveLength(1);
     expect(result.llmCommanders[0].id).toBe("carried");
     expect(result.llmCommanders[0].pauseForCommander).toBe(false);
@@ -143,7 +147,7 @@ describe("PersistStore save migration pauseForCommander backfill", () => {
         commander("garbage", { pauseForCommander: "yes" }),
       ],
     });
-    expect(result.saveVersion).toBe(4);
+    expect(result.saveVersion).toBe(5);
     expect(result.llmCommanders.map((entry) => entry.pauseForCommander)).toEqual([false, true, false]);
   });
 
@@ -156,7 +160,7 @@ describe("PersistStore save migration pauseForCommander backfill", () => {
         commander("garbage", { reasoningEnabled: "yes" }),
       ],
     });
-    expect(result.saveVersion).toBe(4);
+    expect(result.saveVersion).toBe(5);
     expect(result.llmCommanders.map((entry) => entry.reasoningEnabled)).toEqual([false, true, false]);
   });
 
@@ -171,7 +175,7 @@ describe("PersistStore save migration pauseForCommander backfill", () => {
         commander("fraction", { decisionIntervalMs: 1.5 }),
       ],
     });
-    expect(result.saveVersion).toBe(4);
+    expect(result.saveVersion).toBe(5);
     expect(result.llmCommanders.map((entry) => entry.decisionIntervalMs)).toEqual([1000, 5000, 1000, 1000, 1000]);
   });
 
@@ -185,31 +189,90 @@ describe("PersistStore save migration pauseForCommander backfill", () => {
         commander("garbage", { temperatureReasoningOff: "hot", temperatureReasoningOn: null }),
       ],
     });
-    expect(result.saveVersion).toBe(4);
+    expect(result.saveVersion).toBe(5);
     expect(result.llmCommanders.map((entry) => entry.temperatureReasoningOff)).toEqual([0.7, 1.2, 0.7, 0.7]);
     expect(result.llmCommanders.map((entry) => entry.temperatureReasoningOn)).toEqual([0.6, 0.3, 0.6, 0.6]);
   });
 });
 
 describe("PersistStore save migration lastSelectedMapIndex backfill", () => {
-  it("keeps save version 4 and fills lastSelectedMapIndex as null when a v4 save omits it", () => {
+  it("migrates a v4 save to 5 and fills lastSelectedMapIndex as null when omitted", () => {
     const result = migrateToCurrent({ saveVersion: 4, gems: 10 });
-    expect(result.saveVersion).toBe(4);
+    expect(result.saveVersion).toBe(5);
     expect(result.lastSelectedMapIndex).toBeNull();
   });
 
   it("keeps a saved lastSelectedMapIndex", () => {
     const result = migrateToCurrent({ saveVersion: 4, gems: 10, lastSelectedMapIndex: 15 });
-    expect(result.saveVersion).toBe(4);
+    expect(result.saveVersion).toBe(5);
     expect(result.lastSelectedMapIndex).toBe(15);
   });
 });
 
 describe("PersistStore save migration progressiveThirdChoice backfill", () => {
-  it("keeps save version 4 and fills progressiveThirdChoice when a v4 save omits it", () => {
+  it("migrates a v4 save to 5 and fills progressiveThirdChoice when omitted", () => {
     const result = migrateToCurrent({ saveVersion: 4, gems: 10, generalAddons: { extraHealth: null } });
-    expect(result.saveVersion).toBe(4);
+    expect(result.saveVersion).toBe(5);
     expect(result.generalAddons.progressiveThirdChoice).toBeNull();
     expect(result.generalAddons.extraHealth).toBeNull();
+  });
+});
+
+describe("PersistStore save migration v4 -> v5", () => {
+  function v4ShapedSave(): Record<string, unknown> {
+    return {
+      saveVersion: 4,
+      gems: 77,
+      highestUnlockedMap: 9,
+      bestWaves: { best_2: 30 },
+      firstTimeMilestones: { "1_15": true },
+      firstClears: { "4": true },
+      activeWaves: { 0: 7 },
+      lastSelectedThemeId: "default",
+    };
+  }
+
+  it("bumps saveVersion to 5", () => {
+    const result = migrateToCurrent(v4ShapedSave());
+    expect(result.saveVersion).toBe(5);
+  });
+
+  it("moves top-level map progress into the default world bucket", () => {
+    const result = migrateToCurrent(v4ShapedSave());
+    expect(result.themeProgress.default.highestUnlockedMap).toBe(9);
+    expect(result.themeProgress.default.bestWaves).toEqual({ best_2: 30 });
+    expect(result.themeProgress.default.firstTimeMilestones).toEqual({ "1_15": true });
+    expect(result.themeProgress.default.firstClears).toEqual({ "4": true });
+  });
+
+  it("drops the legacy top-level progress fields", () => {
+    const result = migrateToCurrent(v4ShapedSave());
+    expect(result.highestUnlockedMap).toBeUndefined();
+    expect(result.bestWaves).toBeUndefined();
+    expect(result.firstTimeMilestones).toBeUndefined();
+    expect(result.firstClears).toBeUndefined();
+  });
+
+  it("keeps an explicit themeProgress bucket alongside the migrated default", () => {
+    const saved = v4ShapedSave();
+    saved.themeProgress = {
+      aftermath: { highestUnlockedMap: 12, bestWaves: {}, firstTimeMilestones: {}, firstClears: {} },
+    };
+    const result = migrateToCurrent(saved);
+    expect(result.themeProgress.aftermath.highestUnlockedMap).toBe(12);
+    expect(result.themeProgress.default.highestUnlockedMap).toBe(9);
+  });
+
+  it("keeps shared fields untouched", () => {
+    const result = migrateToCurrent(v4ShapedSave());
+    expect(result.gems).toBe(77);
+    expect(result.activeWaves).toEqual({ "default:0": 7 });
+  });
+
+  it("rehomes bare active-wave keys into the default world bucket", () => {
+    const saved = v4ShapedSave();
+    saved.activeWaves = { 0: 7, "the-aftermath:3": 21 };
+    const result = migrateToCurrent(saved);
+    expect(result.activeWaves).toEqual({ "default:0": 7, "the-aftermath:3": 21 });
   });
 });

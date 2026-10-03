@@ -9,6 +9,7 @@ import { GameEngine } from "@/sim/GameEngine.js";
 import type { ProgressiveConfig } from "@/sim/grid/ProgressiveMap.js";
 import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { WorkerParticleSpawner } from "@/sim/ParticleSystem.js";
+import { cloneThemeProgress } from "@/sim/PersistState.js";
 import { initPhysics } from "@/sim/physics/rapierContext.js";
 import type { Command } from "./Command.js";
 import { drainCommandQueue } from "./commandDrain.js";
@@ -350,11 +351,10 @@ function buildPersistSlice(engineRef: GameEngine): PersistStateSlice {
   const persistState = engineRef.persistState;
   return {
     gems: persistState.gems,
-    highestUnlockedMap: persistState.highestUnlockedMap,
-    bestWaves: { ...persistState.bestWaves },
+    // Deep-cloned per-world buckets: the structured clone must be independent of
+    // live engine mutation, and the host replaces its whole record with this.
+    themeProgress: cloneThemeProgress(persistState),
     activeWaves: { ...persistState.activeWaves },
-    firstTimeMilestones: { ...persistState.firstTimeMilestones },
-    firstClears: { ...persistState.firstClears },
     // NOTE: unlocked + generalAddons are intentionally omitted — they are
     // main-thread-owned (skill tree) and would otherwise clobber mid-run
     // unlocks/addon changes with the worker's stale init-time copy. They reach

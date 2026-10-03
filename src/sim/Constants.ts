@@ -27,6 +27,11 @@ const maps = getGameContent().maps;
 
 export const StartingGold = economy.startingGoldByRegion;
 
+// Default (no-theme) maps catalog. Theme worlds override this per run via
+// MapThemeData.maps; the engine and map generators take it as a parameter and
+// fall back to this facade default when a theme carries no override.
+export const MAPS_CONTENT = maps;
+
 export {
   BOSS_CADENCE,
   BOSS_STUN_REDUCTION,

@@ -1,7 +1,8 @@
 // Procedural map definitions for 3 regions × 12 maps each = 36 maps.
 
+import type { MapsContent } from "@/content/schemas/maps.js";
 import type { MapThemeData } from "@/render/themes/index.js";
-import { HEIGHT_NOISE_DIVISOR, HEIGHT_NOISE_FREQ, MAP_LEVELS } from "@/sim/Constants.js";
+import { MAPS_CONTENT } from "@/sim/Constants.js";
 import { BOSS_CADENCE } from "@/sim/ConstantsEnemy.js";
 
 export function progressiveMapDisplayName(regionId: number, entryCount: number, theme: MapThemeData | null): string {
@@ -848,21 +849,37 @@ function carveBastion(tiles: Tile[][], spawns: Point[], base: Point, rng: () => 
   carveWidePath(tiles, axisPoint(isLandscape, island.frontMain, basePerp), base, 1, isLandscape);
 }
 
-// Generated maps are cached per MAP_LEVELS index. The pack is immutable content
-// loaded once, so entries never go stale in a normal run. Tests that remap an
-// index (or swap map content) call invalidateMapCache() to drop prior layouts.
-const mapCache = new Map<number, GeneratedMap>();
+// Generated maps are cached per (catalog, index) pair. Each catalog is frozen
+// immutable content resolved once per theme world, so entries never go stale in
+// a normal run. The outer key is the catalog object identity: the default
+// MAPS_CONTENT and each theme's resolved maps get their own inner cache, so two
+// worlds sharing an index keep distinct layouts. Tests that remap an index (or
+// swap map content) call invalidateMapCache() to drop prior layouts.
+const mapCache = new Map<MapsContent, Map<number, GeneratedMap>>();
 
 export function invalidateMapCache(): void {
   mapCache.clear();
 }
 
-export function getMap(index: number): GeneratedMap {
-  const cached = mapCache.get(index);
+export function getMap(index: number, maps: MapsContent = MAPS_CONTENT): GeneratedMap {
+  let perCatalog = mapCache.get(maps);
+  if (!perCatalog) {
+    perCatalog = new Map<number, GeneratedMap>();
+    mapCache.set(maps, perCatalog);
+  }
+  const cached = perCatalog.get(index);
   if (cached) return cached;
-  const config = MAP_LEVELS[index]!;
-  const map = generateRandomMap(config.width, config.height, config.style, config.regionId, config.level, config.seed);
-  mapCache.set(index, map);
+  const config = maps.levels[index]!;
+  const map = generateRandomMap(
+    config.width,
+    config.height,
+    config.style,
+    config.regionId,
+    config.level,
+    config.seed,
+    maps,
+  );
+  perCatalog.set(index, map);
   return map;
 }
 
@@ -892,6 +909,7 @@ export function generateRandomMap(
   regionId: number,
   level: number,
   seed: number,
+  maps: MapsContent = MAPS_CONTENT,
 ): GeneratedMap {
   const rng = mulberry32(seed);
 
@@ -905,8 +923,8 @@ export function generateRandomMap(
           4,
           1 +
             Math.floor(
-              (Math.sin(x * HEIGHT_NOISE_FREQ) + Math.cos(y * HEIGHT_NOISE_FREQ) + 2 + (regionId === 2 ? 1 : 0)) /
-                HEIGHT_NOISE_DIVISOR,
+              (Math.sin(x * maps.heightNoiseFreq) + Math.cos(y * maps.heightNoiseFreq) + 2 + (regionId === 2 ? 1 : 0)) /
+                maps.heightNoiseDivisor,
             ),
         ),
       );

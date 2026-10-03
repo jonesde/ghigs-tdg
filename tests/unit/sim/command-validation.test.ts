@@ -275,7 +275,7 @@ describe("command intake through applyCommand", () => {
     for (const milestoneWave of MILESTONE_WAVES) {
       if (milestoneWave <= 50) expect(engine.runState.milestoneRewardsClaimed[milestoneWave]).toBe(true);
     }
-    expect(persistState.bestWaves.best_0).toBe(50);
+    expect(persistState.themeProgress.default?.bestWaves.best_0).toBe(50);
   });
 
   it("clamps debug gold and time scale instead of applying them", () => {
