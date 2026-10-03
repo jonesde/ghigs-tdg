@@ -1,5 +1,6 @@
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
+import { getGameContent } from "@/content/gameContent.js";
 import { BASE_LEVEL_HEALTH_MULT, STARTING_BASE_HEALTH, STARTING_HEALTH_BONUS } from "@/sim/Constants.js";
 import { SELL_VALUE_RATIO } from "@/sim/ConstantsTower.js";
 import { GameEngine } from "@/sim/GameEngine.js";
@@ -9,6 +10,16 @@ import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import { BASE_SELECTION_ID, BaseDefense, type BaseDefenseEnemy } from "@/sim/towers/BaseDefense.js";
 import { makeMapData } from "../helpers/mock-grid";
 import { createTestPersistState, createTestThemeBundle, MockHostBindings } from "../helpers/mock-stores";
+
+// Read the live gun tiers from content so the assertions track balance tuning.
+const baseDefenseContent = getGameContent().towers.baseDefense;
+const levelSevenMultiplier = baseDefenseContent.levelSevenDamageMultiplier;
+const LEVEL_ONE_SHORT_DAMAGE = baseDefenseContent.shortRange[0]!.damage;
+const LEVEL_FOUR_LONG_DAMAGE = baseDefenseContent.longRange[0]!.damage;
+const LEVEL_SEVEN_SHORT_DAMAGE =
+  baseDefenseContent.shortRange[baseDefenseContent.shortRange.length - 1]!.damage * levelSevenMultiplier;
+const LEVEL_SEVEN_LONG_DAMAGE =
+  baseDefenseContent.longRange[baseDefenseContent.longRange.length - 1]!.damage * levelSevenMultiplier;
 
 function insetDefense(): { defense: BaseDefense; runState: GameRunState } {
   const grid = new Grid(makeMapData({ width: 9, height: 9, base: { x: 4, y: 4 } }));
@@ -86,9 +97,11 @@ describe("BaseDefense", () => {
     const sound = { playSound() {} };
     defense.update(0.016, query, projectiles, sound, 1);
     expect(spawned).toHaveLength(4);
-    expect(spawned.every((shot) => shot.damage === 12 && shot.color === "#e6c35c" && shot.towerType === "basic")).toBe(
-      true,
-    );
+    expect(
+      spawned.every(
+        (shot) => shot.damage === LEVEL_ONE_SHORT_DAMAGE && shot.color === "#e6c35c" && shot.towerType === "basic",
+      ),
+    ).toBe(true);
     expect(spawned.every((shot) => shot.towerId === BASE_SELECTION_ID)).toBe(true);
 
     defense.level = 3;
@@ -107,7 +120,7 @@ describe("BaseDefense", () => {
     defense.update(0.016, query, projectiles, sound, 3);
     const longShots = spawned.filter((shot) => shot.color === "#d7e4ff");
     expect(longShots).toHaveLength(4);
-    expect(longShots.every((shot) => shot.damage === 30)).toBe(true);
+    expect(longShots.every((shot) => shot.damage === LEVEL_FOUR_LONG_DAMAGE)).toBe(true);
 
     defense.level = 6;
     const shortAtSix = defense.shortGun()!.damage;
@@ -115,8 +128,8 @@ describe("BaseDefense", () => {
     defense.level = 7;
     expect(defense.shortGun()!.damage).toBe(shortAtSix * 2);
     expect(defense.longGun()!.damage).toBe(longAtSix * 2);
-    expect(defense.shortGun()!.damage).toBe(78);
-    expect(defense.longGun()!.damage).toBe(200);
+    expect(defense.shortGun()!.damage).toBe(LEVEL_SEVEN_SHORT_DAMAGE);
+    expect(defense.longGun()!.damage).toBe(LEVEL_SEVEN_LONG_DAMAGE);
   });
 });
 
@@ -204,7 +217,7 @@ describe("GameEngine base selection", () => {
     expect(snapshot.meta.baseDefense?.level).toBe(1);
     expect(snapshot.meta.baseDefense?.sentries.length).toBeGreaterThan(0);
     expect(snapshot.towers.some((tower) => tower.id === BASE_SELECTION_ID)).toBe(false);
-    expect(snapshot.meta.baseDefense?.shortStats?.damage).toBe(12);
+    expect(snapshot.meta.baseDefense?.shortStats?.damage).toBe(LEVEL_ONE_SHORT_DAMAGE);
     expect(snapshot.meta.baseDefense?.longStats).toBeNull();
   });
 });
