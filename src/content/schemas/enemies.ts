@@ -33,6 +33,8 @@ export const EnemiesContentSchema = z.object({
   breachReevalSeconds: z.number(),
   waveCountBase: z.number(),
   waveCountScale: z.number(),
+  tierThresholds: z.array(z.object({ minWave: z.number(), threshold: z.number(), type: z.string() })),
+  healerMinGap: z.number(),
   bossCadence: z.tuple([z.number(), z.number(), z.number()]),
 });
 

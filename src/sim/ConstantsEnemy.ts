@@ -26,6 +26,17 @@ export const ENEMY_TYPES: Record<string, EnemyMeta> = enemies.types as Record<st
 export const ENEMY_LEVEL_HP_MULT = (level: number): number =>
   computeEnemyLevelHpMult(level, getGameContent().enemies.levelHpMult);
 
+export interface EnemyTierThreshold {
+  minWave: number;
+  threshold: number;
+  type: string;
+}
+
+// Order defines the cumulative draw bands; the healer entry is the one the
+// wave generator staggers via HEALER_MIN_GAP.
+export const ENEMY_TIER_THRESHOLDS: EnemyTierThreshold[] = enemies.tierThresholds;
+export const HEALER_MIN_GAP = enemies.healerMinGap;
+
 export const ENEMY_WAVE_DAMAGE_MULT = enemies.waveDamageMult;
 export const BOUNTY_LEVEL_GROWTH = enemies.bountyLevelGrowth;
 export const BOUNTY_FULL_THROUGH_WAVE = enemies.bountyFullThroughWave;

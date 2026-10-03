@@ -1,6 +1,12 @@
 import type { SpawnState } from "@/render/themes/index.js";
 import { BETWEEN_WAVES_TIMER, PRE_EMPTIVE_WAVE_TIMER, VICTORY_WAVE } from "@/sim/Constants.js";
-import { ENEMY_TYPES, WAVE_COUNT_BASE, WAVE_COUNT_SCALE } from "@/sim/ConstantsEnemy.js";
+import {
+  ENEMY_TIER_THRESHOLDS,
+  ENEMY_TYPES,
+  HEALER_MIN_GAP,
+  WAVE_COUNT_BASE,
+  WAVE_COUNT_SCALE,
+} from "@/sim/ConstantsEnemy.js";
 import { mulberry32 } from "@/sim/grid/Map.js";
 
 interface MapRef {
@@ -230,33 +236,51 @@ export class WaveManager {
     const nonBossCount = baseCount;
     const out: WaveEntry[] = [];
 
+    // Healers are rate-limited so their additive heal auras cannot stack into an
+    // unkillable pack: a healer drawn with fewer than HEALER_MIN_GAP enemies since
+    // the last one goes to healerBacklog, this slot is refilled by a re-roll that
+    // excludes healers, and the backlog is emitted once the gap is satisfied again.
+    // sinceLastHealer starts at the full gap so the wave's first healer is not
+    // delayed. Leftover backlog at the end of the wave is intentionally discarded:
+    // those slots were already filled by other enemies and the wave reached maximum
+    // healer density.
+    let healerBacklog = 0;
+    let sinceLastHealer = HEALER_MIN_GAP;
     for (let i = 0; i < nonBossCount; i++) {
-      const rand = this.rng();
-      let type = "minion";
-      const tierThresholds = [
-        { minWave: 32, threshold: 0.04, type: "aegis" as const },
-        { minWave: 22, threshold: 0.05, type: "jet" as const },
-        { minWave: 12, threshold: 0.07, type: "flyer" as const },
-        { minWave: 35, threshold: 0.08, type: "healer" as const },
-        { minWave: 25, threshold: 0.1, type: "shielded" as const },
-        { minWave: 15, threshold: 0.1, type: "tank" as const },
-        { minWave: 5, threshold: 0.08, type: "runner" as const },
-      ];
-      let cumulative = 0;
-      for (const tier of tierThresholds) {
-        cumulative += tier.threshold;
-        if (n >= tier.minWave && rand < cumulative) {
-          type = tier.type;
-          break;
+      let type: string;
+      if (healerBacklog > 0 && sinceLastHealer >= HEALER_MIN_GAP) {
+        type = "healer";
+        healerBacklog--;
+      } else {
+        type = this.rollType(n);
+        if (type === "healer" && sinceLastHealer < HEALER_MIN_GAP) {
+          healerBacklog++;
+          type = this.rollType(n, "healer");
         }
       }
       out.push({ type, level: enemyLevel, delay: 0.5 + this.rng() * 0.5 });
+      sinceLastHealer = type === "healer" ? 0 : sinceLastHealer + 1;
     }
 
     for (let i = 0; i < bossCount; i++) {
       out.push({ type: "boss", level: enemyLevel, delay: 2 + i * 2 });
     }
     return out;
+  }
+
+  private rollType(wave: number, excludeType: string | null = null): string {
+    // excludeType drops the tier from the cumulative bands so a healer re-roll
+    // always yields another type instead of re-looping on healers.
+    const rand = this.rng();
+    let cumulative = 0;
+    for (const tier of ENEMY_TIER_THRESHOLDS) {
+      if (tier.type === excludeType) continue;
+      cumulative += tier.threshold;
+      if (wave >= tier.minWave && rand < cumulative) {
+        return tier.type;
+      }
+    }
+    return "minion";
   }
 
   update(

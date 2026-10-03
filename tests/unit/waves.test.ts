@@ -7,6 +7,7 @@ import {
   BETWEEN_WAVES_TIMER,
   BOSS_CADENCE,
   ENEMY_TYPES,
+  HEALER_MIN_GAP,
   PRE_EMPTIVE_WAVE_TIMER,
   VICTORY_WAVE,
   WAVE_COUNT_BASE,
@@ -229,6 +230,52 @@ describe("WaveManager", () => {
           sawHealer = true;
       }
       expect(sawHealer).toBe(true);
+    });
+
+    it("keeps at least HEALER_MIN_GAP enemies between consecutive healers", () => {
+      let sawHealer = false;
+      for (let seed = 0; seed < 20; seed++) {
+        const map = makeMapData({ ...makeBastionMap(), seed: 7000 + seed });
+        for (let waveNumber = 35; waveNumber <= 45; waveNumber++) {
+          const wave = makeWaveManager(map).generateWave(waveNumber);
+          let seenHealer = false;
+          let sinceLastHealer = 0;
+          for (const entry of wave) {
+            if (entry.type === "healer") {
+              if (seenHealer) {
+                expect(sinceLastHealer).toBeGreaterThanOrEqual(HEALER_MIN_GAP);
+              }
+              seenHealer = true;
+              sinceLastHealer = 0;
+            } else {
+              sinceLastHealer++;
+            }
+          }
+          if (seenHealer) sawHealer = true;
+        }
+      }
+      expect(sawHealer).toBe(true);
+    });
+
+    it("caps healer count at the maximum staggered density and keeps the wave length", () => {
+      for (let seed = 0; seed < 20; seed++) {
+        const map = makeMapData({ ...makeBastionMap(), seed: 7100 + seed });
+        for (let waveNumber = 35; waveNumber <= 45; waveNumber++) {
+          const wave = makeWaveManager(map).generateWave(waveNumber);
+          const healerCount = wave.filter((entry) => entry.type === "healer").length;
+          const nonHealerCount = wave.length - healerCount;
+          expect(healerCount).toBeLessThanOrEqual(1 + Math.floor(nonHealerCount / HEALER_MIN_GAP));
+          const nonBoss = wave.filter((entry) => entry.type !== "boss");
+          expect(nonBoss.length).toBe(WAVE_COUNT_BASE + Math.floor(waveNumber * WAVE_COUNT_SCALE));
+        }
+      }
+    });
+
+    it("staggered healer waves are deterministic for the same seed", () => {
+      const map = makeBastionMap();
+      const waveA = makeWaveManager(map).generateWave(35);
+      const waveB = makeWaveManager(map).generateWave(35);
+      expect(waveA).toEqual(waveB);
     });
 
     it("all enemies have valid types", () => {
