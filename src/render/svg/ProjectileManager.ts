@@ -1,4 +1,4 @@
-import type { Projectile } from "./types.js";
+import type { ProjectileSnapshot } from "../../sim/SimulationSnapshot.js";
 import { PROJECTILE_POOL_SIZE, SVG_NS } from "./types.js";
 
 export class ProjectileManager {
@@ -28,7 +28,7 @@ export class ProjectileManager {
     }
   }
 
-  syncFromGameEngine(projectiles: Projectile[]): void {
+  syncFromGameEngine(projectiles: ProjectileSnapshot[]): void {
     for (let i = 0; i < projectiles.length; i++) {
       const proj = projectiles[i]!;
       if (!this.idToIndex.has(proj.id) && !this.overflowIds.has(proj.id)) {

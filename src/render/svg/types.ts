@@ -29,21 +29,3 @@ export const HP_BAR_POOL_SIZE = 100;
 export const SHIELD_BAR_POOL_SIZE = 100;
 export const BOSS_TEXT_POOL_SIZE = 10;
 export const TOWER_HP_BAR_POOL_SIZE = 100;
-
-export interface Projectile {
-  id: number;
-  x: number;
-  y: number;
-  radius: number;
-  color: string;
-  icon: string;
-}
-
-export interface Particle {
-  id: number;
-  x: number;
-  y: number;
-  color: string;
-  size: number;
-  opacity: number;
-}

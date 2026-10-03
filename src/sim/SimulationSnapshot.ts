@@ -299,8 +299,8 @@ export interface TowerSnapshot {
   stats?: TowerStatsSnapshot;
 }
 
-// Projectile and Particle snapshots: REUSE the existing DTO types.
-//   - ProjectileManager.getRenderData() returns Array<{ id, x, y, radius, color }>
+// Projectile snapshot reuses the sim getRenderData() DTO shape (id, x, y, radius, color, icon).
+// Particles never ride the snapshot: the main-thread ParticleSystem emits RenderParticle directly.
 export type ProjectileSnapshot = ReturnType<ProjectileManager["getRenderData"]>[number];
 
 export type SpawnStateSnapshot = SpawnState & { pendingCount: number };

@@ -1,4 +1,4 @@
-import type { Particle } from "./types.js";
+import type { RenderParticle } from "../../sim/ParticleSystem.js";
 import { PARTICLE_POOL_SIZE, SVG_NS } from "./types.js";
 
 export class ParticleManager {
@@ -24,7 +24,7 @@ export class ParticleManager {
     }
   }
 
-  syncFromGameEngine(particles: Particle[]): void {
+  syncFromGameEngine(particles: RenderParticle[]): void {
     this.activeParticleIds.clear();
     for (const particle of particles) {
       this.activeParticleIds.add(particle.id);

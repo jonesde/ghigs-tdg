@@ -118,9 +118,7 @@ describe("ParticleManager", () => {
     });
 
     it("shows circle elements for particles", () => {
-      pm.syncFromGameEngine([
-        { x: 10, y: 20, color: "#ff0000", size: 5, opacity: 1 },
-      ] as unknown as import("@/render/svg/types").Particle[]);
+      pm.syncFromGameEngine([{ id: 1, x: 10, y: 20, color: "#ff0000", size: 5, opacity: 1 }]);
       expect(circles[0].style.visibility).toBe("visible");
       expect(circles[0].getAttribute("transform")).toBe("translate(10, 20)");
       expect(circles[0].getAttribute("r")).toBe("5");
@@ -128,9 +126,7 @@ describe("ParticleManager", () => {
     });
 
     it("hides unused pool elements after sync", () => {
-      pm.syncFromGameEngine([
-        { x: 0, y: 0, color: "#fff", size: 3, opacity: 1 },
-      ] as unknown as import("@/render/svg/types").Particle[]);
+      pm.syncFromGameEngine([{ id: 1, x: 0, y: 0, color: "#fff", size: 3, opacity: 1 }]);
       expect(circles[0].style.visibility).toBe("visible");
       expect(circles[1].style.visibility).toBe("hidden");
     });
@@ -144,7 +140,7 @@ describe("ParticleManager", () => {
         size: 3,
         opacity: 1,
       }));
-      pm.syncFromGameEngine(particles as unknown as import("@/render/svg/types").Particle[]);
+      pm.syncFromGameEngine(particles);
       for (let i = 0; i < PARTICLE_POOL_SIZE; i++) {
         expect(circles[i].style.visibility).toBe("visible");
       }
@@ -152,12 +148,8 @@ describe("ParticleManager", () => {
 
     it("does not re-create elements on subsequent sync calls", () => {
       const appendCountBefore = mockLayer.children.length;
-      pm.syncFromGameEngine([
-        { x: 10, y: 20, color: "#fff", size: 3, opacity: 1 },
-      ] as unknown as import("@/render/svg/types").Particle[]);
-      pm.syncFromGameEngine([
-        { x: 30, y: 40, color: "#f00", size: 5, opacity: 0.5 },
-      ] as unknown as import("@/render/svg/types").Particle[]);
+      pm.syncFromGameEngine([{ id: 1, x: 10, y: 20, color: "#fff", size: 3, opacity: 1 }]);
+      pm.syncFromGameEngine([{ id: 1, x: 30, y: 40, color: "#f00", size: 5, opacity: 0.5 }]);
       expect(mockLayer.children.length).toBe(appendCountBefore);
     });
   });
@@ -174,9 +166,7 @@ describe("ParticleManager", () => {
 
     it("clears the internal pool", () => {
       pm.dispose();
-      pm.syncFromGameEngine([
-        { x: 0, y: 0, color: "#fff", size: 3, opacity: 1 },
-      ] as unknown as import("@/render/svg/types").Particle[]);
+      pm.syncFromGameEngine([{ id: 1, x: 0, y: 0, color: "#fff", size: 3, opacity: 1 }]);
       expect(mockLayer.children.length).toBe(0);
     });
   });
