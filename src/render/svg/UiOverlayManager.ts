@@ -378,6 +378,7 @@ export class UiOverlayManager {
     towers: TowerSnapshot[],
     waveTopTowers: WaveTopTowerSnapshot[] | null | undefined,
     simSeconds: number,
+    baseCenter: { x: number; y: number } | null = null,
   ): void {
     const towerById = new Map<string, TowerSnapshot>();
     for (const tower of towers) towerById.set(tower.id, tower);
@@ -387,13 +388,15 @@ export class UiOverlayManager {
       for (const entry of waveTopTowers) {
         if (medalIndex >= this.waveTopMedalPool.length) break;
         if (simSeconds - entry.simSeconds > WAVE_TOP_DISPLAY_SECONDS) continue;
-        const tower = towerById.get(entry.towerId);
-        if (!tower) continue;
+        const tower = entry.towerId === "base" ? null : towerById.get(entry.towerId);
+        const medalX = tower?.x ?? (entry.towerId === "base" ? baseCenter?.x : undefined);
+        const medalY = tower?.y ?? (entry.towerId === "base" ? baseCenter?.y : undefined);
+        if (medalX === undefined || medalY === undefined) continue;
         const medal = this.waveTopMedalPool[medalIndex]!;
         const medalText = WAVE_TOP_MEDALS[entry.rank - 1] ?? String(entry.rank);
         medal.style.visibility = "visible";
         medal.textContent = medalText;
-        medal.setAttribute("transform", `translate(${tower.x}, ${tower.y - TOWER_SCALED_SIZE / 2 - 12})`);
+        medal.setAttribute("transform", `translate(${medalX}, ${medalY - TOWER_SCALED_SIZE / 2 - 12})`);
         medalIndex++;
       }
     }

@@ -88,6 +88,38 @@ export interface WaveTopTowerSnapshot {
   simSeconds: number;
 }
 
+export interface BaseGunStatsSnapshot {
+  range: number;
+  damage: number;
+  fireRate: number;
+}
+
+export interface BaseSentrySnapshot {
+  x: number;
+  y: number;
+  angle: number;
+  tileX: number;
+  tileY: number;
+  fireAnimTime: number;
+}
+
+export interface BaseDefenseSnapshot {
+  level: number;
+  maxLevel: number;
+  targeting: string;
+  totalDamageDealt: number;
+  waveDamage: number;
+  previousWaveDamage: number;
+  upgradeCost: number;
+  nextLevel: number;
+  canUpgrade: boolean;
+  blockedReason: string | null;
+  downgradeRefund: number;
+  shortStats: BaseGunStatsSnapshot | null;
+  longStats: BaseGunStatsSnapshot | null;
+  sentries: BaseSentrySnapshot[];
+}
+
 export interface SnapshotMeta {
   // Scalar state from GameRunState. Subset that the renderer/UI need.
   state: GameRunState["state"];
@@ -156,6 +188,8 @@ export interface SnapshotMeta {
   worldOriginX?: number;
   worldOriginY?: number;
   layoutGeneration?: number;
+  // Optional so hand-built test metas compile. The serializer always sets it.
+  baseDefense?: BaseDefenseSnapshot;
 }
 
 // Entity snapshots — plain data only, no methods, no closures.

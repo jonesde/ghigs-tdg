@@ -156,6 +156,7 @@ export function buildSnapshot(
 
 function buildMeta(engine: GameEngine, receipt: SnapshotCommandReceipt): SnapshotMeta {
   const rs = engine.runState;
+  const baseDefense = engine.baseDefenseSnapshot();
   return {
     state: rs.state,
     mapIndex: rs.mapIndex,
@@ -195,6 +196,7 @@ function buildMeta(engine: GameEngine, receipt: SnapshotCommandReceipt): Snapsho
     worldOriginX: engine.grid?.worldOriginX ?? 0,
     worldOriginY: engine.grid?.worldOriginY ?? 0,
     layoutGeneration: engine.layoutGeneration,
+    ...(baseDefense !== undefined ? { baseDefense } : {}),
   };
 }
 

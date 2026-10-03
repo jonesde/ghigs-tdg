@@ -92,7 +92,7 @@ const FIXED_AIM_DIRECTION_VECTORS: Record<"N" | "E" | "S" | "W", [number, number
 // numbers in the mixed case. True when the candidate strictly outranks the
 // best, preserving the reduce tie-break where equal distances keep the earlier
 // enemy. Module-level (not a method) so Tower stays structurally assignable.
-function baseDistanceRanksAhead(
+export function baseDistanceRanksAhead(
   candidateNavDistance: number,
   candidateSquaredDistance: number,
   bestNavDistance: number,

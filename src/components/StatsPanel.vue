@@ -62,6 +62,7 @@ const totalDamageDealt = computed(() => {
   for (const tower of towers.value) {
     total += tower.totalDamageDealt || 0;
   }
+  total += snapshot.value?.meta.baseDefense?.totalDamageDealt ?? 0;
   return Math.round(total);
 });
 

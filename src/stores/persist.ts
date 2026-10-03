@@ -15,13 +15,19 @@ import { useUiStore } from "@/stores/ui.js";
 
 const OLD_STORAGE_KEY = "gempath_save_v1";
 export const STORAGE_KEY = "lol_ya_tdg_save_1";
-const CURRENT_SAVE_VERSION = 5;
+const CURRENT_SAVE_VERSION = 6;
 
 export interface TowerUnlocks {
   levels: boolean[];
   variantA: boolean[];
   variantB: boolean[];
   addons: boolean[];
+}
+
+// Gem cap for the base. Index 0 is level 1. Not a tower id: unlocked values are
+// TowerUnlocks (variant and addon arrays) and are iterated as tower ids.
+export interface BaseUnlocks {
+  levels: boolean[];
 }
 
 // Map-keyed progress for one world (theme). Save v5 moved these out of the
@@ -57,6 +63,7 @@ interface PersistStateShape {
   difficulty: { multiplierTick: number };
   generalAddons: GeneralAddons;
   unlocked: Record<string, TowerUnlocks>;
+  baseUnlocks: BaseUnlocks;
   runHistory: unknown[];
   randomMapRegion: number;
   randomMapLevel: number;
@@ -110,6 +117,25 @@ function defaultUnlocked(): Record<string, TowerUnlocks> {
   };
 }
 
+function defaultBaseUnlocks(): BaseUnlocks {
+  return { levels: [true, true, false, false, false, false, false] };
+}
+
+// Length-7 boolean array. Missing entries take the default. Owned flags already
+// stored as false stay false, including indexes 0 and 1.
+function mergeBaseUnlocks(saved: unknown): BaseUnlocks {
+  const merged = defaultBaseUnlocks().levels.slice();
+  if (typeof saved === "object" && saved !== null && !Array.isArray(saved)) {
+    const levels = (saved as { levels?: unknown }).levels;
+    if (Array.isArray(levels)) {
+      for (let index = 0; index < merged.length; index++) {
+        if (typeof levels[index] === "boolean") merged[index] = levels[index];
+      }
+    }
+  }
+  return { levels: merged };
+}
+
 function defaultGeneralAddons(): GeneralAddons {
   return {
     extraHealth: null,
@@ -139,6 +165,7 @@ function defaultState(): PersistStateShape {
     difficulty: { multiplierTick: 0 },
     generalAddons: defaultGeneralAddons(),
     unlocked: defaultUnlocked(),
+    baseUnlocks: defaultBaseUnlocks(),
     runHistory: [],
     randomMapRegion: 1,
     randomMapLevel: 1,
@@ -273,6 +300,7 @@ function migrateV1ToV2(parsed: Record<string, unknown>): PersistStateShape {
     }
   }
   result.llmCommanders = fillCommanderTimeouts(result.llmCommanders);
+  result.baseUnlocks = mergeBaseUnlocks(result.baseUnlocks);
   return result;
 }
 
@@ -292,6 +320,7 @@ function migrateCurrentVersion(parsed: Record<string, unknown>): PersistStateSha
     }
   }
   result.llmCommanders = fillCommanderTimeouts(result.llmCommanders);
+  result.baseUnlocks = mergeBaseUnlocks(result.baseUnlocks);
   return result;
 }
 
@@ -311,6 +340,7 @@ function migrateV2ToV3(parsed: Record<string, unknown>): PersistStateShape {
     }
   }
   result.llmCommanders = fillCommanderTimeouts(parsed.llmCommanders);
+  result.baseUnlocks = mergeBaseUnlocks(result.baseUnlocks);
   result.saveVersion = CURRENT_SAVE_VERSION;
   return result;
 }
@@ -324,6 +354,15 @@ function migrateV3ToV4(parsed: Record<string, unknown>): PersistStateShape {
 // v4 -> v5: moves the top-level map progress into themeProgress["default"]
 // (see legacyThemeProgress) and stamps the new version.
 function migrateV4ToV5(parsed: Record<string, unknown>): PersistStateShape {
+  const result = migrateCurrentVersion(parsed);
+  result.saveVersion = CURRENT_SAVE_VERSION;
+  return result;
+}
+
+// v5 -> v6: base gem cap. A v5 document has no baseUnlocks key, so the merge
+// fills the pre-unlocked short-range levels. Must run before the current-version
+// check, which would otherwise keep saveVersion 5 from the spread.
+function migrateV5ToV6(parsed: Record<string, unknown>): PersistStateShape {
   const result = migrateCurrentVersion(parsed);
   result.saveVersion = CURRENT_SAVE_VERSION;
   return result;
@@ -345,6 +384,9 @@ export function migrateToCurrent(parsed: Record<string, unknown>): PersistStateS
   }
   if (version === 4) {
     return migrateV4ToV5(parsed);
+  }
+  if (version === 5) {
+    return migrateV5ToV6(parsed);
   }
   if (version === CURRENT_SAVE_VERSION) {
     return migrateCurrentVersion(parsed);

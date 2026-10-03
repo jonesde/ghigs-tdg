@@ -6,6 +6,7 @@ export interface ClickEffectInput {
   upgradeButtonHit: boolean;
   inBounds: boolean;
   towerOnTile: boolean;
+  baseTile: boolean;
   selectedTowerType: TowerId | null;
   buildable: boolean;
   gold: number;
@@ -20,6 +21,6 @@ export function clickHasEffect(input: ClickEffectInput): boolean {
   if (input.placementSiteHit) return true;
   if (input.upgradeButtonHit) return true;
   if (!input.inBounds) return input.selectedTowerType !== null;
-  if (input.towerOnTile) return true;
+  if (input.towerOnTile || input.baseTile) return true;
   return input.selectedTowerType !== null && input.buildable && input.gold >= input.buildCost;
 }

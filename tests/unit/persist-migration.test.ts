@@ -45,9 +45,9 @@ describe("PersistStore save migration v2 -> v3", () => {
     };
   }
 
-  it("bumps saveVersion to 5", () => {
+  it("bumps saveVersion to 6", () => {
     const result = migrateToCurrent(v2ShapedSave());
-    expect(result.saveVersion).toBe(5);
+    expect(result.saveVersion).toBe(6);
   });
 
   it("backfills llmCommanders as an empty array (no data loss of the new field)", () => {
@@ -104,7 +104,7 @@ describe("PersistStore save migration v2 -> v3", () => {
       },
     ];
     const result = migrateToCurrent(saved);
-    expect(result.saveVersion).toBe(5);
+    expect(result.saveVersion).toBe(6);
     expect(result.llmCommanders).toHaveLength(1);
     expect(result.llmCommanders[0].id).toBe("carried");
     expect(result.llmCommanders[0].pauseForCommander).toBe(false);
@@ -147,7 +147,7 @@ describe("PersistStore save migration pauseForCommander backfill", () => {
         commander("garbage", { pauseForCommander: "yes" }),
       ],
     });
-    expect(result.saveVersion).toBe(5);
+    expect(result.saveVersion).toBe(6);
     expect(result.llmCommanders.map((entry) => entry.pauseForCommander)).toEqual([false, true, false]);
   });
 
@@ -160,7 +160,7 @@ describe("PersistStore save migration pauseForCommander backfill", () => {
         commander("garbage", { reasoningEnabled: "yes" }),
       ],
     });
-    expect(result.saveVersion).toBe(5);
+    expect(result.saveVersion).toBe(6);
     expect(result.llmCommanders.map((entry) => entry.reasoningEnabled)).toEqual([false, true, false]);
   });
 
@@ -175,7 +175,7 @@ describe("PersistStore save migration pauseForCommander backfill", () => {
         commander("fraction", { decisionIntervalMs: 1.5 }),
       ],
     });
-    expect(result.saveVersion).toBe(5);
+    expect(result.saveVersion).toBe(6);
     expect(result.llmCommanders.map((entry) => entry.decisionIntervalMs)).toEqual([1000, 5000, 1000, 1000, 1000]);
   });
 
@@ -189,30 +189,30 @@ describe("PersistStore save migration pauseForCommander backfill", () => {
         commander("garbage", { temperatureReasoningOff: "hot", temperatureReasoningOn: null }),
       ],
     });
-    expect(result.saveVersion).toBe(5);
+    expect(result.saveVersion).toBe(6);
     expect(result.llmCommanders.map((entry) => entry.temperatureReasoningOff)).toEqual([0.7, 1.2, 0.7, 0.7]);
     expect(result.llmCommanders.map((entry) => entry.temperatureReasoningOn)).toEqual([0.6, 0.3, 0.6, 0.6]);
   });
 });
 
 describe("PersistStore save migration lastSelectedMapIndex backfill", () => {
-  it("migrates a v4 save to 5 and fills lastSelectedMapIndex as null when omitted", () => {
+  it("migrates a v4 save to 6 and fills lastSelectedMapIndex as null when omitted", () => {
     const result = migrateToCurrent({ saveVersion: 4, gems: 10 });
-    expect(result.saveVersion).toBe(5);
+    expect(result.saveVersion).toBe(6);
     expect(result.lastSelectedMapIndex).toBeNull();
   });
 
   it("keeps a saved lastSelectedMapIndex", () => {
     const result = migrateToCurrent({ saveVersion: 4, gems: 10, lastSelectedMapIndex: 15 });
-    expect(result.saveVersion).toBe(5);
+    expect(result.saveVersion).toBe(6);
     expect(result.lastSelectedMapIndex).toBe(15);
   });
 });
 
 describe("PersistStore save migration progressiveThirdChoice backfill", () => {
-  it("migrates a v4 save to 5 and fills progressiveThirdChoice when omitted", () => {
+  it("migrates a v4 save to 6 and fills progressiveThirdChoice when omitted", () => {
     const result = migrateToCurrent({ saveVersion: 4, gems: 10, generalAddons: { extraHealth: null } });
-    expect(result.saveVersion).toBe(5);
+    expect(result.saveVersion).toBe(6);
     expect(result.generalAddons.progressiveThirdChoice).toBeNull();
     expect(result.generalAddons.extraHealth).toBeNull();
   });
@@ -232,9 +232,9 @@ describe("PersistStore save migration v4 -> v5", () => {
     };
   }
 
-  it("bumps saveVersion to 5", () => {
+  it("bumps saveVersion to 6", () => {
     const result = migrateToCurrent(v4ShapedSave());
-    expect(result.saveVersion).toBe(5);
+    expect(result.saveVersion).toBe(6);
   });
 
   it("moves top-level map progress into the default world bucket", () => {
@@ -274,5 +274,22 @@ describe("PersistStore save migration v4 -> v5", () => {
     saved.activeWaves = { 0: 7, "the-aftermath:3": 21 };
     const result = migrateToCurrent(saved);
     expect(result.activeWaves).toEqual({ "default:0": 7, "the-aftermath:3": 21 });
+  });
+});
+
+describe("PersistStore save migration v5 -> v6", () => {
+  it("fills the pre-unlocked short-range base levels when the key is missing", () => {
+    const result = migrateToCurrent({ saveVersion: 5, gems: 4 });
+    expect(result.saveVersion).toBe(6);
+    expect(result.baseUnlocks.levels).toEqual([true, true, false, false, false, false, false]);
+  });
+
+  it("keeps an explicit false on the free levels", () => {
+    const result = migrateToCurrent({
+      saveVersion: 5,
+      gems: 4,
+      baseUnlocks: { levels: [false, true, true, false, false, false, false] },
+    });
+    expect(result.baseUnlocks.levels).toEqual([false, true, true, false, false, false, false]);
   });
 });

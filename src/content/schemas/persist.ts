@@ -15,6 +15,8 @@ const TowerUnlocksSchema = z.object({
   addons: z.array(z.boolean()),
 });
 
+const BaseUnlocksSchema = z.object({ levels: z.array(z.boolean()).length(7) });
+
 // Per-world map progress (save v5). Keyed by theme id under PersistStateSchema.themeProgress.
 const ThemeProgressSchema = z.object({
   highestUnlockedMap: z.number(),
@@ -64,6 +66,7 @@ export const PersistStateSchema = z.object({
   difficulty: z.object({ multiplierTick: z.number() }),
   generalAddons: GeneralAddonsSchema,
   unlocked: z.record(z.string(), TowerUnlocksSchema),
+  baseUnlocks: BaseUnlocksSchema,
   runHistory: z.array(z.unknown()),
   randomMapRegion: z.number(),
   randomMapLevel: z.number(),

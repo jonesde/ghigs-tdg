@@ -125,6 +125,9 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
             • Use <span class="gold">gold</span> to build towers from the Build Bar, then upgrade and specialize them for maximum effect
           </p>
           <p class="help-description">
+            • Click the base to select it, then spend gold to upgrade its health and sentries. Gems on the skill tree raise the upgrade cap
+          </p>
+          <p class="help-description">
             • Earn <span class="gems">gems</span> by reaching high waves and defeating bosses
           </p>
           <p class="help-description">

@@ -60,6 +60,7 @@ import type { ThemeBundle } from "@/sim/HostBindings.js";
 import { ParticleSystem } from "@/sim/ParticleSystem.js";
 import type { PersistState } from "@/sim/PersistState.js";
 import { SnapshotStore } from "@/sim/SnapshotStore.js";
+import { BASE_SELECTION_ID } from "@/sim/towers/BaseDefense.js";
 import { WorkerCommandDispatcher } from "@/sim/WorkerCommandDispatcher.js";
 import GameWorker from "@/sim/WorkerEntry.ts?worker";
 import type { WorkerToMainMessage } from "@/sim/WorkerProtocol.js";
@@ -467,13 +468,24 @@ const flushHover = (): void => {
 // depends only on the selected tower's tile + the grid tile size, both of which
 // are available from the snapshot/grid on the main thread.
 const computeHoverUpgradeBtn = (worldX: number, worldY: number): boolean => {
-  const selectedTower = snapshotStore.resolveSelectedTower();
-  if (!selectedTower || gameStore.selectedTowerType) return false;
+  if (gameStore.selectedTowerType) return false;
   const grid = gameStore.grid;
   if (!grid) return false;
+  let tileX: number;
+  let tileY: number;
+  if (gameStore.selectedTowerId === BASE_SELECTION_ID) {
+    const base = grid.getBase();
+    tileX = base.x;
+    tileY = base.y;
+  } else {
+    const selectedTower = snapshotStore.resolveSelectedTower();
+    if (!selectedTower) return false;
+    tileX = selectedTower.tileX;
+    tileY = selectedTower.tileY;
+  }
   const tileSize = grid.tileSize || TILE_SIZE;
-  const buildX = grid.worldOriginX + (selectedTower.tileX + 1) * tileSize - 12;
-  const buildY = grid.worldOriginY + selectedTower.tileY * tileSize + 2;
+  const buildX = grid.worldOriginX + (tileX + 1) * tileSize - 12;
+  const buildY = grid.worldOriginY + tileY * tileSize + 2;
   return worldX >= buildX && worldX <= buildX + 10 && worldY >= buildY && worldY <= buildY + 10;
 };
 
@@ -494,6 +506,7 @@ function clickHasEffectAt(worldX: number, worldY: number): boolean {
     upgradeButtonHit: computeHoverUpgradeBtn(worldX, worldY),
     inBounds: false,
     towerOnTile: false,
+    baseTile: false,
     selectedTowerType: towerType,
     buildable: false,
     gold: gameStore.gold,
@@ -504,6 +517,7 @@ function clickHasEffectAt(worldX: number, worldY: number): boolean {
   const tile = grid.worldToTile(worldX, worldY);
   input.inBounds = grid.inBounds(tile.x, tile.y);
   input.towerOnTile = input.inBounds && towerOnTileAt(tile.x, tile.y);
+  input.baseTile = input.inBounds && grid.isBase(tile.x, tile.y);
   input.buildable = input.inBounds && grid.canBuild(tile.x, tile.y);
   return clickHasEffect(input);
 }
@@ -763,6 +777,19 @@ function renderLoop(): void {
 
   enemyManager.syncFromGameEngine(snapshot.enemies);
   towerManager.syncFromGameEngine(snapshot.towers, animDt);
+  const grid = gameStore.grid;
+  const baseTile = grid?.getBase() ?? null;
+  const baseCenter = grid && baseTile ? grid.tileToWorld(baseTile.x, baseTile.y) : null;
+  const baseDefense = snapshot.meta.baseDefense;
+  const basicVisual = themeStore.getTowerVisual("basic");
+  towerManager.syncBaseSentries(
+    baseDefense?.sentries ?? [],
+    baseDefense?.level ?? 1,
+    baseCenter,
+    basicVisual?.animation ?? null,
+    basicVisual?.color ?? "#c8c8c8",
+    animDt,
+  );
   projectileManager.syncFromGameEngine(snapshot.projectiles);
   // Finding 7: simulate + render particles on the main thread. The worker no
   // longer ships a `particles` array; instead this rAF loop advances the
@@ -792,8 +819,27 @@ function renderLoop(): void {
     gameStore.grid,
     buildRangeTiles.value,
   );
+  effectManager.syncBaseSelection(
+    baseDefense,
+    snapshot.meta.selectedTowerId === "base",
+    baseCenter && baseTile
+      ? {
+          x: baseCenter.x,
+          y: baseCenter.y,
+          tileX: baseTile.x,
+          tileY: baseTile.y,
+          originX: grid?.worldOriginX ?? 0,
+          originY: grid?.worldOriginY ?? 0,
+        }
+      : null,
+  );
   uiOverlayManager.syncFromGameEngine(snapshot.enemies, selectedTower, snapshot.towers);
-  uiOverlayManager.syncWaveTopTowers(snapshot.towers, snapshot.meta.waveTopTowers, snapshot.meta.simSeconds ?? 0);
+  uiOverlayManager.syncWaveTopTowers(
+    snapshot.towers,
+    snapshot.meta.waveTopTowers,
+    snapshot.meta.simSeconds ?? 0,
+    baseCenter,
+  );
   if (gameStore.grid) {
     uiOverlayManager.syncPendingQueueOverlays(gameStore.grid, snapshot.spawnStates);
     uiOverlayManager.syncBaseHealthBar(gameStore.grid, snapshot.meta.baseHealth, snapshot.meta.maxBaseHealth);

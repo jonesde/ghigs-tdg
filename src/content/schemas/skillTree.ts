@@ -9,6 +9,7 @@ export const SkillTreeContentSchema = z.object({
   addonCosts: z.tuple([z.number(), z.number(), z.number()]),
   variantInfo: z.record(z.string(), z.object({ A: NameDescSchema, B: NameDescSchema })),
   addonInfo: z.record(z.string(), z.array(NameDescSchema).length(3)),
+  baseLevels: z.array(z.object({ label: z.string(), desc: z.string() })).length(7),
   generalAddonCategories: z.record(z.string(), z.object({ label: z.string(), addons: z.array(z.string()) })),
   generalAddonDefs: z.record(
     z.string(),

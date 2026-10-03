@@ -335,17 +335,18 @@ describe("PersistStore", () => {
 
   describe("schema migration on load", () => {
     it("includes saveVersion in default state", () => {
-      expect(store.saveVersion).toBe(5);
+      expect(store.saveVersion).toBe(6);
     });
 
-    it("migrates v1 data (no saveVersion) to current (v5)", () => {
+    it("migrates v1 data (no saveVersion) to current (v6)", () => {
       const oldData = { gems: 100, highestUnlockedMap: 5 };
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // OLD_STORAGE_KEY
         .mockReturnValueOnce(JSON.stringify(oldData)); // STORAGE_KEY
       store.load();
-      expect(store.saveVersion).toBe(5);
+      expect(store.saveVersion).toBe(6);
       expect(store.gems).toBe(100);
+      expect(store.baseUnlocks.levels).toEqual([true, true, false, false, false, false, false]);
       expect(store.themeProgress.default.highestUnlockedMap).toBe(5);
       expect(store.difficulty.multiplierTick).toBe(0);
       expect(store.generalAddons.extraHealth).toBeNull();
@@ -357,12 +358,12 @@ describe("PersistStore", () => {
         .mockReturnValueOnce(null) // OLD_STORAGE_KEY
         .mockReturnValueOnce(JSON.stringify(v1Data)); // STORAGE_KEY
       store.load();
-      expect(store.saveVersion).toBe(5);
+      expect(store.saveVersion).toBe(6);
       expect(store.gems).toBe(200);
       expect(store.themeProgress.default.bestWaves.best_3).toBe(45);
     });
 
-    it("loads v2 data and migrates forward to current (v5)", () => {
+    it("loads v2 data and migrates forward to current (v6)", () => {
       const v2Data = {
         saveVersion: 2,
         gems: 300,
@@ -383,7 +384,7 @@ describe("PersistStore", () => {
         .mockReturnValueOnce(null) // OLD_STORAGE_KEY
         .mockReturnValueOnce(JSON.stringify(v2Data)); // STORAGE_KEY
       store.load();
-      expect(store.saveVersion).toBe(5);
+      expect(store.saveVersion).toBe(6);
       expect(store.gems).toBe(300);
       expect(store.difficulty.multiplierTick).toBe(4);
       expect(store.generalAddons.extraHealth).toBe(10);
@@ -410,7 +411,7 @@ describe("PersistStore", () => {
         .mockReturnValueOnce(null)
         .mockReturnValueOnce(JSON.stringify(v3Data));
       store.load();
-      expect(store.saveVersion).toBe(5);
+      expect(store.saveVersion).toBe(6);
       expect(store.llmCommanders[0]?.requestTimeoutMs).toBe(30000);
       expect(store.llmCommanders[0]?.decisionIntervalMs).toBe(1000);
       expect(store.llmCommanders[0]?.name).toBe("Old");

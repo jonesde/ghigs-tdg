@@ -5,21 +5,27 @@ import type { TowerId } from "@/sim/ConstantsTower.js";
 import { TowerIds, targetsLabel, towerGroundOnly } from "@/sim/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import {
+  BASE_LEVEL_NODES,
   canRefund,
+  canRefundBase,
   canRefundGeneral,
   countRefundableGems,
   GENERAL_ADDON_CATEGORIES,
   GENERAL_ADDON_DEFS,
   getGeneralAddonValue,
   isAvailable,
+  isBaseAvailable,
+  isBaseUnlocked,
   isGeneralAvailable,
   isGeneralUnlocked,
   isUnlocked,
   refundAllGems,
   SKILL_TREE,
   tryRefund,
+  tryRefundBase,
   tryRefundGeneral,
   tryUnlock,
+  tryUnlockBase,
   tryUnlockGeneral,
 } from "@/sim/towers/SkillTree.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
@@ -36,6 +42,7 @@ function saveAndSyncPersist(gemsBefore: number): void {
     type: "action:syncPersist",
     unlocked: persistStore.unlocked,
     generalAddons: persistStore.generalAddons,
+    baseUnlocks: persistStore.baseUnlocks,
     gemDelta: persistStore.gems - gemsBefore,
   });
 }
@@ -46,6 +53,23 @@ const themeStore = useMapThemeStore();
 const uiStore = useUiStore();
 
 const towerIds = Object.values(TowerIds) as TowerId[];
+
+function handleBaseNodeClick(index: number, element: HTMLElement) {
+  const gemsBefore = persistStore.gems;
+  const result = tryUnlockBase(persistStore.$state, index);
+  if (result.ok) {
+    saveAndSyncPersist(gemsBefore);
+  } else if (result.reason === "Already unlocked") {
+    const refundGems = canRefundBase(persistStore.$state, index);
+    if (refundGems > 0) {
+      showBaseRefundConfirm(index, refundGems);
+    } else {
+      flashElement(element);
+    }
+  } else {
+    flashElement(element);
+  }
+}
 
 function handleTowerNodeClick(towerId: TowerId, tier: string, index: number, element: HTMLElement) {
   const gemsBefore = persistStore.gems;
@@ -106,6 +130,21 @@ function handleGeneralClick(key: string, type: string | number, opt: string | nu
   } else {
     flashElement(element);
   }
+}
+
+function showBaseRefundConfirm(index: number, gems: number) {
+  const label = BASE_LEVEL_NODES[index]?.label ?? "Base";
+  uiStore.showConfirm({
+    title: "Refund Unlock",
+    message: `Revoke "${label}" and refund ${gems} 💎?`,
+    confirmLabel: "Refund",
+    cancelLabel: "Cancel",
+    onConfirm: () => {
+      const gemsBefore = persistStore.gems;
+      tryRefundBase(persistStore.$state, index);
+      saveAndSyncPersist(gemsBefore);
+    },
+  });
 }
 
 function showRefundConfirm(towerId: TowerId, tier: string, index: number, gems: number) {
@@ -194,8 +233,8 @@ function showRefundAllConfirm() {
       <button class="back-btn" @click="goBack">← Back</button>
     </div>
 
-    <!-- General Add-ons Bar -->
-    <div class="general-addons">
+    <div class="skill-top">
+      <div class="skill-top-col">
       <template v-for="(cat, catKey) in GENERAL_ADDON_CATEGORIES" :key="catKey">
         <div class="category-group" :class="'category-' + catKey">
           <div class="category-header">
@@ -260,6 +299,52 @@ function showRefundAllConfirm() {
           </div>
         </div>
       </template>
+      </div>
+      <div class="skill-top-col base-unlocks">
+        <div class="category-group category-base">
+          <div class="category-header">
+            <span class="category-label">Base</span>
+            <span class="category-divider"></span>
+          </div>
+          <div v-for="key in ['extraHealth', 'slowHealing']" :key="key" class="general-card">
+            <template v-for="def in [GENERAL_ADDON_DEFS[key]]" :key="def.key">
+              <div class="general-label">{{ def.label }}</div>
+              <div class="general-desc">{{ def.desc }}</div>
+              <button
+                v-for="(tierDef, tierIndex) in def.tiers"
+                :key="tierIndex"
+                class="addon-btn"
+                :class="{
+                  unlocked: isGeneralUnlocked(persistStore.$state, key, tierIndex),
+                  unavailable: !isGeneralAvailable(persistStore.$state, key, tierIndex),
+                  active: getGeneralAddonValue(persistStore.$state, key) === tierIndex,
+                }"
+                @click="handleGeneralClick(key, tierIndex, null, $event.currentTarget)"
+              >
+                {{ tierDef.label }}{{ isGeneralUnlocked(persistStore.$state, key, tierIndex) ? '' : ' · ' + def.costs[tierIndex] + ' 💎' }}
+              </button>
+            </template>
+          </div>
+          <div
+            v-for="node in BASE_LEVEL_NODES"
+            :key="'base-' + node.index"
+            class="skill-node"
+            :class="{
+              unlocked: isBaseUnlocked(persistStore.$state, node.index),
+              unavailable: !isBaseAvailable(persistStore.$state, node.index),
+            }"
+            @click="handleBaseNodeClick(node.index, $event.currentTarget)"
+          >
+            <div class="node-header">
+              <span>{{ node.label }}</span>
+              <span class="node-cost">
+                {{ isBaseUnlocked(persistStore.$state, node.index) ? '✓' : node.cost + ' 💎' }}
+              </span>
+            </div>
+            <div class="node-desc">{{ node.desc }}</div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Tower Skill Columns -->
@@ -443,8 +528,46 @@ function showRefundAllConfirm() {
 .category-economy .category-label { color: var(--color-gold); }
 .category-economy .category-divider { background: linear-gradient(to right, rgba(255, 200, 80, 0.4), transparent); }
 
-.category-health .category-label { color: #6abf6a; }
-.category-health .category-divider { background: linear-gradient(to right, rgba(106, 191, 106, 0.4), transparent); }
+.category-base .category-label { color: #6abf6a; }
+.category-base .category-divider { background: linear-gradient(to right, rgba(106, 191, 106, 0.4), transparent); }
+
+.skill-top {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 20px;
+  align-items: start;
+}
+
+.skill-top-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.skill-top-col .category-group {
+  display: flex;
+  width: 100%;
+}
+
+.base-unlocks .category-group {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+}
+
+.base-unlocks .general-card {
+  width: auto;
+  margin-left: 0;
+  box-sizing: border-box;
+}
+
+@media (max-width: 900px) {
+  .skill-top {
+    grid-template-columns: 1fr;
+  }
+}
 
 .category-damage .category-label { color: var(--color-danger); }
 .category-damage .category-divider { background: linear-gradient(to right, rgba(255, 80, 80, 0.4), transparent); }

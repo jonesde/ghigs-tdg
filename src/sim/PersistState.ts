@@ -1,5 +1,5 @@
 import { TOTAL_MAPS } from "@/sim/Constants.js";
-import type { GeneralAddons, ThemeProgress, TowerUnlocks } from "@/stores/persist.js";
+import type { BaseUnlocks, GeneralAddons, ThemeProgress, TowerUnlocks } from "@/stores/persist.js";
 
 // Authoritative persist state — ALL fields enumerated explicitly. The
 // randomMap* / progressiveMap* / lastSelected* fields aren't written by
@@ -13,6 +13,7 @@ export interface PersistState {
   difficulty: { multiplierTick: number };
   generalAddons: GeneralAddons;
   unlocked: Record<string, TowerUnlocks>;
+  baseUnlocks: BaseUnlocks;
   runHistory: unknown[];
   randomMapRegion: number;
   randomMapLevel: number;
@@ -29,7 +30,11 @@ export interface PersistState {
   soundEnabled: boolean;
 }
 
-const CURRENT_SAVE_VERSION = 5;
+const CURRENT_SAVE_VERSION = 6;
+
+function defaultBaseUnlocks(): BaseUnlocks {
+  return { levels: [true, true, false, false, false, false, false] };
+}
 
 function blankTower(): TowerUnlocks {
   return {
@@ -78,6 +83,7 @@ export function createDefaultPersistState(): PersistState {
     difficulty: { multiplierTick: 0 },
     generalAddons: defaultGeneralAddons(),
     unlocked: defaultUnlocked(),
+    baseUnlocks: defaultBaseUnlocks(),
     runHistory: [],
     randomMapRegion: 1,
     randomMapLevel: 1,

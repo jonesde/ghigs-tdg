@@ -77,9 +77,17 @@
       { "name": "Spread", "desc": "Wider shotgun spread — +1 range." }
     ]
   },
+  "baseLevels": [
+    { "label": "Short Range", "desc": "Corner sentries fire at short range." },
+    { "label": "Short Range II", "desc": "Stronger short-range sentries." },
+    { "label": "Short Range III", "desc": "Short-range sentries reach their final tier." },
+    { "label": "Long Range", "desc": "Corner sentries also fire at long range." },
+    { "label": "Long Range II", "desc": "Stronger long-range sentries." },
+    { "label": "Long Range III", "desc": "Long-range sentries reach their final tier." },
+    { "label": "Double Damage", "desc": "Short-range and long-range sentries deal double damage." }
+  ],
   "generalAddonCategories": {
     "economy": { "label": "Economy", "addons": ["sellOption", "startingGold", "upgradeCostReduction", "progressiveThirdChoice"] },
-    "health": { "label": "Health", "addons": ["extraHealth", "slowHealing"] },
     "damage": { "label": "Damage", "addons": ["terrainHeightBonus", "terrainHeightRangeBonus", "damageMilestoneBonus"] }
   },
   "generalAddonDefs": {

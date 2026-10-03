@@ -60,6 +60,8 @@ export type Command =
       type: "action:syncPersist";
       unlocked: PersistState["unlocked"];
       generalAddons: PersistState["generalAddons"];
+      // Main-thread base gem cap. The worker copy is what caps in-run gold upgrades.
+      baseUnlocks: PersistState["baseUnlocks"];
       gemDelta: number;
     }
   // action:debug is the unified debug-injection command used by the DebugPanel

@@ -8,6 +8,7 @@ import { type TowerId, TowerIds } from "@/sim/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { PROGRESSIVE_BLOCK_SIZE, progressiveBlockWorldCorner } from "@/sim/grid/ProgressiveMap.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
+import { BASE_SELECTION_ID } from "@/sim/towers/BaseDefense.js";
 import type { GameStoreLike } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 import type { UiStoreLike } from "@/stores/ui.js";
@@ -74,6 +75,10 @@ function keyboardZoomFocus(gameStore: GameStoreLike): { x: number; y: number } |
   if (gameStore.progressivePlacementHold && gameStore.progressiveSelectedSite) {
     const site = gameStore.progressiveSelectedSite;
     return placementSiteCenter(gameStore, site.blockX, site.blockY);
+  }
+  if (gameStore.selectedTowerId === BASE_SELECTION_ID && !gameStore.selectedTowerType) {
+    const baseTile = baseNavTile(gameStore);
+    if (baseTile) return tileCenter(gameStore, baseTile.tileX, baseTile.tileY);
   }
   if (gameStore.selectedTower && !gameStore.selectedTowerType) {
     return tileCenter(gameStore, gameStore.selectedTower.tileX, gameStore.selectedTower.tileY);
@@ -251,7 +256,7 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
           uiStore.closeAllDialogs();
         } else if (gs.selectedTowerType) {
           dispatch({ commandId: nextInputCommandId++, type: "action:cancelBuildMode" });
-        } else if (gs.selectedTower) {
+        } else if (gs.selectedTower || gs.selectedTowerId === BASE_SELECTION_ID) {
           dispatchCommand({ commandId: nextInputCommandId++, type: "action:selectTower", towerId: null });
         } else {
           uiStore.openPauseMenu();
@@ -318,12 +323,12 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         break;
       }
       case "w":
-        if (canActNow(event.key) && gs.selectedTower) {
+        if (canActNow(event.key) && selectionActive(gs)) {
           dispatch({ commandId: nextInputCommandId++, type: "action:upgradeSelected" });
         }
         break;
       case "u":
-        if (canActNow(event.key) && gs.selectedTower) {
+        if (canActNow(event.key) && selectionActive(gs)) {
           dispatch({ commandId: nextInputCommandId++, type: "action:upgradeSelected" });
         }
         break;
@@ -344,8 +349,10 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         }
         break;
       case "s":
-        if (canActNow(event.key) && gs.selectedTower) {
-          if (gs.selectedTower.level > 1) {
+        if (canActNow(event.key) && selectionActive(gs)) {
+          if (gs.selectedTowerId === BASE_SELECTION_ID) {
+            dispatch({ commandId: nextInputCommandId++, type: "action:downgradeSelected" });
+          } else if (gs.selectedTower && gs.selectedTower.level > 1) {
             dispatch({ commandId: nextInputCommandId++, type: "action:downgradeSelected" });
           } else {
             dispatch({ commandId: nextInputCommandId++, type: "action:sellSelected" });
@@ -359,8 +366,11 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         }
         break;
       case "f":
-        if (canActNow(event.key) && gs.selectedTower) {
-          const currentMode = gs.selectedTower.targeting || "first";
+        if (canActNow(event.key) && selectionActive(gs)) {
+          const currentMode =
+            gs.selectedTowerId === BASE_SELECTION_ID
+              ? gs.baseDefense?.targeting || "first"
+              : gs.selectedTower?.targeting || "first";
           const currentIndex = targetingModes.indexOf(currentMode as (typeof targetingModes)[number]);
           const nextIndex = (currentIndex + 1) % targetingModes.length;
           dispatch({ commandId: nextInputCommandId++, type: "action:setTargeting", mode: targetingModes[nextIndex]! });
@@ -443,8 +453,8 @@ function handleTabCycle(gameStore: GameStoreLike, previous: boolean): void {
     return a.tileX - b.tileX;
   });
 
-  if (gameStore.selectedTower) {
-    const selectedId = gameStore.selectedTower.id;
+  const selectedId = gameStore.selectedTowerId ?? gameStore.selectedTower?.id ?? null;
+  if (selectedId) {
     const selectedIndex = sortedTowers.findIndex((tower) => tower.id === selectedId);
     if (selectedIndex >= 0) {
       const offset = previous ? -1 : 1;
@@ -544,10 +554,23 @@ type TowerLite = { id: string; tileX: number; tileY: number };
 // Tower navigation (Tab / arrow keys) reads the snapshot projection in the
 // worker build (the live manager is null on the main thread). Fall back to the
 // live manager when no snapshot is available (legacy / test path). Fix #5.
-function getNavigableTowers(_gameStore: GameStoreLike): TowerLite[] {
+function selectionActive(gameStore: GameStoreLike): boolean {
+  return gameStore.selectedTower != null || gameStore.selectedTowerId === BASE_SELECTION_ID;
+}
+
+function baseNavTile(gameStore: GameStoreLike): TowerLite | null {
+  const grid = inputGrid(gameStore) as (InputGrid & { getBase?: () => { x: number; y: number } }) | null;
+  const base = grid?.getBase?.();
+  if (!base) return null;
+  return { id: BASE_SELECTION_ID, tileX: base.x, tileY: base.y };
+}
+
+function getNavigableTowers(gameStore: GameStoreLike): TowerLite[] {
   const snapshot = getLatestSnapshot();
-  if (snapshot && snapshot.towers.length > 0) return snapshot.towers;
-  return [];
+  const towers: TowerLite[] = snapshot ? [...snapshot.towers] : [];
+  const baseTile = baseNavTile(gameStore);
+  if (baseTile) towers.push(baseTile);
+  return towers;
 }
 
 function searchTowers(
@@ -569,7 +592,8 @@ function moveTowerSelection(gameStore: GameStoreLike, direction: Direction): Cam
   const towers = getNavigableTowers(gameStore);
   if (towers.length === 0) return null;
 
-  const selected = gameStore.selectedTower;
+  const selectedId = gameStore.selectedTowerId ?? gameStore.selectedTower?.id ?? null;
+  const selected = selectedId ? (towers.find((tower) => tower.id === selectedId) ?? null) : null;
   if (!selected) {
     const sorted = [...towers].sort((a, b) => {
       if (direction === "up") return a.tileY - b.tileY || a.tileX - b.tileX;

@@ -235,6 +235,88 @@ export function maxLevelFor(save: PersistState, towerId: string, variant: "A" | 
 
 export const GENERAL_ADDON_CATEGORIES: Record<string, GeneralAddonCategory> = skillTreeContent.generalAddonCategories;
 
+export const BASE_LEVEL_COUNT = 7;
+
+export const BASE_LEVEL_NODES: { index: number; label: string; desc: string; cost: number }[] =
+  skillTreeContent.baseLevels.map((node, index) => ({
+    index,
+    label: node.label,
+    desc: node.desc,
+    cost: LEVEL_COSTS[index] ?? 0,
+  }));
+
+function baseLevelCost(index: number): number {
+  return LEVEL_COSTS[index] ?? 0;
+}
+
+export function isBaseUnlocked(save: PersistState, index: number): boolean {
+  if (index < 0 || index >= BASE_LEVEL_COUNT) return false;
+  const levels = save.baseUnlocks?.levels;
+  if (!levels) return index < 2;
+  return !!levels[index];
+}
+
+// Shared base-level precondition for isBaseAvailable/tryUnlockBase. Index 0 and 1
+// are free. Index 2 and above require the previous index.
+function checkBaseUnlockPreconditions(save: PersistState, index: number): { ok: true } | { ok: false; reason: string } {
+  if (index < 0 || index >= BASE_LEVEL_COUNT) return { ok: false, reason: "Invalid base level" };
+  if (index >= 2 && !isBaseUnlocked(save, index - 1)) {
+    return { ok: false, reason: "Unlock previous level first" };
+  }
+  return { ok: true };
+}
+
+export function isBaseAvailable(save: PersistState, index: number): boolean {
+  if (isBaseUnlocked(save, index)) return true;
+  if (save.gems < baseLevelCost(index)) return false;
+  return checkBaseUnlockPreconditions(save, index).ok;
+}
+
+export function tryUnlockBase(save: PersistState, index: number) {
+  if (isBaseUnlocked(save, index)) return { ok: false, reason: "Already unlocked" };
+  const cost = baseLevelCost(index);
+  if (save.gems < cost) return { ok: false, reason: "Not enough gems" };
+  const precondition = checkBaseUnlockPreconditions(save, index);
+  if (!precondition.ok) return precondition;
+  if (!save.baseUnlocks) {
+    save.baseUnlocks = { levels: [true, true, false, false, false, false, false] };
+  }
+  save.gems -= cost;
+  save.baseUnlocks.levels[index] = true;
+  return { ok: true };
+}
+
+export function canRefundBase(save: PersistState, index: number): number {
+  if (index < 2 || index >= BASE_LEVEL_COUNT) return 0;
+  const levels = save.baseUnlocks?.levels;
+  if (!levels?.[index]) return 0;
+  for (let higher = index + 1; higher < BASE_LEVEL_COUNT; higher++) {
+    if (levels[higher]) return 0;
+  }
+  const cost = baseLevelCost(index);
+  return cost > 0 ? cost : 0;
+}
+
+export function tryRefundBase(save: PersistState, index: number) {
+  const refundAmount = canRefundBase(save, index);
+  if (refundAmount === 0) return { ok: false, reason: "Cannot refund: dependent unlocks active" };
+  save.baseUnlocks!.levels[index] = false;
+  save.gems += refundAmount;
+  return { ok: true, gems: refundAmount };
+}
+
+// Walks until the first locked index. A run always has a legal cap of at least 1.
+export function maxLevelForBase(save: PersistState): number {
+  const levels = save.baseUnlocks?.levels;
+  if (!levels) return 2;
+  let max = 0;
+  for (let index = 0; index < BASE_LEVEL_COUNT; index++) {
+    if (!levels[index]) break;
+    max = index + 1;
+  }
+  return Math.max(1, max);
+}
+
 function resolveGeneralAddonCosts(costKey: string | undefined, isSellOption: boolean | undefined): readonly number[] {
   if (isSellOption) return [SELL_OPTION_GEM_COST, SELL_OPTION_GEM_COST];
   if (!costKey) return [];
@@ -409,6 +491,12 @@ export function countRefundableGems(save: PersistState): number {
       total += def.costs[i]!;
     }
   }
+  const baseLevels = save.baseUnlocks?.levels;
+  if (baseLevels) {
+    for (let index = BASE_LEVEL_COUNT - 1; index >= 0; index--) {
+      if (baseLevels[index]) total += baseLevelCost(index);
+    }
+  }
   return total;
 }
 
@@ -444,6 +532,11 @@ export function refundAllGems(save: PersistState) {
     if (typeof current !== "number") continue;
     for (let i = current; i >= 0; i--) {
       tryRefundGeneral(save, key, i);
+    }
+  }
+  if (save.baseUnlocks?.levels) {
+    for (let index = BASE_LEVEL_COUNT - 1; index >= 0; index--) {
+      if (save.baseUnlocks.levels[index]) tryRefundBase(save, index);
     }
   }
 }

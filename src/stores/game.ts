@@ -25,7 +25,10 @@ import {
   replayProgressiveBoard,
   sitesAtRotation,
 } from "@/sim/grid/ProgressiveMap.js";
+import type { BaseDefenseSnapshot } from "@/sim/SimulationSnapshot.js";
 import type { Tower } from "@/sim/towers/Tower.js";
+
+export type BasePanelState = Omit<BaseDefenseSnapshot, "sentries">;
 
 type GameStateValue = (typeof GameState)[keyof typeof GameState];
 type TowerId = typeof import("@/sim/ConstantsTower").TowerIds[keyof typeof import("@/sim/ConstantsTower").TowerIds];
@@ -176,7 +179,9 @@ export interface GameStoreLike {
   state: GameStateValue;
   timeScale: number;
   selectedTower: Tower | null;
+  selectedTowerId: string | null;
   selectedTowerType: TowerId | null;
+  baseDefense: BasePanelState | null;
   hoverTile: HoverTile | null;
   camera: CameraState;
   zoomCamera(magnificationFactor: number, focalWorldX: number | null, focalWorldY: number | null): void;
@@ -210,7 +215,9 @@ interface GameStateShape {
   timeScale: number;
   commanderHold: boolean;
   selectedTower: Tower | null;
+  selectedTowerId: string | null;
   selectedTowerType: TowerId | null;
+  baseDefense: BasePanelState | null;
   towerPanelPos: TowerPanelPos;
   gameShopPos: TowerPanelPos;
   minimapPanelPos: TowerPanelPos;
@@ -251,7 +258,9 @@ export const useGameStore = defineStore("game", {
     timeScale: 1,
     commanderHold: false,
     selectedTower: null,
+    selectedTowerId: null,
     selectedTowerType: null,
+    baseDefense: null,
     towerPanelPos: { x: 0, y: 48 },
     gameShopPos: { x: 0, y: 0 },
     minimapPanelPos: { x: 40, y: 80 },
@@ -374,7 +383,9 @@ export const useGameStore = defineStore("game", {
         firstClearBonus: 0,
       };
       this.selectedTower = null;
+      this.selectedTowerId = null;
       this.selectedTowerType = null;
+      this.baseDefense = null;
       this.towerPanelPos = { x: 0, y: 48 };
       this.gameShopPos = { x: 0, y: 0 };
       this.minimapPanelPos = { x: 40, y: 80 };
@@ -546,7 +557,9 @@ export const useGameStore = defineStore("game", {
 
     triggerEnd(victoryFlag: boolean, data: Omit<EndScreenPayload, "victory">) {
       this.selectedTower = null;
+      this.selectedTowerId = null;
       this.selectedTowerType = null;
+      this.baseDefense = null;
       this.hoverTile = null;
       this.buildHoverHeld = false;
       this.endScreenData = { victory: victoryFlag, ...data };
@@ -569,7 +582,9 @@ export const useGameStore = defineStore("game", {
       this.timeScale = 1;
       this.commanderHold = false;
       this.selectedTower = null;
+      this.selectedTowerId = null;
       this.selectedTowerType = null;
+      this.baseDefense = null;
       this.towerPanelPos = { x: 0, y: 48 };
       this.gameShopPos = { x: 0, y: 0 };
       this.minimapPanelPos = { x: 40, y: 80 };

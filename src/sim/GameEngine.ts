@@ -66,6 +66,9 @@ import { ContactProcessor } from "@/sim/physics/ContactProcessor.js";
 import { ForceFieldSystem } from "@/sim/physics/ForceFieldSystem.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { separateEnemiesFromTowers } from "@/sim/physics/separateEnemiesFromTowers.js";
+import type { BaseDefenseSnapshot } from "@/sim/SimulationSnapshot.js";
+import { BASE_SELECTION_ID, BaseDefense } from "@/sim/towers/BaseDefense.js";
+import { maxLevelForBase } from "@/sim/towers/SkillTree.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import { TowerManager } from "@/sim/towers/TowerManager.js";
 import { WaveGraphTracker } from "@/sim/WaveGraphTracker.js";
@@ -144,6 +147,7 @@ export class GameEngine {
   private lastPathVersion = -1;
   waveManager: WaveManagerRef | null;
   projectileManager: ProjectileManager | null;
+  baseDefense: BaseDefense | null = null;
   particleSpawner: ParticleSpawner;
   waveGraphTracker: WaveGraphTracker | null = null;
   totalGoldEarned: number;
@@ -343,7 +347,14 @@ export class GameEngine {
       this.theme,
       this.themeBundle.defaultTowerVisuals,
     );
-    this.projectileManager.setTowerLookup((towerId) => this.towerManager?.getTowerById(towerId) ?? null);
+    // setEngineMax writes this.maxBaseHealth from the base level curve.
+    this.baseDefense = new BaseDefense(this.grid, this.runState, (maxHealth) => {
+      this.maxBaseHealth = maxHealth;
+    });
+    this.projectileManager.setTowerLookup((towerId) => {
+      if (towerId === BASE_SELECTION_ID) return this.baseDefense;
+      return this.towerManager?.getTowerById(towerId) ?? null;
+    });
     // Burn ticks run inside Enemy.updateStatusTimers; route their dealt damage
     // back through the projectile manager's tower credit so the DPS graph and
     // milestone progression see burn like any other tower damage.
@@ -399,10 +410,12 @@ export class GameEngine {
     this.navDistanceField.rebuild();
     this.flightDistanceField = new FlightDistanceField(this.grid);
     this.flightDistanceField.rebuild(this.liveTowerAt, this.grid.pathVersion);
-    this.towerManager.setNavDistanceToBase((tileX, tileY, flyingHeight = 0) => {
+    const distanceToBase = (tileX: number, tileY: number, flyingHeight = 0): number => {
       if (flyingHeight > 0) return this.flightDistanceField?.getDistanceToBase(tileX, tileY, flyingHeight) ?? -1;
       return this.navDistanceField?.getDistanceToBase(tileX, tileY) ?? -1;
-    });
+    };
+    this.towerManager.setNavDistanceToBase(distanceToBase);
+    this.baseDefense?.setNavDistanceToBase(distanceToBase);
     this.enemyManager.setBlockedApproachLookup(
       (tileX, tileY) => this.navDistanceField?.getBlockedApproach(tileX, tileY) ?? null,
     );
@@ -429,6 +442,7 @@ export class GameEngine {
       this.persistState,
       this.towerManager!,
       this.enemyManager!,
+      this.baseDefense,
     );
 
     this._applyStartingBonuses();
@@ -449,12 +463,11 @@ export class GameEngine {
     this.runState.gold = StartingGold[regionId] ?? StartingGold[0];
 
     const ehTier = generalAddons.extraHealth;
+    let levelOneHealth = STARTING_BASE_HEALTH;
     if (ehTier !== null && ehTier !== undefined) {
-      this.runState.baseHealth += STARTING_HEALTH_BONUS[ehTier] || 0;
+      levelOneHealth += STARTING_HEALTH_BONUS[ehTier] || 0;
     }
-
-    this.maxBaseHealth = this.runState.baseHealth;
-    this.runState.maxBaseHealth = this.runState.baseHealth;
+    this.baseDefense?.applyStartingHealth(levelOneHealth);
 
     const sgTier = generalAddons.startingGold;
     if (sgTier !== null && sgTier !== undefined) {
@@ -598,6 +611,9 @@ export class GameEngine {
     // reordered: moving tower fire earlier showed no perf win and would shift every
     // combat roll by a tick.
     this.towerManager.update(dt, this.enemyManager);
+    if (this.baseDefense && this.projectileManager) {
+      this.baseDefense.update(dt, this.enemyManager, this.projectileManager, this.host, this.simSeconds);
+    }
 
     // Known one-tick gap: a tower ghosted this frame drops its block now (visuals
     // resolve here) but enemies route through the tile only after next tick's
@@ -763,20 +779,27 @@ export class GameEngine {
     setWave(this.runState, wave);
     this.waveGraphTracker?.onWaveStart(wave);
 
-    const towers = this.towerManager!.towers;
-    const sorted = towers
-      .map((tower) => ({ tower, dmg: tower.waveDamage }))
-      .filter((entry) => entry.dmg > 0)
-      .sort(
-        (entryA, entryB) => entryB.dmg - entryA.dmg || entryB.tower.totalDamageDealt - entryA.tower.totalDamageDealt,
-      )
-      .slice(0, 3);
+    const ranked: { towerId: string; damage: number; totalDamage: number }[] = [];
+    for (const tower of this.towerManager!.towers) {
+      if (tower.waveDamage > 0) {
+        ranked.push({ towerId: tower.id, damage: tower.waveDamage, totalDamage: tower.totalDamageDealt });
+      }
+    }
+    if (this.baseDefense && this.baseDefense.waveDamage > 0) {
+      ranked.push({
+        towerId: BASE_SELECTION_ID,
+        damage: this.baseDefense.waveDamage,
+        totalDamage: this.baseDefense.totalDamageDealt,
+      });
+    }
+    ranked.sort((entryA, entryB) => entryB.damage - entryA.damage || entryB.totalDamage - entryA.totalDamage);
+    const topRanked = ranked.slice(0, 3);
     this.waveTopTowers =
-      sorted.length > 0
-        ? sorted.map((entry, i) => ({
-            towerId: entry.tower.id,
-            rank: i + 1,
-            damage: entry.dmg,
+      topRanked.length > 0
+        ? topRanked.map((entry, index) => ({
+            towerId: entry.towerId,
+            rank: index + 1,
+            damage: entry.damage,
             simSeconds: this.simSeconds,
           }))
         : null;
@@ -784,6 +807,7 @@ export class GameEngine {
     this.towerManager!.towers.forEach((tower) => {
       tower.waveDamage = 0;
     });
+    this.baseDefense?.commitWave();
 
     // Full-restore all towers at wave start so ghosted tiles block again in one
     // pathVersion bump. Enemies still inside those tiles are moved out when
@@ -919,14 +943,26 @@ export class GameEngine {
     });
   }
 
-  private isUpgradeBtnAt(worldX: number, worldY: number): boolean {
+  private selectedAnchorTile(): { tileX: number; tileY: number } | null {
+    if (this.runState.selectedTowerId === BASE_SELECTION_ID) {
+      const base = this.grid?.getBase();
+      if (!base) return null;
+      return { tileX: base.x, tileY: base.y };
+    }
     const selectedTower = this.getSelectedTower();
-    if (!selectedTower || this.runState.selectedTowerType) return false;
+    if (!selectedTower) return null;
+    return { tileX: selectedTower.tileX, tileY: selectedTower.tileY };
+  }
+
+  private isUpgradeBtnAt(worldX: number, worldY: number): boolean {
+    if (this.runState.selectedTowerType) return false;
+    const anchor = this.selectedAnchorTile();
+    if (!anchor) return false;
     const tileSize = this.grid?.tileSize || 36;
     const originX = this.grid?.worldOriginX ?? 0;
     const originY = this.grid?.worldOriginY ?? 0;
-    const buildX = originX + (selectedTower.tileX + 1) * tileSize - 12;
-    const buildY = originY + selectedTower.tileY * tileSize + 2;
+    const buildX = originX + (anchor.tileX + 1) * tileSize - 12;
+    const buildY = originY + anchor.tileY * tileSize + 2;
     return worldX >= buildX && worldX <= buildX + 10 && worldY >= buildY && worldY <= buildY + 10;
   }
 
@@ -976,6 +1012,12 @@ export class GameEngine {
 
     if (!this.grid.inBounds(tx, ty)) {
       if (this.runState.selectedTowerType) this.runState.selectedTowerType = null;
+      return;
+    }
+
+    if (this.grid.isBase(tx, ty)) {
+      this.runState.selectedTowerType = null;
+      this.runState.selectedTowerId = BASE_SELECTION_ID;
       return;
     }
 
@@ -1034,7 +1076,82 @@ export class GameEngine {
     return this.runState.gold >= this.getUpgradeCost(tower);
   }
 
+  private reducedUpgradeCost(rawCost: number): number {
+    const ucrTier = this.persistState.generalAddons.upgradeCostReduction;
+    if (ucrTier !== null && ucrTier !== undefined) {
+      const reduction = UPGRADE_COST_REDUCTION_PCT[ucrTier] || 0;
+      return Math.floor(rawCost * (1 - reduction));
+    }
+    return rawCost;
+  }
+
+  private upgradeBase(): void {
+    const defense = this.baseDefense;
+    if (!defense) return;
+    const check = defense.canUpgrade(maxLevelForBase(this.persistState));
+    if (!check.ok) return;
+    const cost = this.reducedUpgradeCost(check.cost);
+    if (this.runState.gold < cost) return;
+    setGold(this.runState, this.runState.gold - cost);
+    defense.doUpgrade(cost);
+  }
+
+  baseDefenseSnapshot(): BaseDefenseSnapshot | undefined {
+    const defense = this.baseDefense;
+    if (!defense) return undefined;
+    const maxLevel = maxLevelForBase(this.persistState);
+    const check = defense.canUpgrade(maxLevel);
+    const upgradeCost = check.ok ? this.reducedUpgradeCost(check.cost) : 0;
+    const paid = defense.lastPaidCost();
+    const sellActive = this.persistState.generalAddons?.sellActive;
+    let downgradeRefund = 0;
+    if (defense.level > 1) {
+      if (sellActive === "refund") downgradeRefund = paid;
+      else if (sellActive !== "discount") downgradeRefund = Math.round(paid * SELL_VALUE_RATIO);
+    }
+    const shortGun = defense.shortGun();
+    const longGun = defense.longGun();
+    return {
+      level: defense.level,
+      maxLevel,
+      targeting: defense.targeting,
+      totalDamageDealt: defense.totalDamageDealt,
+      waveDamage: defense.waveDamage,
+      previousWaveDamage: defense.previousWaveDamage,
+      upgradeCost,
+      nextLevel: check.ok ? defense.level + 1 : defense.level,
+      canUpgrade: check.ok,
+      blockedReason: check.reason,
+      downgradeRefund,
+      shortStats: shortGun ? { range: shortGun.range, damage: shortGun.damage, fireRate: shortGun.fireRate } : null,
+      longStats: longGun ? { range: longGun.range, damage: longGun.damage, fireRate: longGun.fireRate } : null,
+      sentries: defense.sentries.map((sentry) => ({
+        x: sentry.x,
+        y: sentry.y,
+        angle: sentry.angle,
+        tileX: sentry.tileX,
+        tileY: sentry.tileY,
+        fireAnimTime: sentry.fireAnimTime,
+      })),
+    };
+  }
+
+  private downgradeBase(): void {
+    const defense = this.baseDefense;
+    if (!defense || defense.level <= 1) return;
+    const paid = defense.downgrade();
+    const sellActive = this.persistState.generalAddons?.sellActive;
+    let refund = 0;
+    if (sellActive === "refund") refund = paid;
+    else if (sellActive !== "discount") refund = Math.round(paid * SELL_VALUE_RATIO);
+    if (refund > 0) setGold(this.runState, this.runState.gold + refund);
+  }
+
   upgradeSelected(): void {
+    if (this.runState.selectedTowerId === BASE_SELECTION_ID) {
+      this.upgradeBase();
+      return;
+    }
     const tower = this.getSelectedTower();
     if (!tower) return;
 
@@ -1088,9 +1205,17 @@ export class GameEngine {
   // Merges the main-thread-owned persist slices (unlocked + generalAddons) into
   // the worker's persistState, and applies the skill-tree gem delta to that same
   // copy. Returns true so the worker posts a fresh snapshot.
-  syncPersist(unlocked: PersistState["unlocked"], generalAddons: PersistState["generalAddons"], gemDelta = 0): boolean {
+  syncPersist(
+    unlocked: PersistState["unlocked"],
+    generalAddons: PersistState["generalAddons"],
+    gemDelta = 0,
+    baseUnlocks?: PersistState["baseUnlocks"],
+  ): boolean {
     if (unlocked) this.persistState.unlocked = unlocked;
     if (generalAddons) this.persistState.generalAddons = generalAddons;
+    // baseUnlocks is main-thread-owned. Copying it here raises the live gold cap
+    // after a mid-run gem purchase; omitting it leaves the worker copy unchanged.
+    if (baseUnlocks) this.persistState.baseUnlocks = baseUnlocks;
     if (gemDelta !== 0) {
       this.persistState.gems += gemDelta;
       // This copy is what the next persist flush writes over persistStore.gems.
@@ -1190,6 +1315,7 @@ export class GameEngine {
   }
 
   sellSelected(): void {
+    if (this.runState.selectedTowerId === BASE_SELECTION_ID) return;
     const tower = this.getSelectedTower();
     if (!tower) return;
 
@@ -1268,6 +1394,11 @@ export class GameEngine {
       this.runState.selectedTowerId = null;
       return;
     }
+    if (towerId === BASE_SELECTION_ID) {
+      this.runState.selectedTowerType = null;
+      this.runState.selectedTowerId = BASE_SELECTION_ID;
+      return;
+    }
     const tower = this.towerManager?.getTowerById(towerId);
     if (tower) {
       this.runState.selectedTowerId = towerId;
@@ -1280,6 +1411,7 @@ export class GameEngine {
   }
 
   cancelSelected(): void {
+    if (this.runState.selectedTowerId === BASE_SELECTION_ID) return;
     const tower = this.getSelectedTower();
     if (!tower) return;
     if (this.persistState.generalAddons.sellActive === "discount") return;
@@ -1299,6 +1431,10 @@ export class GameEngine {
   }
 
   downgradeSelected(): void {
+    if (this.runState.selectedTowerId === BASE_SELECTION_ID) {
+      this.downgradeBase();
+      return;
+    }
     const tower = this.getSelectedTower();
     if (!tower) return;
     if (tower.level <= 1) return;
@@ -1324,6 +1460,10 @@ export class GameEngine {
   }
 
   setTargeting(mode: string): void {
+    if (this.runState.selectedTowerId === BASE_SELECTION_ID) {
+      this.baseDefense?.setTargeting(mode);
+      return;
+    }
     const tower = this.getSelectedTower();
     if (tower) {
       tower.targeting = mode;

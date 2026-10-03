@@ -117,7 +117,7 @@ export function applyCommand(engine: GameEngine, command: Command, enemyLookup?:
       // Main-thread skill-tree edits (unlocks, add-ons, and the gem delta) pushed
       // into the worker. The gem delta lands on the copy the persist flush writes,
       // so a mid-run purchase is not restored to the pre-purchase total.
-      engine.syncPersist(command.unlocked, command.generalAddons, command.gemDelta);
+      engine.syncPersist(command.unlocked, command.generalAddons, command.gemDelta, command.baseUnlocks);
       return true;
     case "action:debug":
       engine.debug(command.kind, command.amount);

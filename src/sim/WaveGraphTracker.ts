@@ -23,6 +23,7 @@ export class WaveGraphTracker {
   private persistState: PersistState;
   private towerManager: TowerManagerRef;
   private enemyManager: EnemyManagerRef;
+  private extraDamage: { totalDamageDealt: number } | null;
 
   private _gameTimeAccum: number = 0;
   private _dots: WaveGraphDot[] = [];
@@ -46,8 +47,10 @@ export class WaveGraphTracker {
     persistState: PersistState,
     towerManager: TowerManagerRef,
     enemyManager: EnemyManagerRef,
+    extraDamage: { totalDamageDealt: number } | null = null,
   ) {
     this.runState = runState;
+    this.extraDamage = extraDamage;
     this.persistState = persistState;
     this.towerManager = towerManager;
     this.enemyManager = enemyManager;
@@ -164,6 +167,7 @@ export class WaveGraphTracker {
     for (const tower of this.towerManager.towers) {
       total += tower.totalDamageDealt;
     }
+    if (this.extraDamage) total += this.extraDamage.totalDamageDealt;
     return total;
   }
 

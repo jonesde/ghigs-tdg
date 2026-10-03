@@ -185,6 +185,8 @@ export const UPGRADE_COST_REDUCTION_PCT = economy.upgradeCostReductionPct;
 export const STARTING_GOLD_BONUS = economy.startingGoldBonus;
 export const STARTING_HEALTH_BONUS = economy.startingHealthBonus;
 export const STARTING_BASE_HEALTH = economy.startingBaseHealth;
+export const BASE_GOLD_COST = economy.baseGoldCost;
+export const BASE_LEVEL_HEALTH_MULT = economy.baseLevelHealthMult;
 export const MILESTONE_BONUS_PCT = economy.milestoneBonusPct;
 export const MILESTONE_THRESHOLD = economy.milestoneThreshold;
 

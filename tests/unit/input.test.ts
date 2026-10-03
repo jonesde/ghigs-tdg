@@ -218,6 +218,16 @@ describe("useInput", () => {
       expect(lastSelectedTowerId()).toBeNull();
     });
 
+    it("deselects the base instead of opening the pause menu", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.selectedTower = null;
+      gameStore.selectedTowerId = "base";
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("Escape");
+      expect(lastSelectedTowerId()).toBeNull();
+      expect(uiStore.showPauseMenu).toBe(false);
+    });
+
     it("opens pause menu when no dialog is open and no tower is selected", () => {
       gameStore.setState(GameState.PLAYING);
       useInput(gameStore, dispatcher, uiStore);
@@ -282,6 +292,15 @@ describe("useInput", () => {
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("w");
       expect(dispatched("action:upgradeSelected")).toBe(false);
+    });
+
+    it("dispatches upgradeSelected when the base is selected", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.selectedTower = null;
+      gameStore.selectedTowerId = "base";
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("w");
+      expect(dispatched("action:upgradeSelected")).toBe(true);
     });
 
     it("dispatches upgradeSelected even when the tower needs a specialization (engine auto-picks)", () => {
@@ -501,6 +520,16 @@ describe("useInput", () => {
       expect(dispatched("action:sellSelected")).toBe(false);
       expect(dispatched("action:downgradeSelected")).toBe(false);
     });
+
+    it("downgrades the base instead of selling it", () => {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.selectedTower = null;
+      gameStore.selectedTowerId = "base";
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("s");
+      expect(dispatched("action:downgradeSelected")).toBe(true);
+      expect(dispatched("action:sellSelected")).toBe(false);
+    });
   });
 
   describe("ArrowDown (tower selection / build position)", () => {
@@ -711,7 +740,7 @@ describe("useInput", () => {
   });
 
   describe("Arrow key wrap-around (tower selection)", () => {
-    it("wraps right from rightmost tower to leftmost tower on same row", () => {
+    it("selects the base when it sits further right than the selected tower", () => {
       gameStore.setState(GameState.PLAYING);
       const { engine, towers } = applyTowerSnapshot([
         { tileX: 9, tileY: 5 },
@@ -719,11 +748,36 @@ describe("useInput", () => {
       ]);
       gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, engine.grid as unknown as Grid);
       const rightmost = towers.find((t) => t.tileX === 9 && t.tileY === 5)!;
-      const leftmost = towers.find((t) => t.tileX === 2 && t.tileY === 5)!;
       gameStore.selectedTower = rightmost as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowRight");
+      expect(lastSelectedTowerId()).toBe("base");
+    });
+
+    it("wraps right from the base to the leftmost tower", () => {
+      gameStore.setState(GameState.PLAYING);
+      const { engine, towers } = applyTowerSnapshot([
+        { tileX: 9, tileY: 5 },
+        { tileX: 2, tileY: 5 },
+      ]);
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, engine.grid as unknown as Grid);
+      const leftmost = towers.find((t) => t.tileX === 2 && t.tileY === 5)!;
+      gameStore.selectedTower = null;
+      gameStore.selectedTowerId = "base";
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("ArrowRight");
       expect(lastSelectedTowerId()).toBe(leftmost.id);
+    });
+
+    it("selects the base with arrow keys when no tower is built", () => {
+      gameStore.setState(GameState.PLAYING);
+      const { engine } = applyTowerSnapshot([]);
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, engine.grid as unknown as Grid);
+      gameStore.selectedTower = null;
+      gameStore.selectedTowerId = null;
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("ArrowRight");
+      expect(lastSelectedTowerId()).toBe("base");
     });
 
     it("wraps left from leftmost tower to rightmost tower on same row", () => {

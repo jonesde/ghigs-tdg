@@ -59,6 +59,10 @@ export interface ObservationNav {
 // stable for LLM commanders.
 export interface CommanderObservation {
   observationId?: number;
+  // Optional so hand-built test observations compile. buildObservation always sets them.
+  baseLevel?: number;
+  baseShortRange?: number;
+  baseLongRange?: number;
   map: number[][] | undefined;
   heights?: number[][] | undefined;
   spawns?: SpawnPointSnapshot[];
@@ -140,8 +144,12 @@ export function buildObservation(slice: CommanderSnapshotSlice): CommanderObserv
       failedCommandId: slice.meta.lastFailedCommandId ?? 0,
     };
   }
+  const baseDefense = slice.meta.baseDefense;
   const observation: CommanderObservation = {
     observationId: slice.observationId,
+    baseLevel: baseDefense?.level ?? 1,
+    baseShortRange: baseDefense?.shortStats?.range ?? 0,
+    baseLongRange: baseDefense?.longStats?.range ?? 0,
     map: slice.gridLayout,
     heights: slice.heights,
     spawns: slice.meta.spawns ?? [],

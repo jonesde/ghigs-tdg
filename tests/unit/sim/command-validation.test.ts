@@ -397,6 +397,7 @@ describe("WorkerCommandDispatcher", () => {
       type: "action:syncPersist",
       unlocked: persist.unlocked,
       generalAddons: persist.generalAddons,
+      baseUnlocks: persist.baseUnlocks,
       gemDelta: -100,
     };
     dispatcher.dispatch(outgoing);

@@ -35,6 +35,8 @@ export const EconomyContentSchema = z.object({
   startingGoldBonus: z.tuple([z.number(), z.number(), z.number()]),
   startingHealthBonus: z.tuple([z.number(), z.number(), z.number()]),
   startingBaseHealth: z.number(),
+  baseGoldCost: z.number(),
+  baseLevelHealthMult: z.number(),
   milestoneBonusPct: z.tuple([
     z.tuple([z.number(), z.number()]),
     z.tuple([z.number(), z.number()]),

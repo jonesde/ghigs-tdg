@@ -1,7 +1,12 @@
 import { WAVE_GRAPH_DOT_SPACING, WAVE_GRAPH_WIDTH } from "@/sim/Constants.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import type { GameStore } from "@/stores/game.js";
-import type { SimulationSnapshot, WaveGraphDot } from "./SimulationSnapshot.js";
+import type {
+  BaseDefenseSnapshot,
+  BaseGunStatsSnapshot,
+  SimulationSnapshot,
+  WaveGraphDot,
+} from "./SimulationSnapshot.js";
 import { SNAPSHOT_SCHEMA_VERSION } from "./SimulationSnapshot.js";
 
 // Module-level mirror of the latest snapshot so non-reactive Vue components
@@ -34,6 +39,50 @@ const WAVE_GRAPH_MAX_ACCUM = Math.ceil(WAVE_GRAPH_WIDTH / WAVE_GRAPH_DOT_SPACING
 // summation order after a rebuild). Exact equality would then fail to detect the
 // overlap and append duplicates instead of merging.
 const WAVE_GRAPH_DOT_EPSILON = 1e-6;
+
+function gunStatsMatch(current: BaseGunStatsSnapshot | null, next: BaseGunStatsSnapshot | null): boolean {
+  if (current === null || next === null) return current === next;
+  return current.range === next.range && current.damage === next.damage && current.fireRate === next.fireRate;
+}
+
+function mirrorBasePanel(gs: GameStore, view: BaseDefenseSnapshot | undefined): void {
+  if (!view) {
+    if (gs.baseDefense) gs.baseDefense = null;
+    return;
+  }
+  const panel = gs.baseDefense;
+  const unchanged =
+    panel !== null &&
+    panel.level === view.level &&
+    panel.maxLevel === view.maxLevel &&
+    panel.targeting === view.targeting &&
+    panel.totalDamageDealt === view.totalDamageDealt &&
+    panel.waveDamage === view.waveDamage &&
+    panel.previousWaveDamage === view.previousWaveDamage &&
+    panel.upgradeCost === view.upgradeCost &&
+    panel.nextLevel === view.nextLevel &&
+    panel.canUpgrade === view.canUpgrade &&
+    panel.blockedReason === view.blockedReason &&
+    panel.downgradeRefund === view.downgradeRefund &&
+    gunStatsMatch(panel.shortStats, view.shortStats) &&
+    gunStatsMatch(panel.longStats, view.longStats);
+  if (unchanged) return;
+  gs.baseDefense = {
+    level: view.level,
+    maxLevel: view.maxLevel,
+    targeting: view.targeting,
+    totalDamageDealt: view.totalDamageDealt,
+    waveDamage: view.waveDamage,
+    previousWaveDamage: view.previousWaveDamage,
+    upgradeCost: view.upgradeCost,
+    nextLevel: view.nextLevel,
+    canUpgrade: view.canUpgrade,
+    blockedReason: view.blockedReason,
+    downgradeRefund: view.downgradeRefund,
+    shortStats: view.shortStats ? { ...view.shortStats } : null,
+    longStats: view.longStats ? { ...view.longStats } : null,
+  };
+}
 
 function numbersClose(a: number, b: number): boolean {
   return Math.abs(a - b) <= WAVE_GRAPH_DOT_EPSILON;
@@ -314,6 +363,8 @@ export class SnapshotStore {
         if (proxy) Object.assign(proxy, fresh);
       }
     }
+    if (gs.selectedTowerId !== meta.selectedTowerId) gs.selectedTowerId = meta.selectedTowerId;
+    mirrorBasePanel(gs, meta.baseDefense);
     // hoverUpgradeBtn is intentionally NOT mirrored here — the engine no longer
     // writes it (GameEngine.setHover was removed in Phase 7), so mirroring would
     // clobber the main-thread value with the engine's always-false default.

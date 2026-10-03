@@ -126,6 +126,7 @@ function renderFrame(): void {
     ctx.clearRect(0, 0, canvasWidth.value, canvasHeight.value);
     pathRenderer.render(ctx, snapshot, scale.value);
     towerManager.render(ctx, snapshot.towers, themeStore, scale.value);
+    towerManager.renderBaseSentries(ctx, snapshot.meta.baseDefense?.sentries ?? [], themeStore, scale.value);
     enemyManager.render(ctx, snapshot.enemies, themeStore, scale.value);
     overlayRenderer.render(ctx, snapshot, scale.value, uiStore.debugPanelVisible);
   }

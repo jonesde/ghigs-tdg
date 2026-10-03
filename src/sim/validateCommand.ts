@@ -180,6 +180,9 @@ export function validateCommand(command: Command, grid?: CommandGridInfo | null)
       if (!command.generalAddons || typeof command.generalAddons !== "object") {
         return "action:syncPersist generalAddons must exist";
       }
+      if (!command.baseUnlocks || typeof command.baseUnlocks !== "object") {
+        return "action:syncPersist baseUnlocks must exist";
+      }
       if (typeof command.gemDelta !== "number" || !Number.isFinite(command.gemDelta)) {
         return "action:syncPersist gemDelta must be a finite number";
       }

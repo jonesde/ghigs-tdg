@@ -2,7 +2,6 @@ import { GRID_TILE_SIZE } from "@/render/svg/types.js";
 import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
 import type { ProjectileHitEvent } from "@/sim/physics/ContactProcessor.js";
 import type { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
-import type { Tower } from "@/sim/towers/Tower.js";
 import { MAX_PROJECTILE_AGE, PROJECTILE_HIT_SLOP, PROJECTILE_RETARGET_CORRIDOR_TILE_FRACTION } from "./Constants.js";
 import {
   ANTI_HEAL_DURATION,
@@ -19,6 +18,11 @@ import {
   SPLASH_DAMAGE_RATIO,
   TOWER_BASE,
 } from "./ConstantsTower.js";
+
+export interface DamageCreditTarget {
+  totalDamageDealt: number;
+  waveDamage: number;
+}
 
 // Sub-range widening fractions for the nearest-enemy search. Index 0 scales by
 // tileSize (covers the local neighborhood before any range is applied), the
@@ -254,7 +258,7 @@ export class ProjectileManager {
   private onStunEffect: OnStunEffectCallback | null;
   private onGoldReward: OnGoldRewardCallback | null;
   private nextProjectileId: number;
-  private towerLookup: ((towerId: string) => Tower | null) | null = null;
+  private towerLookup: ((towerId: string) => DamageCreditTarget | null) | null = null;
   private pendingLightning: LightningVisualEffect[];
   private pendingStuns: StunVisualEffect[];
   private renderDataBuffer: Array<{ id: number; x: number; y: number; radius: number; color: string; icon: string }> =
@@ -296,7 +300,7 @@ export class ProjectileManager {
   constructor(
     enemyManager: EnemyManager,
     particles: ParticleSpawner | null,
-    towerLookup: ((towerId: string) => Tower | null) | null = null,
+    towerLookup: ((towerId: string) => DamageCreditTarget | null) | null = null,
     grid: GridRef | null = null,
     rng: (() => number) | null = null,
   ) {
@@ -326,7 +330,7 @@ export class ProjectileManager {
     this.onGoldReward = callback;
   }
 
-  setTowerLookup(callback: ((towerId: string) => Tower | null) | null): void {
+  setTowerLookup(callback: ((towerId: string) => DamageCreditTarget | null) | null): void {
     this.towerLookup = callback;
   }
 

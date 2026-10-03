@@ -293,6 +293,7 @@ describe("worker round-trip", () => {
       type: "action:syncPersist",
       unlocked: syncedState.unlocked,
       generalAddons: syncedState.generalAddons,
+      baseUnlocks: syncedState.baseUnlocks,
       gemDelta: 0,
     });
     await wait(40);

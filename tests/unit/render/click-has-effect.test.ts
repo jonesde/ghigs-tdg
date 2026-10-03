@@ -8,6 +8,7 @@ function input(overrides: Partial<ClickEffectInput> = {}): ClickEffectInput {
     upgradeButtonHit: false,
     inBounds: true,
     towerOnTile: false,
+    baseTile: false,
     selectedTowerType: null,
     buildable: true,
     gold: 100,
@@ -30,6 +31,11 @@ describe("clickHasEffect", () => {
   it("acts on a tower in both modes", () => {
     expect(clickHasEffect(input({ towerOnTile: true }))).toBe(true);
     expect(clickHasEffect(input({ towerOnTile: true, selectedTowerType: "basic" }))).toBe(true);
+  });
+
+  it("acts on a base tile in both modes", () => {
+    expect(clickHasEffect(input({ baseTile: true, buildable: false }))).toBe(true);
+    expect(clickHasEffect(input({ baseTile: true, selectedTowerType: "basic", buildable: false }))).toBe(true);
   });
 
   it("builds on an in-bounds buildable tile the gold covers", () => {

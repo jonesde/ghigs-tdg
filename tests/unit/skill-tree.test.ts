@@ -5,19 +5,25 @@ import { getGameContent } from "@/content/gameContent.js";
 import { GENERAL_ADDON_GEM_COSTS, SELL_OPTION_GEM_COST } from "@/sim/Constants.js";
 import {
   canRefund,
+  canRefundBase,
   canRefundGeneral,
   countRefundableGems,
   GENERAL_ADDON_DEFS,
   getGeneralAddonValue,
   isAvailable,
+  isBaseAvailable,
+  isBaseUnlocked,
   isGeneralAvailable,
   isGeneralUnlocked,
   isUnlocked,
   maxLevelFor,
+  maxLevelForBase,
   refundAllGems,
   tryRefund,
+  tryRefundBase,
   tryRefundGeneral,
   tryUnlock,
+  tryUnlockBase,
   tryUnlockGeneral,
   unlockCost,
 } from "@/sim/towers/SkillTree.js";
@@ -636,5 +642,42 @@ describe("SkillTree — General Add-ons", () => {
       expect(save.generalAddons.sellActive).toBeNull();
       expect(singleRefundSave.generalAddons.sellActive).toBeNull();
     });
+  });
+});
+
+describe("SkillTree — Base levels", () => {
+  it("treats a missing baseUnlocks field as the free short-range cap", () => {
+    const save = freshSave();
+    expect(isBaseUnlocked(save, 0)).toBe(true);
+    expect(isBaseUnlocked(save, 1)).toBe(true);
+    expect(isBaseUnlocked(save, 2)).toBe(false);
+    expect(maxLevelForBase(save)).toBe(2);
+    expect(canRefundBase(save, 0)).toBe(0);
+    expect(canRefundBase(save, 1)).toBe(0);
+  });
+
+  it("unlocks in order and refuses level 4 before level 3", () => {
+    const save = freshSave();
+    expect(tryUnlockBase(save, 3).ok).toBe(false);
+    expect(tryUnlockBase(save, 2).ok).toBe(true);
+    expect(save.baseUnlocks.levels[2]).toBe(true);
+    expect(isBaseAvailable(save, 3)).toBe(true);
+    expect(tryUnlockBase(save, 3).ok).toBe(true);
+  });
+
+  it("does not refund a level while a higher one is owned, and refundAll returns the spend", () => {
+    const save = freshSave();
+    const gemsBefore = save.gems;
+    tryUnlockBase(save, 2);
+    tryUnlockBase(save, 3);
+    expect(canRefundBase(save, 2)).toBe(0);
+    expect(tryRefundBase(save, 2).ok).toBe(false);
+    expect(tryRefundBase(save, 3).ok).toBe(true);
+    expect(canRefundBase(save, 2)).toBe(16);
+    const spent = gemsBefore - save.gems;
+    refundAllGems(save);
+    expect(save.gems).toBe(gemsBefore);
+    expect(spent).toBe(16);
+    expect(save.baseUnlocks.levels[2]).toBe(false);
   });
 });

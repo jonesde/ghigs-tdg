@@ -108,6 +108,19 @@ export const TowerTuningSchema = z.object({
   knockbackHpDivisor: z.number(),
 });
 
+const BaseGunTierSchema = z.object({
+  range: z.number(),
+  damage: z.number(),
+  fireRate: z.number(),
+  projSpeed: z.number(),
+});
+
+export const BaseDefenseContentSchema = z.object({
+  shortRange: z.array(BaseGunTierSchema).length(3),
+  longRange: z.array(BaseGunTierSchema).length(3),
+  levelSevenDamageMultiplier: z.number(),
+});
+
 export const TowersContentSchema = z.object({
   ids: z.array(z.string()).min(1),
   meta: z.record(z.string(), TowerMetaSchema),
@@ -115,6 +128,7 @@ export const TowersContentSchema = z.object({
   tuning: TowerTuningSchema,
   variants: z.record(z.string(), z.object({ A: TowerVariantDefSchema, B: TowerVariantDefSchema })),
   addonEffects: z.record(z.string(), z.array(TowerAddonEffectSchema)),
+  baseDefense: BaseDefenseContentSchema,
 });
 
 export type TowersContent = z.infer<typeof TowersContentSchema>;

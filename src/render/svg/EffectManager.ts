@@ -67,6 +67,7 @@ export class EffectManager {
   private buildPreviewEl: SVGRectElement | null = null;
   private buildPreviewSpriteEl: SVGUseElement | null = null;
   private rangeCircleEl: SVGCircleElement | null = null;
+  private baseRangeCirclePool: SVGCircleElement[] = [];
   private buildRangeCircleEl: SVGCircleElement | null = null;
   private splashCircleEl: SVGCircleElement | null = null;
   private upgradeButtonEl: SVGGElement | null = null;
@@ -128,6 +129,15 @@ export class EffectManager {
     this.rangeCircleEl.setAttribute("stroke-width", "1.5");
     this.rangeCircleEl.style.visibility = "hidden";
     layer.appendChild(this.rangeCircleEl);
+
+    for (let circleIndex = 0; circleIndex < 8; circleIndex++) {
+      const circle = document.createElementNS(SVG_NS, "circle");
+      circle.setAttribute("fill", "none");
+      circle.setAttribute("stroke-width", "1.5");
+      circle.style.visibility = "hidden";
+      layer.appendChild(circle);
+      this.baseRangeCirclePool.push(circle);
+    }
 
     this.buildRangeCircleEl = document.createElementNS(SVG_NS, "circle");
     this.buildRangeCircleEl.setAttribute("fill", "none");
@@ -637,6 +647,67 @@ export class EffectManager {
     }
   }
 
+  // Shows the shared upgrade button and the 3×3 highlight after tower sync has
+  // hidden them (the base is not a Tower). Hides only the sentry range circles
+  // when a real tower is selected, so it does not clear that tower's button.
+  syncBaseSelection(
+    defense:
+      | {
+          shortStats: { range: number } | null;
+          longStats: { range: number } | null;
+          sentries: { x: number; y: number }[];
+        }
+      | undefined,
+    selected: boolean,
+    anchor: { x: number; y: number; tileX: number; tileY: number; originX: number; originY: number } | null,
+  ): void {
+    const show = selected && defense != null && anchor != null;
+    if (!show) {
+      for (const circle of this.baseRangeCirclePool) circle.style.visibility = "hidden";
+      return;
+    }
+    if (this.rangeCircleEl) this.rangeCircleEl.style.visibility = "hidden";
+    if (this.upgradeButtonEl) {
+      this.upgradeButtonEl.style.visibility = "visible";
+      const buttonX = anchor.x + TILE_SIZE / 2 - 12;
+      const buttonY = anchor.y - TILE_SIZE / 2 + 2;
+      this.upgradeButtonEl.setAttribute("transform", `translate(${buttonX}, ${buttonY})`);
+    }
+    if (this.selectedTileRectEl) {
+      this.selectedTileRectEl.style.visibility = "visible";
+      const rectX = anchor.originX + (anchor.tileX - 1) * TILE_SIZE + 1;
+      const rectY = anchor.originY + (anchor.tileY - 1) * TILE_SIZE + 1;
+      this.selectedTileRectEl.setAttribute("transform", `translate(${rectX}, ${rectY})`);
+      this.selectedTileRectEl.setAttribute("width", String(TILE_SIZE * 3 - 2));
+      this.selectedTileRectEl.setAttribute("height", String(TILE_SIZE * 3 - 2));
+    }
+    let circleIndex = 0;
+    const sentries = defense.sentries;
+    for (const sentry of sentries) {
+      if (defense.shortStats && circleIndex < this.baseRangeCirclePool.length) {
+        const circle = this.baseRangeCirclePool[circleIndex]!;
+        circle.style.visibility = "visible";
+        circle.setAttribute("stroke", "rgba(0,255,0,0.6)");
+        circle.removeAttribute("stroke-dasharray");
+        circle.setAttribute("transform", `translate(${sentry.x}, ${sentry.y})`);
+        circle.setAttribute("r", String(defense.shortStats.range * TILE_SIZE));
+        circleIndex++;
+      }
+      if (defense.longStats && circleIndex < this.baseRangeCirclePool.length) {
+        const circle = this.baseRangeCirclePool[circleIndex]!;
+        circle.style.visibility = "visible";
+        circle.setAttribute("stroke", "rgba(255,180,40,0.55)");
+        circle.removeAttribute("stroke-dasharray");
+        circle.setAttribute("transform", `translate(${sentry.x}, ${sentry.y})`);
+        circle.setAttribute("r", String(defense.longStats.range * TILE_SIZE));
+        circleIndex++;
+      }
+    }
+    for (let index = circleIndex; index < this.baseRangeCirclePool.length; index++) {
+      this.baseRangeCirclePool[index]!.style.visibility = "hidden";
+    }
+  }
+
   private generateLightningId(): string {
     this.nextLightningId += 1;
     return `lightning-${this.nextLightningId}`;
@@ -667,6 +738,10 @@ export class EffectManager {
     if (this.rangeCircleEl?.parentNode) {
       this.rangeCircleEl.parentNode.removeChild(this.rangeCircleEl);
     }
+    for (const circle of this.baseRangeCirclePool) {
+      if (circle.parentNode) circle.parentNode.removeChild(circle);
+    }
+    this.baseRangeCirclePool = [];
     if (this.buildRangeCircleEl?.parentNode) {
       this.buildRangeCircleEl.parentNode.removeChild(this.buildRangeCircleEl);
     }
