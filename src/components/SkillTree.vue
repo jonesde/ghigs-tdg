@@ -306,42 +306,49 @@ function showRefundAllConfirm() {
             <span class="category-label">Base</span>
             <span class="category-divider"></span>
           </div>
-          <div v-for="key in ['extraHealth', 'slowHealing']" :key="key" class="general-card">
-            <template v-for="def in [GENERAL_ADDON_DEFS[key]]" :key="def.key">
-              <div class="general-label">{{ def.label }}</div>
-              <div class="general-desc">{{ def.desc }}</div>
-              <button
-                v-for="(tierDef, tierIndex) in def.tiers"
-                :key="tierIndex"
-                class="addon-btn"
-                :class="{
-                  unlocked: isGeneralUnlocked(persistStore.$state, key, tierIndex),
-                  unavailable: !isGeneralAvailable(persistStore.$state, key, tierIndex),
-                  active: getGeneralAddonValue(persistStore.$state, key) === tierIndex,
-                }"
-                @click="handleGeneralClick(key, tierIndex, null, $event.currentTarget)"
-              >
-                {{ tierDef.label }}{{ isGeneralUnlocked(persistStore.$state, key, tierIndex) ? '' : ' · ' + def.costs[tierIndex] + ' 💎' }}
-              </button>
-            </template>
-          </div>
-          <div
-            v-for="node in BASE_LEVEL_NODES"
-            :key="'base-' + node.index"
-            class="skill-node"
-            :class="{
-              unlocked: isBaseUnlocked(persistStore.$state, node.index),
-              unavailable: !isBaseAvailable(persistStore.$state, node.index),
-            }"
-            @click="handleBaseNodeClick(node.index, $event.currentTarget)"
-          >
-            <div class="node-header">
-              <span>{{ node.label }}</span>
-              <span class="node-cost">
-                {{ isBaseUnlocked(persistStore.$state, node.index) ? '✓' : node.cost + ' 💎' }}
-              </span>
+          <div class="base-columns">
+            <div class="base-addon-cards">
+              <div v-for="key in ['extraHealth', 'slowHealing']" :key="key" class="general-card">
+                <template v-for="def in [GENERAL_ADDON_DEFS[key]]" :key="def.key">
+                  <div class="general-label">{{ def.label }}</div>
+                  <div class="general-desc">{{ def.desc }}</div>
+                  <button
+                    v-for="(tierDef, tierIndex) in def.tiers"
+                    :key="tierIndex"
+                    class="addon-btn"
+                    :class="{
+                      unlocked: isGeneralUnlocked(persistStore.$state, key, tierIndex),
+                      unavailable: !isGeneralAvailable(persistStore.$state, key, tierIndex),
+                      active: getGeneralAddonValue(persistStore.$state, key) === tierIndex,
+                    }"
+                    @click="handleGeneralClick(key, tierIndex, null, $event.currentTarget)"
+                  >
+                    {{ tierDef.label }}{{ isGeneralUnlocked(persistStore.$state, key, tierIndex) ? '' : ' · ' + def.costs[tierIndex] + ' 💎' }}
+                  </button>
+                </template>
+              </div>
             </div>
-            <div class="node-desc">{{ node.desc }}</div>
+            <div class="base-levels-card">
+              <div class="skill-section">Levels</div>
+              <div
+                v-for="node in BASE_LEVEL_NODES"
+                :key="'base-' + node.index"
+                class="skill-node"
+                :class="{
+                  unlocked: isBaseUnlocked(persistStore.$state, node.index),
+                  unavailable: !isBaseAvailable(persistStore.$state, node.index),
+                }"
+                @click="handleBaseNodeClick(node.index, $event.currentTarget)"
+              >
+                <div class="node-header">
+                  <span>{{ node.label }}</span>
+                  <span class="node-cost">
+                    {{ isBaseUnlocked(persistStore.$state, node.index) ? '✓' : node.cost + ' 💎' }}
+                  </span>
+                </div>
+                <div class="node-desc">{{ node.desc }}</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -563,8 +570,27 @@ function showRefundAllConfirm() {
   box-sizing: border-box;
 }
 
+.base-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.base-addon-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 @media (max-width: 900px) {
   .skill-top {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .base-columns {
     grid-template-columns: 1fr;
   }
 }
@@ -654,7 +680,8 @@ function showRefundAllConfirm() {
   }
 }
 
-.skill-col {
+.skill-col,
+.base-levels-card {
   padding: 12px;
   background: var(--color-surface-subtle);
   border: 1px solid var(--color-line);
@@ -680,6 +707,10 @@ function showRefundAllConfirm() {
   margin: 10px 0 6px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.base-levels-card .skill-section:first-child {
+  margin-top: 0;
 }
 
 .skill-node {
