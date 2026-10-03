@@ -27,6 +27,7 @@ import { EnemyManager } from "@/render/svg/EnemyManager.js";
 import { ParticleManager } from "@/render/svg/ParticleManager.js";
 import { ProjectileManager } from "@/render/svg/ProjectileManager.js";
 import { SpawnManager } from "@/render/svg/SpawnManager.js";
+import { isNewSnapshotRendered, snapshotAnimDt } from "@/render/svg/snapshotAnimDt.js";
 import { TowerManager } from "@/render/svg/TowerManager.js";
 import { UiOverlayManager } from "@/render/svg/UiOverlayManager.js";
 import { useSvgStaticContent } from "@/render/svg/useSvgStaticContent.js";
@@ -170,13 +171,17 @@ let projectileManager!: ProjectileManager;
 let particleManager!: ParticleManager;
 // Finding 7: particles are a render-only main-thread effect. The worker ships
 // sparse spawn requests (particleSpawns); the main thread owns this ParticleSystem,
-// simulates it each rAF frame, and feeds the render ParticleManager.
+// advances it once per posted snapshot (gated on the game clock), and feeds the
+// render ParticleManager.
 const mainParticleSystem = new ParticleSystem();
 let effectManager!: EffectManager;
 let uiOverlayManager!: UiOverlayManager;
 let spawnManager!: SpawnManager;
-// Last timestamp (ms) used to compute the per-frame particle simulation dt.
-let lastParticleFrame: number = 0;
+// Last (frameId, workerGeneration) pair rendered by the render loop. Animation
+// dt applies only when a new snapshot renders, because the ack gate can hold
+// one snapshot across multiple rAF frames (see snapshotAnimDt).
+let lastRenderedFrameId: number | null = null;
+let lastRenderedWorkerGeneration: number | null = null;
 
 // rAF lifecycle: the render loop must be stopped when the component unmounts
 // (route change) so a late frame never touches managers that have been disposed.
@@ -751,20 +756,29 @@ function renderLoop(): void {
     return;
   }
 
+  const isNewSnapshot = isNewSnapshotRendered(snapshot, lastRenderedFrameId, lastRenderedWorkerGeneration);
+  const animDt = snapshotAnimDt(snapshot, lastRenderedFrameId, lastRenderedWorkerGeneration);
+  lastRenderedFrameId = snapshot.frameId;
+  lastRenderedWorkerGeneration = snapshot.meta.workerGeneration ?? null;
+
   enemyManager.syncFromGameEngine(snapshot.enemies);
-  towerManager.syncFromGameEngine(snapshot.towers, snapshot.meta.lastScaledDt);
+  towerManager.syncFromGameEngine(snapshot.towers, animDt);
   projectileManager.syncFromGameEngine(snapshot.projectiles);
   // Finding 7: simulate + render particles on the main thread. The worker no
   // longer ships a `particles` array; instead this rAF loop advances the
-  // main-thread ParticleSystem (pausing cleanly when the tab is hidden) and the
-  // render ParticleManager draws from its current state.
-  const particleNow = performance.now();
-  const particleDt = Math.min(0.05, (particleNow - lastParticleFrame) / 1000) || 0;
-  lastParticleFrame = particleNow;
-  mainParticleSystem.update(particleDt);
+  // main-thread ParticleSystem once per posted snapshot — gated on the game
+  // clock (frozen while paused, scales with timeScale, no jump on tab resume)
+  // — and the render ParticleManager draws from its current state.
+  mainParticleSystem.update(animDt);
   particleManager.syncFromGameEngine(mainParticleSystem.getRenderData());
 
-  effectManager.syncVisualEffectsFromSnapshot(snapshot.lightningEffects, snapshot.stunEffects);
+  // addLightningEffect re-adds with a fresh seed per call, so the spawn is gated
+  // on the new-snapshot signal — not animDt, which is also 0 for a new paused
+  // post whose arming tick generated bolts that must still appear. Stun dedups
+  // by position key; lightning does not.
+  if (isNewSnapshot) {
+    effectManager.syncVisualEffectsFromSnapshot(snapshot.lightningEffects, snapshot.stunEffects);
+  }
 
   const selectedTower = snapshotStore.resolveSelectedTower();
 
@@ -774,7 +788,7 @@ function renderLoop(): void {
     buildPreviewColor.value,
     selectedTower,
     buildPreviewValid.value,
-    snapshot.meta.lastScaledDt,
+    animDt,
     gameStore.grid,
     buildRangeTiles.value,
   );
