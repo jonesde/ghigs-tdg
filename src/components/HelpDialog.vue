@@ -399,6 +399,10 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                   <td>Select it to view stats, upgrade, or sell</td>
                 </tr>
                 <tr>
+                  <td>Right-click</td>
+                  <td>In build mode: exit build mode. Otherwise: deselect the selected tower or base</td>
+                </tr>
+                <tr>
                   <td>Right-click a placement space</td>
                   <td>During a block placement, rotate the block</td>
                 </tr>
@@ -408,7 +412,7 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                 </tr>
                 <tr>
                   <td>Right-drag, or Alt + left-drag, or a left-drag where a click would do nothing</td>
-                  <td>Pan the view (a left-drag over a path tile, off the map, or a build tile you cannot place on)</td>
+                  <td>Pan the view (a left-drag over a path tile, off the map, or a build tile you cannot place on). A right press that does not move is a right-click instead of a pan</td>
                 </tr>
               </tbody>
             </table>
