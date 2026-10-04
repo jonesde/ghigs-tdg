@@ -35,14 +35,16 @@ export function progressivePreviewFill(
   return terrainFillOf(regionVisual, heightStep);
 }
 
-export function progressivePatternMarkup(
+// Unit-cell <rect> markup for one block in absolute coordinates. Shared by the
+// offer cards (origin 0,0 and cellSize 1 inside a "0 0 5 5" viewBox) and the
+// on-map ghost (origin at the block corner, cellSize = tile size).
+export function progressiveCellRects(
   catalog: BlockTemplate[],
   templateIndex: number,
   rotation: number,
   originX: number,
   originY: number,
   cellSize: number,
-  selected: boolean,
   regionVisual: RegionVisualMeta | undefined | null,
 ): string {
   const block: PlacedBlock = {
@@ -53,6 +55,8 @@ export function progressivePatternMarkup(
     blockY: 0,
     fill: false,
     entryEdges: [],
+    // Ignored on the kind: "catalog" path: localTile reads the baked
+    // template.tiles, which already carry each template's rolled height pattern.
     heightPattern: "slope",
     flatHeight: 1,
     peakCorner: 0,
@@ -67,6 +71,20 @@ export function progressivePatternMarkup(
       cells += `<rect x="${cellX}" y="${cellY}" width="${cellSize}" height="${cellSize}" fill="${fill}" />`;
     }
   }
+  return cells;
+}
+
+export function progressivePatternMarkup(
+  catalog: BlockTemplate[],
+  templateIndex: number,
+  rotation: number,
+  originX: number,
+  originY: number,
+  cellSize: number,
+  selected: boolean,
+  regionVisual: RegionVisualMeta | undefined | null,
+): string {
+  const cells = progressiveCellRects(catalog, templateIndex, rotation, originX, originY, cellSize, regionVisual);
   const size = PROGRESSIVE_BLOCK_SIZE * cellSize;
   const stroke = selected
     ? `<rect x="${originX}" y="${originY}" width="${size}" height="${size}" fill="none" stroke="var(--color-accent)" stroke-width="3" />`

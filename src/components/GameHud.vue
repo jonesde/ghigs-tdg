@@ -13,7 +13,7 @@ const persistStore = usePersistStore();
 const uiStore = useUiStore();
 const themeStore = useMapThemeStore();
 
-const notificationVisible = ref(false);
+const effectsOpen = ref(false);
 
 const baseHealthRatio = computed(() =>
   gameStore.maxBaseHealth > 0 ? gameStore.baseHealth / gameStore.maxBaseHealth : 0,
@@ -21,74 +21,72 @@ const baseHealthRatio = computed(() =>
 
 const bonusParts = computed(() => runBonusSummaryParts(gameStore.runBonuses));
 
-let checkInterval: number | null = null;
+// uiStore.showNotification stamps an absolute expiry, so one timer per
+// notification replaces polling the store: on arrival schedule the remaining
+// wait, and clear the toast when it fires.
+let expiryTimer: number | null = null;
 
-function shouldShowNotification() {
-  const n = uiStore.notification;
-  if (!n) return false;
-  if (Date.now() > n.expires) {
-    uiStore.hideNotification();
-    return false;
+function clearExpiryTimer(): void {
+  if (expiryTimer !== null) {
+    clearTimeout(expiryTimer);
+    expiryTimer = null;
   }
-  return true;
 }
 
-function startNotificationCheck() {
-  stopNotificationCheck();
-  checkInterval = window.setInterval(() => {
-    if (!shouldShowNotification()) {
-      notificationVisible.value = false;
-    } else {
-      notificationVisible.value = true;
-    }
-  }, 200);
-}
-
-function stopNotificationCheck() {
-  if (checkInterval !== null) {
-    clearInterval(checkInterval);
-    checkInterval = null;
-  }
+function hideExpiredNotification(): void {
+  clearExpiryTimer();
+  uiStore.hideNotification();
 }
 
 watch(
   () => uiStore.notification,
-  (n) => {
-    if (n && shouldShowNotification()) {
-      notificationVisible.value = true;
-    } else {
-      notificationVisible.value = false;
+  (notification) => {
+    clearExpiryTimer();
+    if (!notification) return;
+    const remaining = notification.expires - Date.now();
+    if (remaining <= 0) {
+      hideExpiredNotification();
+      return;
     }
+    expiryTimer = window.setTimeout(hideExpiredNotification, remaining);
   },
   { immediate: true },
 );
 
+const barRef = ref<HTMLElement | null>(null);
+let barHeightObserver: ResizeObserver | null = null;
+
+// Publishes the bar's rendered height as --hud-height on <html> for the
+// consumers that clear it: SvgGameRoot's play-area wrapper insets its top by
+// the token, the notification toast offsets by it, and EnemyChat's resting
+// position anchors below it. Cross-module side effect: the bar owns its own
+// layout (the narrow-viewport wrap included), so it measures itself here and
+// the root element is what the sibling consumers inherit.
+// A zero measurement (bar not laid out yet) leaves the CSS default in place.
+function publishBarHeight(): void {
+  const height = barRef.value?.offsetHeight ?? 0;
+  if (height > 0) document.documentElement.style.setProperty("--hud-height", `${height}px`);
+}
+
 onMounted(() => {
-  if (gameStore.isPlaying) {
-    startNotificationCheck();
-  }
+  publishBarHeight();
+  const element = barRef.value;
+  if (!element) return;
+  barHeightObserver = new ResizeObserver(publishBarHeight);
+  barHeightObserver.observe(element);
 });
 
 onUnmounted(() => {
-  stopNotificationCheck();
+  clearExpiryTimer();
+  barHeightObserver?.disconnect();
+  barHeightObserver = null;
+  document.documentElement.style.removeProperty("--hud-height");
 });
-
-watch(
-  () => gameStore.isPlaying,
-  (playing) => {
-    if (playing) {
-      startNotificationCheck();
-    } else {
-      stopNotificationCheck();
-      notificationVisible.value = false;
-    }
-  },
-);
 </script>
 
 <template>
   <div class="hud-container">
-    <div class="hud-bar">
+    <div ref="barRef" class="hud-bar">
       <div class="hud-left">
         <span class="hud-label map-title">{{ getMapDisplayName(gameStore.map, themeStore.activeTheme) }}</span>
       </div>
@@ -112,32 +110,64 @@ watch(
           <span>Wave</span>
           <span class="hud-value">{{ gameStore.currentWave }}</span>
         </span>
-        <span v-if="bonusParts.length" class="effects-chip">
+        <button
+          v-if="bonusParts.length"
+          type="button"
+          class="effects-chip"
+          :class="{ open: effectsOpen }"
+          :aria-expanded="effectsOpen"
+          @click="effectsOpen = !effectsOpen"
+        >
           Effects ×{{ bonusParts.length }}
-          <span class="effects-pop">
+          <span class="effects-pop" tabindex="0" aria-label="Active run effects">
             <span v-for="part in bonusParts" :key="part" class="effects-part">{{ part }}</span>
           </span>
-        </span>
+        </button>
         <span v-if="gameStore.commanderHold" class="commander-hold">Paused for commander</span>
       </div>
       <div class="hud-right">
-        <button class="hud-btn" :class="{ playing: !gameStore.isPaused }" id="pauseBtn" @click="dispatchCommand({ commandId: 0, type: 'action:togglePause' })">
+        <button
+          class="hud-btn"
+          :class="{ playing: !gameStore.isPaused }"
+          id="pauseBtn"
+          :aria-label="gameStore.isPaused ? 'Resume' : 'Pause'"
+          @click="dispatchCommand({ commandId: 0, type: 'action:togglePause' })"
+        >
           {{ gameStore.isPaused ? '>' : '⏸' }}
         </button>
-        <button class="hud-btn" id="speedBtn" @click="gameStore.cycleSpeed(); dispatchCommand({ commandId: 0, type: 'action:cycleSpeed', direction: 1 })">
+        <button
+          class="hud-btn"
+          id="speedBtn"
+          :aria-label="`Time speed ${gameStore.timeScale} times. Activate to speed up.`"
+          @click="dispatchCommand({ commandId: 0, type: 'action:cycleSpeed', direction: 1 })"
+        >
           {{ gameStore.timeScale }}×
         </button>
-        <button class="hud-btn sound-btn" :class="{ muted: !persistStore.soundEnabled }" id="soundBtn" @click="persistStore.toggleSoundEnabled()">
+        <button
+          class="hud-btn sound-btn"
+          :class="{ muted: !persistStore.soundEnabled }"
+          id="soundBtn"
+          aria-label="Sound"
+          :aria-pressed="persistStore.soundEnabled"
+          @click="persistStore.toggleSoundEnabled()"
+        >
           {{ persistStore.soundEnabled ? "🔊" : "🔇" }}
         </button>
-        <button class="hud-btn stats-btn" @click="uiStore.toggleStatsPanel()">∑</button>
-        <button class="hud-btn minimap-btn" :class="{ active: uiStore.showMinimap }" id="minimapBtn" @click="uiStore.toggleMinimap()">🗺</button>
-        <button class="hud-btn" id="helpBtn" @click="uiStore.toggleHelpDialog()">🛈</button>
-        <button class="hud-btn" id="menuBtn" @click="uiStore.openPauseMenu()">☰</button>
+        <button class="hud-btn stats-btn" aria-label="Statistics" @click="uiStore.toggleStatsPanel()">∑</button>
+        <button
+          class="hud-btn minimap-btn"
+          :class="{ active: uiStore.showMinimap }"
+          id="minimapBtn"
+          aria-label="Minimap"
+          :aria-pressed="uiStore.showMinimap"
+          @click="uiStore.toggleMinimap()"
+        >🗺</button>
+        <button class="hud-btn" id="helpBtn" aria-label="Help" @click="uiStore.toggleHelpDialog()">🛈</button>
+        <button class="hud-btn" id="menuBtn" aria-label="Pause menu" @click="uiStore.openPauseMenu()">☰</button>
       </div>
     </div>
     <transition name="notification">
-      <div v-if="notificationVisible" class="notification-toast">
+      <div v-if="uiStore.notification" class="notification-toast">
         <span class="notification-message">{{ uiStore.notification?.message }}</span>
       </div>
     </transition>
@@ -150,6 +180,9 @@ watch(
   top: 0;
   left: 0;
   right: 0;
+  /* The bar owns its layout (40px row, auto-wrap under 720px) and publishes
+     the rendered height as --hud-height; sizing itself from that token would
+     make the measurement circular and pin a wrapped height past the wrap. */
   height: 40px;
   display: flex;
   align-items: center;
@@ -167,7 +200,8 @@ watch(
 
 .notification-toast {
   position: absolute;
-  top: 48px;
+  /* Clears the HUD bar below it. */
+  top: calc(var(--hud-height) + 8px);
   left: 50%;
   transform: translateX(-50%);
   background: var(--color-panel);
@@ -270,20 +304,29 @@ watch(
   border-radius: 4px;
   background: var(--color-surface-subtle);
   color: var(--color-text-dim);
+  font-family: inherit;
   font-size: var(--font-sm);
   white-space: nowrap;
-  cursor: default;
+  cursor: pointer;
 }
 
+.effects-chip:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Anchored to the chip's right edge: the part strings carry themed tower names
+   and are nowrap, so a left-anchored popup runs off a narrow viewport. */
 .effects-pop {
   display: none;
   position: absolute;
   top: calc(100% + 6px);
-  left: 0;
+  right: 0;
   z-index: 20;
   flex-direction: column;
   gap: 3px;
   min-width: 170px;
+  max-width: min(320px, calc(100vw - 16px));
   padding: 8px 10px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
@@ -293,9 +336,12 @@ watch(
   font-size: var(--font-md);
   font-weight: 400;
   white-space: nowrap;
+  overflow-x: auto;
 }
 
-.effects-chip:hover .effects-pop {
+.effects-chip:hover .effects-pop,
+.effects-chip:focus-within .effects-pop,
+.effects-chip.open .effects-pop {
   display: flex;
 }
 
@@ -331,19 +377,19 @@ watch(
   transition: background 0.15s;
 }
 
-  .hud-btn:hover {
-    background: var(--color-surface-hover);
-  }
+.hud-btn:hover {
+  background: var(--color-surface-hover);
+}
 
-  .hud-btn.minimap-btn.active {
-    background: var(--color-accent-hover);
-    border-color: var(--color-accent-strong);
-    color: var(--color-accent);
-  }
+.hud-btn.minimap-btn.active {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-strong);
+  color: var(--color-accent);
+}
 
-  .hud-btn.sound-btn.muted {
-    opacity: 0.5;
-  }
+.hud-btn.sound-btn.muted {
+  opacity: 0.5;
+}
 
 @keyframes pulse {
   from { opacity: 1; }
@@ -362,6 +408,17 @@ watch(
   .hud-right {
     flex: 1 1 100%;
     min-width: 0;
+  }
+
+  /* The wave counter, effects chip, and commander hold share the wrapped row.
+     Without min-width: 0 and wrap the nowrap chip widens the bar past the
+     viewport instead of letting the row reflow. */
+  .hud-center,
+  .hud-center-extra {
+    flex: 1 1 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    row-gap: 4px;
   }
 
   .hud-right {

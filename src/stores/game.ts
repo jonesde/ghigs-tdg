@@ -198,8 +198,6 @@ export interface GameStoreLike {
   zoomCamera(magnificationFactor: number, focalWorldX: number | null, focalWorldY: number | null): void;
   panCameraByFraction(xFraction: number, yFraction: number): void;
   revealCameraPoint(worldX: number, worldY: number): void;
-  cycleSpeed(): number;
-  cycleSpeedReverse(): number;
   selectBuildType(type: TowerId | null): void;
   selectTower(tower: Tower | null): void;
   setHoverTile(tile: HoverTile | null): void;
@@ -234,6 +232,7 @@ interface GameStateShape {
   selectedTowerType: TowerId | null;
   baseDefense: BasePanelState | null;
   towerPanelPos: TowerPanelPos;
+  basePanelPos: TowerPanelPos;
   gameShopPos: TowerPanelPos;
   minimapPanelPos: TowerPanelPos;
   hoverTile: HoverTile | null;
@@ -284,6 +283,7 @@ export const useGameStore = defineStore("game", {
     selectedTowerType: null,
     baseDefense: null,
     towerPanelPos: { x: 0, y: 48 },
+    basePanelPos: { x: 0, y: 48 },
     gameShopPos: { x: 0, y: 0 },
     minimapPanelPos: { x: 40, y: 80 },
     hoverTile: null,
@@ -352,20 +352,6 @@ export const useGameStore = defineStore("game", {
 
     setWave(wave: number) {
       this.currentWave = wave;
-    },
-
-    cycleSpeed(): number {
-      const speeds = [1, 2, 4, 8] as const;
-      const speedIndex = (speeds as readonly number[]).indexOf(this.timeScale);
-      this.timeScale = speeds[(speedIndex + 1) % speeds.length]!;
-      return this.timeScale;
-    },
-
-    cycleSpeedReverse(): number {
-      const speeds = [1, 2, 4, 8] as const;
-      const speedIndex = (speeds as readonly number[]).indexOf(this.timeScale);
-      this.timeScale = speeds[(speedIndex - 1 + speeds.length) % speeds.length]!;
-      return this.timeScale;
     },
 
     selectTower(tower: Tower | null) {
@@ -450,6 +436,7 @@ export const useGameStore = defineStore("game", {
       this.selectedTowerType = null;
       this.baseDefense = null;
       this.towerPanelPos = { x: 0, y: 48 };
+      this.basePanelPos = { x: 0, y: 48 };
       this.gameShopPos = { x: 0, y: 0 };
       this.minimapPanelPos = { x: 40, y: 80 };
       this.hoverTile = null;
@@ -644,6 +631,7 @@ export const useGameStore = defineStore("game", {
       this.selectedTowerType = null;
       this.baseDefense = null;
       this.towerPanelPos = { x: 0, y: 48 };
+      this.basePanelPos = { x: 0, y: 48 };
       this.gameShopPos = { x: 0, y: 0 };
       this.minimapPanelPos = { x: 40, y: 80 };
       this.hoverTile = null;

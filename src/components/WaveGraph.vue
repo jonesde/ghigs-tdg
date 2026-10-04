@@ -21,7 +21,6 @@ const gameStore = useGameStore();
 const uiStore = useUiStore();
 
 const overlayRef = ref<HTMLDivElement | null>(null);
-const svgRef = ref<SVGSVGElement | null>(null);
 
 const containerWidth = ref(0);
 
@@ -269,7 +268,6 @@ onUnmounted(() => {
   >
     <div class="wave-graph-separator"></div>
     <svg
-      ref="svgRef"
       class="wave-graph-svg"
       :viewBox="`0 0 ${containerWidth} ${WAVE_GRAPH_HEIGHT}`"
       xmlns="http://www.w3.org/2000/svg"

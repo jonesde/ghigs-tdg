@@ -1,4 +1,5 @@
 import type { Command } from "./Command.js";
+import { TIME_SCALES } from "./Constants.js";
 import { TOWER_META } from "./ConstantsTower.js";
 
 export interface CommandGridInfo {
@@ -23,7 +24,7 @@ const FALLBACK_TILE_SIZE = 36;
 
 const TOWER_TARGETING_MODES: ReadonlySet<string> = new Set(["first", "last", "closest", "strong", "furthest"]);
 const FIXED_AIM_DIRECTIONS: ReadonlySet<string> = new Set(["N", "E", "S", "W"]);
-const DEBUG_TIME_SCALES: ReadonlySet<number> = new Set([1, 2, 4, 8]);
+const DEBUG_TIME_SCALES: ReadonlySet<number> = new Set(TIME_SCALES);
 
 function tileReason(tile: CommandTile, grid: CommandGridInfo | null, label: string): string | null {
   const axes = ["x", "y"] as const;

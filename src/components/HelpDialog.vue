@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { PROGRESSIVE_REROLL_GOLD_PER_WAVE } from "@/sim/Constants.js";
+import { computed, nextTick, ref } from "vue";
+import { progressiveRerollGoldPerWave } from "@/sim/Constants.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { useUiStore } from "@/stores/ui.js";
 import HelpEnemyTab from "./HelpEnemyTab.vue";
 import HelpTowerTab from "./HelpTowerTab.vue";
 
 const uiStore = useUiStore();
+const themeStore = useMapThemeStore();
+
+// The re-roll row has to quote the active world's price, not the content-pack
+// default: a theme maps override changes what the button actually charges.
+const rerollGoldPerWave = computed(() => progressiveRerollGoldPerWave(themeStore.activeTheme?.maps));
 
 type HelpTabId = "howto" | "towers" | "enemies";
 const helpTabs: Array<{ id: HelpTabId; label: string }> = [
@@ -14,6 +20,38 @@ const helpTabs: Array<{ id: HelpTabId; label: string }> = [
   { id: "enemies", label: "Enemies" },
 ];
 const activeHelpTab = ref<HelpTabId>("howto");
+
+// WAI-ARIA tabs pattern: one tab stop for the whole strip, arrow keys move
+// between tabs and select as they go. Selection has to carry focus with it —
+// the newly selected tab is the one with tabindex="0", so leaving focus on the
+// deselected one strands the keyboard user on a tab they can no longer reach.
+const tabElements = new Map<HelpTabId, HTMLButtonElement>();
+
+function setTabElement(id: HelpTabId, element: unknown): void {
+  if (element instanceof HTMLButtonElement) {
+    tabElements.set(id, element);
+  } else {
+    tabElements.delete(id);
+  }
+}
+
+function selectTab(id: HelpTabId): void {
+  activeHelpTab.value = id;
+  void nextTick(() => tabElements.get(id)?.focus());
+}
+
+function onTabKeydown(event: KeyboardEvent): void {
+  const currentIndex = helpTabs.findIndex((tab) => tab.id === activeHelpTab.value);
+  let nextIndex: number;
+  if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % helpTabs.length;
+  else if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + helpTabs.length) % helpTabs.length;
+  else if (event.key === "Home") nextIndex = 0;
+  else if (event.key === "End") nextIndex = helpTabs.length - 1;
+  else return;
+  event.preventDefault();
+  const nextTab = helpTabs[nextIndex];
+  if (nextTab) selectTab(nextTab.id);
+}
 
 const KEYBOARD_Y = 70;
 const KEY_SIZE = 28;
@@ -124,21 +162,26 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
           <button class="help-close" @click="uiStore.closeHelpDialog()">X</button>
         </div>
 
-        <div class="help-tabs" role="tablist" aria-label="Help topics">
+        <div class="help-tabs" role="tablist" aria-label="Help topics" @keydown="onTabKeydown">
           <button
             v-for="helpTab in helpTabs"
+            :id="`help-tab-${helpTab.id}`"
             :key="helpTab.id"
             class="help-tab"
             :class="{ active: activeHelpTab === helpTab.id }"
             role="tab"
+            type="button"
             :aria-selected="activeHelpTab === helpTab.id"
-            @click="activeHelpTab = helpTab.id"
+            :aria-controls="activeHelpTab === helpTab.id ? `help-panel-${helpTab.id}` : undefined"
+            :tabindex="activeHelpTab === helpTab.id ? 0 : -1"
+            :ref="element => setTabElement(helpTab.id, element)"
+            @click="selectTab(helpTab.id)"
           >
             {{ helpTab.label }}
           </button>
         </div>
 
-        <div v-if="activeHelpTab === 'howto'" role="tabpanel">
+        <div v-if="activeHelpTab === 'howto'" id="help-panel-howto" role="tabpanel" aria-labelledby="help-tab-howto" tabindex="0">
           <div class="help-section">
             <div class="help-section-title">How to Play</div>
             <p class="help-description">
@@ -170,16 +213,10 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
               • Fully playable by keyboard alone (friend mode is a future feature)
             </p>
             <svg class="keyboard-diagram" viewBox="0 0 580 300" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <marker id="kb-arrow" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto">
-                  <path d="M0,0 L6,2 L0,4" fill="var(--color-text-dim)" />
-                </marker>
-              </defs>
-
               <g class="kb-keys">
                 <g v-for="(key, idx) in keyboardKeys" :key="idx">
-                  <rect :x="key.x" :y="key.y" :width="key.width" :height="28"
-                    :class="{ 'kb-key': true, 'kb-key-hl': key.highlighted }" rx="2" />
+                  <rect :x="key.x" :y="key.y" :width="key.width" height="28" class="kb-key"
+                    :class="{ 'kb-key-hl': key.highlighted }" rx="2" />
                   <text :x="key.x + key.width / 2" :y="key.y + 17" class="kb-key-text" text-anchor="middle"
                   >{{ key.label }}</text>
                 </g>
@@ -187,7 +224,6 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
 
               <g class="kb-brackets">
                 <path class="kb-bracket" d="M 30,62 L 30,56 L 299,56 L 299,62" />
-                <!-- <path class="kb-bracket" d="M 520,170 L 526,170 L 526,232 L 520,232" /> -->
               </g>
 
               <g class="kb-labels">
@@ -196,8 +232,6 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                     <tspan class="kb-label-key">Esc|X</tspan>
                     <tspan class="kb-label-desc"> Close/Pause</tspan>
                   </text>
-                  <!-- <polyline class="kb-line" points="40,30 14,30 14,70" marker-end="url(#kb-arrow)" /> -->
-                  <!-- <polyline class="kb-line" points="80,30 382,30 382,166" marker-end="url(#kb-arrow)" /> -->
                 </g>
 
                 <g class="kb-label-group">
@@ -205,7 +239,6 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                     <tspan class="kb-label-key">Tab</tspan>
                     <tspan class="kb-label-desc"> Speed↑ ( Build Bar → )</tspan>
                   </text>
-                  <!-- <polyline class="kb-line" points="170,22 6,22 6,102 34,102" marker-end="url(#kb-arrow)" /> -->
                 </g>
 
                 <g class="kb-label-group">
@@ -213,7 +246,6 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                     <tspan class="kb-label-key">Shift+Tab</tspan>
                     <tspan class="kb-label-desc"> Speed↓ ( Build Bar ← )</tspan>
                   </text>
-                  <!-- <polyline class="kb-line" points="170,42 10,42 10,134 34,134" marker-end="url(#kb-arrow)" /> -->
                 </g>
 
                 <g class="kb-label-group">
@@ -221,7 +253,6 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                     <tspan class="kb-label-key">1-9</tspan>
                     <tspan class="kb-label-desc"> Tower Build</tspan>
                   </text>
-                  <!-- <polyline class="kb-line" points="171,44 171,52" marker-end="url(#kb-arrow)" /> -->
                 </g>
 
                 <g class="kb-label-group">
@@ -229,7 +260,6 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                     <tspan class="kb-label-key">A</tspan>
                     <tspan class="kb-label-desc"> Speed↓</tspan>
                   </text>
-                  <!-- <polyline class="kb-line" points="60,260 60,210 106,210 106,194" marker-end="url(#kb-arrow)" /> -->
                 </g>
 
                 <g class="kb-label-group">
@@ -237,7 +267,6 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                     <tspan class="kb-label-key">W|U</tspan>
                     <tspan class="kb-label-desc"> Upgrade</tspan>
                   </text>
-                  <!-- <polyline class="kb-line" points="150,250 150,200 136,200 136,166" marker-end="url(#kb-arrow)" /> -->
                 </g>
 
                 <g class="kb-label-group">
@@ -245,7 +274,6 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                     <tspan class="kb-label-key">S</tspan>
                     <tspan class="kb-label-desc"> Downgrade/Sell</tspan>
                   </text>
-                  <!-- <polyline class="kb-line" points="160,278 160,220 166,220 166,194" marker-end="url(#kb-arrow)" /> -->
                 </g>
 
                 <g class="kb-label-group">
@@ -253,7 +281,6 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                     <tspan class="kb-label-key">D</tspan>
                     <tspan class="kb-label-desc"> Speed↑</tspan>
                   </text>
-                  <!-- <polyline class="kb-line" points="230,260 230,210 196,210 196,194" marker-end="url(#kb-arrow)" /> -->
                 </g>
 
                 <g class="kb-label-group">
@@ -261,7 +288,6 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                     <tspan class="kb-label-key">F</tspan>
                     <tspan class="kb-label-desc"> Cycle Targeting</tspan>
                   </text>
-                  <!-- <polyline class="kb-line" points="280,278 280,220 226,220 226,194" marker-end="url(#kb-arrow)" /> -->
                 </g>
 
                 <g class="kb-label-group">
@@ -269,7 +295,6 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                     <tspan class="kb-label-key">Space</tspan>
                     <tspan class="kb-label-desc"> Pause/Resume</tspan>
                   </text>
-                  <!-- <polyline class="kb-line" points="400,270 400,240 311,240 311,230" marker-end="url(#kb-arrow)" /> -->
                 </g>
 
                 <g class="kb-label-group">
@@ -277,14 +302,12 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                     <tspan class="kb-label-key">Enter</tspan>
                     <tspan class="kb-label-desc"> Confirm</tspan>
                   </text>
-                  <!-- <polyline class="kb-line" points="570,116 540,116 540,182 462,182" marker-end="url(#kb-arrow)" /> -->
                 </g>
 
                 <g class="kb-label-group">
                   <text x="490" y="182" class="kb-label-text">
                     <tspan class="kb-label-desc">Select Tower</tspan>
                   </text>
-                  <!-- <polyline class="kb-line" points="570,196 526,196" marker-end="url(#kb-arrow)" /> -->
                 </g>
                 <g class="kb-label-group">
                   <text x="490" y="194" class="kb-label-text">
@@ -294,7 +317,6 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
               </g>
             </svg>
 
-            <!-- <div class="help-section-title">Keyboard Controls</div> -->
             <table class="help-table">
               <tbody>
                 <tr>
@@ -339,7 +361,7 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                     During a block placement the view zooms out to the whole map. Tab cycles the block choices, R, a right
                     click on a placement space, or a second click on the selected choice rotates it, the arrow keys move
                     the placement space (the view pans when that site comes within 20% of the screen width of an edge),
-                    and Enter places that block. Re-roll spends {{ PROGRESSIVE_REROLL_GOLD_PER_WAVE }} gold times the wave
+                    and Enter places that block. Re-roll spends {{ rerollGoldPerWave }} gold times the wave
                     number and redraws every choice. After a placement the run stays paused with an Undo button that
                     disappears as soon as you resume.
                   </td>
@@ -393,10 +415,26 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
           </div>
         </div>
 
-        <HelpTowerTab v-else-if="activeHelpTab === 'towers'" />
-        <HelpEnemyTab v-else />
+        <div
+          v-if="activeHelpTab === 'towers'"
+          id="help-panel-towers"
+          role="tabpanel"
+          aria-labelledby="help-tab-towers"
+          tabindex="0"
+        >
+          <HelpTowerTab />
+        </div>
+        <div
+          v-else-if="activeHelpTab === 'enemies'"
+          id="help-panel-enemies"
+          role="tabpanel"
+          aria-labelledby="help-tab-enemies"
+          tabindex="0"
+        >
+          <HelpEnemyTab />
+        </div>
 
-        <button class="debug-bug" @click="uiStore.openDebugPanel();" aria-label="Open Debug Panel">🐞</button>
+        <button class="debug-bug" @click="uiStore.openDebugPanel()" aria-label="Open Debug Panel">🐞</button>
       </div>
     </div>
   </Teleport>
@@ -602,12 +640,6 @@ kbd {
 
 .kb-label-desc {
   fill: var(--color-text);
-}
-
-.kb-line {
-  fill: none;
-  stroke: var(--color-text-dim);
-  stroke-width: 1;
 }
 
 .debug-bug {

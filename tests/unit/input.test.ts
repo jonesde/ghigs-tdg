@@ -191,6 +191,15 @@ describe("useInput", () => {
       triggerInput(" ");
       expect(uiStore.showPauseMenu).toBe(false);
     });
+
+    it("closes the stats panel instead of toggling the sim", () => {
+      gameStore.setState(GameState.PLAYING);
+      uiStore.showStatsPanel = true;
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput(" ");
+      expect(uiStore.showStatsPanel).toBe(false);
+      expect(dispatched("action:togglePause")).toBe(false);
+    });
   });
 
   describe("Escape key", () => {
@@ -941,17 +950,16 @@ describe("useInput", () => {
       expect(gameStore.selectedTowerType).toBe(TowerIds.BASIC);
     });
 
-    it("cycles speed forward outside build mode", () => {
+    it("dispatches a forward speed cycle outside build mode", () => {
       gameStore.setState(GameState.PLAYING);
-      gameStore.timeScale = 1;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("Tab");
-      expect(gameStore.timeScale).toBe(2);
+      expect(lastOfType("action:cycleSpeed")).toMatchObject({ direction: 1 });
     });
 
-    it("cycles speed from 8x back to 1x outside build mode", () => {
+    it("leaves gameStore.timeScale untouched so the snapshot mirror owns it", () => {
       gameStore.setState(GameState.PLAYING);
-      gameStore.timeScale = 8;
+      gameStore.timeScale = 1;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("Tab");
       expect(gameStore.timeScale).toBe(1);
@@ -967,20 +975,11 @@ describe("useInput", () => {
       expect(gameStore.selectedTowerType).toBe(TowerIds.BASIC);
     });
 
-    it("cycles speed reverse outside build mode", () => {
+    it("dispatches a reverse speed cycle outside build mode", () => {
       gameStore.setState(GameState.PLAYING);
-      gameStore.timeScale = 1;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("Tab", { shiftKey: true });
-      expect(gameStore.timeScale).toBe(8);
-    });
-
-    it("cycles speed reverse from 2x to 1x", () => {
-      gameStore.setState(GameState.PLAYING);
-      gameStore.timeScale = 2;
-      useInput(gameStore, dispatcher, uiStore);
-      triggerInput("Tab", { shiftKey: true });
-      expect(gameStore.timeScale).toBe(1);
+      expect(lastOfType("action:cycleSpeed")).toMatchObject({ direction: -1 });
     });
   });
 
@@ -1037,17 +1036,16 @@ describe("useInput", () => {
   });
 
   describe("d key (cycle speed forward)", () => {
-    it("cycles timeScale forward", () => {
+    it("dispatches a forward speed cycle", () => {
       gameStore.setState(GameState.PLAYING);
-      gameStore.timeScale = 1;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("d");
-      expect(gameStore.timeScale).toBe(2);
+      expect(lastOfType("action:cycleSpeed")).toMatchObject({ direction: 1 });
     });
 
-    it("cycles from 8x back to 1x", () => {
+    it("does not write gameStore.timeScale itself", () => {
       gameStore.setState(GameState.PLAYING);
-      gameStore.timeScale = 8;
+      gameStore.timeScale = 1;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("d");
       expect(gameStore.timeScale).toBe(1);
@@ -1073,20 +1071,11 @@ describe("useInput", () => {
   });
 
   describe("a key (cycle speed reverse)", () => {
-    it("cycles timeScale reverse", () => {
+    it("dispatches a reverse speed cycle", () => {
       gameStore.setState(GameState.PLAYING);
-      gameStore.timeScale = 1;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("a");
-      expect(gameStore.timeScale).toBe(8);
-    });
-
-    it("cycles from 2x to 1x", () => {
-      gameStore.setState(GameState.PLAYING);
-      gameStore.timeScale = 2;
-      useInput(gameStore, dispatcher, uiStore);
-      triggerInput("a");
-      expect(gameStore.timeScale).toBe(1);
+      expect(lastOfType("action:cycleSpeed")).toMatchObject({ direction: -1 });
     });
   });
 

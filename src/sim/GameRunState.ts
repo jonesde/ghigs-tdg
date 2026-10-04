@@ -1,5 +1,5 @@
 import type { GameStateValue } from "@/sim/Constants.js";
-import { STARTING_BASE_HEALTH, StartingGold } from "@/sim/Constants.js";
+import { STARTING_BASE_HEALTH, StartingGold, TIME_SCALES } from "@/sim/Constants.js";
 import type { TowerId } from "@/sim/ConstantsTower.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
@@ -95,8 +95,8 @@ export function setWave(state: GameRunState, wave: number): void {
 }
 
 export function cycleTimeScale(state: GameRunState, direction: 1 | -1): number {
-  const speeds = [1, 2, 4, 8];
-  let speedIndex = speeds.indexOf(state.timeScale);
+  const speeds = TIME_SCALES;
+  let speedIndex = speeds.indexOf(state.timeScale as (typeof speeds)[number]);
   if (speedIndex < 0) {
     speedIndex = 0;
     let nearestDistance = Math.abs(speeds[0]! - state.timeScale);

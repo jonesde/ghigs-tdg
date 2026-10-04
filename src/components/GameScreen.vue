@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from "vue";
+import { onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
-import { awaitDisposeWorker } from "@/router/index.js";
 import { GameState } from "@/sim/Constants.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { useGameStore } from "@/stores/game.js";
@@ -29,7 +28,6 @@ const uiStore = useUiStore();
 
 let popstateHandler: ((event: PopStateEvent) => void) | null = null;
 let awaitingConfirm = false;
-const disposed = ref(false);
 
 watch(
   () => gameStore.state,
@@ -52,7 +50,6 @@ function onPopState() {
     confirmLabel: "End Game",
     cancelLabel: "Stay",
     onConfirm() {
-      disposed.value = true;
       dispatchCommand({ commandId: 0, type: "action:endRun" });
       router.push("/game-over");
     },
@@ -75,9 +72,10 @@ onUnmounted(() => {
     window.removeEventListener("popstate", popstateHandler);
     popstateHandler = null;
   }
-  if (gameStore.worker && !disposed.value) {
-    void awaitDisposeWorker(gameStore.worker);
-  }
+  // Worker disposal is not this component's job. On a route change the router
+  // guard disposes the worker before this tree unmounts; in every other
+  // unmount SvgGameRoot.onUnmounted owns disposal (Vue runs the child's
+  // onUnmounted before this parent's).
 });
 </script>
 
@@ -122,6 +120,4 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
 }
-
-
 </style>

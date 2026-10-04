@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
+import "@/components/detailPanel.css";
 </script>
 
 <template>
@@ -53,6 +54,17 @@ import ConfirmDialog from "@/components/ConfirmDialog.vue";
   --font-title: 32px;
   --font-display: 72px;
   --font-mono: ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
+
+  /* Game screen chrome heights. The /game layout insets its play area by these
+     (SvgGameRoot's wrapper, GameShop's resting position), so they live next to
+     the palette tokens rather than as literals in each component's CSS.
+     --hud-height is only the pre-measurement default: GameHud measures its own
+     rendered height (including the narrow-viewport wrap) and publishes the
+     real value on <html> for SvgGameRoot's wrapper, the notification toast,
+     and EnemyChat's resting position to inherit. */
+  --hud-height: 40px;
+  --build-bar-header-height: 20px;
+  --build-bar-footer-height: 64px;
 }
 
 *, *::before, *::after {

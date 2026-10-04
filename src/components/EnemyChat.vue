@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { DEFAULT_DECISION_INTERVAL_MS, normalizeDecisionIntervalMs } from "@/commanders/llm/types.js";
 import { postChatToCommander, postUpdateCallSettings, postUpdateInstructions } from "@/commanders/relay.js";
+import { usePanelDrag } from "@/composables/usePanelDrag.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
 
@@ -91,10 +92,21 @@ watch(traceOpen, async (open) => {
 const instructionsText = ref("");
 const lastPostedInstructions = ref("");
 const messageText = ref("");
-const position = ref({ x: 24, y: 24 });
-const dragging = ref(false);
-let dragOffsetX = 0;
-let dragOffsetY = 0;
+// Below the HUD bar so the panel does not cover the map title and the base
+// health / gold / gems readouts it would otherwise sit on top of. The 56 is a
+// fallback only: onMounted re-anchors under the published --hud-height, which
+// follows the bar's narrow-viewport wrap where 56 would slide underneath it.
+const position = ref({ x: 24, y: 56 });
+const panelRef = ref<HTMLElement | null>(null);
+
+const { onHeaderMouseDown, onHeaderTouchStart } = usePanelDrag({
+  read: () => position.value,
+  write: (next) => {
+    position.value = next;
+  },
+  panelRef,
+  clampToViewport: true,
+});
 
 function syncInstructions() {
   instructionsText.value = activeCommander.value?.commanderInstructions ?? "";
@@ -119,31 +131,15 @@ function sendMessage() {
   messageText.value = "";
 }
 
-function onHeaderMouseDown(event: MouseEvent) {
-  if (!visible.value) return;
-  dragging.value = true;
-  dragOffsetX = event.clientX - position.value.x;
-  dragOffsetY = event.clientY - position.value.y;
-  if (typeof window !== "undefined") {
-    window.addEventListener("mousemove", onWindowMouseMove);
-    window.addEventListener("mouseup", onWindowMouseUp);
-  }
-}
-
-function onWindowMouseMove(event: MouseEvent) {
-  if (!dragging.value) return;
-  position.value = { x: event.clientX - dragOffsetX, y: event.clientY - dragOffsetY };
-}
-
-function onWindowMouseUp() {
-  dragging.value = false;
-  if (typeof window !== "undefined") {
-    window.removeEventListener("mousemove", onWindowMouseMove);
-    window.removeEventListener("mouseup", onWindowMouseUp);
-  }
-}
-
 onMounted(() => {
+  // GameHud measures its bar and publishes --hud-height on <html> in its own
+  // onMounted, which runs first (GameScreen renders the HUD above this panel).
+  // Reading the inline value keeps jsdom (no stylesheet var resolution) and
+  // the browser on the same number.
+  const publishedHudHeight = Number.parseFloat(document.documentElement.style.getPropertyValue("--hud-height"));
+  if (Number.isFinite(publishedHudHeight)) {
+    position.value = { x: position.value.x, y: publishedHudHeight + 16 };
+  }
   syncInstructions();
 });
 
@@ -151,25 +147,19 @@ watch(
   () => activeCommander.value?.id,
   () => syncInstructions(),
 );
-
-onBeforeUnmount(() => {
-  if (typeof window !== "undefined") {
-    window.removeEventListener("mousemove", onWindowMouseMove);
-    window.removeEventListener("mouseup", onWindowMouseUp);
-  }
-});
 </script>
 
 <template>
   <div
     v-if="visible"
+    ref="panelRef"
     class="enemy-chat"
     :class="{ 'trace-open': traceOpen }"
     :style="{ left: position.x + 'px', top: position.y + 'px' }"
     @dragstart.prevent
   >
     <div class="chat-column">
-    <div class="chat-header" @mousedown="onHeaderMouseDown">
+    <div class="chat-header" @mousedown="onHeaderMouseDown" @touchstart="onHeaderTouchStart">
       <span>Enemy Commander</span>
       <button type="button" class="chat-log-toggle" @mousedown.stop @click="traceOpen = !traceOpen">Log</button>
     </div>

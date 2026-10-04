@@ -1,6 +1,6 @@
 // @ts-nocheck
 /** @vitest-environment node */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GameState } from "@/sim/Constants.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
 import { WorkerCommandDispatcher } from "@/sim/WorkerCommandDispatcher.js";
@@ -11,6 +11,10 @@ describe("UiStore", () => {
 
   beforeEach(() => {
     store = createTestUiStore();
+  });
+
+  afterEach(() => {
+    setCommandDispatcher(null);
   });
 
   describe("initial state", () => {
@@ -32,12 +36,17 @@ describe("UiStore", () => {
       expect(store.randomMapPanelVisible).toBe(false);
     });
 
-    it("starts with wasPlayingWhenPauseOpened = false", () => {
-      expect(store.wasPlayingWhenPauseOpened).toBe(false);
+    it("starts with overlayPausedSim = false", () => {
+      expect(store.overlayPausedSim).toBe(false);
     });
 
-    it("starts with wasPlayingWhenSkillTreeOpened = false", () => {
-      expect(store.wasPlayingWhenSkillTreeOpened).toBe(false);
+    it("anyPauseOverlayOpen ignores the overlays that never pause", () => {
+      expect(store.anyPauseOverlayOpen).toBe(false);
+      store.showMinimap = true;
+      store.debugPanelVisible = true;
+      expect(store.anyPauseOverlayOpen).toBe(false);
+      store.showStatsPanel = true;
+      expect(store.anyPauseOverlayOpen).toBe(true);
     });
   });
 
@@ -118,11 +127,11 @@ describe("UiStore", () => {
   });
 
   describe("openPauseMenu / closePauseMenu", () => {
-    it("openPauseMenu records wasPlayingWhenPauseOpened", () => {
+    it("openPauseMenu claims the overlay pause when the run is playing", () => {
       const stores = createTestStores();
       stores.game.setState(GameState.PLAYING);
       stores.ui.openPauseMenu();
-      expect(stores.ui.wasPlayingWhenPauseOpened).toBe(true);
+      expect(stores.ui.overlayPausedSim).toBe(true);
       expect(stores.ui.showPauseMenu).toBe(true);
     });
 
@@ -147,13 +156,13 @@ describe("UiStore", () => {
       );
     });
 
-    it("closePauseMenu hides menu and restores playing state", () => {
+    it("closePauseMenu hides menu and releases the overlay pause", () => {
       const stores = createTestStores();
       stores.game.setState(GameState.PLAYING);
       stores.ui.openPauseMenu();
       stores.ui.closePauseMenu();
       expect(stores.ui.showPauseMenu).toBe(false);
-      expect(stores.ui.wasPlayingWhenPauseOpened).toBe(false);
+      expect(stores.ui.overlayPausedSim).toBe(false);
       expect(stores.game.state).toBe(GameState.PLAYING);
     });
 
@@ -196,13 +205,13 @@ describe("UiStore", () => {
       );
     });
 
-    it("closeSkillTree hides skill tree and restores playing state", () => {
+    it("closeSkillTree hides skill tree and releases the overlay pause", () => {
       const stores = createTestStores();
       stores.game.setState(GameState.PLAYING);
       stores.ui.openSkillTreeFromGame();
       stores.ui.closeSkillTree();
       expect(stores.ui.showSkillTree).toBe(false);
-      expect(stores.ui.wasPlayingWhenSkillTreeOpened).toBe(false);
+      expect(stores.ui.overlayPausedSim).toBe(false);
       expect(stores.game.state).toBe(GameState.PLAYING);
     });
   });
@@ -220,6 +229,93 @@ describe("UiStore", () => {
       store.showStatsPanel = true;
       store.closeStatsPanel();
       expect(store.showStatsPanel).toBe(false);
+    });
+
+    it("claims the overlay pause when opened while playing", () => {
+      const stores = createTestStores();
+      stores.game.setState(GameState.PLAYING);
+      stores.ui.toggleStatsPanel();
+      expect(stores.ui.overlayPausedSim).toBe(true);
+      expect(stores.ui.showStatsPanel).toBe(true);
+    });
+
+    it("leaves overlayPausedSim false when opened while already paused", () => {
+      const stores = createTestStores();
+      stores.game.setState(GameState.PAUSED);
+      stores.ui.toggleStatsPanel();
+      expect(stores.ui.overlayPausedSim).toBe(false);
+    });
+
+    it("dispatches a pause toggle on open and the matching resume on close", () => {
+      const stores = createTestStores();
+      stores.game.setState(GameState.PLAYING);
+      const worker = { postMessage: vi.fn() } as unknown as Worker;
+      stores.game.worker = worker;
+      setCommandDispatcher(new WorkerCommandDispatcher(worker));
+
+      stores.ui.toggleStatsPanel();
+      stores.ui.closeStatsPanel();
+      setCommandDispatcher(null);
+
+      const pauseCommands = worker.postMessage.mock.calls.filter(
+        (call) => (call[0] as { command?: { type?: string } })?.command?.type === "action:togglePause",
+      );
+      expect(pauseCommands).toHaveLength(2);
+      expect(stores.ui.overlayPausedSim).toBe(false);
+    });
+
+    it("does not resume when the panel was opened while already paused", () => {
+      const stores = createTestStores();
+      stores.game.setState(GameState.PAUSED);
+      const worker = { postMessage: vi.fn() } as unknown as Worker;
+      stores.game.worker = worker;
+      setCommandDispatcher(new WorkerCommandDispatcher(worker));
+
+      stores.ui.toggleStatsPanel();
+      stores.ui.closeStatsPanel();
+      setCommandDispatcher(null);
+
+      expect(worker.postMessage).not.toHaveBeenCalled();
+    });
+
+    it("toggles closed through toggleStatsPanel, resuming exactly once", () => {
+      const stores = createTestStores();
+      stores.game.setState(GameState.PLAYING);
+      const worker = { postMessage: vi.fn() } as unknown as Worker;
+      stores.game.worker = worker;
+      setCommandDispatcher(new WorkerCommandDispatcher(worker));
+
+      stores.ui.toggleStatsPanel();
+      stores.ui.toggleStatsPanel();
+      setCommandDispatcher(null);
+
+      expect(stores.ui.showStatsPanel).toBe(false);
+      expect(stores.ui.overlayPausedSim).toBe(false);
+      expect(worker.postMessage.mock.calls).toHaveLength(2);
+    });
+
+    it("holds the pause while a second overlay stacks on top", () => {
+      const stores = createTestStores();
+      stores.game.setState(GameState.PLAYING);
+      const worker = { postMessage: vi.fn() } as unknown as Worker;
+      stores.game.worker = worker;
+      setCommandDispatcher(new WorkerCommandDispatcher(worker));
+
+      stores.ui.toggleStatsPanel();
+      stores.ui.toggleHelpDialog();
+      stores.ui.closeStatsPanel();
+      const pauseCommands = () =>
+        worker.postMessage.mock.calls.filter(
+          (call) => (call[0] as { command?: { type?: string } })?.command?.type === "action:togglePause",
+        );
+      expect(pauseCommands()).toHaveLength(1);
+      expect(stores.ui.showHelpDialog).toBe(true);
+      expect(stores.ui.overlayPausedSim).toBe(true);
+
+      stores.ui.closeHelpDialog();
+      expect(pauseCommands()).toHaveLength(2);
+      expect(stores.ui.overlayPausedSim).toBe(false);
+      setCommandDispatcher(null);
     });
   });
 

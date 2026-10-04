@@ -4,7 +4,7 @@
     class="minimap-panel"
     :style="{ top: gameStore.minimapPanelPos.y + 'px', left: gameStore.minimapPanelPos.x + 'px' }"
   >
-    <div class="panel-header" @mousedown="onHeaderMouseDown">
+    <div class="panel-header" @mousedown="onHeaderMouseDown" @touchstart="onHeaderTouchStart">
       Minimap
       <span class="close-btn" @click="uiStore.closeMinimap()" @mousedown.stop>✕</span>
     </div>
@@ -15,7 +15,8 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref } from "vue";
+import { nextTick, onMounted, ref } from "vue";
+import { usePanelDrag } from "@/composables/usePanelDrag.js";
 import { useGameStore } from "@/stores/game.js";
 import { useUiStore } from "@/stores/ui.js";
 import TextGameRoot from "./TextGameRoot.vue";
@@ -24,6 +25,15 @@ const gameStore = useGameStore();
 const uiStore = useUiStore();
 
 const panelEl = ref<HTMLElement | null>(null);
+
+const { onHeaderMouseDown, onHeaderTouchStart } = usePanelDrag({
+  read: () => gameStore.minimapPanelPos,
+  write: (position) => {
+    gameStore.minimapPanelPos = position;
+  },
+  panelRef: panelEl,
+  clampToViewport: true,
+});
 
 // The default panel position is a sentinel in the upper-left. On first mount,
 // after the (sized-to-content) text map has actually rendered into the DOM, snap
@@ -45,49 +55,6 @@ onMounted(() => {
       gameStore.minimapPanelPos = { x: rightX, y: gameStore.minimapPanelPos.y };
     });
   }
-});
-
-let dragging = false;
-let dragStartX = 0;
-let dragStartY = 0;
-let panelStartX = 0;
-let panelStartY = 0;
-let currentOnMove: ((event: MouseEvent) => void) | null = null;
-let currentOnUp: (() => void) | null = null;
-
-function onHeaderMouseDown(event: MouseEvent): void {
-  if (event.button !== 0) return;
-  dragging = true;
-  dragStartX = event.clientX;
-  dragStartY = event.clientY;
-  panelStartX = gameStore.minimapPanelPos.x;
-  panelStartY = gameStore.minimapPanelPos.y;
-
-  currentOnMove = (moveEvent: MouseEvent) => {
-    if (!dragging) return;
-    gameStore.minimapPanelPos = {
-      x: panelStartX + (moveEvent.clientX - dragStartX),
-      y: panelStartY + (moveEvent.clientY - dragStartY),
-    };
-  };
-  currentOnUp = () => {
-    dragging = false;
-    cleanupDragListeners();
-  };
-  document.addEventListener("mousemove", currentOnMove);
-  document.addEventListener("mouseup", currentOnUp);
-  event.preventDefault();
-}
-
-function cleanupDragListeners(): void {
-  if (currentOnMove) document.removeEventListener("mousemove", currentOnMove);
-  if (currentOnUp) document.removeEventListener("mouseup", currentOnUp);
-  currentOnMove = null;
-  currentOnUp = null;
-}
-
-onUnmounted(() => {
-  cleanupDragListeners();
 });
 </script>
 
