@@ -53,7 +53,6 @@ import { TOWER_BASE, TOWER_META, type TowerId, TowerIds } from "@/sim/ConstantsT
 import { setCommandDispatcher } from "@/sim/commandBus.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import {
-  blockCoordinateForTile,
   boardToGeneratedMap,
   boardWithPlayerStamp,
   progressiveBlockWorldCorner,
@@ -65,14 +64,13 @@ import type { ThemeBundle } from "@/sim/HostBindings.js";
 import {
   collectWorldKeys,
   PACKAGE_CLICK_RADIUS_TILES,
+  planSitesForStampedBoard,
   playerPlacedBlockCount,
-  reconcileMapSites,
-  worldKey,
+  stampWorldKeysForBlock,
 } from "@/sim/mapSites.js";
 import { ParticleSystem } from "@/sim/ParticleSystem.js";
 import type { PersistState } from "@/sim/PersistState.js";
 import type { BonusOffer } from "@/sim/runBonuses.js";
-import type { MapBuildingSnapshot, MapCacheSnapshot } from "@/sim/SimulationSnapshot.js";
 import { SnapshotStore } from "@/sim/SnapshotStore.js";
 import { BASE_SELECTION_ID } from "@/sim/towers/BaseDefense.js";
 import { WorkerCommandDispatcher } from "@/sim/WorkerCommandDispatcher.js";
@@ -221,52 +219,17 @@ function previewNewSites(
     maxHp: cache.maxHp,
     offer: cache.offer,
   }));
-  const originTileX = Math.round(nextGrid.worldOriginX / nextGrid.tileSize);
-  const originTileY = Math.round(nextGrid.worldOriginY / nextGrid.tileSize);
-  const stampWorldKeys = new Set<string>();
-  for (let tileY = 0; tileY < nextGrid.height; tileY++) {
-    for (let tileX = 0; tileX < nextGrid.width; tileX++) {
-      const block = blockCoordinateForTile(originTileX, originTileY, tileX, tileY);
-      if (block.blockX !== selected.blockX || block.blockY !== selected.blockY) continue;
-      stampWorldKeys.add(worldKey(nextGrid, tileX, tileY));
-    }
-  }
-  let localId = 1;
-  reconcileMapSites({
+  const plan = planSitesForStampedBoard({
     grid: nextGrid,
-    seed: nextMap.seed,
-    regionId: nextMap.regionId,
-    mapLevel: nextMap.level,
+    map: nextMap,
     buildings,
     caches,
     previousWorldKeys,
     placedBlocks: playerPlacedBlockCount(gameStore.progressivePlacements) + 1,
-    stampWorldKeys,
-    allocateId: () => localId++,
+    stampWorldKeys: stampWorldKeysForBlock(nextGrid, selected.blockX, selected.blockY),
     rollOffer: () => GHOST_OFFER,
   });
-  const newBuildings: MapBuildingSnapshot[] = [];
-  for (const building of buildings) {
-    if (previousWorldKeys.has(worldKey(nextGrid, building.tileX, building.tileY))) continue;
-    const world = nextGrid.tileToWorld(building.tileX, building.tileY);
-    newBuildings.push({ ...building, worldX: world.x, worldY: world.y });
-  }
-  const newCaches: MapCacheSnapshot[] = [];
-  for (const cache of caches) {
-    if (previousWorldKeys.has(worldKey(nextGrid, cache.tileX, cache.tileY))) continue;
-    const world = nextGrid.tileToWorld(cache.tileX, cache.tileY);
-    newCaches.push({
-      id: cache.id,
-      tileX: cache.tileX,
-      tileY: cache.tileY,
-      worldX: world.x,
-      worldY: world.y,
-      hp: cache.hp,
-      maxHp: cache.maxHp,
-      offer: cache.offer,
-    });
-  }
-  return siteGlyphMarkup([], newCaches, newBuildings);
+  return siteGlyphMarkup([], plan.caches, plan.buildings, gameStore.currentWave);
 }
 
 let enemyManager!: EnemyManager;

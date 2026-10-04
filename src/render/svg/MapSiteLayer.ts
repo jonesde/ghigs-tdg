@@ -1,10 +1,12 @@
 import { HASTE_AURA_RANGE_TILES, HEAL_AURA_RANGE_TILES } from "@/sim/bossAbilities.js";
 import { BUILDING_COLORS, buildingBlurb } from "@/sim/mapSites.js";
+import { cacheOpenGold } from "@/sim/runBonuses.js";
 import type {
   BombardShotSnapshot,
   MapBuildingSnapshot,
   MapCacheSnapshot,
   SimulationSnapshot,
+  SnapshotMeta,
   SupplyDropSnapshot,
 } from "@/sim/SimulationSnapshot.js";
 
@@ -16,10 +18,11 @@ export function siteGlyphMarkup(
   drops: readonly SupplyDropSnapshot[],
   caches: readonly MapCacheSnapshot[],
   buildings: readonly MapBuildingSnapshot[],
+  currentWave: number,
 ): string {
   const parts: string[] = [];
   for (const drop of drops) parts.push(dropGlyph(drop.worldX, drop.worldY));
-  for (const cache of caches) parts.push(cacheGlyph(cache));
+  for (const cache of caches) parts.push(cacheGlyph(cache, currentWave));
   for (const building of buildings) parts.push(buildingGlyph(building));
   return parts.join("");
 }
@@ -27,13 +30,29 @@ export function siteGlyphMarkup(
 export class MapSiteLayer {
   private layer: SVGGElement | null = null;
   private lastMarkup = "";
+  private siteSignature = "";
+  private siteMarkup = "";
 
   init(layer: SVGGElement): void {
     this.layer = layer;
   }
 
   sync(snapshot: SimulationSnapshot): void {
-    const markup = liveMarkup(snapshot);
+    const meta = snapshot.meta;
+    // Site glyphs carry tooltips and HP bars, so they dominate this layer's string
+    // cost. A cheap signature keeps them out of the per-frame path; aura rings and
+    // bombard shots are rebuilt every call because they move every frame.
+    const signature = siteSignature(meta);
+    if (signature !== this.siteSignature) {
+      this.siteSignature = signature;
+      this.siteMarkup = siteGlyphMarkup(
+        meta.supplyDrops ?? [],
+        meta.mapCaches ?? [],
+        meta.mapBuildings ?? [],
+        meta.currentWave,
+      );
+    }
+    const markup = this.siteMarkup + overlayMarkup(snapshot);
     if (markup === this.lastMarkup) return;
     this.lastMarkup = markup;
     if (this.layer) this.layer.innerHTML = markup;
@@ -43,13 +62,26 @@ export class MapSiteLayer {
     if (this.layer) this.layer.innerHTML = "";
     this.layer = null;
     this.lastMarkup = "";
+    this.siteSignature = "";
+    this.siteMarkup = "";
   }
 }
 
-function liveMarkup(snapshot: SimulationSnapshot): string {
+// Covers every field siteGlyphMarkup reads: positions come from tile coords plus
+// the run's tile size and world origin, cache titles from hp and the current wave.
+function siteSignature(meta: SnapshotMeta): string {
+  let signature = `t${meta.tileSize ?? 36}:${meta.worldOriginX ?? 0},${meta.worldOriginY ?? 0}w${meta.currentWave}`;
+  for (const drop of meta.supplyDrops ?? []) signature += `d${drop.id}:${drop.tileX},${drop.tileY}`;
+  for (const cache of meta.mapCaches ?? []) signature += `c${cache.id}:${cache.tileX},${cache.tileY}:${cache.hp}`;
+  for (const building of meta.mapBuildings ?? [])
+    signature += `b${building.id}:${building.tileX},${building.tileY}:${building.kind}`;
+  return signature;
+}
+
+function overlayMarkup(snapshot: SimulationSnapshot): string {
   const meta = snapshot.meta;
   const tileSize = meta.tileSize ?? 36;
-  const parts: string[] = [siteGlyphMarkup(meta.supplyDrops ?? [], meta.mapCaches ?? [], meta.mapBuildings ?? [])];
+  const parts: string[] = [];
   for (const enemy of snapshot.enemies) {
     if (enemy.removed || enemy.type !== "boss") continue;
     if (enemy.bossAbility === "healAura" && !enemy.mendSuppressed) {
@@ -69,17 +101,22 @@ function dropGlyph(worldX: number, worldY: number): string {
   return `<polygon points="${points}" fill="#e0c040" stroke="#8a7020" stroke-width="1"><title>Supply drop</title></polygon>`;
 }
 
-function cacheGlyph(cache: MapCacheSnapshot): string {
+function cacheGlyph(cache: MapCacheSnapshot, currentWave: number): string {
   const half = GLYPH_SIZE / 2;
   const left = cache.worldX - half;
   const top = cache.worldY - half;
+  const broken = cache.hp <= 0;
   const bar =
-    cache.hp < cache.maxHp
+    !broken && cache.hp < cache.maxHp
       ? `<rect x="${left}" y="${top - 4}" width="${GLYPH_SIZE * Math.max(0, cache.hp / cache.maxHp)}" height="2" fill="#d0d0d0"/>`
       : "";
+  const title = broken
+    ? "Broken cache · free card"
+    : `Cache ${Math.ceil(cache.hp)}/${Math.ceil(cache.maxHp)} · open for ${cacheOpenGold(currentWave)} gold`;
+  const fill = broken ? "#5a4a30" : "#8a6230";
   return (
-    `<rect x="${left}" y="${top}" width="${GLYPH_SIZE}" height="${GLYPH_SIZE}" fill="#8a6230" stroke="#4a3018" stroke-width="1">` +
-    `<title>Cache ${Math.ceil(cache.hp)}/${Math.ceil(cache.maxHp)} · open for 50 gold</title></rect>${bar}`
+    `<rect x="${left}" y="${top}" width="${GLYPH_SIZE}" height="${GLYPH_SIZE}" fill="${fill}" stroke="#4a3018" stroke-width="1">` +
+    `<title>${title}</title></rect>${bar}`
   );
 }
 

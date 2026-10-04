@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { dispatchCommand } from "@/sim/commandBus.js";
-import { bonusCard } from "@/sim/runBonuses.js";
+import { bonusCard, cacheOpenGold } from "@/sim/runBonuses.js";
 import { useGameStore } from "@/stores/game.js";
 
 const gameStore = useGameStore();
@@ -9,7 +9,18 @@ const gameStore = useGameStore();
 const cards = computed(() => {
   const picker = gameStore.bonusPicker;
   if (!picker) return [];
-  return picker.offer.map((bonusId, index) => ({ index, ...bonusCard(bonusId, gameStore.runBonuses) }));
+  const context = { wave: gameStore.currentWave, specialistType: picker.specialistType };
+  return picker.offer.map((bonusId, index) => ({ index, ...bonusCard(bonusId, gameStore.runBonuses, context) }));
+});
+
+// Null for a supply drop. A cache broken open by tower fire costs nothing, so the
+// label has to read the live hp rather than the fee the engine would charge.
+const cacheCost = computed<number | null>(() => {
+  const picker = gameStore.bonusPicker;
+  if (picker?.source !== "cache") return null;
+  const cache = gameStore.mapCaches.find((site) => site.id === picker.id);
+  if (!cache) return null;
+  return cache.hp > 0 ? cacheOpenGold(gameStore.currentWave) : 0;
 });
 
 function pick(index: number): void {
@@ -31,7 +42,7 @@ function dismiss(): void {
         <span v-if="card.change" class="bonus-change">{{ card.change }}</span>
       </button>
     </div>
-    <span v-if="gameStore.bonusPicker.source === 'cache'" class="bonus-cost">50 gold</span>
+    <span v-if="cacheCost !== null" class="bonus-cost">{{ cacheCost > 0 ? `${cacheCost} gold` : "Free" }}</span>
     <button class="bonus-dismiss" type="button" @click="dismiss">Leave it</button>
   </div>
 </template>

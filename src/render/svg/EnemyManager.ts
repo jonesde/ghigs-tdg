@@ -29,13 +29,15 @@ export class EnemyManager {
   }
 
   syncFromGameEngine(enemies: EnemySnapshot[]): void {
+    // Same theme record for every proxy, so resolve it once outside the loop.
+    const healerVisual = this.resolveEnemyVisual("healer");
     let proxyIndex = 0;
 
     for (const enemy of enemies) {
       if (proxyIndex >= this.pool.length) break;
 
       const proxy = this.pool[proxyIndex]!;
-      proxy.sync(enemy, this.resolveEnemyVisual(enemy.type), this.resolveEnemyVisual("healer"));
+      proxy.sync(enemy, this.resolveEnemyVisual(enemy.type), healerVisual);
       proxyIndex++;
     }
 

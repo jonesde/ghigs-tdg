@@ -388,7 +388,8 @@ export class Enemy {
   bombardTargetId: string | null = null;
   bombardTargetX = 0;
   bombardTargetY = 0;
-  // GameEngine points Mend bosses at nearerMendBlocks. Null for every other enemy.
+  // Set by GameEngine for Mend bosses: reads the tick's cached mend source list
+  // through nearerMendBlocksIn. Null for every other enemy.
   mendSuppresses: ((source: Enemy, ally: Enemy) => boolean) | null = null;
   private healTickDt: number = 0;
   private applyHealAura = (ally: Enemy): void => {

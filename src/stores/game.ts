@@ -389,16 +389,9 @@ export const useGameStore = defineStore("game", {
       else if (this.state === GameState.PAUSED) this.state = GameState.PLAYING;
     },
 
-    initMap(mapIndex: number, mapData: GeneratedMap, grid: Grid | null) {
-      this.mapIndex = mapIndex;
-      this.map = mapData;
-      this.grid = grid;
-      this.state = GameState.PLAYING;
-      this.baseHealth = STARTING_BASE_HEALTH;
-      this.maxBaseHealth = STARTING_BASE_HEALTH;
-      this.gold = StartingGold[mapData.regionId]!;
-      this.currentWave = 0;
-      this.commanderHold = false;
+    // Rewards and run-scoped state both start a run and return to the menu clear,
+    // so the next run cannot inherit gems, milestones, or a half-open picker.
+    resetRunRewards() {
       this.runGemsEarned = 0;
       this.bossesKilledThisRun = 0;
       this.bossesReachedBaseThisRun = 0;
@@ -409,17 +402,11 @@ export const useGameStore = defineStore("game", {
         waveCompletion: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
         firstClearBonus: 0,
       };
-      this.selectedTower = null;
-      this.selectedTowerId = null;
-      this.selectedTowerType = null;
-      this.baseDefense = null;
-      this.towerPanelPos = { x: 0, y: 48 };
-      this.gameShopPos = { x: 0, y: 0 };
-      this.minimapPanelPos = { x: 40, y: 80 };
-      this.hoverTile = null;
-      this.buildHoverHeld = false;
-      this.endScreenData = null;
-      this.camera = defaultCamera();
+    },
+
+    // Progressive placement state, the run's bonus records, and the site lists all
+    // describe one board: they are rebuilt together or not at all.
+    resetRunBonusesAndSites() {
       this.progressivePlacementHold = false;
       this.progressiveOffer = [];
       this.progressiveRotation = 0;
@@ -434,6 +421,31 @@ export const useGameStore = defineStore("game", {
       this.supplyDrops = [];
       this.mapCaches = [];
       this.mapBuildings = [];
+    },
+
+    initMap(mapIndex: number, mapData: GeneratedMap, grid: Grid | null) {
+      this.mapIndex = mapIndex;
+      this.map = mapData;
+      this.grid = grid;
+      this.state = GameState.PLAYING;
+      this.baseHealth = STARTING_BASE_HEALTH;
+      this.maxBaseHealth = STARTING_BASE_HEALTH;
+      this.gold = StartingGold[mapData.regionId]!;
+      this.currentWave = 0;
+      this.commanderHold = false;
+      this.resetRunRewards();
+      this.selectedTower = null;
+      this.selectedTowerId = null;
+      this.selectedTowerType = null;
+      this.baseDefense = null;
+      this.towerPanelPos = { x: 0, y: 48 };
+      this.gameShopPos = { x: 0, y: 0 };
+      this.minimapPanelPos = { x: 40, y: 80 };
+      this.hoverTile = null;
+      this.buildHoverHeld = false;
+      this.endScreenData = null;
+      this.camera = defaultCamera();
+      this.resetRunBonusesAndSites();
     },
 
     rotateProgressiveBlock() {
@@ -626,33 +638,11 @@ export const useGameStore = defineStore("game", {
       this.hoverTile = null;
       this.buildHoverHeld = false;
       this.hoverUpgradeBtn = false;
-      this.runGemsEarned = 0;
-      this.bossesKilledThisRun = 0;
-      this.bossesReachedBaseThisRun = 0;
-      this.milestoneRewardsClaimed = {};
-      this.gemBreakdown = {
-        bossKills: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
-        milestones: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
-        waveCompletion: { base: 0, afterDiff: 0, afterRegion: 0, afterFirstTime: 0 },
-        firstClearBonus: 0,
-      };
+      this.resetRunRewards();
       this.endScreenData = null;
       this.camera = defaultCamera();
       this.randomMapParams = null;
-      this.progressivePlacementHold = false;
-      this.progressiveOffer = [];
-      this.progressiveRotation = 0;
-      this.progressiveSelectedOffer = 0;
-      this.progressiveSelectedSite = null;
-      this.progressivePlacements = [];
-      this.progressiveUndoAvailable = false;
-      this.layoutGeneration = 0;
-      this.runBonuses = freshRunBonuses();
-      this.bonusPicker = null;
-      this.nextBossAbilityNames = [];
-      this.supplyDrops = [];
-      this.mapCaches = [];
-      this.mapBuildings = [];
+      this.resetRunBonusesAndSites();
     },
 
     syncSiteReservations() {
@@ -662,6 +652,7 @@ export const useGameStore = defineStore("game", {
       const keys: string[] = [];
       for (const building of this.mapBuildings) keys.push(`${building.tileX},${building.tileY}`);
       for (const cache of this.mapCaches) keys.push(`${cache.tileX},${cache.tileY}`);
+      for (const drop of this.supplyDrops) keys.push(`${drop.tileX},${drop.tileY}`);
       grid.setReservedTerrain(keys);
     },
   },

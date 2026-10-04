@@ -31,7 +31,7 @@ interface EnemyManagerRef {
   getEnemiesInRange(x: number, y: number, range: number): unknown[];
 }
 
-interface WaveEntry {
+export interface WaveEntry {
   type: string;
   level: number;
   delay: number;
@@ -62,6 +62,10 @@ export class WaveManager {
   // Set by the engine while a progressive placement hold owns the clock. update
   // returns before the between-waves countdown or the next wave can start.
   advanceHeld: boolean;
+  // Stamps boss abilities onto a wave's entries the moment they are generated.
+  // Stamping at generation (not at wave start) is what keeps every caller of
+  // startNextWave covered, including the debug tools that bypass onWaveStart.
+  bossAbilityStamper: ((entries: WaveEntry[], waveNumber: number) => void) | null = null;
 
   constructor(map: MapRef, enemyManager: EnemyManagerRef) {
     this.map = map;
@@ -121,6 +125,7 @@ export class WaveManager {
     this.currentWave++;
     this.betweenWaves = false;
     const newQueue = this.generateWave(this.currentWave);
+    this.bossAbilityStamper?.(newQueue, this.currentWave);
     this.queue.push(...newQueue);
     this.spawnTimer = 0;
     this._waveGameTime = 0;

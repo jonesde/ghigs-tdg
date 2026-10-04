@@ -1,13 +1,15 @@
 import type { MapThemeData, SpawnState } from "@/render/themes/index.js";
 import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
-import type { BossAbilityId } from "@/sim/bossAbilities.js";
 import {
+  type ActiveMendSource,
+  BossAbilityRuntime,
+  type BossShotTarget,
   bossAbilityLabel,
+  collectMendSourcesInto,
   configureBossAbility,
   minionPulseCount,
-  nearerMendBlocks,
+  nearerMendBlocksIn,
   rollBossAbilities,
-  tickBossAbilities,
 } from "@/sim/bossAbilities.js";
 import type { DebugKind } from "@/sim/Command.js";
 import { enemyLevelForWave, waveBossCount } from "@/sim/ConstantsEnemy.js";
@@ -35,7 +37,6 @@ import type { GeneratedMap } from "@/sim/grid/Map.js";
 import { forkRunSeed, generateRandomMap, mulberry32 } from "@/sim/grid/Map.js";
 import {
   type BlockTemplate,
-  blockCoordinateForTile,
   boardToGeneratedMap,
   boardWithPlayerStamp,
   commitPlacement,
@@ -52,17 +53,9 @@ import {
   resolveGeneratedMap,
 } from "@/sim/grid/ProgressiveMap.js";
 import type { HostBindings, ThemeBundle } from "@/sim/HostBindings.js";
+import { MapSiteManager } from "@/sim/MapSiteManager.js";
 import type { MapBuildingSite, MapCacheSite, SupplyDropSite } from "@/sim/mapSites.js";
-import {
-  CACHE_OPEN_GOLD,
-  collectWorldKeys,
-  nearestPathTile,
-  neighborBonus,
-  PACKAGE_CLICK_RADIUS_TILES,
-  playerPlacedBlockCount,
-  reconcileMapSites,
-  worldKey,
-} from "@/sim/mapSites.js";
+import { collectWorldKeys, neighborBonus, playerPlacedBlockCount, stampWorldKeysForBlock } from "@/sim/mapSites.js";
 import { CrowdManager, restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdManager.js";
 import { toRecast } from "@/sim/navmesh/coords.js";
 import { FlightDistanceField } from "@/sim/navmesh/FlightDistanceField.js";
@@ -89,15 +82,21 @@ import { ContactProcessor } from "@/sim/physics/ContactProcessor.js";
 import { ForceFieldSystem } from "@/sim/physics/ForceFieldSystem.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { separateEnemiesFromTowers } from "@/sim/physics/separateEnemiesFromTowers.js";
-import type { BonusApplication, BonusOffer } from "@/sim/runBonuses.js";
-import { describeBonus, freshRunBonuses, rollBonusOfferFor } from "@/sim/runBonuses.js";
+import type { BonusApplication } from "@/sim/runBonuses.js";
+import {
+  cacheOpenGold,
+  curateBonusOffer,
+  describeBonus,
+  freshRunBonuses,
+  rollSpecialistType,
+} from "@/sim/runBonuses.js";
 import type { BaseDefenseSnapshot } from "@/sim/SimulationSnapshot.js";
 import { BASE_SELECTION_ID, BaseDefense } from "@/sim/towers/BaseDefense.js";
 import { maxLevelForBase } from "@/sim/towers/SkillTree.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import { TowerManager } from "@/sim/towers/TowerManager.js";
 import { WaveGraphTracker } from "@/sim/WaveGraphTracker.js";
-import { WaveManager } from "@/sim/waves/WaveManager.js";
+import { type WaveEntry, WaveManager } from "@/sim/waves/WaveManager.js";
 import {
   BETWEEN_WAVES_TIMER,
   BONUS_GEM_BASE,
@@ -121,7 +120,7 @@ import {
   UPGRADE_COST_REDUCTION_PCT,
   VICTORY_WAVE,
 } from "./Constants.js";
-import { GHOST_PARTICLE_COUNT, GHOST_PARTICLE_DURATION, TOWER_META } from "./ConstantsTower.js";
+import { GHOST_PARTICLE_COUNT, GHOST_PARTICLE_DURATION, TOWER_META, type TowerId } from "./ConstantsTower.js";
 
 interface WaveManagerRef {
   currentWave: number;
@@ -152,7 +151,7 @@ interface WaveManagerRef {
   startNextWave(): void;
   debugJumpToWave(wave: number): void;
   getRemainingScheduledSpawns(): number;
-  queue: { type: string; level: number; delay: number; bossAbility?: BossAbilityId }[];
+  bossAbilityStamper: ((entries: WaveEntry[], waveNumber: number) => void) | null;
 }
 
 export class GameEngine {
@@ -224,11 +223,37 @@ export class GameEngine {
   progressivePlacementUndo: { stampCount: number; offer: number[] } | null = null;
   layoutGeneration = 0;
   lastPostedLayoutGeneration = -1;
-  supplyDrops: SupplyDropSite[] = [];
-  mapCaches: MapCacheSite[] = [];
-  mapBuildings: MapBuildingSite[] = [];
-  nextSiteId = 1;
+  readonly sites = new MapSiteManager();
+  private readonly bossAbilityRuntime = new BossAbilityRuntime({
+    // The tower list resolves only when a towerShot boss arms a bombard, so a wave
+    // without one pays nothing for it.
+    towers: () => this.bossShotTargets(),
+    spawnMinions: (boss) => this.spawnBossMinions(boss),
+    damageTower: (towerId, amount, attacker) => {
+      const tower = this.towerManager?.getTowerById(towerId);
+      if (!tower || tower.isGhost) return;
+      tower.takeAbilityDamage(amount, attacker);
+    },
+  });
+  private mendSources: readonly ActiveMendSource[] = [];
+  private readonly mendSourceBuffer: ActiveMendSource[] = [];
+  private readonly cacheShotTargetBuffer: { id: number; x: number; y: number }[] = [];
+
+  get supplyDrops(): SupplyDropSite[] {
+    return this.sites.supplyDrops;
+  }
+
+  get mapCaches(): MapCacheSite[] {
+    return this.sites.mapCaches;
+  }
+
+  get mapBuildings(): MapBuildingSite[] {
+    return this.sites.mapBuildings;
+  }
   nextBossAbilityNames: string[] = [];
+  // Broken caches waiting for the picker that is currently open to close. The
+  // wasPlaying flag is inherited so the whole chain resumes exactly once.
+  pendingBrokenCaches: { id: number; wasPlaying: boolean }[] = [];
   private progressiveBoard: ProgressiveBoard | null = null;
   private progressiveCatalog: BlockTemplate[] | null = null;
   private progressiveRng: (() => number) | null = null;
@@ -328,11 +353,9 @@ export class GameEngine {
     this.progressivePlacementUndo = null;
     this.layoutGeneration = 0;
     this.lastPostedLayoutGeneration = -1;
-    this.supplyDrops = [];
-    this.mapCaches = [];
-    this.mapBuildings = [];
-    this.nextSiteId = 1;
+    this.sites.reset();
     this.nextBossAbilityNames = [];
+    this.pendingBrokenCaches = [];
     this.progressiveBoard = null;
     this.progressiveCatalog = null;
     this.progressiveRng = null;
@@ -485,6 +508,7 @@ export class GameEngine {
       this.earnGold(amount);
     });
     this.waveManager = new WaveManager(mapData, this.enemyManager);
+    this.waveManager.bossAbilityStamper = (entries, waveNumber) => this.stampBossAbilities(entries, waveNumber);
 
     this.waveGraphTracker = new WaveGraphTracker(
       this.runState,
@@ -586,6 +610,14 @@ export class GameEngine {
     // the live count is under the gameplay cap, so immortal base-attackers can
     // never pin the pending queue. Runs pre-step so released enemies join this tick.
     this.enemyManager.drainPendingQueues();
+
+    // Cross-module: Mend bosses read this list from their spawn-time closure, so it
+    // is rebuilt once per tick here rather than once per ally inside a heal tick.
+    // Sources are read at tick start, so a boss that spawns mid-tick only joins the
+    // list next tick, where the worst case is one tick of two Mend bosses both healing.
+    // The closure only reads it during this tick's boss combat, before the next
+    // rebuild overwrites the buffer.
+    this.mendSources = collectMendSourcesInto(this.enemyManager.enemies, this.mendSourceBuffer);
 
     const wm = this.waveManager;
     if (wm.countdownActive) {
@@ -836,9 +868,6 @@ export class GameEngine {
 
   onWaveStart(wave: number): void {
     setWave(this.runState, wave);
-    // The queue for this wave already exists. Spawn happens on a later tick, so a
-    // stamp here is on the plan, and bossesSpawned still counts only bodies that appear.
-    this.stampBossAbilities(wave);
     this.waveGraphTracker?.onWaveStart(wave);
 
     const ranked: { towerId: string; damage: number; totalDamage: number }[] = [];
@@ -906,7 +935,7 @@ export class GameEngine {
       this.waveGraphTracker?.onGoldBounty(bounty);
       this.earnGold(bounty);
     }
-    if (enemy.type === "boss") this.dropSupplyPackage(enemy);
+    if (enemy.type === "boss") this.sites.addSupplyDrop(this.grid, this.runState.map, enemy);
   }
 
   earnGold(amount: number): void {
@@ -1078,13 +1107,15 @@ export class GameEngine {
       return;
     }
 
-    const packageHit = this.nearestPackage(worldX, worldY);
+    const packageHit = this.sites.nearestPackage(this.grid, worldX, worldY);
     if (packageHit) {
-      if (packageHit.source === "cache" && this.runState.gold < CACHE_OPEN_GOLD) {
-        this.host.notifyUi({ type: "showNotification", message: "50 gold is required to open a cache." });
+      const openCost = packageHit.source === "cache" ? this.cacheOpenCost(packageHit.id) : 0;
+      if (openCost === null) return;
+      if (openCost > 0 && this.runState.gold < openCost) {
+        this.host.notifyUi({ type: "showNotification", message: `${openCost} gold is required to open a cache.` });
         return;
       }
-      this.openBonusPicker(packageHit.source, packageHit.id, packageHit.offer);
+      this.openBonusPicker(packageHit.source, packageHit.id);
       return;
     }
 
@@ -1665,7 +1696,7 @@ export class GameEngine {
     }
     this.towerManager.shiftLayoutIndices(shift.shiftX, shift.shiftY);
     this.enemyManager.shiftLayoutIndices(shift.shiftX, shift.shiftY);
-    this.shiftMapSites(shift.shiftX, shift.shiftY);
+    this.sites.shift(shift.shiftX, shift.shiftY);
     const playerBlock = committed.added.find((block) => !block.fill);
     const stampWorldKeys = playerBlock ? this.playerStampKeys(playerBlock.blockX, playerBlock.blockY) : null;
     this.adoptLayoutSites(previousWorldKeys, playerPlacedBlockCount(this.progressivePlacements), stampWorldKeys);
@@ -1765,6 +1796,9 @@ export class GameEngine {
     this.progressiveOffer = [];
     this.progressivePlacementUndo = null;
     if (this.waveManager) this.waveManager.advanceHeld = false;
+    // The hold refused the open that queued a broken cache; retry now that the
+    // hold no longer owns the UI.
+    this.drainPendingBrokenCaches();
   }
 
   // Placement succeeded: close the offer UI and stash the undo record. The run
@@ -1850,7 +1884,7 @@ export class GameEngine {
     }
     this.towerManager.shiftLayoutIndices(shift.shiftX, shift.shiftY);
     this.enemyManager.shiftLayoutIndices(shift.shiftX, shift.shiftY);
-    this.shiftMapSites(shift.shiftX, shift.shiftY);
+    this.sites.shift(shift.shiftX, shift.shiftY);
     this.adoptLayoutSites(previousWorldKeys);
     this.enemyManager.reindexSpawns(previousSpawns, nextMap.spawns);
     this.waveManager.map = nextMap;
@@ -1920,14 +1954,13 @@ export class GameEngine {
     this.runState.bossesSpawned += 1;
     configureBossAbility(enemy, enemy.bossAbility, this.grid.tileSize);
     if (enemy.bossAbility !== "healAura") return;
-    enemy.mendSuppresses = (source, ally) => nearerMendBlocks(source, ally, this.enemyManager?.enemies ?? []);
+    enemy.mendSuppresses = (source, ally) => nearerMendBlocksIn(this.mendSources, source, ally);
   }
 
-  private stampBossAbilities(waveNumber: number): void {
-    const manager = this.waveManager;
+  private stampBossAbilities(entries: readonly WaveEntry[], waveNumber: number): void {
     const map = this.runState.map;
-    if (!manager || !map) return;
-    const unstamped = manager.queue.filter((entry) => entry.type === "boss" && entry.bossAbility === undefined);
+    if (!map) return;
+    const unstamped = entries.filter((entry) => entry.type === "boss" && entry.bossAbility === undefined);
     if (unstamped.length === 0) return;
     const vanillaFirst = this.runState.bossesSpawned === 0;
     const abilities = rollBossAbilities(map.seed, waveNumber, unstamped.length, vanillaFirst);
@@ -1958,25 +1991,18 @@ export class GameEngine {
 
   private tickBossCombat(dt: number): void {
     const enemyManager = this.enemyManager;
-    const towerManager = this.towerManager;
     const grid = this.grid;
-    if (!enemyManager || !towerManager || !grid) return;
-    const towers = towerManager.towers.map((tower) => ({
+    if (!enemyManager || !this.towerManager || !grid) return;
+    this.bossAbilityRuntime.tick(enemyManager.enemies, dt, grid.tileSize);
+  }
+
+  private bossShotTargets(): readonly BossShotTarget[] {
+    return (this.towerManager?.towers ?? []).map((tower) => ({
       id: String(tower.id),
       x: tower.x,
       y: tower.y,
       isGhost: tower.isGhost,
     }));
-    tickBossAbilities(enemyManager.enemies, dt, {
-      tileSize: grid.tileSize,
-      towers,
-      spawnMinions: (boss) => this.spawnBossMinions(boss),
-      damageTower: (towerId, amount, attacker) => {
-        const tower = towerManager.getTowerById(towerId);
-        if (!tower || tower.isGhost) return;
-        tower.takeDamage(amount, attacker);
-      },
-    });
   }
 
   private spawnBossMinions(boss: Enemy): void {
@@ -2002,85 +2028,125 @@ export class GameEngine {
     }
   }
 
-  private cacheShotTargets(): { id: number; x: number; y: number }[] {
+  // Rebuilt into one reused buffer each tick: TowerManager reads the list only
+  // during the update call, so this keeps the per-tick array off the hot path.
+  private cacheShotTargets(): readonly { id: number; x: number; y: number }[] {
     const grid = this.grid;
-    if (!grid || this.mapCaches.length === 0) return [];
-    const targets: { id: number; x: number; y: number }[] = [];
+    const targets = this.cacheShotTargetBuffer;
+    if (!grid) {
+      targets.length = 0;
+      return targets;
+    }
+    let count = 0;
     for (const cache of this.mapCaches) {
       if (cache.hp <= 0) continue;
       const world = grid.tileToWorld(cache.tileX, cache.tileY);
-      targets.push({ id: cache.id, x: world.x, y: world.y });
+      const existing = targets[count];
+      if (existing) {
+        existing.id = cache.id;
+        existing.x = world.x;
+        existing.y = world.y;
+      } else {
+        targets.push({ id: cache.id, x: world.x, y: world.y });
+      }
+      count += 1;
     }
+    targets.length = count;
     return targets;
   }
 
   private damageCache(cacheId: number, amount: number): void {
     if (amount <= 0) return;
     const cache = this.mapCaches.find((site) => site.id === cacheId);
-    if (!cache) return;
+    if (!cache || cache.hp <= 0) return;
     cache.hp -= amount;
     if (cache.hp > 0) return;
-    this.mapCaches = this.mapCaches.filter((site) => site.id !== cacheId);
-    this.syncReservedTiles();
-    const picker = this.runState.bonusPicker;
-    if (picker && picker.source === "cache" && picker.id === cacheId) this.closeBonusPicker(false);
+    // A broken cache keeps its tile, its offer, and its reservation. Shot targets
+    // skip hp<=0 so towers stop firing it, and the free card claim below is what
+    // finally removes it.
+    cache.hp = 0;
+    this.host.notifyUi({
+      type: "showNotification",
+      message: "A cache was broken open. Click it to claim a card for free.",
+    });
+    this.pendingBrokenCaches.push({
+      id: cacheId,
+      wasPlaying: this.runState.bonusPicker?.wasPlaying ?? this.runState.state === GameState.PLAYING,
+    });
+    this.drainPendingBrokenCaches();
+  }
+
+  // Opens the next broken cache whose site still exists. Entries stay queued until
+  // one actually opens, so a placement hold that refuses the open cannot lose it.
+  private drainPendingBrokenCaches(): boolean {
+    if (this.runState.bonusPicker) return false;
+    while (this.pendingBrokenCaches.length > 0) {
+      const next = this.pendingBrokenCaches[0]!;
+      const cache = this.mapCaches.find((site) => site.id === next.id);
+      if (!cache) {
+        this.pendingBrokenCaches.shift();
+        continue;
+      }
+      if (!this.openBonusPicker("cache", cache.id, next.wasPlaying)) return false;
+      this.pendingBrokenCaches.shift();
+      return true;
+    }
+    return false;
   }
 
   private playerStampKeys(blockX: number, blockY: number): Set<string> {
-    const grid = this.grid;
-    const keys = new Set<string>();
-    if (!grid) return keys;
-    const originTileX = Math.round(grid.worldOriginX / grid.tileSize);
-    const originTileY = Math.round(grid.worldOriginY / grid.tileSize);
-    for (let tileY = 0; tileY < grid.height; tileY++) {
-      for (let tileX = 0; tileX < grid.width; tileX++) {
-        const block = blockCoordinateForTile(originTileX, originTileY, tileX, tileY);
-        if (block.blockX !== blockX || block.blockY !== blockY) continue;
-        keys.add(worldKey(grid, tileX, tileY));
-      }
-    }
-    return keys;
+    return this.grid ? stampWorldKeysForBlock(this.grid, blockX, blockY) : new Set();
   }
 
-  private dropSupplyPackage(enemy: Enemy): void {
-    const grid = this.grid;
+  // Resolves everything the picker needs from the site itself: the curated offer,
+  // the specialist type the typed cards promise, and the pause ownership. Resolving
+  // here (not at click time) is what keeps a dismiss and reopen on the same roll.
+  private openBonusPicker(
+    source: "drop" | "cache",
+    id: number,
+    wasPlaying = this.runState.state === GameState.PLAYING,
+  ): boolean {
+    if (this.runState.bonusPicker || this.progressivePlacementHold) return false;
     const map = this.runState.map;
-    if (!grid || !map) return;
-    const tile = grid.worldToTile(enemy.x, enemy.y);
-    const pathTile = nearestPathTile(grid, tile.x, tile.y);
-    if (!pathTile) return;
-    const id = this.nextSiteId++;
-    this.supplyDrops.push({ id, tileX: pathTile.x, tileY: pathTile.y, offer: rollBonusOfferFor(map.seed, id) });
-  }
-
-  private nearestPackage(
-    worldX: number,
-    worldY: number,
-  ): { source: "drop" | "cache"; id: number; offer: BonusOffer } | null {
-    const grid = this.grid;
-    if (!grid) return null;
-    const radius = grid.tileSize * PACKAGE_CLICK_RADIUS_TILES;
-    let bestDistance = radius * radius;
-    let best: { source: "drop" | "cache"; id: number; offer: BonusOffer } | null = null;
-    const consider = (source: "drop" | "cache", id: number, tileX: number, tileY: number, offer: BonusOffer): void => {
-      const world = grid.tileToWorld(tileX, tileY);
-      const deltaX = world.x - worldX;
-      const deltaY = world.y - worldY;
-      const distance = deltaX * deltaX + deltaY * deltaY;
-      if (distance > bestDistance) return;
-      bestDistance = distance;
-      best = { source, id, offer };
-    };
-    for (const drop of this.supplyDrops) consider("drop", drop.id, drop.tileX, drop.tileY, drop.offer);
-    for (const cache of this.mapCaches) consider("cache", cache.id, cache.tileX, cache.tileY, cache.offer);
-    return best;
-  }
-
-  private openBonusPicker(source: "drop" | "cache", id: number, offer: BonusOffer): void {
-    if (this.runState.bonusPicker || this.progressivePlacementHold) return;
-    const wasPlaying = this.runState.state === GameState.PLAYING;
-    this.runState.bonusPicker = { source, id, offer, wasPlaying };
+    if (!map) return false;
+    const site =
+      source === "drop"
+        ? this.supplyDrops.find((drop) => drop.id === id)
+        : this.mapCaches.find((cache) => cache.id === id);
+    if (!site) return false;
+    if (site.specialistType === undefined) {
+      site.specialistType = rollSpecialistType(map.seed, id, this.specialistWeights());
+    }
+    const curated = curateBonusOffer(site.offer, { canApplySlow: this.canApplySlow() }, map.seed, id);
+    if (curated !== site.offer) site.offer = curated;
+    this.runState.bonusPicker = { source, id, offer: site.offer, wasPlaying, specialistType: site.specialistType };
     if (wasPlaying) setGameState(this.runState, GameState.PAUSED);
+    return true;
+  }
+
+  private specialistWeights(): Partial<Record<TowerId, number>> {
+    const weights: Partial<Record<TowerId, number>> = {};
+    for (const tower of this.towerManager?.towers ?? []) {
+      if (tower.isGhost) continue;
+      const towerId = tower.type as TowerId;
+      weights[towerId] = (weights[towerId] ?? 0) + 1;
+    }
+    return weights;
+  }
+
+  private canApplySlow(): boolean {
+    return (this.towerManager?.towers ?? []).some(
+      (tower) => !tower.isGhost && (tower.stats.slowAmt > 0 || tower.stats.frostAura),
+    );
+  }
+
+  // Zero while a cache is broken open: breaking it is the free claim path, and the
+  // gold charge is what a player pays to open an intact one from a distance.
+  private cacheOpenCost(cacheId: number): number | null {
+    const cache = this.mapCaches.find((site) => site.id === cacheId);
+    if (!cache) return null;
+    if (cache.hp <= 0) return 0;
+    return cacheOpenGold(this.runState.currentWave);
   }
 
   pickBonus(index: number): boolean {
@@ -2089,14 +2155,22 @@ export class GameEngine {
     const bonusId = picker.offer[index];
     if (!bonusId) return false;
     if (picker.source === "cache") {
-      if (this.runState.gold < CACHE_OPEN_GOLD) {
-        this.host.notifyUi({ type: "showNotification", message: "50 gold is required to open a cache." });
+      const cost = this.cacheOpenCost(picker.id);
+      if (cost === null) {
+        this.closeBonusPicker(true);
         return false;
       }
-      setGold(this.runState, this.runState.gold - CACHE_OPEN_GOLD);
+      if (cost > 0) {
+        if (this.runState.gold < cost) {
+          this.host.notifyUi({ type: "showNotification", message: `${cost} gold is required to open a cache.` });
+          return false;
+        }
+        setGold(this.runState, this.runState.gold - cost);
+      }
     }
-    this.applyBonus(describeBonus(bonusId));
-    this.consumePackage(picker.source, picker.id);
+    const context = { wave: this.runState.currentWave, specialistType: picker.specialistType };
+    this.applyBonus(describeBonus(bonusId, context));
+    this.sites.consume(this.grid, picker.source, picker.id);
     this.closeBonusPicker(true);
     return true;
   }
@@ -2111,6 +2185,9 @@ export class GameEngine {
     const picker = this.runState.bonusPicker;
     if (!picker) return;
     this.runState.bonusPicker = null;
+    // The next broken cache inherits the pause this one held, so the chain of
+    // simultaneous breaks resumes exactly once at the end.
+    if (this.drainPendingBrokenCaches()) return;
     if (resume && picker.wasPlaying && this.runState.state === GameState.PAUSED) {
       setGameState(this.runState, GameState.PLAYING);
     }
@@ -2123,6 +2200,12 @@ export class GameEngine {
     }
     if (application.kind === "mult") {
       this.runState.runBonuses[application.field] *= application.factor;
+      this.refreshAllTowerBonuses();
+      return;
+    }
+    if (application.kind === "typedMult") {
+      const record = this.runState.runBonuses[application.field];
+      record[application.towerType] = (record[application.towerType] ?? 1) * application.factor;
       this.refreshAllTowerBonuses();
       return;
     }
@@ -2140,15 +2223,6 @@ export class GameEngine {
     }
   }
 
-  private consumePackage(source: "drop" | "cache", id: number): void {
-    if (source === "drop") {
-      this.supplyDrops = this.supplyDrops.filter((drop) => drop.id !== id);
-      return;
-    }
-    this.mapCaches = this.mapCaches.filter((cache) => cache.id !== id);
-    this.syncReservedTiles();
-  }
-
   // Recomputes max health only when the multiplied value changes, so an unchanged
   // tower does not drift its current HP through a ratio round-trip.
   private refreshAllTowerBonuses(): void {
@@ -2161,10 +2235,14 @@ export class GameEngine {
     const towers = this.towerManager?.towers;
     if (!towers) return;
     for (const tower of towers) {
-      tower.runDamageMult = bonuses.damageMult;
-      tower.runFireRateMult = bonuses.fireRateMult;
-      tower.runHealthMult = bonuses.healthMult;
-      tower.runRangeMult = bonuses.rangeMult;
+      const towerId = tower.type as TowerId;
+      // The typed record folds into the run factor so every downstream consumer
+      // (_statsKey, max health, the tower bonus line) keeps reading one number.
+      // The base defense keeps the untyped health factor: it is not a tower.
+      tower.runDamageMult = bonuses.damageMult * (bonuses.typeDamageMult[towerId] ?? 1);
+      tower.runFireRateMult = bonuses.fireRateMult * (bonuses.typeFireRateMult[towerId] ?? 1);
+      tower.runHealthMult = bonuses.healthMult * (bonuses.typeHealthMult[towerId] ?? 1);
+      tower.runRangeMult = bonuses.rangeMult * (bonuses.typeRangeMult[towerId] ?? 1);
       tower.runSlowMult = bonuses.slowMult;
       tower.incomingDamageMult = bonuses.armorMult;
       const site = neighborBonus(tower.tileX, tower.tileY, this.mapBuildings);
@@ -2183,49 +2261,16 @@ export class GameEngine {
     placedBlocks = 0,
     stampWorldKeys: ReadonlySet<string> | null = null,
   ): void {
-    const grid = this.grid;
-    const map = this.runState.map;
-    if (!grid || !map) return;
-    reconcileMapSites({
-      grid,
-      seed: map.seed,
-      regionId: map.regionId,
-      mapLevel: map.level,
-      buildings: this.mapBuildings,
-      caches: this.mapCaches,
+    // The manager reconciles sites and reservations; only a real reconcile can
+    // move a site under a tower, so the bonus refresh runs only then.
+    const synced = this.sites.syncMapSites(
+      this.grid,
+      this.runState.map,
       previousWorldKeys,
       placedBlocks,
       stampWorldKeys,
-      allocateId: () => this.nextSiteId++,
-      rollOffer: (packageId) => rollBonusOfferFor(map.seed, packageId),
-    });
-    this.syncReservedTiles();
-    this.refreshAllTowerBonuses();
-  }
-
-  private syncReservedTiles(): void {
-    const grid = this.grid;
-    if (!grid) return;
-    const keys: string[] = [];
-    for (const building of this.mapBuildings) keys.push(`${building.tileX},${building.tileY}`);
-    for (const cache of this.mapCaches) keys.push(`${cache.tileX},${cache.tileY}`);
-    grid.setReservedTerrain(keys);
-  }
-
-  private shiftMapSites(shiftX: number, shiftY: number): void {
-    if (shiftX === 0 && shiftY === 0) return;
-    for (const building of this.mapBuildings) {
-      building.tileX += shiftX;
-      building.tileY += shiftY;
-    }
-    for (const cache of this.mapCaches) {
-      cache.tileX += shiftX;
-      cache.tileY += shiftY;
-    }
-    for (const drop of this.supplyDrops) {
-      drop.tileX += shiftX;
-      drop.tileY += shiftY;
-    }
+    );
+    if (synced) this.refreshAllTowerBonuses();
   }
 
   private adoptLayoutSites(
@@ -2235,22 +2280,11 @@ export class GameEngine {
   ): void {
     const grid = this.grid;
     if (!grid) return;
-    for (let index = this.supplyDrops.length - 1; index >= 0; index--) {
-      const drop = this.supplyDrops[index]!;
-      if (grid.isPath(drop.tileX, drop.tileY)) continue;
-      const snapped = nearestPathTile(grid, drop.tileX, drop.tileY);
-      if (!snapped) {
-        this.supplyDrops.splice(index, 1);
-        continue;
-      }
-      drop.tileX = snapped.x;
-      drop.tileY = snapped.y;
-    }
+    this.sites.snapDropsToPath(grid);
     this.syncMapSites(previousWorldKeys, placedBlocks, stampWorldKeys);
     const picker = this.runState.bonusPicker;
     if (!picker) return;
-    const sites = picker.source === "drop" ? this.supplyDrops : this.mapCaches;
-    if (sites.some((site) => site.id === picker.id)) return;
+    if (this.sites.siteExists(picker.source, picker.id)) return;
     this.closeBonusPicker(false);
   }
 }

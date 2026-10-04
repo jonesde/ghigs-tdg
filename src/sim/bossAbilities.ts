@@ -90,19 +90,62 @@ export interface MendSource {
   antiHealTimer: number;
 }
 
-// Two Mend bosses do not add their rates. The nearer living source wins. A
-// normal healer has healSelf false and is ignored here, so its aura still stacks.
-export function nearerMendBlocks(source: MendSource, ally: MendSource, enemies: readonly MendSource[]): boolean {
-  let nearestId = -1;
-  let nearestDistance = Infinity;
+// The eligible Mend sources as of one tick, in the shape the suppress check reads.
+// GameEngine rebuilds this list once per tick and the per-ally check walks it, so
+// a heal tick costs O(sources) per ally instead of O(enemies).
+export interface ActiveMendSource {
+  id: number;
+  x: number;
+  y: number;
+}
+
+export function collectMendSources(enemies: readonly MendSource[]): ActiveMendSource[] {
+  return collectMendSourcesInto(enemies, []);
+}
+
+// Same list as collectMendSources, written into a caller-owned buffer. GameEngine
+// rebuilds it once per tick, so the per-tick path keeps the array and the source
+// objects off the allocation path the way the cache shot-target buffer does.
+// Entries are only read within the same tick (the Mend heal tick), before the next
+// rebuild overwrites them.
+export function collectMendSourcesInto(
+  enemies: readonly MendSource[],
+  sources: ActiveMendSource[],
+): ActiveMendSource[] {
+  let count = 0;
   for (const enemy of enemies) {
     if (enemy.removed || !enemy.healSelf || enemy.antiHealTimer > 0) continue;
-    const deltaX = enemy.x - ally.x;
-    const deltaY = enemy.y - ally.y;
+    const existing = sources[count];
+    if (existing) {
+      existing.id = enemy.id;
+      existing.x = enemy.x;
+      existing.y = enemy.y;
+    } else {
+      sources.push({ id: enemy.id, x: enemy.x, y: enemy.y });
+    }
+    count += 1;
+  }
+  sources.length = count;
+  return sources;
+}
+
+// Two Mend bosses do not add their rates: the nearest eligible source wins, so a
+// second one is suppressed. A normal healer carries healSelf false and never enters
+// the source list, which is what keeps its aura stacking with a Mend boss.
+export function nearerMendBlocksIn(
+  sources: readonly ActiveMendSource[],
+  source: MendSource,
+  ally: MendSource,
+): boolean {
+  let nearestId = -1;
+  let nearestDistance = Infinity;
+  for (const candidate of sources) {
+    const deltaX = candidate.x - ally.x;
+    const deltaY = candidate.y - ally.y;
     const distance = deltaX * deltaX + deltaY * deltaY;
     if (distance < nearestDistance) {
       nearestDistance = distance;
-      nearestId = enemy.id;
+      nearestId = candidate.id;
     }
   }
   return nearestId !== -1 && nearestId !== source.id;
@@ -133,10 +176,39 @@ export interface BossShotTarget {
 
 export interface BossTickContext {
   tileSize: number;
-  towers: readonly BossShotTarget[];
+  // Resolved only when a towerShot boss arms a bombard. A wave without one never
+  // asks, so the sim does not pay for a tower list on ticks that cannot use it.
+  towers: () => readonly BossShotTarget[];
   // Spawns only the slack under the live cap. Overflow is discarded, not queued.
   spawnMinions: (boss: Enemy) => void;
   damageTower: (towerId: string, amount: number, attacker: Enemy) => void;
+}
+
+export interface BossAbilityServices {
+  readonly towers: () => readonly BossShotTarget[];
+  readonly spawnMinions: (boss: Enemy) => void;
+  readonly damageTower: (towerId: string, amount: number, attacker: Enemy) => void;
+}
+
+// Owns the services the ability ticks call back into for one run. Holding them
+// across ticks keeps the per-tick path free of a context literal and closures;
+// tileSize stays per tick because a grid resize can change it between ticks.
+export class BossAbilityRuntime {
+  private readonly context: BossTickContext;
+
+  constructor(services: BossAbilityServices) {
+    this.context = {
+      tileSize: 0,
+      towers: services.towers,
+      spawnMinions: services.spawnMinions,
+      damageTower: services.damageTower,
+    };
+  }
+
+  tick(enemies: readonly Enemy[], dt: number, tileSize: number): void {
+    this.context.tileSize = tileSize;
+    tickBossAbilities(enemies, dt, this.context);
+  }
 }
 
 export function tickBossAbilities(enemies: readonly Enemy[], dt: number, context: BossTickContext): void {
@@ -211,15 +283,15 @@ function tickBombard(boss: Enemy, dt: number, context: BossTickContext): void {
     const targetId = boss.bombardTargetId;
     boss.bombardTargetId = null;
     if (!targetId) return;
-    const tower = context.towers.find((candidate) => candidate.id === targetId);
-    if (!tower || tower.isGhost) return;
+    // damageTower drops the hit when the tower is gone or has become a ghost,
+    // which is the same check the old id lookup into the tower list made.
     context.damageTower(targetId, boss.attackDamage * BOMBARD_DAMAGE_FRACTION, boss);
     return;
   }
   boss.bombardTimer -= dt;
   if (boss.bombardTimer > 0) return;
   boss.bombardTimer = BOMBARD_INTERVAL_SECONDS;
-  const target = nearestTower(boss, context.towers, BOMBARD_RANGE_TILES * context.tileSize);
+  const target = nearestTower(boss, context.towers(), BOMBARD_RANGE_TILES * context.tileSize);
   if (!target) return;
   boss.bombardTelegraphRemaining = BOMBARD_TELEGRAPH_SECONDS;
   boss.bombardTargetId = target.id;

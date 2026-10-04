@@ -706,22 +706,14 @@ export class Tower {
 
   takeDamage(amount: number, attacker?: Enemy): void {
     if (this.enemyAttackImmune) return;
-    // Armor is applied before thorn reflect so the reflected hit uses the damage
-    // the tower actually took. GameEngine writes incomingDamageMult from the run.
-    const incoming = amount * this.incomingDamageMult;
-    const stats = this.stats;
-    const attackerFlying = (attacker?.flyingHeight ?? 0) > 0;
-    if (stats.thornReflectPct > 0 && attacker && !this.isGhost && (!stats.groundOnly || !attackerFlying)) {
-      const reflected = incoming * stats.thornReflectPct;
-      const dealtDamage = attacker.takeDamage(reflected) ?? reflected;
-      this.creditDamage(dealtDamage);
-    }
-    this.health -= incoming;
-    if (this.health < 0) this.health = 0;
-    if (this.health <= 0 && !this.isGhost) {
-      this.isGhost = true;
-      this.pendingGhostEffect = true;
-    }
+    applyIncomingDamage(this, amount, attacker);
+  }
+
+  // Terrain placement grants enemyAttackImmune against contact attacks. A boss
+  // Bombard is a targeted siege hit that has to reach those towers, so it uses
+  // this path and deliberately skips the immunity check.
+  takeAbilityDamage(amount: number, attacker?: Enemy): void {
+    applyIncomingDamage(this, amount, attacker);
   }
 
   restore(): void {
@@ -962,14 +954,11 @@ export class Tower {
         this.cachedTargetId = targetEnemy ? targetEnemy.id : null;
       }
       if (targetEnemy) {
-        if (this.cooldown <= 0) {
-          const aimTarget = { x: this.x + ddx * rangePx, y: this.y + ddy * rangePx, id: 0 };
-          this.fire(aimTarget, enemyManager, projectileManager, sound);
-          this.cooldown = 1 / stats.fireRate;
-        }
+        const aimTarget = { x: this.x + ddx * rangePx, y: this.y + ddy * rangePx, id: 0 };
+        this.fire({ kind: "enemy", ...aimTarget }, enemyManager, projectileManager, sound);
       } else {
         const cache = nearestCache(this.x, this.y, rangeSquared, caches, { x: ddx, y: ddy });
-        if (cache) fireAtCache(this, cache, projectileManager, sound, onCacheHit);
+        if (cache) this.fire(cacheShotTarget(cache, onCacheHit), enemyManager, projectileManager, sound);
       }
       return;
     }
@@ -1002,23 +991,21 @@ export class Tower {
       this.cachedTargetId = target ? target.id : null;
     }
     if (target) {
-      this.angle = Math.atan2(target.y - this.y, target.x - this.x);
-      if (this.cooldown <= 0) {
-        this.fire(target, enemyManager, projectileManager, sound);
-        this.cooldown = 1 / stats.fireRate;
-      }
+      this.fire({ kind: "enemy", ...target }, enemyManager, projectileManager, sound);
       return;
     }
     const cache = nearestCache(this.x, this.y, rangeSquared, caches);
-    if (cache) fireAtCache(this, cache, projectileManager, sound, onCacheHit);
+    if (cache) this.fire(cacheShotTarget(cache, onCacheHit), enemyManager, projectileManager, sound);
   }
 
   fire(
-    target: { x: number; y: number; id: number },
+    target: FireTarget,
     _enemyManager: EnemyManagerRef,
     projectileManager: ProjectileManagerRef,
     sound: SoundPlayer,
   ) {
+    this.angle = Math.atan2(target.y - this.y, target.x - this.x);
+    if (this.cooldown > 0) return;
     const stats = this.stats;
     let fireDamage = stats.damage;
 
@@ -1032,6 +1019,40 @@ export class Tower {
 
     const tileSize = this.grid?.tileSize || 36;
     const barrelOffset = tileSize * 0.45;
+    this.fireAnimTime = this._gameSeconds;
+    this.cooldown = 1 / stats.fireRate;
+    if (sound) sound.playSound(`shoot_${this.type as TowerId}`);
+
+    // A siege shot carries no on-hit effects: it lands on the cache tile, and the
+    // cache takes the damage through onCacheHit instead of the projectile pipeline.
+    if (target.kind === "cache") {
+      if (this.type === "lightning") {
+        target.onCacheHit(target.id, fireDamage);
+        return;
+      }
+      projectileManager.spawn({
+        towerId: this.id,
+        x: this.x + Math.cos(this.angle) * barrelOffset,
+        y: this.y + Math.sin(this.angle) * barrelOffset,
+        damage: fireDamage,
+        speed:
+          (resolveEffectiveBase(this.base, this.type as TowerId, this.variant).projSpeed || 1) *
+          tileSize *
+          PROJECTILE_SPEED_MULTIPLIER,
+        range: stats.range,
+        towerType: this.type,
+        towerLevel: this.level,
+        targetId: 0,
+        targetX: target.x,
+        targetY: target.y,
+        cacheId: target.id,
+        color: this.color,
+        icon: this.icon,
+        variant: this.variant,
+      });
+      return;
+    }
+
     if (this.type === "lightning") {
       projectileManager.fireLightning({
         originX: this.x + Math.cos(this.angle) * barrelOffset,
@@ -1050,8 +1071,6 @@ export class Tower {
         stormcall: stats.stormcall,
         color: this.color,
       });
-      this.fireAnimTime = this._gameSeconds;
-      if (sound) sound.playSound(`shoot_${this.type as TowerId}`);
       return;
     }
     projectileManager.spawn({
@@ -1092,51 +1111,37 @@ export class Tower {
       stunDur: stats.stun,
       splash: stats.splash,
     });
-    this.fireAnimTime = this._gameSeconds;
-    if (sound) sound.playSound(`shoot_${this.type as TowerId}`);
   }
 }
 
-function fireAtCache(
-  tower: Tower,
-  cache: CacheShotTarget,
-  projectileManager: ProjectileManagerRef,
-  sound: SoundPlayer,
-  onCacheHit: (cacheId: number, damage: number) => void,
-): void {
-  tower.angle = Math.atan2(cache.y - tower.y, cache.x - tower.x);
-  if (tower.cooldown > 0) return;
+// Shared damage entry for enemy contact hits and ability hits. Module level, not
+// a method: a required private member on Tower would break the structural
+// assignability of Pinia's unwrapped store state to Tower.
+// Armor is applied before thorn reflect so the reflected hit uses the damage
+// the tower actually took. GameEngine writes incomingDamageMult from the run.
+function applyIncomingDamage(tower: Tower, amount: number, attacker?: Enemy): void {
+  const incoming = amount * tower.incomingDamageMult;
   const stats = tower.stats;
-  let fireDamage = stats.damage;
-  if (stats.chargeShot) {
-    tower.chargeShotCount = (tower.chargeShotCount + 1) % CHARGE_SHOT_COUNT;
-    if (tower.chargeShotCount === 0) fireDamage *= CHARGE_SHOT_MULT;
+  const attackerFlying = (attacker?.flyingHeight ?? 0) > 0;
+  if (stats.thornReflectPct > 0 && attacker && !tower.isGhost && (!stats.groundOnly || !attackerFlying)) {
+    const reflected = incoming * stats.thornReflectPct;
+    const dealtDamage = attacker.takeDamage(reflected) ?? reflected;
+    tower.creditDamage(dealtDamage);
   }
-  const tileSize = tower.grid?.tileSize || 36;
-  const barrelOffset = tileSize * 0.45;
-  tower.fireAnimTime = tower._gameSeconds;
-  tower.cooldown = 1 / stats.fireRate;
-  if (sound) sound.playSound(`shoot_${tower.type as TowerId}`);
-  if (tower.type === "lightning") {
-    onCacheHit(cache.id, fireDamage);
-    return;
+  tower.health -= incoming;
+  if (tower.health < 0) tower.health = 0;
+  if (tower.health <= 0 && !tower.isGhost) {
+    tower.isGhost = true;
+    tower.pendingGhostEffect = true;
   }
-  const base = resolveEffectiveBase(tower.base, tower.type as TowerId, tower.variant);
-  projectileManager.spawn({
-    towerId: tower.id,
-    x: tower.x + Math.cos(tower.angle) * barrelOffset,
-    y: tower.y + Math.sin(tower.angle) * barrelOffset,
-    damage: fireDamage,
-    speed: (base.projSpeed || 1) * tileSize * PROJECTILE_SPEED_MULTIPLIER,
-    range: stats.range,
-    towerType: tower.type,
-    towerLevel: tower.level,
-    targetId: 0,
-    targetX: cache.x,
-    targetY: cache.y,
-    cacheId: cache.id,
-    color: tower.color,
-    icon: tower.icon,
-    variant: tower.variant,
-  });
+}
+
+// Every shot is one of these: an enemy (or a free aim point, id 0) for a normal
+// projectile, or a cache for the reduced siege payload that bypasses on-hit effects.
+type FireTarget =
+  | { kind: "enemy"; x: number; y: number; id: number }
+  | { kind: "cache"; x: number; y: number; id: number; onCacheHit: (cacheId: number, damage: number) => void };
+
+function cacheShotTarget(cache: CacheShotTarget, onCacheHit: (cacheId: number, damage: number) => void): FireTarget {
+  return { kind: "cache", x: cache.x, y: cache.y, id: cache.id, onCacheHit };
 }

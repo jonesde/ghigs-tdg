@@ -1,4 +1,6 @@
+import type { TowerId } from "@/sim/ConstantsTower.js";
 import { mulberry32 } from "@/sim/grid/Map.js";
+import { blockCoordinateForTile } from "@/sim/grid/ProgressiveMap.js";
 import type { BonusOffer } from "@/sim/runBonuses.js";
 
 export const BUILDING_KINDS = ["armory", "magazine", "ward", "beacon"] as const;
@@ -15,8 +17,8 @@ const BUILDING_NEIGHBOR_MINIMUM = 3;
 const CACHE_CLEARANCE = 6;
 const CACHE_SPAWN_CLEARANCE = 4;
 const CACHE_BASE_CLEARANCE = 6;
+const CACHE_BUILDING_CLEARANCE = 2;
 const CACHE_PATH_GAP = 2;
-export const CACHE_OPEN_GOLD = 50;
 export const PACKAGE_CLICK_RADIUS_TILES = 0.75;
 const SITE_RANK_TAG = 0xc0de;
 const BUILDING_STAMP_TAG = 0xb1d;
@@ -61,6 +63,9 @@ export interface MapCacheSite {
   hp: number;
   maxHp: number;
   offer: BonusOffer;
+  // Drawn on first open and kept on the site so a dismiss and reopen cannot reroll
+  // the specialist type the offer's typed cards promise. Absent until first open.
+  specialistType?: TowerId;
 }
 
 export interface SupplyDropSite {
@@ -68,11 +73,15 @@ export interface SupplyDropSite {
   tileX: number;
   tileY: number;
   offer: BonusOffer;
+  specialistType?: TowerId;
 }
 
 export interface SiteGrid {
   width: number;
   height: number;
+  tileSize: number;
+  worldOriginX: number;
+  worldOriginY: number;
   spawns: { x: number; y: number }[];
   base: { x: number; y: number };
   inBounds(tileX: number, tileY: number): boolean;
@@ -124,6 +133,9 @@ function regionLevelProgress(regionId: number, level: number): number {
   return index / (REGION_COUNT * MAPS_PER_REGION - 1);
 }
 
+// Multiplied per adjacent building. BUILDING_CLEARANCE keeps two buildings' rings
+// from overlapping, so a tower tile can sit next to at most one building and this
+// loop never stacks two factors for the same stat.
 export function neighborBonus(tileX: number, tileY: number, buildings: readonly MapBuildingSite[]): NeighborBonus {
   const bonus = freshNeighborBonus();
   for (const building of buildings) {
@@ -136,14 +148,24 @@ export function neighborBonus(tileX: number, tileY: number, buildings: readonly 
   return bonus;
 }
 
-export function nearestPathTile(grid: SiteGrid, tileX: number, tileY: number): { x: number; y: number } | null {
-  if (grid.isPath(tileX, tileY)) return { x: tileX, y: tileY };
+// Nearest path tile to (tileX, tileY), preferring the smallest Chebyshev then the
+// smallest squared distance. `isFree` skips taken tiles (towers under a package,
+// an existing package) so two callers racing for the same corridor do not stack;
+// the caller falls back to an unfiltered pass when nothing free is left.
+export function nearestPathTile(
+  grid: SiteGrid,
+  tileX: number,
+  tileY: number,
+  isFree?: (scanX: number, scanY: number) => boolean,
+): { x: number; y: number } | null {
+  if (grid.isPath(tileX, tileY) && (isFree?.(tileX, tileY) ?? true)) return { x: tileX, y: tileY };
   let best: { x: number; y: number } | null = null;
   let bestChebyshev = Infinity;
   let bestEuclidean = Infinity;
   for (let scanY = 0; scanY < grid.height; scanY++) {
     for (let scanX = 0; scanX < grid.width; scanX++) {
       if (!grid.isPath(scanX, scanY)) continue;
+      if (isFree && !isFree(scanX, scanY)) continue;
       const distance = chebyshev(tileX, tileY, scanX, scanY);
       const deltaX = scanX - tileX;
       const deltaY = scanY - tileY;
@@ -161,6 +183,80 @@ export function nearestPathTile(grid: SiteGrid, tileX: number, tileY: number): {
 export function worldKey(grid: SiteGrid, tileX: number, tileY: number): string {
   const world = grid.tileToWorld(tileX, tileY);
   return `${Math.round(world.x)},${Math.round(world.y)}`;
+}
+
+// Every world tile that belongs to one progressive block, so a reconcile can tell
+// which sites a stamped block is allowed to place.
+export function stampWorldKeysForBlock(grid: SiteGrid, blockX: number, blockY: number): Set<string> {
+  const originTileX = Math.round(grid.worldOriginX / grid.tileSize);
+  const originTileY = Math.round(grid.worldOriginY / grid.tileSize);
+  const keys = new Set<string>();
+  for (let tileY = 0; tileY < grid.height; tileY++) {
+    for (let tileX = 0; tileX < grid.width; tileX++) {
+      const block = blockCoordinateForTile(originTileX, originTileY, tileX, tileY);
+      if (block.blockX !== blockX || block.blockY !== blockY) continue;
+      keys.add(worldKey(grid, tileX, tileY));
+    }
+  }
+  return keys;
+}
+
+export interface PlannedBuildingSite extends MapBuildingSite {
+  worldX: number;
+  worldY: number;
+}
+
+export interface PlannedCacheSite extends MapCacheSite {
+  worldX: number;
+  worldY: number;
+}
+
+export interface StampedBoardSitesInput {
+  grid: SiteGrid;
+  map: { readonly seed: number; readonly regionId: number; readonly level: number };
+  buildings: MapBuildingSite[];
+  caches: MapCacheSite[];
+  previousWorldKeys: ReadonlySet<string>;
+  placedBlocks: number;
+  stampWorldKeys: ReadonlySet<string>;
+  rollOffer: (packageId: number) => BonusOffer;
+}
+
+// Reconciles a candidate stamped board's site lists and returns only the sites the
+// stamp adds, in world coordinates for drawing. The progressive ghost preview runs
+// this against copies of the live lists, so it must never mutate them.
+export function planSitesForStampedBoard(input: StampedBoardSitesInput): {
+  buildings: PlannedBuildingSite[];
+  caches: PlannedCacheSite[];
+} {
+  let nextLocalId = 1;
+  reconcileMapSites({
+    grid: input.grid,
+    seed: input.map.seed,
+    regionId: input.map.regionId,
+    mapLevel: input.map.level,
+    buildings: input.buildings,
+    caches: input.caches,
+    previousWorldKeys: input.previousWorldKeys,
+    placedBlocks: input.placedBlocks,
+    stampWorldKeys: input.stampWorldKeys,
+    allocateId: () => nextLocalId++,
+    rollOffer: input.rollOffer,
+  });
+  const added = (site: { tileX: number; tileY: number }): boolean =>
+    !input.previousWorldKeys.has(worldKey(input.grid, site.tileX, site.tileY));
+  return {
+    buildings: input.buildings.filter(added).map((building) => atWorld(input.grid, building)),
+    caches: input.caches.filter(added).map((cache) => atWorld(input.grid, cache)),
+  };
+}
+
+function atWorld<T extends { tileX: number; tileY: number }>(
+  grid: SiteGrid,
+  site: T,
+): T & { worldX: number; worldY: number } {
+  const world = grid.tileToWorld(site.tileX, site.tileY);
+  return { ...site, worldX: world.x, worldY: world.y };
 }
 
 export function collectWorldKeys(grid: SiteGrid): Set<string> {
@@ -229,6 +325,10 @@ function buildingCandidates(input: ReconcileSitesInput, occupied: Set<string>): 
       if (!clearOfPoint(tileX, tileY, grid.base, BUILDING_CLEARANCE)) continue;
       if (!clearOfPoints(tileX, tileY, grid.spawns, BUILDING_CLEARANCE)) continue;
       if (!clearOf(tileX, tileY, input.buildings, BUILDING_CLEARANCE)) continue;
+      // The mirror of the cache-side check below: a building stamped onto an
+      // existing board must not sit a cache's ring away, or the cache ends up
+      // occupying a slot the building's buff promised the player.
+      if (!clearOf(tileX, tileY, input.caches, CACHE_BUILDING_CLEARANCE)) continue;
       if (buildableNeighborCount(grid, tileX, tileY, occupied) < BUILDING_NEIGHBOR_MINIMUM) continue;
       const rolled = rollSite(input.seed, grid, tileX, tileY);
       candidates.push({ tileX, tileY, rank: rolled.rank, kind: rolled.kind });
@@ -250,6 +350,9 @@ function cacheCandidates(input: ReconcileSitesInput, occupied: Set<string>): Ran
       if (chebyshev(tileX, tileY, grid.base.x, grid.base.y) <= CACHE_BASE_CLEARANCE) continue;
       if (!spawnClear(grid, tileX, tileY)) continue;
       if (!clearOf(tileX, tileY, input.caches, CACHE_CLEARANCE)) continue;
+      // A cache two tiles from a building would sit in the ring of buffed tower
+      // slots, so the player could never build there without dropping the buff.
+      if (!clearOf(tileX, tileY, input.buildings, CACHE_BUILDING_CLEARANCE)) continue;
       const rolled = rollSite(input.seed, grid, tileX, tileY);
       candidates.push({ tileX, tileY, rank: rolled.rank, kind: rolled.kind });
     }

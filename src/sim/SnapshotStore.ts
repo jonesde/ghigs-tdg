@@ -1,4 +1,5 @@
 import { WAVE_GRAPH_DOT_SPACING, WAVE_GRAPH_WIDTH } from "@/sim/Constants.js";
+import { TYPED_MULT_FIELDS } from "@/sim/runBonuses.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import type { GameStore } from "@/stores/game.js";
 import type {
@@ -391,16 +392,31 @@ export class SnapshotStore {
         bonuses.bountyMult,
         bonuses.slowMult,
         bonuses.armorMult,
+        ...TYPED_MULT_FIELDS.flatMap((field) =>
+          Object.entries(bonuses[field])
+            .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+            .map(([towerId, value]) => `${field}.${towerId}=${value}`),
+        ),
       ].join("|");
       if (signature !== this.bonusSignature) {
         this.bonusSignature = signature;
-        gs.runBonuses = { ...bonuses };
+        // Typed records are objects: a shallow spread would alias the worker's
+        // record into the store, and the next in-place multiply would write back
+        // into the snapshot that is supposed to be immutable.
+        gs.runBonuses = {
+          ...bonuses,
+          typeDamageMult: { ...bonuses.typeDamageMult },
+          typeFireRateMult: { ...bonuses.typeFireRateMult },
+          typeHealthMult: { ...bonuses.typeHealthMult },
+          typeRangeMult: { ...bonuses.typeRangeMult },
+        };
       }
     }
     const picker = meta.bonusPicker ?? null;
     const pickerSignature = picker
-      ? `${picker.source}:${picker.id}:${picker.wasPlaying ? 1 : 0}:${picker.offer.join(",")}`
-      : "";
+      ? `${meta.runId ?? 0}:${picker.source}:${picker.id}:${picker.wasPlaying ? 1 : 0}:` +
+        `${picker.specialistType}:${picker.offer.join(",")}`
+      : `${meta.runId ?? 0}:`;
     if (pickerSignature !== this.pickerSignature) {
       this.pickerSignature = pickerSignature;
       gs.bonusPicker = picker;
@@ -417,7 +433,9 @@ export class SnapshotStore {
     const siteSignature = [
       meta.runId ?? 0,
       ...drops.map((drop) => `d${drop.id}:${drop.tileX},${drop.tileY}`),
-      ...caches.map((cache) => `c${cache.id}:${cache.tileX},${cache.tileY}`),
+      // hp travels too: a cache damaged between layout changes has to refresh the
+      // store copies the progressive ghost preview reads.
+      ...caches.map((cache) => `c${cache.id}:${cache.tileX},${cache.tileY}:${Math.ceil(cache.hp)}`),
       ...buildings.map((building) => `b${building.id}:${building.kind}:${building.tileX},${building.tileY}`),
     ].join("|");
     if (siteSignature === this.siteSignature) return;

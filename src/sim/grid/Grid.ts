@@ -191,15 +191,16 @@ export class Grid {
     if (!this.inBounds(x, y)) return false;
     const tileType = this.tiles[y]![x]!;
     if (tileType.type === "base") return false;
-    if (tileType.type === "terrain") {
-      // Buildings and unopened caches reserve the tile. They stay out of `blocked`
-      // so enemy routing and the navmesh keep the corridor they already had.
-      const tileKey = `${x},${y}`;
-      return !this.terrainTowers.has(tileKey) && !this.reservedTerrain.has(tileKey);
+    const tileKey = `${x},${y}`;
+    // Buildings, unopened caches, and supply drops reserve the tile. They stay out
+    // of `blocked` so enemy routing and the navmesh keep the corridor they already
+    // had. A reserved corridor tile blocks the build so a tower cannot land on top
+    // of a package the player still has to click.
+    if (tileType.type === "terrain" || tileType.type === "path") {
+      if (this.reservedTerrain.has(tileKey)) return false;
     }
-    if (tileType.type === "path") {
-      return !this.blocked.has(`${x},${y}`) && !this.ghostTowers.has(`${x},${y}`);
-    }
+    if (tileType.type === "terrain") return !this.terrainTowers.has(tileKey);
+    if (tileType.type === "path") return !this.blocked.has(tileKey) && !this.ghostTowers.has(tileKey);
     if (tileType.type === "spawn" || tileType.type === "void") return false;
     return false;
   }

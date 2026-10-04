@@ -72,6 +72,11 @@ let awaitingAck = false;
 // True after a posted snapshot has included an active placement hold. The next
 // hold (a snapshot where the hold is clear) forces again. Reset with the ack gate.
 let placementHoldPosted = false;
+// Same latch for the bonus picker: a tower-fired cache break opens the picker
+// inside engine.update (not a command), pauses the run, and would otherwise lose
+// its announcement snapshot to the ack gate. The click-open path is a command and
+// needs no help, but the latch is cheap and covers both.
+let bonusPickerPosted = false;
 // FrameId of the most recently posted snapshot. An ack only releases the gate
 // when it carries a frameId >= this value, so a stale ack (a duplicate render of
 // an older snapshot, or an ack delivered across an init boundary) cannot unblock
@@ -138,6 +143,7 @@ function startLoop(): void {
   hasPostedSnapshot = false;
   awaitingAck = false;
   placementHoldPosted = false;
+  bonusPickerPosted = false;
   lastPostedFrameId = 0;
   lastTime = 0; // re-anchored on first tick
   accumulator = 0;
@@ -229,6 +235,8 @@ function tick(): void {
       stateMutatedThisTick,
       placementHoldActive: engine.progressivePlacementHold,
       placementHoldPosted,
+      bonusPickerActive: engine.runState.bonusPicker !== null,
+      bonusPickerPosted,
     });
 
     if (terminal) {
@@ -283,6 +291,7 @@ function tick(): void {
       // tick follows the running rule; the latch records that this post carried it.
       awaitingAck = snapshotGate.awaitingAck;
       placementHoldPosted = snapshotGate.placementHoldPosted;
+      bonusPickerPosted = snapshotGate.bonusPickerPosted;
 
       // Phase 9 persist batching: flush to the host only on significant events so
       // we do not hit the persist store on every dirty mutation. Reads live
@@ -382,6 +391,7 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
       commandQueue.length = 0;
       awaitingAck = false;
       placementHoldPosted = false;
+      bonusPickerPosted = false;
       lastPostedFrameId = 0;
       lastAppliedCommandId = 0;
       lastFailedCommandId = 0;
@@ -484,6 +494,7 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
       commandQueue.length = 0;
       awaitingAck = false;
       placementHoldPosted = false;
+      bonusPickerPosted = false;
       lastPostedFrameId = 0;
       // Retire this run's generation so any command still in flight after teardown
       // can never be mistaken for the next run's.

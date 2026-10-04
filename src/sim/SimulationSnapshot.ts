@@ -9,7 +9,9 @@ import type { BonusOffer, BonusPickerState, RunBonuses } from "./runBonuses.js";
 
 // Bump on incompatible schema changes. Builders stamp it; SnapshotStore.apply
 // rejects (warn once, keep previous) any snapshot stamped with another version.
-export const SNAPSHOT_SCHEMA_VERSION = 1;
+// 2: runBonuses gained the typed per-tower records and bonusPicker gained
+// specialistType (boss abilities / run bonuses pass).
+export const SNAPSHOT_SCHEMA_VERSION = 2;
 
 export interface SimulationSnapshot {
   schemaVersion: number; // SNAPSHOT_SCHEMA_VERSION; consumers reject mismatches
