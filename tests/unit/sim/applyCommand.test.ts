@@ -110,7 +110,9 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
     const baseCenter = engine.grid!.tileToWorld(base.x, base.y);
     const distanceToBase = (e: typeof enemy) => Math.hypot(e.centerX - baseCenter.x, e.centerY - baseCenter.y);
     const startDistance = distanceToBase(enemy);
-    for (let tick = 0; tick < 200; tick++) engine.update(FIXED_DT);
+    // 400 ticks: map 0's route detours south before heading for the base, so the
+    // enemy must cover the detour plus part of the east leg to net closer.
+    for (let tick = 0; tick < 400; tick++) engine.update(FIXED_DT);
     expect(distanceToBase(enemy)).toBeLessThan(startDistance);
   });
 
@@ -242,7 +244,9 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
     const distanceToBase = (enemyRef: typeof enemy) =>
       Math.hypot(enemyRef.centerX - baseCenter.x, enemyRef.centerY - baseCenter.y);
     const startDistance = distanceToBase(enemy);
-    for (let tick = 0; tick < 200; tick++) engine.update(FIXED_DT);
+    // 400 ticks: map 0's route detours south before heading for the base, so the
+    // enemy must cover the detour plus part of the east leg to net closer.
+    for (let tick = 0; tick < 400; tick++) engine.update(FIXED_DT);
     expect(distanceToBase(enemy)).toBeLessThan(startDistance);
   });
 

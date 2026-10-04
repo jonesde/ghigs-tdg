@@ -791,13 +791,14 @@ describe("useInput", () => {
 
     it("wraps left from leftmost tower to rightmost tower on same row", () => {
       gameStore.setState(GameState.PLAYING);
+      // Row 3: the base occupies row 5 of map 0 and the wrap scan would stop on it.
       const { engine, towers } = applyTowerSnapshot([
-        { tileX: 2, tileY: 5 },
-        { tileX: 9, tileY: 5 },
+        { tileX: 2, tileY: 3 },
+        { tileX: 9, tileY: 3 },
       ]);
       gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, engine.grid as unknown as Grid);
-      const leftmost = towers.find((t) => t.tileX === 2 && t.tileY === 5)!;
-      const rightmost = towers.find((t) => t.tileX === 9 && t.tileY === 5)!;
+      const leftmost = towers.find((t) => t.tileX === 2 && t.tileY === 3)!;
+      const rightmost = towers.find((t) => t.tileX === 9 && t.tileY === 3)!;
       gameStore.selectedTower = leftmost as unknown as Tower;
       useInput(gameStore, dispatcher, uiStore);
       triggerInput("ArrowLeft");

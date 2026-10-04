@@ -16,7 +16,9 @@ const BUILDING_CLEARANCE = 3;
 const BUILDING_NEIGHBOR_MINIMUM = 3;
 const CACHE_CLEARANCE = 6;
 const CACHE_SPAWN_CLEARANCE = 4;
-const CACHE_BASE_CLEARANCE = 6;
+// Capped so the base ring and the spawn ring (CACHE_SPAWN_CLEARANCE) leave at
+// least one clear column on the smallest catalog boards (15x10, 10x15).
+const CACHE_BASE_CLEARANCE = 4;
 const CACHE_BUILDING_CLEARANCE = 2;
 const CACHE_PATH_GAP = 2;
 export const PACKAGE_CLICK_RADIUS_TILES = 0.75;

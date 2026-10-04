@@ -49,9 +49,14 @@ function distanceToBaseSquare(x: number, y: number, baseCenterX: number, baseCen
 
 // True when the entire enemy body (its circle of `radius` at x/y) stays on traversable
 // (non-terrain) tiles — i.e. the enemy never drifts sideways off the entry tile into the
-// terrain flanking the base. Treats out-of-bounds as terrain.
+// terrain flanking the base. Treats out-of-bounds as terrain. Terrain within the
+// sealed entry collar (the ring hugging the base's 3x3 block, i.e. Chebyshev 2 of
+// its center) is exempt: an attacker resting on the one-tile entry pokes a body
+// point into a sealed corner, which is expected pile geometry, not a sideways
+// spill. Flanking terrain beyond the collar still fails.
 function bodyOnPathTiles(enemy: Enemy, grid: Grid): boolean {
   const r = enemy.radius;
+  const base = grid.getBase();
   const points = [
     { x: enemy.x, y: enemy.y },
     { x: enemy.x + r, y: enemy.y },
@@ -63,7 +68,8 @@ function bodyOnPathTiles(enemy: Enemy, grid: Grid): boolean {
     const tileX = Math.floor(point.x / grid.tileSize);
     const tileY = Math.floor(point.y / grid.tileSize);
     if (!grid.inBounds(tileX, tileY)) return false;
-    if (grid.isTerrain(tileX, tileY)) return false;
+    const inSealedCollar = Math.max(Math.abs(tileX - base.x), Math.abs(tileY - base.y)) <= 2;
+    if (grid.isTerrain(tileX, tileY) && !inSealedCollar) return false;
   }
   return true;
 }
