@@ -6,7 +6,7 @@
     "sniper": { "cost": 40 },
     "cannon": { "cost": 60 },
     "lightning": { "cost": 70 },
-    "railgun": { "cost": 90 },
+    "railgun": { "cost": 80 },
     "sturdyWall": { "cost": 20 },
     "shotgunTank": { "cost": 35 }
   },
@@ -140,9 +140,9 @@
       { "range": 3.5, "damage": 50, "fireRate": 1.5, "projSpeed": 12 }
     ],
     "longRange": [
-      { "range": 5, "damage": 30, "fireRate": 0.5, "projSpeed": 22 },
-      { "range": 6, "damage": 60, "fireRate": 0.6, "projSpeed": 24 },
-      { "range": 7, "damage": 120, "fireRate": 0.75, "projSpeed": 26 }
+      { "range": 5, "damage": 100, "fireRate": 0.5, "projSpeed": 22 },
+      { "range": 6, "damage": 200, "fireRate": 0.6, "projSpeed": 24 },
+      { "range": 7, "damage": 400, "fireRate": 0.75, "projSpeed": 26 }
     ],
     "levelSevenDamageMultiplier": 2
   }
