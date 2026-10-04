@@ -29,7 +29,12 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useInput } from "@/composables/Input.js";
 import { progressivePlacementCommand, rotateProgressiveBlockAt } from "@/composables/progressivePlacement.js";
 import { fitFrame, frameFromCenter, TILE_SIZE, wheelZoomFactor } from "@/render/svg/cameraFrame.js";
-import { type ClickEffectInput, clickHasEffect } from "@/render/svg/clickHasEffect.js";
+import {
+  type ClickEffectInput,
+  clickHasEffect,
+  decideRightClickAction,
+  rightPressIsClick,
+} from "@/render/svg/clickHasEffect.js";
 import { EffectManager } from "@/render/svg/EffectManager.js";
 import { EnemyManager } from "@/render/svg/EnemyManager.js";
 import { MapSiteLayer, siteGlyphMarkup } from "@/render/svg/MapSiteLayer.js";
@@ -692,6 +697,12 @@ const dispatchClick = (worldX: number, worldY: number): void => {
 let panLastClientX = 0;
 let panLastClientY = 0;
 
+// Right-press candidate for the drag-aware right-click: a right press that
+// releases in place exits build mode (or deselects), while a right press that
+// moves pans the camera. The candidate records the press origin; onPanMove
+// drops pre-threshold motion and stopPan fires the action on a clean release.
+let rightPressStart: { x: number; y: number } | null = null;
+
 function worldPerPixel(): { x: number; y: number } | null {
   const viewport = gameStore.viewport;
   if (!displayedRect || viewport.width <= 0 || viewport.height <= 0) return null;
@@ -715,15 +726,32 @@ function isPanButton(event: MouseEvent): boolean {
 
 // Pan listens on window so the drag continues after the pointer leaves the svg.
 // The listeners are removed on mouseup, on blur, and when the component unmounts.
-function stopPan(): void {
+function stopPan(event?: MouseEvent | FocusEvent): void {
   panActive.value = false;
   window.removeEventListener("mousemove", onPanMove);
   window.removeEventListener("mouseup", stopPan);
   window.removeEventListener("blur", stopPan);
+  // A clean right release fires the right-click action. A drag already dropped
+  // the candidate in onPanMove; any other release or a blur drops it here.
+  // Every stop clears the candidate because the window listeners are removed
+  // with it — keeping it on a non-right release would leak a stale origin into
+  // the next pan's threshold check.
+  const pressStart = rightPressStart;
+  rightPressStart = null;
+  if (event instanceof MouseEvent && event.button === 2 && pressStart) {
+    if (rightPressIsClick(pressStart.x, pressStart.y, event.clientX, event.clientY)) handleRightClick();
+  }
 }
 
 function onPanMove(event: MouseEvent): void {
   if (!panActive.value) return;
+  // A pending right press is not a pan until it travels past the click
+  // threshold. Pre-threshold motion is dropped without advancing the pan
+  // anchor so a clean release neither pans nor starts from a moved anchor.
+  if (rightPressStart && !rightPressIsClick(rightPressStart.x, rightPressStart.y, event.clientX, event.clientY)) {
+    rightPressStart = null;
+  }
+  if (rightPressStart) return;
   const scale = worldPerPixel();
   if (!scale) return;
   const worldDx = -(event.clientX - panLastClientX) * scale.x;
@@ -740,11 +768,33 @@ function startPan(event: MouseEvent): void {
   panActive.value = true;
   panLastClientX = event.clientX;
   panLastClientY = event.clientY;
-  mouseDownHandledGesture = true;
+  // The primary-button gesture latch pairs mousedown with click for placement
+  // dedup. Right pans ride this same starter but must never arm the latch, or
+  // a stale latch can swallow a later lone left click as a duplicate. Alt+left
+  // keeps the latch so its paired click is still swallowed as a pan gesture.
+  if (event.button === 0) mouseDownHandledGesture = true;
   window.addEventListener("mousemove", onPanMove);
   window.addEventListener("mouseup", stopPan);
   window.addEventListener("blur", stopPan);
   event.preventDefault();
+}
+
+// Right-click anywhere on the canvas exits build mode (keeping any tower
+// selection); otherwise it deselects the selected tower or the base. Mirrors
+// the Escape/X priority in Input.ts without ever opening the pause menu.
+function handleRightClick(): void {
+  if (!dispatcher) return;
+  const action = decideRightClickAction(
+    gameStore.selectedTowerType !== null,
+    gameStore.selectedTower !== null || gameStore.selectedTowerId !== null,
+  );
+  if (action === "cancelBuild") {
+    gameStore.selectBuildType(null);
+    gameStore.buildHoverHeld = false;
+    dispatcher.dispatch({ commandId: nextClickCommandId++, type: "action:cancelBuildMode" });
+  } else if (action === "deselect") {
+    dispatcher.dispatch({ commandId: nextClickCommandId++, type: "action:selectTower", towerId: null });
+  }
 }
 
 const onWheel = (event: WheelEvent): void => {
@@ -759,6 +809,11 @@ const onMouseDown = (e: MouseEvent): void => {
   if (e.button === 2 && gameStore.progressivePlacementHold) {
     const world = clientToWorld(e.clientX, e.clientY);
     if (world && rotateProgressiveBlockAt(gameStore, world.x, world.y)) return;
+  }
+  if (e.button === 2 && !gameStore.progressivePlacementHold && !gameStore.bonusPicker) {
+    rightPressStart = { x: e.clientX, y: e.clientY };
+    startPan(e);
+    return;
   }
   if (isPanButton(e)) {
     startPan(e);

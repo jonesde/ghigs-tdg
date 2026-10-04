@@ -145,7 +145,7 @@ export class UiOverlayManager {
     const baseBg = document.createElementNS(SVG_NS, "rect");
     baseBg.style.visibility = "hidden";
     baseBg.setAttribute("width", "108");
-    baseBg.setAttribute("height", "10");
+    baseBg.setAttribute("height", "5");
     baseBg.setAttribute("fill", "#000000");
     baseBg.setAttribute("opacity", "0.6");
     layer.appendChild(baseBg);
@@ -153,7 +153,7 @@ export class UiOverlayManager {
     const baseBorder = document.createElementNS(SVG_NS, "rect");
     baseBorder.style.visibility = "hidden";
     baseBorder.setAttribute("width", "108");
-    baseBorder.setAttribute("height", "10");
+    baseBorder.setAttribute("height", "5");
     baseBorder.setAttribute("fill", "none");
     baseBorder.setAttribute("stroke", "#000000");
     baseBorder.setAttribute("stroke-width", "0.5");
@@ -162,7 +162,7 @@ export class UiOverlayManager {
     const baseFg = document.createElementNS(SVG_NS, "rect");
     baseFg.style.visibility = "hidden";
     baseFg.setAttribute("width", "108");
-    baseFg.setAttribute("height", "10");
+    baseFg.setAttribute("height", "5");
     baseFg.setAttribute("fill", WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN);
     layer.appendChild(baseFg);
 
@@ -460,9 +460,10 @@ export class UiOverlayManager {
     if (!grid || !bg || !border || !fg) return;
     const center = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
     const barWidth = 108;
-    const barHeight = 10;
     const barX = center.x - barWidth / 2;
-    const barY = center.y - grid.tileSize * 1.6 - barHeight;
+    // Just inside the top edge of the 3x3 base block, so clipped viewport
+    // edges never hide the bar the way an above-the-block bar could be.
+    const barY = center.y - grid.tileSize * 1.5 + 4;
     const barTransform = `translate(${barX}, ${barY})`;
     if (this.baseHealthLastTransform !== barTransform) {
       bg.setAttribute("transform", barTransform);

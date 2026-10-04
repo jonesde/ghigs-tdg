@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { type ClickEffectInput, clickHasEffect } from "@/render/svg/clickHasEffect.js";
+import {
+  type ClickEffectInput,
+  clickHasEffect,
+  decideRightClickAction,
+  RIGHT_CLICK_MAX_DRAG_PX,
+  rightPressIsClick,
+} from "@/render/svg/clickHasEffect.js";
 
 function input(overrides: Partial<ClickEffectInput> = {}): ClickEffectInput {
   return {
@@ -56,5 +62,33 @@ describe("clickHasEffect", () => {
   it("cancels build mode on an out-of-bounds press and ignores one without it", () => {
     expect(clickHasEffect(input({ inBounds: false, selectedTowerType: "basic" }))).toBe(true);
     expect(clickHasEffect(input({ inBounds: false }))).toBe(false);
+  });
+});
+
+describe("decideRightClickAction", () => {
+  it("exits build mode first, keeping any tower selection", () => {
+    expect(decideRightClickAction(true, false)).toBe("cancelBuild");
+    expect(decideRightClickAction(true, true)).toBe("cancelBuild");
+  });
+
+  it("deselects a tower or the base when build mode is not active", () => {
+    expect(decideRightClickAction(false, true)).toBe("deselect");
+  });
+
+  it("does nothing with nothing to exit", () => {
+    expect(decideRightClickAction(false, false)).toBeNull();
+  });
+});
+
+describe("rightPressIsClick", () => {
+  it("treats an unmoved press as a click", () => {
+    expect(rightPressIsClick(100, 200, 100, 200)).toBe(true);
+  });
+
+  it("treats sub-threshold motion as a click and past-threshold motion as a drag", () => {
+    expect(rightPressIsClick(0, 0, RIGHT_CLICK_MAX_DRAG_PX, 0)).toBe(true);
+    expect(rightPressIsClick(0, 0, RIGHT_CLICK_MAX_DRAG_PX + 1, 0)).toBe(false);
+    expect(rightPressIsClick(0, 0, 3, 4)).toBe(true);
+    expect(rightPressIsClick(0, 0, 4, 4)).toBe(false);
   });
 });
