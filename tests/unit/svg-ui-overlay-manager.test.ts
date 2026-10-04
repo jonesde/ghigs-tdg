@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { HP_BAR_POOL_SIZE, SHIELD_BAR_POOL_SIZE, SVG_NS, TOWER_HP_BAR_POOL_SIZE } from "@/render/svg/types.js";
 import { UiOverlayManager } from "@/render/svg/UiOverlayManager.js";
+import {
+  WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN,
+  WAVE_GRAPH_COLOR_BASE_HEALTH_RED,
+  WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW,
+} from "@/sim/Constants.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import { buildTestTower, createTestEngine } from "../helpers/engine-snapshot.js";
 
@@ -239,5 +244,53 @@ describe("UiOverlayManager enemy health bars", () => {
       null,
     );
     expect(enemyBarFg(layer, 1).style.visibility).toBe("hidden");
+  });
+});
+
+describe("UiOverlayManager base health bar", () => {
+  let manager: UiOverlayManager;
+  let layer: SVGGElement;
+
+  const fakeGrid = {
+    tileSize: 36,
+    getBase: () => ({ x: 2, y: 3 }),
+    tileToWorld: (tileX: number, tileY: number) => ({ x: tileX * 36 + 18, y: tileY * 36 + 18 }),
+  } as never;
+
+  // The base bar is the single [bg, border, fg] group between the pending-queue
+  // texts and the tower bars.
+  function baseBarRects(): SVGRectElement[] {
+    const rects = Array.from(layer.querySelectorAll("rect"));
+    const enemyBlock = HP_BAR_POOL_SIZE * 3;
+    const shieldBlock = SHIELD_BAR_POOL_SIZE * 3;
+    const baseBlock = rects.slice(enemyBlock + shieldBlock, enemyBlock + shieldBlock + 3);
+    expect(baseBlock.length).toBe(3);
+    return baseBlock as SVGRectElement[];
+  }
+
+  beforeEach(() => {
+    layer = makeLayer();
+    manager = new UiOverlayManager();
+    manager.init(layer);
+  });
+
+  it("renders a half-height bar just inside the top of the 3x3 base block", () => {
+    manager.syncBaseHealthBar(fakeGrid, 80, 100);
+    const [bg, , fg] = baseBarRects();
+    // Base center is (90, 126); the 3x3 top edge sits at 126 - 54 = 72.
+    expect(bg!.getAttribute("height")).toBe("5");
+    expect(fg!.getAttribute("height")).toBe("5");
+    expect(bg!.getAttribute("transform")).toBe("translate(36, 76)");
+    expect(bg!.style.visibility).toBe("visible");
+    expect(fg!.getAttribute("width")).toBe("86.4");
+  });
+
+  it("colors the bar green/yellow/red by health ratio", () => {
+    manager.syncBaseHealthBar(fakeGrid, 80, 100);
+    expect(baseBarRects()[2]!.getAttribute("fill")).toBe(WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN);
+    manager.syncBaseHealthBar(fakeGrid, 30, 100);
+    expect(baseBarRects()[2]!.getAttribute("fill")).toBe(WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW);
+    manager.syncBaseHealthBar(fakeGrid, 10, 100);
+    expect(baseBarRects()[2]!.getAttribute("fill")).toBe(WAVE_GRAPH_COLOR_BASE_HEALTH_RED);
   });
 });

@@ -53,10 +53,6 @@ def menu_svg_root(content: str) -> str:
             f'preserveAspectRatio="xMidYMid slice">{content}</svg>')
 
 
-def menu_frame(accent: str) -> str:
-    return rect(24, 24, MENU_WIDTH - 48, MENU_HEIGHT - 48, 32, "none", accent, 5, 0.35)
-
-
 def symbol_text(x: float, y: float, entity: str, color: str, size: float,
                 opacity: float) -> str:
     return text_element(x, y, entity, color, size, opacity, "middle", None, 600)
@@ -104,7 +100,6 @@ def polymath_menu_background() -> str:
     parts.append(symbol_text(1520, 220, "&#177;", accent, 40, 0.2))
     parts.append(symbol_text(1460, 780, "%", accent, 40, 0.2))
     parts.append(symbol_text(980, 790, "&#189;", accent, 40, 0.2))
-    parts.append(menu_frame(accent))
     return menu_svg_root("".join(parts))
 
 
@@ -134,7 +129,6 @@ def quadratic_point(start: tuple[float, float], control: tuple[float, float],
 
 
 def aftermath_menu_background() -> str:
-    accent = "#b87333"
     road_start = (90.0, 862.0)
     road_control = (700.0, 800.0)
     road_end = (1540.0, 560.0)
@@ -187,5 +181,4 @@ def aftermath_menu_background() -> str:
             f"{bird_x - 5},{bird_y} {bird_x},{bird_y - 4} {bird_x + 5},{bird_y}",
             "none", "#8a5a3a", 1.6, 0.5,
         ))
-    parts.append(menu_frame(accent))
     return menu_svg_root("".join(parts))
