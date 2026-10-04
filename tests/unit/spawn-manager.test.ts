@@ -2,52 +2,65 @@ import { describe, expect, it } from "vitest";
 import { SpawnManager } from "@/render/svg/SpawnManager.js";
 import type { SpawnState } from "@/render/themes/index.js";
 
-function createSvgRoot(spawnCount: number): SVGSVGElement {
+function createSpawnLayer(): { svg: SVGSVGElement; layer: SVGGElement } {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 100 100");
-
-  const gridLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
-  gridLayer.setAttribute("class", "grid-layer");
-
-  for (let i = 0; i < spawnCount; i++) {
-    const useEl = document.createElementNS("http://www.w3.org/2000/svg", "use");
-    useEl.setAttribute("id", `spawn-${i}`);
-    useEl.setAttribute("href", "#spawn-closed");
-    useEl.setAttribute("x", String(i * 36));
-    useEl.setAttribute("y", "0");
-    useEl.setAttribute("width", "36");
-    useEl.setAttribute("height", "36");
-    gridLayer.appendChild(useEl);
-  }
-
-  svg.appendChild(gridLayer);
+  const layer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  layer.setAttribute("class", "spawn-layer");
+  svg.appendChild(layer);
   document.body.appendChild(svg);
-  return svg;
+  return { svg, layer };
 }
 
 describe("SpawnManager", () => {
-  it("should find spawn elements by ID on init", () => {
-    const svg = createSvgRoot(3);
+  it("creates one use marker per spawn point at its tile position", () => {
+    const { svg, layer } = createSpawnLayer();
     const manager = new SpawnManager();
-    manager.init(svg, 3);
+    manager.init(
+      layer,
+      [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 0, y: 1 },
+      ],
+      36,
+      0,
+    );
+
     expect(manager.getElements()).toHaveLength(3);
+    expect(layer.children).toHaveLength(3);
+    const positions = Array.from(layer.children).map((child) => ({
+      x: child.getAttribute("x"),
+      y: child.getAttribute("y"),
+    }));
+    expect(positions).toEqual([
+      { x: "36", y: "0" },
+      { x: "72", y: "0" },
+      { x: "36", y: "36" },
+    ]);
+    for (const child of Array.from(layer.children)) {
+      expect(child.getAttribute("class")).toBe("spawn-marker");
+      expect(child.getAttribute("href")).toBe("#spawn-closed");
+      expect(child.getAttribute("width")).toBe("36");
+      expect(child.getAttribute("height")).toBe("36");
+    }
+
     manager.dispose();
     svg.remove();
   });
 
-  it("should only find elements that exist in the DOM", () => {
-    const svg = createSvgRoot(2);
+  it("updates href when visualState changes", () => {
+    const { svg, layer } = createSpawnLayer();
     const manager = new SpawnManager();
-    manager.init(svg, 5);
-    expect(manager.getElements()).toHaveLength(2);
-    manager.dispose();
-    svg.remove();
-  });
-
-  it("should update href when visualState changes", () => {
-    const svg = createSvgRoot(2);
-    const manager = new SpawnManager();
-    manager.init(svg, 2);
+    manager.init(
+      layer,
+      [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+      ],
+      0,
+      0,
+    );
 
     const states: SpawnState[] = [
       { visualState: "open", closeTransitionTimer: 0 },
@@ -55,37 +68,67 @@ describe("SpawnManager", () => {
     ];
     manager.sync(states);
 
-    const el0 = svg.querySelector("#spawn-0") as SVGUseElement;
-    const el1 = svg.querySelector("#spawn-1") as SVGUseElement;
-    expect(el0.getAttribute("href")).toBe("#spawn-open");
-    expect(el0.getAttributeNS("http://www.w3.org/1999/xlink", "href")).toBe("#spawn-open");
-    expect(el1.getAttribute("href")).toBe("#spawn-closed");
-    expect(el1.getAttributeNS("http://www.w3.org/1999/xlink", "href")).toBe("#spawn-closed");
+    expect(layer.children[0]!.getAttribute("href")).toBe("#spawn-open");
+    expect(layer.children[0]!.getAttributeNS("http://www.w3.org/1999/xlink", "href")).toBe("#spawn-open");
+    expect(layer.children[1]!.getAttribute("href")).toBe("#spawn-closed");
+    expect(layer.children[1]!.getAttributeNS("http://www.w3.org/1999/xlink", "href")).toBe("#spawn-closed");
 
     manager.dispose();
     svg.remove();
   });
 
-  it("should skip DOM write when state has not changed", () => {
-    const svg = createSvgRoot(1);
+  it("keeps markers attached across re-init with a different spawn count", () => {
+    const { svg, layer } = createSpawnLayer();
     const manager = new SpawnManager();
-    manager.init(svg, 1);
+    manager.init(
+      layer,
+      [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 2, y: 0 },
+      ],
+      0,
+      0,
+    );
+    expect(layer.children).toHaveLength(3);
+
+    manager.init(layer, [{ x: 5, y: 5 }], 0, 0);
+    expect(layer.children).toHaveLength(1);
+    expect(layer.children[0]!.getAttribute("x")).toBe("180");
+    expect(layer.children[0]!.getAttribute("y")).toBe("180");
+
+    manager.dispose();
+    svg.remove();
+  });
+
+  it("skips DOM write when state has not changed", () => {
+    const { svg, layer } = createSpawnLayer();
+    const manager = new SpawnManager();
+    manager.init(layer, [{ x: 0, y: 0 }], 0, 0);
 
     const states: SpawnState[] = [{ visualState: "closed", closeTransitionTimer: 0 }];
     manager.sync(states);
     manager.sync(states);
 
-    const el = svg.querySelector("#spawn-0") as SVGUseElement;
-    expect(el.getAttribute("href")).toBe("#spawn-closed");
+    expect(layer.children[0]!.getAttribute("href")).toBe("#spawn-closed");
 
     manager.dispose();
     svg.remove();
   });
 
-  it("should handle all three visual states", () => {
-    const svg = createSvgRoot(3);
+  it("handles all three visual states", () => {
+    const { svg, layer } = createSpawnLayer();
     const manager = new SpawnManager();
-    manager.init(svg, 3);
+    manager.init(
+      layer,
+      [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 2, y: 0 },
+      ],
+      0,
+      0,
+    );
 
     const states: SpawnState[] = [
       { visualState: "closed", closeTransitionTimer: 0 },
@@ -94,25 +137,34 @@ describe("SpawnManager", () => {
     ];
     manager.sync(states);
 
-    expect(svg.querySelector("#spawn-0")!.getAttribute("href")).toBe("#spawn-closed");
-    expect(svg.querySelector("#spawn-0")!.getAttributeNS("http://www.w3.org/1999/xlink", "href")).toBe("#spawn-closed");
-    expect(svg.querySelector("#spawn-1")!.getAttribute("href")).toBe("#spawn-transition");
-    expect(svg.querySelector("#spawn-1")!.getAttributeNS("http://www.w3.org/1999/xlink", "href")).toBe(
-      "#spawn-transition",
-    );
-    expect(svg.querySelector("#spawn-2")!.getAttribute("href")).toBe("#spawn-open");
-    expect(svg.querySelector("#spawn-2")!.getAttributeNS("http://www.w3.org/1999/xlink", "href")).toBe("#spawn-open");
+    expect(layer.children[0]!.getAttribute("href")).toBe("#spawn-closed");
+    expect(layer.children[0]!.getAttributeNS("http://www.w3.org/1999/xlink", "href")).toBe("#spawn-closed");
+    expect(layer.children[1]!.getAttribute("href")).toBe("#spawn-transition");
+    expect(layer.children[1]!.getAttributeNS("http://www.w3.org/1999/xlink", "href")).toBe("#spawn-transition");
+    expect(layer.children[2]!.getAttribute("href")).toBe("#spawn-open");
+    expect(layer.children[2]!.getAttributeNS("http://www.w3.org/1999/xlink", "href")).toBe("#spawn-open");
 
     manager.dispose();
     svg.remove();
   });
 
-  it("should clear elements on dispose", () => {
-    const svg = createSvgRoot(2);
+  it("removes markers from the layer on dispose", () => {
+    const { svg, layer } = createSpawnLayer();
     const manager = new SpawnManager();
-    manager.init(svg, 2);
+    manager.init(
+      layer,
+      [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+      ],
+      0,
+      0,
+    );
     manager.dispose();
     expect(manager.getElements()).toHaveLength(0);
+    expect(layer.children).toHaveLength(0);
+    manager.dispose();
+
     svg.remove();
   });
 });

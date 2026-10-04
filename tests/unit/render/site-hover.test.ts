@@ -46,7 +46,9 @@ describe("site hover hit test", () => {
   it("hits a building glyph box and stops at its edge", () => {
     const sites = sitesOf({ buildings: [makeBuilding(4, 200, 200)] });
     expect(siteHoverAt(sites, TILE_SIZE, 208, 192)).toEqual({ kind: "building", id: 4 });
-    expect(siteHoverAt(sites, TILE_SIZE, 210, 200)).toBeNull();
+    // The glyph box is 26 world units wide, so the hover half is 14 with grace.
+    expect(siteHoverAt(sites, TILE_SIZE, 214, 200)).toEqual({ kind: "building", id: 4 });
+    expect(siteHoverAt(sites, TILE_SIZE, 215, 200)).toBeNull();
   });
 
   it("gives a package under the pointer priority over the building behind it", () => {

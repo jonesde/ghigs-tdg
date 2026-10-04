@@ -67,10 +67,17 @@ export interface RegionMapLayout {
   connections: RegionMapConnection[];
 }
 
+export const TILE_KINDS = ["path", "terrain1", "terrain2", "terrain3", "terrain4"] as const;
+export type TileKind = (typeof TILE_KINDS)[number];
+
+// One image per variant, primary art first. Theme JSON may ship a bare string,
+// which normalizes to a single-element list (see normalizeThemeImages).
+export type TileKindImages = Record<TileKind, string[]>;
+
 export interface RegionVisualMeta {
   id: number;
   name: string;
-  tiles: { path: string; terrain1: string; terrain2: string; terrain3: string; terrain4: string };
+  tiles: TileKindImages;
   base: string;
   mapImage: string;
   mapLayout: RegionMapLayout;
@@ -82,6 +89,15 @@ export interface SpawnPointVisualMeta {
   transition: string;
 }
 
+// Map site art (buildings, caches, boss packages), authored in the same
+// 0 0 36 36 space as tile art and drawn at 26 world px. Absent when a theme
+// ships none, and MapSiteLayer then draws its procedural marks instead.
+export interface SiteArtMeta {
+  buildings: Record<"armory" | "magazine" | "ward" | "beacon", string>;
+  caches: Record<"sealed" | "unlocked" | "broken", string>;
+  supplyDrop?: string;
+}
+
 export interface MapThemeData {
   id: string;
   label: string;
@@ -90,6 +106,7 @@ export interface MapThemeData {
   enemies: Record<string, EnemyVisualMeta>;
   regions: RegionVisualMeta[];
   spawns?: SpawnPointVisualMeta;
+  sites?: SiteArtMeta;
   // Effective maps catalog for this world: the default maps content merged with
   // the theme's optional `maps` override (see resolveThemeMaps). Absent when the
   // theme carries no override — consumers then fall back to the default catalog.

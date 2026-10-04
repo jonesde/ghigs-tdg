@@ -19,11 +19,16 @@ A map theme swaps the visual identity of towers, enemies, and map tiles on the `
   "towers": { /* one entry per tower id */ },
   "enemies": { /* one entry per enemy id */ },
   "regions": [ /* 3 region objects */ ],
-  "spawns": { "closed": "", "open": "", "transition": "" }
+  "spawns": { "closed": "", "open": "", "transition": "" },
+  "sites": {
+    "buildings": { "armory": "", "magazine": "", "ward": "", "beacon": "" },
+    "caches": { "sealed": "", "unlocked": "", "broken": "" },
+    "supplyDrop": ""
+  }
 }
 ```
 
-`menuBackground` and `spawns` are optional. If `menuBackground` is omitted, the main menu falls back to a plain dark background. If `spawns` is omitted, spawn tiles fall back to a translucent red rectangle.
+`menuBackground`, `spawns`, and `sites` are optional. If `menuBackground` is omitted, the main menu falls back to a plain dark background. If `spawns` is omitted, spawn tiles fall back to a translucent red rectangle. If `sites` is omitted, map sites (buildings, caches, boss packages) fall back to the procedural marks in `MapSiteLayer.ts`.
 
 Current tower ids: `basic`, `ice`, `sniper`, `cannon`, `lightning`, `railgun`, `sturdyWall`, `shotgunTank`.
 
@@ -188,9 +193,38 @@ Enemies face +X. When `cos(angle) < 0`, `EnemyManager` mirrors the sprite with `
 | **Base Size** | 36 x 36 px |
 | **Symbol viewBox** | `0 0 36 36` (hardcoded) |
 
-Tiles fill each grid cell exactly. Each tile, including path and the tile under a spawn, is rotated by a random multiple of 90° from the map seed (`useSvgStaticContent.ts`). A lane stripe will not follow the path. The edge pixels of a tile must be one flat color so neighbors meet after rotation. Keep motifs about 3px in from the edge: a 0.7px grid stroke is drawn over the tile boundary.
+Tiles fill each grid cell exactly. Each tile, including path and the tile under a spawn, is rotated by a random multiple of 90° from the map seed (`useSvgStaticContent.ts`). A lane stripe will not follow the path.
+
+Two consequences for the art:
+
+- **The outer 3px band of a tile carries no art.** Rotated neighbours have to meet on identical pixels, so nothing (including a stroke) may reach inside 3px of a cell edge. The one deliberate exception is a rotationally symmetric inner ring — a `rect` at `x=1 y=1 width=34 height=34` stroked at low opacity — because all four rotations paint the same band. Shipped Polymath tiles use one.
+- **Fine line work does not survive rotation.** Concentric arcs with a per-tile random start angle, and marks under ~2px, read as scratches and speckle rather than ground, because neighbouring cells show unrelated fragments. Large soft shapes do survive: field fill plus a few low-opacity ellipses is what both shipped themes use.
+
+The first `fill="#..."` in a tile string must be the full-bleed 36x36 field rect. The region backdrop tone and the progressive block preview both parse that first fill (`src/render/themes/fieldFill.ts`), so a tile that leads with anything else silently loses its field color.
 
 `terrain1` is the lowest ground and `terrain4` is the highest. Height is a gameplay input, so the four steps need a clear light-to-dark ramp.
+
+**Variants.** A tile field is either one image string or an array of variant strings with the primary art first:
+
+```json
+"terrain2": ["<svg viewBox=\"0 0 36 36\">…primary…</svg>", "<svg …>…variant 2…</svg>"]
+```
+
+One image per kind repeats a single stamp across a whole height blob, and the seeded rotation only supplies four looks. The renderer emits one `<symbol>` per variant (`tile-r{regionId}-{kind}` for variant 0, `tile-r{regionId}-{kind}-v{n}` beyond) and picks a variant per cell from a hash of the map seed and that cell's absolute tile position, so a cell keeps its variant across a progressive board rebuild (`src/render/themes/tileArt.ts`). Every variant of a kind must share the field fill — the preview reads variant 0's.
+
+### Map Site Art
+
+The optional `sites` block replaces the procedural building, cache, and boss-package marks in `MapSiteLayer.ts`.
+
+| Property | Value |
+|---|---|
+| **viewBox** | `0 0 36 36` (same authoring space as tile art) |
+| **Element size** | 26 x 26 px, centred on the site |
+| **Symbol ids** | `site-building-{armory,magazine,ward,beacon}`, `site-cache-{sealed,unlocked,broken}`, `site-supply-drop` |
+| **Selection** | `sealed` while intact, `unlocked` once paid for, `broken` at 0 hp |
+| **Draw order** | Site art paints under the pulsing ring a boss package keeps |
+
+Buildings and caches have to read as distinct silhouettes at 26px, in any case, since a map can hold twenty of them at once. The boss package's pulsing ring stays markup in `MapSiteLayer` rather than theme art: its CSS animation targets stroke paint, so that element has to stay a stroked shape.
 
 ### Region Base Art
 
@@ -225,8 +259,10 @@ The renderers generate `<symbol>` elements with specific IDs. Your theme's frame
 | Enemy type `minion`, hit frame 0 | `enemy-minion-hit-f0` |
 | Enemy type `minion`, attack frame 0 | `enemy-minion-attack-f0` |
 | Spawn hatch | `spawn-closed`, `spawn-open`, `spawn-transition` |
+| Region 1 path tile, variant 0 / variant 2 | `tile-r1-path`, `tile-r1-path-v2` |
+| Armory building / sealed cache | `site-building-armory`, `site-cache-sealed` |
 
-Pattern: `tower-{type}-f{index}`, `enemy-{type}-f{index}`, `enemy-{type}-hit-f{index}`, `enemy-{type}-attack-f{index}`.
+Pattern: `tower-{type}-f{index}`, `enemy-{type}-f{index}`, `enemy-{type}-hit-f{index}`, `enemy-{type}-attack-f{index}`, `tile-r{region}-{kind}[-v{index}]`, `site-building-{kind}`, `site-cache-{state}`.
 
 Tower frame 0 is the resting picture. Later animation frames play across `animation.duration`, then the renderer returns to frame 0. Enemy hit and attack replace the walking frame while their timers are running, then walking resumes. There is no separate tower walking symbol.
 
@@ -285,6 +321,7 @@ The normalizer strips XML prologues, HTML comments, and whitespace. For inline S
 4. Start any map and verify:
    - Tower sprites render correctly with proper colors and rotation.
    - Enemy sprites walk, bob, and flash on hit.
-   - Tile images fill grid cells without gaps.
+   - Tile images fill grid cells without gaps, and the height ramp reads light to dark.
    - Base art appears at the correct location.
+   - Buildings, caches, and boss packages read as distinct shapes; a cache hover tooltip lines up with its glyph.
 5. Run the test suite: `npm run test` (includes `map-theme.test.ts` for theme loading/normalization).

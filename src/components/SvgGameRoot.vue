@@ -8,6 +8,7 @@
 
       <g ref="worldLayer" class="camera-wrapper">
         <g class="grid-layer" v-html="gridContent"></g>
+        <g ref="spawnLayer" class="spawn-layer"></g>
         <g ref="siteLayer" class="site-layer"></g>
         <g class="progressive-ghost" v-html="progressiveGhost"></g>
         <g ref="entityLayer" class="entity-layer"></g>
@@ -24,7 +25,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useInput } from "@/composables/Input.js";
 import { progressivePlacementCommand, rotateProgressiveBlockAt } from "@/composables/progressivePlacement.js";
 import { fitFrame, frameFromCenter, TILE_SIZE, wheelZoomFactor } from "@/render/svg/cameraFrame.js";
@@ -93,6 +94,7 @@ import { progressivePatternMarkup } from "./progressivePreview.js";
 const svgRoot = ref<SVGSVGElement | null>(null);
 const defsLayer = ref<SVGDefsElement | null>(null);
 const worldLayer = ref<SVGGElement | null>(null);
+const spawnLayer = ref<SVGGElement | null>(null);
 const entityLayer = ref<SVGGElement | null>(null);
 const siteLayer = ref<SVGGElement | null>(null);
 const uiOverlayLayer = ref<SVGGElement | null>(null);
@@ -115,6 +117,10 @@ const mouseWorldPos = ref<{ x: number; y: number } | null>(null);
 // Custom tooltip over a map site. Client offsets are relative to .svg-wrapper,
 // so the tooltip sits with the pointer without reaching into the camera math.
 const siteHoverState = ref<{ site: SiteHoverRef; offsetX: number; offsetY: number } | null>(null);
+
+// The active theme's optional map site art; null when the theme ships none, in
+// which case MapSiteLayer draws its procedural marks.
+const activeSiteArt = computed(() => themeStore.activeTheme?.sites ?? null);
 
 const siteHoverSites = computed<SiteHoverSites>(() => ({
   drops: gameStore.supplyDrops,
@@ -196,12 +202,14 @@ const GHOST_OFFER: BonusOffer = ["smallPurse", "largePurse", "sharpened"];
 
 const progressiveGhost = computed(() => {
   if (!gameStore.progressivePlacementHold || !gameStore.map) return "";
-  const config = progressiveConfigFromMap(gameStore.map);
+  const currentMap = gameStore.map;
+  const config = progressiveConfigFromMap(currentMap);
   const templateIndex = gameStore.progressiveOffer[gameStore.progressiveSelectedOffer];
   if (!config || templateIndex === undefined) return "";
   const replayed = replayProgressiveBoard(config, gameStore.progressivePlacements);
   const sites = sitesAtRotation(replayed.board, replayed.catalog, templateIndex, gameStore.progressiveRotation);
   const selectedSite = gameStore.progressiveSelectedSite;
+  const regionVisual = themeStore.getRegionVisual(currentMap.regionId ?? 0);
   const blockMarkup = sites
     .map((site) => {
       const corner = progressiveBlockWorldCorner(site.blockX, site.blockY, TILE_SIZE);
@@ -215,6 +223,7 @@ const progressiveGhost = computed(() => {
         corner.y,
         TILE_SIZE,
         selected,
+        regionVisual,
       );
     })
     .join("");
@@ -268,7 +277,7 @@ function previewNewSites(
     stampWorldKeys: stampWorldKeysForBlock(nextGrid, selected.blockX, selected.blockY),
     rollOffer: () => GHOST_OFFER,
   });
-  return siteGlyphMarkup([], plan.caches, plan.buildings, gameStore.currentWave);
+  return siteGlyphMarkup([], plan.caches, plan.buildings, gameStore.currentWave, activeSiteArt.value);
 }
 
 let enemyManager!: EnemyManager;
@@ -1012,7 +1021,7 @@ onMounted(async () => {
   mapSiteLayer = new MapSiteLayer();
 
   enemyManager.init(el);
-  if (siteLayer.value) mapSiteLayer.init(siteLayer.value);
+  if (siteLayer.value) mapSiteLayer.init(siteLayer.value, activeSiteArt.value);
   towerManager.init(el);
   uiOverlayManager.init(uol);
   projectileManager.init(pl);
@@ -1062,8 +1071,14 @@ onMounted(async () => {
         : undefined,
   });
 
-  if (gameStore.map) {
-    spawnManager.init(svgRoot.value!, gameStore.map.spawns.length);
+  if (gameStore.map && spawnLayer.value) {
+    const map = gameStore.map;
+    spawnManager.init(
+      spawnLayer.value,
+      map.spawns,
+      (map.originTileX ?? 0) * TILE_SIZE,
+      (map.originTileY ?? 0) * TILE_SIZE,
+    );
   }
 
   requestAnimationFrame(renderLoop);
@@ -1072,12 +1087,16 @@ onMounted(async () => {
 watch(
   () => gameStore.map,
   async (map) => {
-    if (!map || !svgRoot.value || disposed || !spawnManager) return;
+    if (!map || !spawnLayer.value || disposed || !spawnManager) return;
     const { Grid } = await import("@/sim/grid/Grid.js");
     gameStore.grid = new Grid(map);
     gameStore.syncSiteReservations();
-    await nextTick();
-    spawnManager.init(svgRoot.value, map.spawns.length);
+    spawnManager.init(
+      spawnLayer.value,
+      map.spawns,
+      (map.originTileX ?? 0) * TILE_SIZE,
+      (map.originTileY ?? 0) * TILE_SIZE,
+    );
   },
 );
 

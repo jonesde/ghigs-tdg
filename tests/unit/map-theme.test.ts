@@ -4,6 +4,7 @@ import { RawMapThemeSchema } from "@/content/schemas/theme.js";
 import { useSvgStaticContent } from "@/render/svg/useSvgStaticContent.js";
 import defaultTheme from "@/render/themes/data/default-map-theme.json";
 import aftermathTheme from "@/render/themes/data/the-aftermath.json";
+import { hexChannels } from "@/render/themes/fieldFill.js";
 import { DEFAULT_THEME_ID, MAP_THEME_MANIFEST, type MapThemeData } from "@/render/themes/index.js";
 import { normalizeThemeImages } from "@/render/themes/normalize.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -111,6 +112,84 @@ describe("Map Theme System", () => {
       expect(normalized.spawns!.closed).toContain("fill='red'");
       expect(normalized.spawns!.open).toContain("fill='green'");
       expect(normalized.spawns!.transition).toContain("fill='blue'");
+    });
+
+    it("should normalize tile variants and site art", async () => {
+      const tile = (fill: string): string =>
+        `<svg viewBox="0 0 36 36"><rect width="36" height="36" fill="${fill}"/></svg>`;
+      const siteTile = (id: string): string => `<svg viewBox="0 0 36 36"><rect id="${id}"/></svg>`;
+      const rawTheme = {
+        id: "test",
+        label: "Test Theme",
+        towers: { basic: { name: "Basic Tower", color: "#ffffff", icon: "\u{1F527}", animation: null } },
+        enemies: {
+          skeleton: {
+            name: "Skeleton",
+            color: "#cccccc",
+            shape: "circle",
+            walking: { duration: 400, frames: [{ image: "<svg></svg>" }] },
+          },
+        },
+        regions: [
+          {
+            id: 0,
+            name: "Test Region",
+            tiles: {
+              path: tile("#111111"),
+              terrain1: [tile("#222222"), tile("#333333")],
+              terrain2: tile("#444444"),
+              terrain3: tile("#555555"),
+              terrain4: tile("#666666"),
+            },
+            base: "",
+            mapImage: "<svg></svg>",
+            mapLayout: makeMockRegionMapLayout(),
+          },
+        ],
+        sites: {
+          buildings: {
+            armory: siteTile("armory"),
+            magazine: siteTile("magazine"),
+            ward: siteTile("ward"),
+            beacon: siteTile("beacon"),
+          },
+          caches: { sealed: siteTile("sealed"), unlocked: siteTile("unlocked"), broken: siteTile("broken") },
+          supplyDrop: siteTile("drop"),
+        },
+      };
+
+      const normalized = await normalizeThemeImages(rawTheme as never);
+      const tiles = normalized.regions[0]!.tiles;
+      // A bare string and a variant list both normalize to a non-empty list, and
+      // the tile string keeps its <svg> wrapper (the symbol builder strips that).
+      expect(tiles.path).toEqual([tile("#111111")]);
+      expect(tiles.terrain1).toHaveLength(2);
+      expect(tiles.terrain1[0]).toContain("#222222");
+      expect(tiles.terrain1[1]).toContain("#333333");
+      expect(tiles.terrain2).toHaveLength(1);
+      expect(normalized.sites?.buildings.armory).toBe(siteTile("armory"));
+      expect(normalized.sites?.caches.broken).toBe(siteTile("broken"));
+      expect(normalized.sites?.supplyDrop).toBe(siteTile("drop"));
+    });
+
+    it("should leave sites undefined when the theme ships none", async () => {
+      const rawTheme = {
+        id: "test",
+        label: "Test Theme",
+        towers: { basic: { name: "Basic Tower", color: "#ffffff", icon: "\u{1F527}", animation: null } },
+        enemies: {
+          skeleton: {
+            name: "Skeleton",
+            color: "#cccccc",
+            shape: "circle",
+            walking: { duration: 400, frames: [{ image: "<svg></svg>" }] },
+          },
+        },
+        regions: [],
+      };
+
+      const normalized = await normalizeThemeImages(rawTheme as never);
+      expect(normalized.sites).toBeUndefined();
     });
 
     it("should handle missing spawns gracefully", async () => {
@@ -382,33 +461,9 @@ describe("Aftermath theme", () => {
     }
   });
 
-  it("paints sprites without document-scoped paint servers", () => {
-    const images: string[] = [];
-    for (const tower of Object.values(theme.towers)) {
-      for (const frame of tower.animation?.frames ?? []) images.push(frame.image);
-      for (const frame of tower.walking?.frames ?? []) images.push(frame.image);
-    }
-    for (const enemy of Object.values(theme.enemies)) {
-      for (const frame of enemy.walking.frames) images.push(frame.image);
-      for (const frame of enemy.hitReaction?.frames ?? []) images.push(frame.image);
-      for (const frame of enemy.attack?.frames ?? []) images.push(frame.image);
-    }
-    for (const region of theme.regions) {
-      images.push(
-        region.tiles.path,
-        region.tiles.terrain1,
-        region.tiles.terrain2,
-        region.tiles.terrain3,
-        region.tiles.terrain4,
-      );
-      images.push(region.base);
-    }
-    images.push(theme.spawns?.closed ?? "", theme.spawns?.open ?? "", theme.spawns?.transition ?? "");
-    for (const image of images) {
-      expect(image.includes("url(#")).toBe(false);
-      expect(image.includes("<filter")).toBe(false);
-    }
-  });
+  // The flat-paint rule (no url(# paint servers, no filters) is asserted for both
+  // shipped themes by "Theme tile art" below, which supersedes the former
+  // single-theme copy of that sweep.
 });
 
 describe("Menu background", () => {
@@ -563,11 +618,11 @@ function buildCustomTheme(overrides?: {
         id: 0,
         name: "Test Region",
         tiles: {
-          path: makeTileSvg(pathColor, false),
-          terrain1: makeTileSvg(terrainColors[0]!, true),
-          terrain2: makeTileSvg(terrainColors[1]!, true),
-          terrain3: makeTileSvg(terrainColors[2]!, true),
-          terrain4: makeTileSvg(terrainColors[3]!, true),
+          path: [makeTileSvg(pathColor, false)],
+          terrain1: [makeTileSvg(terrainColors[0]!, true)],
+          terrain2: [makeTileSvg(terrainColors[1]!, true)],
+          terrain3: [makeTileSvg(terrainColors[2]!, true)],
+          terrain4: [makeTileSvg(terrainColors[3]!, true)],
         },
         base: regionBase,
         mapImage: mockRegionMapImage,
@@ -664,7 +719,7 @@ describe("SVG Static Content Render Placement", () => {
   });
 
   describe("Spawn placement", () => {
-    it("renders spawn <use> elements with correct IDs and positions", () => {
+    it("keeps spawn markers out of the static grid content", () => {
       const store = createTestMapThemeStore();
       const customTheme = buildCustomTheme();
       store.activeTheme = customTheme;
@@ -674,9 +729,12 @@ describe("SVG Static Content Render Placement", () => {
       const { gridContent } = useSvgStaticContent(mapRef as never);
       const svg = gridContent.value;
 
-      expect(svg).toContain('<use id="spawn-0" href="#spawn-closed" x="0" y="0" width="36" height="36"/>');
-      expect(svg).toContain('<use id="spawn-1" href="#spawn-closed" x="36" y="0" width="36" height="36"/>');
-      expect(svg).toContain('<use id="spawn-2" href="#spawn-closed" x="72" y="0" width="36" height="36"/>');
+      // Spawn markers are dynamic (their href flips per snapshot) and are owned
+      // by SpawnManager's imperative layer; if they lived in this v-html string,
+      // a re-render (grid or theme change) would replace the nodes SpawnManager
+      // captured and the open/close states would stop reaching the DOM.
+      expect(svg).not.toContain("spawn-marker");
+      expect(svg).not.toContain('id="spawn-');
     });
   });
 
@@ -716,5 +774,385 @@ describe("SVG Static Content Render Placement", () => {
       const groupContent = svg.slice(groupStart, groupEnd);
       expect(groupContent).toContain("url(#base-gradient)");
     });
+  });
+});
+
+// Rotated neighbors meet on the cell edge, so tile ink has to stay inside a
+// 3px band around every cell. The one deliberate exception is the inner ring
+// rect, which is rotationally symmetric so all four rotations paint the same
+// band. This is the tile-side half of the rule MapThemeHowTo.md documents.
+const TILE_EDGE_BAND_INSET = 3;
+
+function blobBoxes(tileContent: string): { minX: number; minY: number; maxX: number; maxY: number }[] {
+  const boxes: { minX: number; minY: number; maxX: number; maxY: number }[] = [];
+  for (const match of tileContent.matchAll(/<(ellipse|circle)\b([^>]*?)\/?>/g)) {
+    const attributes = match[2]!;
+    const numberAttribute = (name: string): number => {
+      const found = attributes.match(new RegExp(`\\b${name}="([\\d.]+)"`));
+      return found ? Number(found[1]) : 0;
+    };
+    const centerX = numberAttribute("cx");
+    const centerY = numberAttribute("cy");
+    const radiusX = numberAttribute("rx") || numberAttribute("r");
+    const radiusY = numberAttribute("ry") || numberAttribute("r");
+    boxes.push({ minX: centerX - radiusX, minY: centerY - radiusY, maxX: centerX + radiusX, maxY: centerY + radiusY });
+  }
+  return boxes;
+}
+
+function relativeLuminanceOfChannels(channels: [number, number, number]): number {
+  const channelToLinear = (channel: number): number => {
+    const srgb = channel / 255;
+    return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+  };
+  const [red, green, blue] = channels;
+  return 0.2126 * channelToLinear(red) + 0.7152 * channelToLinear(green) + 0.0722 * channelToLinear(blue);
+}
+
+describe("Theme tile art", () => {
+  const shippedThemes = [
+    { label: "Polymath", raw: defaultTheme },
+    { label: "Aftermath", raw: aftermathTheme },
+  ];
+  const TERRAIN_KINDS = ["terrain1", "terrain2", "terrain3", "terrain4"] as const;
+  const TILE_KINDS = ["path", ...TERRAIN_KINDS] as const;
+
+  // A tile kind is one image or a list of variants in theme JSON; every image
+  // has to satisfy the same rules.
+  function variantsOf(rawImage: string | string[]): string[] {
+    return Array.isArray(rawImage) ? rawImage : [rawImage];
+  }
+
+  function firstFillHex(tileContent: string): string {
+    const firstFill = tileContent.match(/fill="(#[0-9a-fA-F]{3,8})"/);
+    if (!firstFill) throw new Error("tile has no hex fill");
+    return firstFill[1]!;
+  }
+
+  function firstFillTag(tileContent: string): string {
+    const firstFillIndex = tileContent.search(/fill="#[0-9a-fA-F]{3,8}"/);
+    const tagStart = tileContent.lastIndexOf("<", firstFillIndex);
+    return tileContent.slice(tagStart, tileContent.indexOf(">", firstFillIndex));
+  }
+
+  for (const { label, raw } of shippedThemes) {
+    it(`${label} tile variants all open with the full-bleed field rect`, () => {
+      const theme = RawMapThemeSchema.parse(raw);
+      for (const region of theme.regions) {
+        for (const kind of TILE_KINDS) {
+          const variants = variantsOf(region.tiles[kind]);
+          expect(variants.length).toBeGreaterThanOrEqual(1);
+          for (const variant of variants) {
+            const tag = firstFillTag(variant);
+            expect(tag.startsWith("<rect")).toBe(true);
+            expect(tag).toContain('width="36"');
+            expect(tag).toContain('height="36"');
+          }
+        }
+      }
+    });
+
+    it(`${label} shares one field fill across a kind's variants`, () => {
+      const theme = RawMapThemeSchema.parse(raw);
+      for (const region of theme.regions) {
+        for (const kind of TILE_KINDS) {
+          const fieldFills = new Set(variantsOf(region.tiles[kind]).map((variant) => firstFillHex(variant)));
+          expect(fieldFills.size).toBe(1);
+        }
+      }
+    });
+
+    it(`${label} terrain ramps darken with height`, () => {
+      const theme = RawMapThemeSchema.parse(raw);
+      for (const region of theme.regions) {
+        const luminosities = TERRAIN_KINDS.map((kind) => {
+          const channels = hexChannels(firstFillHex(variantsOf(region.tiles[kind])[0]!));
+          if (!channels) throw new Error("terrain field fill is not a 3- or 6-digit hex");
+          return relativeLuminanceOfChannels(channels);
+        });
+        for (let step = 1; step < luminosities.length; step++) {
+          expect(luminosities[step]).toBeLessThanOrEqual(luminosities[step - 1]!);
+        }
+      }
+    });
+
+    it(`${label} sprites paint without document-scoped paint servers`, () => {
+      const theme = RawMapThemeSchema.parse(raw);
+      const images: string[] = [];
+      for (const tower of Object.values(theme.towers)) {
+        for (const frame of tower.animation?.frames ?? []) images.push(frame.image);
+        for (const frame of tower.walking?.frames ?? []) images.push(frame.image);
+      }
+      for (const enemy of Object.values(theme.enemies)) {
+        for (const frame of enemy.walking.frames) images.push(frame.image);
+        for (const frame of enemy.hitReaction?.frames ?? []) images.push(frame.image);
+        for (const frame of enemy.attack?.frames ?? []) images.push(frame.image);
+      }
+      for (const region of theme.regions) {
+        for (const kind of TILE_KINDS) images.push(...variantsOf(region.tiles[kind]));
+        images.push(region.base);
+      }
+      images.push(theme.spawns?.closed ?? "", theme.spawns?.open ?? "", theme.spawns?.transition ?? "");
+      const sites = theme.sites;
+      if (sites) {
+        images.push(...Object.values(sites.buildings), ...Object.values(sites.caches));
+        if (sites.supplyDrop) images.push(sites.supplyDrop);
+      }
+      for (const image of images) {
+        expect(image.includes("url(#")).toBe(false);
+        expect(image.includes("<filter")).toBe(false);
+      }
+    });
+  }
+
+  it("keeps Polymath tile blobs inside the edge band", () => {
+    const theme = RawMapThemeSchema.parse(defaultTheme);
+    for (const region of theme.regions) {
+      for (const kind of TILE_KINDS) {
+        for (const variant of variantsOf(region.tiles[kind])) {
+          for (const box of blobBoxes(variant)) {
+            expect(box.minX).toBeGreaterThanOrEqual(TILE_EDGE_BAND_INSET);
+            expect(box.minY).toBeGreaterThanOrEqual(TILE_EDGE_BAND_INSET);
+            expect(box.maxX).toBeLessThanOrEqual(36 - TILE_EDGE_BAND_INSET);
+            expect(box.maxY).toBeLessThanOrEqual(36 - TILE_EDGE_BAND_INSET);
+          }
+        }
+      }
+    }
+  });
+});
+
+describe("Contour edge pass", () => {
+  function makeContourMap(row: { type: string; height: number }[]) {
+    return { width: row.length, height: 1, tiles: [row], spawns: [], base: null, regionId: 0, seed: 42 };
+  }
+
+  function edgeSegmentCount(svg: string, edgeName: string): number {
+    const match = svg.match(new RegExp(`<path data-edge="${edgeName}" d="([^"]*)"`));
+    if (!match) return 0;
+    return (match[1]!.match(/M/g) ?? []).length;
+  }
+
+  it("draws a cliff at the height step, curbs at terrain/path bounds, and a map border", () => {
+    const store = createTestMapThemeStore();
+    const customTheme = buildCustomTheme();
+    store.activeTheme = customTheme;
+    store.defaultTheme = customTheme;
+
+    const map = makeContourMap([
+      { type: "terrain", height: 1 },
+      { type: "terrain", height: 2 },
+      { type: "path", height: 0 },
+      { type: "terrain", height: 1 },
+    ]);
+    const { gridContent } = useSvgStaticContent({ value: map } as never);
+    const svg = gridContent.value;
+
+    expect(edgeSegmentCount(svg, "cliff-thin")).toBe(1);
+    expect(edgeSegmentCount(svg, "cliff-thick")).toBe(0);
+    expect(edgeSegmentCount(svg, "curb")).toBe(2);
+    expect(edgeSegmentCount(svg, "border")).toBe(10);
+  });
+
+  it("draws no interior edge between same-height terrain neighbors", () => {
+    const store = createTestMapThemeStore();
+    const customTheme = buildCustomTheme();
+    store.activeTheme = customTheme;
+    store.defaultTheme = customTheme;
+
+    const map = makeContourMap([
+      { type: "terrain", height: 2 },
+      { type: "terrain", height: 2 },
+    ]);
+    const { gridContent } = useSvgStaticContent({ value: map } as never);
+    const svg = gridContent.value;
+
+    expect(edgeSegmentCount(svg, "cliff-thin")).toBe(0);
+    expect(edgeSegmentCount(svg, "curb")).toBe(0);
+    expect(edgeSegmentCount(svg, "border")).toBe(6);
+  });
+
+  it("separates a two-step height drop from a one-step height drop", () => {
+    const store = createTestMapThemeStore();
+    const customTheme = buildCustomTheme();
+    store.activeTheme = customTheme;
+    store.defaultTheme = customTheme;
+
+    const map = makeContourMap([
+      { type: "terrain", height: 1 },
+      { type: "terrain", height: 2 },
+      { type: "terrain", height: 4 },
+    ]);
+    const { gridContent } = useSvgStaticContent({ value: map } as never);
+    const svg = gridContent.value;
+
+    expect(edgeSegmentCount(svg, "cliff-thin")).toBe(1);
+    expect(edgeSegmentCount(svg, "cliff-thick")).toBe(1);
+  });
+
+  it("tones the backdrop from the region terrain2 field fill and overlays the vignette", () => {
+    const store = createTestMapThemeStore();
+    const customTheme = buildCustomTheme();
+    store.activeTheme = customTheme;
+    store.defaultTheme = customTheme;
+
+    const { gridContent, mapDefsContent } = useSvgStaticContent({
+      value: makeContourMap([{ type: "terrain", height: 1 }]),
+    } as never);
+    const svg = gridContent.value;
+    // buildCustomTheme terrain2 is #222222; scaled 35% toward black each channel is round(34 * 0.65) = 22.
+    expect(svg).toContain('fill="rgba(22,22,22,1)"');
+    expect(svg).toContain('fill="url(#map-vignette)"');
+    expect(mapDefsContent.value).toContain('<radialGradient id="map-vignette"');
+  });
+});
+
+describe("Entity symbol frames carry no injected ground shadow", () => {
+  function defsForTheme(theme: MapThemeData): string {
+    const store = createTestMapThemeStore();
+    store.activeTheme = theme;
+    store.defaultTheme = theme;
+    const { staticDefsContent } = useSvgStaticContent({ value: null } as never);
+    return staticDefsContent.value;
+  }
+
+  it("starts tower symbols directly with the theme frame content", () => {
+    const defs = defsForTheme(buildCustomTheme());
+    expect(defs).toContain('<symbol id="tower-basic-f0" viewBox="-16 -16 32 32"><rect/></symbol>');
+    expect(defs).not.toMatch(/tower-[a-z]+-f\d+" viewBox="-16 -16 32 32"><ellipse/);
+  });
+
+  it("starts enemy symbols directly with the theme frame content", () => {
+    const defs = defsForTheme(buildCustomTheme());
+    expect(defs).toContain('<symbol id="enemy-minion-f0" viewBox="-1 -1 2 2"><rect/></symbol>');
+    expect(defs).toContain('<symbol id="enemy-minion-hit-f0" viewBox="-1 -1 2 2"><path/></symbol>');
+    expect(defs).not.toMatch(/enemy-[a-z]+-[a-z]*f\d+" viewBox="-1 -1 2 2"><ellipse/);
+  });
+});
+
+describe("Tile variants", () => {
+  const TERRAIN2_VARIANTS = ["#223322", "#334433", "#445544"];
+
+  function buildVariantTheme(): MapThemeData {
+    const theme = structuredClone(buildCustomTheme());
+    const region = theme.regions[0]!;
+    region.tiles.terrain2 = TERRAIN2_VARIANTS.map(
+      (fill) => `<svg viewBox="0 0 36 36"><rect width="36" height="36" fill="${fill}"/></svg>`,
+    );
+    return theme;
+  }
+
+  function useVariantTheme(): void {
+    const store = createTestMapThemeStore();
+    const theme = buildVariantTheme();
+    store.activeTheme = theme;
+    store.defaultTheme = theme;
+  }
+
+  function terrainRowMap(width: number, height: number) {
+    return {
+      width,
+      height,
+      tiles: Array.from({ length: height }, () =>
+        Array.from({ length: width }, () => ({ type: "terrain", height: 2 })),
+      ),
+      spawns: [],
+      base: null,
+      regionId: 0,
+      seed: 1337,
+    };
+  }
+
+  function referencedTileSymbols(svg: string): string[] {
+    return [...svg.matchAll(/<use href="#(tile-r0-terrain2[^"]*)"/g)].map((match) => match[1]!);
+  }
+
+  it("emits one symbol per variant, keeping the unsuffixed id for variant 0", () => {
+    useVariantTheme();
+    const { mapDefsContent } = useSvgStaticContent({ value: terrainRowMap(4, 1) } as never);
+    const defs = mapDefsContent.value;
+    expect(defs).toContain('<symbol id="tile-r0-terrain2" viewBox="0 0 36 36">');
+    expect(defs).toContain('<symbol id="tile-r0-terrain2-v1" viewBox="0 0 36 36">');
+    expect(defs).toContain('<symbol id="tile-r0-terrain2-v2" viewBox="0 0 36 36">');
+  });
+
+  it("draws every variant of a multi-variant kind across a row of terrain", () => {
+    useVariantTheme();
+    const { gridContent } = useSvgStaticContent({ value: terrainRowMap(12, 1) } as never);
+    const referenced = new Set(referencedTileSymbols(gridContent.value));
+    expect(referenced).toEqual(new Set(["tile-r0-terrain2", "tile-r0-terrain2-v1", "tile-r0-terrain2-v2"]));
+  });
+
+  it("picks the same variant for a tile across two builds of the same map", () => {
+    useVariantTheme();
+    const map = terrainRowMap(12, 1);
+    const first = useSvgStaticContent({ value: map } as never).gridContent.value;
+    const second = useSvgStaticContent({ value: structuredClone(map) } as never).gridContent.value;
+    expect(referencedTileSymbols(second)).toEqual(referencedTileSymbols(first));
+  });
+
+  it("leaves a single-variant kind on its documented unsuffixed symbol id", () => {
+    useVariantTheme();
+    const { mapDefsContent } = useSvgStaticContent({ value: terrainRowMap(4, 1) } as never);
+    const defs = mapDefsContent.value;
+    // Only terrain2 has variants here, so terrain1 stays unsuffixed.
+    expect(defs).toContain('<symbol id="tile-r0-terrain1" viewBox="0 0 36 36">');
+    expect(defs).not.toContain("tile-r0-terrain1-v");
+  });
+});
+
+describe("Map site art symbols", () => {
+  function defsForTheme(theme: MapThemeData): string {
+    const store = createTestMapThemeStore();
+    store.activeTheme = theme;
+    store.defaultTheme = theme;
+    return useSvgStaticContent({ value: null } as never).staticDefsContent.value;
+  }
+
+  it("emits one symbol per building kind, cache state, and boss package", () => {
+    const theme = structuredClone(buildCustomTheme());
+    theme.sites = {
+      buildings: {
+        armory: "<svg viewBox='0 0 36 36'><rect/></svg>",
+        magazine: "<svg viewBox='0 0 36 36'><rect/></svg>",
+        ward: "<svg viewBox='0 0 36 36'><rect/></svg>",
+        beacon: "<svg viewBox='0 0 36 36'><rect/></svg>",
+      },
+      caches: {
+        sealed: "<svg viewBox='0 0 36 36'><rect/></svg>",
+        unlocked: "<svg viewBox='0 0 36 36'><rect/></svg>",
+        broken: "<svg viewBox='0 0 36 36'><rect/></svg>",
+      },
+      supplyDrop: "<svg viewBox='0 0 36 36'><rect/></svg>",
+    };
+    const defs = defsForTheme(theme);
+    for (const kind of ["armory", "magazine", "ward", "beacon"]) {
+      expect(defs).toContain(`<symbol id="site-building-${kind}" viewBox="0 0 36 36">`);
+    }
+    for (const state of ["sealed", "unlocked", "broken"]) {
+      expect(defs).toContain(`<symbol id="site-cache-${state}" viewBox="0 0 36 36">`);
+    }
+    expect(defs).toContain('<symbol id="site-supply-drop" viewBox="0 0 36 36">');
+  });
+
+  it("emits nothing for a theme with no sites block", () => {
+    const defs = defsForTheme(buildCustomTheme());
+    expect(defs).not.toContain("site-building-");
+    expect(defs).not.toContain("site-cache-");
+    expect(defs).not.toContain("site-supply-drop");
+  });
+});
+
+describe("hexChannels", () => {
+  it("expands a 3-digit hex and parses a 6-digit hex", () => {
+    expect(hexChannels("#abc")).toEqual([170, 187, 204]);
+    expect(hexChannels("#427542")).toEqual([66, 117, 66]);
+  });
+
+  it("returns null for alpha forms and non-hex strings so callers can fall back", () => {
+    expect(hexChannels("#abcd")).toBeNull();
+    expect(hexChannels("#42754280")).toBeNull();
+    expect(hexChannels("rgb(1,2,3)")).toBeNull();
+    expect(hexChannels("")).toBeNull();
   });
 });

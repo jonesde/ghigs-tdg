@@ -80,22 +80,35 @@ const RegionMapLayoutSchema = z
     }
   });
 
+const SpawnPointVisualSchema = z.object({ closed: z.string(), open: z.string(), transition: z.string() });
+
+// A tile kind ships one image, or a list of variants with the primary art first.
+// Extra variants break up the repeat of a single stamp across a height blob;
+// the renderer picks one per cell from a hash of the map seed and tile position.
+const TileImageSchema = z.union([z.string(), z.array(z.string()).min(1)]);
+
 const RegionVisualSchema = z.object({
   id: z.number(),
   name: z.string(),
   tiles: z.object({
-    path: z.string(),
-    terrain1: z.string(),
-    terrain2: z.string(),
-    terrain3: z.string(),
-    terrain4: z.string(),
+    path: TileImageSchema,
+    terrain1: TileImageSchema,
+    terrain2: TileImageSchema,
+    terrain3: TileImageSchema,
+    terrain4: TileImageSchema,
   }),
   base: z.string(),
   mapImage: z.string(),
   mapLayout: RegionMapLayoutSchema,
 });
 
-const SpawnPointVisualSchema = z.object({ closed: z.string(), open: z.string(), transition: z.string() });
+// Authored in the same 0 0 36 36 space as tile art, drawn at 26 world px.
+// A theme that omits `sites` keeps the procedural marks in MapSiteLayer.
+const SiteArtSchema = z.object({
+  buildings: z.object({ armory: z.string(), magazine: z.string(), ward: z.string(), beacon: z.string() }),
+  caches: z.object({ sealed: z.string(), unlocked: z.string(), broken: z.string() }),
+  supplyDrop: z.string().optional(),
+});
 
 export const RawMapThemeSchema = z.object({
   id: z.string(),
@@ -105,6 +118,7 @@ export const RawMapThemeSchema = z.object({
   enemies: z.record(z.string(), EnemyVisualSchema),
   regions: z.array(RegionVisualSchema),
   spawns: SpawnPointVisualSchema.optional(),
+  sites: SiteArtSchema.optional(),
   maps: ThemeMapsOverrideSchema.optional(),
 });
 

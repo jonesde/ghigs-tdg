@@ -1,5 +1,7 @@
 import { computed } from "vue";
-import type { MapThemeData } from "@/render/themes/index.js";
+import { fieldFillOf, hexChannels } from "@/render/themes/fieldFill.js";
+import { type MapThemeData, TILE_KINDS, type TileKind } from "@/render/themes/index.js";
+import { tileImagesOf, tileSymbolId, tileVariantIndex } from "@/render/themes/tileArt.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import { mulberry32 } from "@/sim/grid/Map.js";
 import { progressiveTileRotation } from "@/sim/grid/ProgressiveMap.js";
@@ -107,12 +109,6 @@ interface TileInfo {
   height: number;
 }
 
-interface RegionInfo {
-  pathImage: string;
-  terrainImages: readonly string[];
-  base: string;
-}
-
 interface MapInfo {
   width: number;
   height: number;
@@ -145,16 +141,16 @@ function buildSymbolsFromConstants(themeOverride?: MapThemeData | null): string 
     if (!walking) continue;
     for (let frameIndex = 0; frameIndex < walking.referenceImages.length; frameIndex++) {
       const frame = walking.referenceImages[frameIndex]!;
-      const innerContent = stripSvgWrapper(frame.svg);
-      symbolParts.push(`<symbol id="enemy-${typeId}-f${frameIndex}" viewBox="-1 -1 2 2">${innerContent}</symbol>`);
+      symbolParts.push(
+        `<symbol id="enemy-${typeId}-f${frameIndex}" viewBox="-1 -1 2 2">${stripSvgWrapper(frame.svg)}</symbol>`,
+      );
     }
     const hitReaction = enemyVisual.hitReaction;
     if (hitReaction) {
       for (let frameIndex = 0; frameIndex < hitReaction.referenceImages.length; frameIndex++) {
         const frame = hitReaction.referenceImages[frameIndex]!;
-        const innerContent = stripSvgWrapper(frame.svg);
         symbolParts.push(
-          `<symbol id="enemy-${typeId}-hit-f${frameIndex}" viewBox="-1 -1 2 2">${innerContent}</symbol>`,
+          `<symbol id="enemy-${typeId}-hit-f${frameIndex}" viewBox="-1 -1 2 2">${stripSvgWrapper(frame.svg)}</symbol>`,
         );
       }
     }
@@ -162,9 +158,8 @@ function buildSymbolsFromConstants(themeOverride?: MapThemeData | null): string 
     if (attack) {
       for (let frameIndex = 0; frameIndex < attack.referenceImages.length; frameIndex++) {
         const frame = attack.referenceImages[frameIndex]!;
-        const innerContent = stripSvgWrapper(frame.svg);
         symbolParts.push(
-          `<symbol id="enemy-${typeId}-attack-f${frameIndex}" viewBox="-1 -1 2 2">${innerContent}</symbol>`,
+          `<symbol id="enemy-${typeId}-attack-f${frameIndex}" viewBox="-1 -1 2 2">${stripSvgWrapper(frame.svg)}</symbol>`,
         );
       }
     }
@@ -175,8 +170,9 @@ function buildSymbolsFromConstants(themeOverride?: MapThemeData | null): string 
     if (!animation) continue;
     for (let frameIndex = 0; frameIndex < animation.referenceImages.length; frameIndex++) {
       const frame = animation.referenceImages[frameIndex]!;
-      const innerContent = stripSvgWrapper(frame.svg);
-      symbolParts.push(`<symbol id="tower-${typeId}-f${frameIndex}" viewBox="-16 -16 32 32">${innerContent}</symbol>`);
+      symbolParts.push(
+        `<symbol id="tower-${typeId}-f${frameIndex}" viewBox="-16 -16 32 32">${stripSvgWrapper(frame.svg)}</symbol>`,
+      );
     }
   }
 
@@ -188,6 +184,24 @@ function buildSymbolsFromConstants(themeOverride?: MapThemeData | null): string 
   symbolParts.push(`<symbol id="spawn-closed" viewBox="0 0 36 36">${stripSvgWrapper(spawnClosed)}</symbol>`);
   symbolParts.push(`<symbol id="spawn-open" viewBox="0 0 36 36">${stripSvgWrapper(spawnOpen)}</symbol>`);
   symbolParts.push(`<symbol id="spawn-transition" viewBox="0 0 36 36">${stripSvgWrapper(spawnTransition)}</symbol>`);
+
+  // Map site art (buildings, caches, boss packages), authored in the same 36x36
+  // space as tile art. MapSiteLayer falls back to its procedural marks when the
+  // theme ships no `sites` block, so nothing here is required.
+  const siteArt = activeTheme.sites;
+  if (siteArt) {
+    for (const [kind, content] of Object.entries(siteArt.buildings)) {
+      symbolParts.push(`<symbol id="site-building-${kind}" viewBox="0 0 36 36">${stripSvgWrapper(content)}</symbol>`);
+    }
+    for (const [state, content] of Object.entries(siteArt.caches)) {
+      symbolParts.push(`<symbol id="site-cache-${state}" viewBox="0 0 36 36">${stripSvgWrapper(content)}</symbol>`);
+    }
+    if (siteArt.supplyDrop) {
+      symbolParts.push(
+        `<symbol id="site-supply-drop" viewBox="0 0 36 36">${stripSvgWrapper(siteArt.supplyDrop)}</symbol>`,
+      );
+    }
+  }
 
   return symbolParts.join("\n");
 }
@@ -209,42 +223,33 @@ export function buildStaticFiltersContent(): string {
 }
 
 /**
- * Builds <symbol> elements for each region's tile images (path + terrain1-4),
- * so gridContent can reference them via <use> for small, fast strings.
+ * Builds <symbol> elements for every tile variant of every region (path +
+ * terrain1-4), so gridContent can reference them via <use> for small, fast
+ * strings. Variant 0 keeps the plain `tile-r{regionId}-{kind}` id.
  */
 function buildTileSymbols(activeTheme: MapThemeData | null): string {
   if (!activeTheme) return "";
   const parts: string[] = [];
   for (const region of activeTheme.regions) {
-    const prefix = `tile-r${region.id}`;
-    parts.push(`<symbol id="${prefix}-path" viewBox="0 0 36 36">${stripSvgWrapper(region.tiles.path)}</symbol>`);
-    parts.push(
-      `<symbol id="${prefix}-terrain1" viewBox="0 0 36 36">${stripSvgWrapper(region.tiles.terrain1)}</symbol>`,
-    );
-    parts.push(
-      `<symbol id="${prefix}-terrain2" viewBox="0 0 36 36">${stripSvgWrapper(region.tiles.terrain2)}</symbol>`,
-    );
-    parts.push(
-      `<symbol id="${prefix}-terrain3" viewBox="0 0 36 36">${stripSvgWrapper(region.tiles.terrain3)}</symbol>`,
-    );
-    parts.push(
-      `<symbol id="${prefix}-terrain4" viewBox="0 0 36 36">${stripSvgWrapper(region.tiles.terrain4)}</symbol>`,
-    );
+    for (const kind of TILE_KINDS) {
+      const variants = tileImagesOf(region.tiles, kind);
+      for (let variantIndex = 0; variantIndex < variants.length; variantIndex++) {
+        const symbolId = tileSymbolId(region.id, kind, variantIndex);
+        parts.push(`<symbol id="${symbolId}" viewBox="0 0 36 36">${stripSvgWrapper(variants[variantIndex]!)}</symbol>`);
+      }
+    }
   }
   return parts.join("\n");
 }
 
 /**
- * Ported from Shapes.ts drawTile() — returns SVG elements for a single tile
- * using the theme's tile image via <use>.
+ * Ported from Shapes.ts drawTile() — returns the SVG elements for a single cell
+ * from the tile symbol the grid layer picked for it (see tileKindOf and the
+ * variant hash in the gridContent loop).
  */
-function getTileSvg(tile: TileInfo, x: number, y: number, regionId: number, rotation: number): string {
+function getTileSvg(symbolId: string, x: number, y: number, rotation: number): string {
   const size = TILE_SIZE;
   const cellCenter = size / 2;
-  const tileSymbolId =
-    tile.type === "path" || tile.type === "spawn"
-      ? `tile-r${regionId}-path`
-      : `tile-r${regionId}-terrain${Math.min(4, Math.max(1, tile.height))}`;
 
   // Theme ink may extend past the 36 viewBox. A fill-box rotation follows that ink and
   // slides the cell off the grid. This viewport clips the overflow to the cell, and the
@@ -255,13 +260,125 @@ function getTileSvg(tile: TileInfo, x: number, y: number, regionId: number, rota
   if (rotation !== 0) {
     svg += `<g transform="rotate(${rotation} ${cellCenter} ${cellCenter})">`;
   }
-  svg += `<use href="#${tileSymbolId}" width="${size}" height="${size}" />`;
+  svg += `<use href="#${symbolId}" width="${size}" height="${size}" />`;
   if (rotation !== 0) {
     svg += `</g>`;
   }
   svg += `</svg></g>`;
   return svg;
 }
+
+// Spawn and base tiles paint with the path art; terrain height 1-4 selects the
+// ramp step, clamped because the ramp is four wide.
+function tileKindOf(tile: TileInfo): TileKind {
+  if (tile.type !== "terrain") return "path";
+  // TILE_KINDS is ["path", "terrain1".."terrain4"], so the clamped height is the index.
+  return TILE_KINDS[Math.min(4, Math.max(1, tile.height))]!;
+}
+
+interface ContourEdgeData {
+  curb: string;
+  cliffThin: string;
+  cliffThick: string;
+  border: string;
+}
+
+function tileLevel(tile: TileInfo): number {
+  return tile.type === "terrain" ? tile.height : 1;
+}
+
+function isPathFamily(tile: TileInfo): boolean {
+  return tile.type === "path" || tile.type === "spawn" || tile.type === "base";
+}
+
+function appendContourEdge(edges: ContourEdgeData, leftTile: TileInfo, rightTile: TileInfo, segment: string): void {
+  if (isPathFamily(leftTile) && isPathFamily(rightTile)) return;
+  if (leftTile.type === "terrain" && rightTile.type === "terrain") {
+    const heightDelta = Math.abs(tileLevel(leftTile) - tileLevel(rightTile));
+    if (heightDelta === 0) return;
+    if (heightDelta === 1) {
+      edges.cliffThin += `${segment} `;
+    } else {
+      edges.cliffThick += `${segment} `;
+    }
+    return;
+  }
+  edges.curb += `${segment} `;
+}
+
+// Classifies each internal edge exactly once, via the right and bottom neighbors; the
+// top and left sides only ever emit border segments, since an interior top/left edge is
+// the classified bottom/right edge of the neighbor tile. OOB or void neighbors make
+// the segment a border.
+function buildContourEdges(map: MapInfo, originX: number, originY: number): ContourEdgeData {
+  const edges: ContourEdgeData = { curb: "", cliffThin: "", cliffThick: "", border: "" };
+  const tileAt = (tileX: number, tileY: number): TileInfo | null =>
+    tileX < 0 || tileY < 0 || tileX >= map.width || tileY >= map.height ? null : map.tiles[tileY]![tileX]!;
+  for (let tileY = 0; tileY < map.height; tileY++) {
+    for (let tileX = 0; tileX < map.width; tileX++) {
+      const tile = map.tiles[tileY]![tileX]!;
+      if (tile.type === "void") continue;
+      const left = originX + tileX * TILE_SIZE;
+      const top = originY + tileY * TILE_SIZE;
+      const rightEdgeX = left + TILE_SIZE;
+      const bottomEdgeY = top + TILE_SIZE;
+      const rightTile = tileAt(tileX + 1, tileY);
+      if (!rightTile || rightTile.type === "void") {
+        edges.border += `M${rightEdgeX},${top} L${rightEdgeX},${bottomEdgeY} `;
+      } else {
+        appendContourEdge(edges, tile, rightTile, `M${rightEdgeX},${top} L${rightEdgeX},${bottomEdgeY}`);
+      }
+      const bottomTile = tileAt(tileX, tileY + 1);
+      if (!bottomTile || bottomTile.type === "void") {
+        edges.border += `M${left},${bottomEdgeY} L${rightEdgeX},${bottomEdgeY} `;
+      } else {
+        appendContourEdge(edges, tile, bottomTile, `M${left},${bottomEdgeY} L${rightEdgeX},${bottomEdgeY}`);
+      }
+      const topTile = tileAt(tileX, tileY - 1);
+      if (!topTile || topTile.type === "void") {
+        edges.border += `M${left},${top} L${rightEdgeX},${top} `;
+      }
+      const leftTile = tileAt(tileX - 1, tileY);
+      if (!leftTile || leftTile.type === "void") {
+        edges.border += `M${left},${top} L${left},${bottomEdgeY} `;
+      }
+    }
+  }
+  return edges;
+}
+
+function contourEdgeMarkup(edges: ContourEdgeData): string {
+  const strokeSpecs: { edgeName: string; pathData: string; strokeColor: string; strokeWidth: number }[] = [
+    { edgeName: "curb", pathData: edges.curb, strokeColor: "rgba(0,0,0,0.35)", strokeWidth: 0.75 },
+    { edgeName: "cliff-thin", pathData: edges.cliffThin, strokeColor: "rgba(0,0,0,0.45)", strokeWidth: 1.2 },
+    { edgeName: "cliff-thick", pathData: edges.cliffThick, strokeColor: "rgba(0,0,0,0.45)", strokeWidth: 1.8 },
+    { edgeName: "border", pathData: edges.border, strokeColor: "rgba(0,0,0,0.5)", strokeWidth: 1 },
+  ];
+  return strokeSpecs
+    .filter((strokeSpec) => strokeSpec.pathData.trim().length > 0)
+    .map(
+      (strokeSpec) =>
+        `<path data-edge="${strokeSpec.edgeName}" d="${strokeSpec.pathData.trim()}" fill="none" ` +
+        `stroke="${strokeSpec.strokeColor}" stroke-width="${strokeSpec.strokeWidth}" stroke-linecap="round" stroke-linejoin="round" />`,
+    )
+    .join("");
+}
+
+const BACKDROP_FALLBACK_RGB = "40,40,40";
+const BACKDROP_SCALE = 0.65;
+
+function regionBackdropRgb(terrain2Content: string | undefined): string {
+  const fieldFill = terrain2Content ? fieldFillOf(terrain2Content) : null;
+  const channels = fieldFill ? hexChannels(fieldFill) : null;
+  if (!channels) return BACKDROP_FALLBACK_RGB;
+  return channels.map((channel) => Math.round(channel * BACKDROP_SCALE)).join(",");
+}
+
+const VIGNETTE_GRADIENT =
+  `<radialGradient id="map-vignette" cx="50%" cy="50%" r="75%">` +
+  `<stop offset="55%" stop-color="rgba(0,0,0,0)" />` +
+  `<stop offset="100%" stop-color="rgba(0,0,0,0.32)" />` +
+  `</radialGradient>`;
 
 /**
  * Ported from Shapes.ts drawBase() via SvgBaseRenderer.ts renderBaseSvg().
@@ -296,12 +413,16 @@ export function useSvgStaticContent(
       `<stop offset="0%" stop-color="#4a3e2c" />` +
       `<stop offset="100%" stop-color="#241d14" />` +
       `</linearGradient>` +
+      VIGNETTE_GRADIENT +
       tileSymbols
     );
   });
 
-  // Static grid layer: background, tiles, grid lines, spawn markers, base.
-  // Depends only on currentMap — does NOT re-render when towers are placed.
+  // Static grid layer: backdrop, tiles, contour edges, vignette, base. Spawn
+  // markers live in SpawnManager's own imperative layer, because v-html
+  // replaces this layer's children whenever the string changes (currentMap,
+  // the active theme, or currentGrid all feed it) and would detach any node a
+  // manager captured earlier.
   const gridContent = computed(() => {
     const map = currentMap.value;
     if (!map) return "";
@@ -309,19 +430,11 @@ export function useSvgStaticContent(
     const activeTheme = currentTheme?.value ?? useMapThemeStore().activeTheme;
     const regionId = map.regionId ?? 0;
     const regionVisual = activeTheme?.regions.find((r) => r.id === regionId);
-    const region: RegionInfo = {
-      pathImage: regionVisual?.tiles.path || "",
-      terrainImages: [
-        regionVisual?.tiles.terrain1 || "",
-        regionVisual?.tiles.terrain2 || "",
-        regionVisual?.tiles.terrain3 || "",
-        regionVisual?.tiles.terrain4 || "",
-      ],
-      base: regionVisual?.base || "",
-    };
     let svg = "";
 
-    const BACKGROUND_RGB = "40,40,40";
+    // The backdrop is the tone behind void and unstamped cells: the region's
+    // mid-ramp field fill scaled 65% toward black.
+    const backdropRgb = regionBackdropRgb(tileImagesOf(regionVisual?.tiles, "terrain2")[0]);
     const originTileX = map.originTileX ?? 0;
     const originTileY = map.originTileY ?? 0;
     const originX = originTileX * TILE_SIZE;
@@ -329,7 +442,7 @@ export function useSvgStaticContent(
     const progressive = map.style === "progressive";
     const mapWidthPx = map.width * TILE_SIZE;
     const mapHeightPx = map.height * TILE_SIZE;
-    svg += `<rect x="${originX}" y="${originY}" width="${mapWidthPx}" height="${mapHeightPx}" fill="rgba(${BACKGROUND_RGB},1)" />`;
+    svg += `<rect x="${originX}" y="${originY}" width="${mapWidthPx}" height="${mapHeightPx}" fill="rgba(${backdropRgb},1)" />`;
 
     const tileRng = progressive ? null : mulberry32(map.seed);
     for (let ty = 0; ty < map.height; ty++) {
@@ -339,51 +452,19 @@ export function useSvgStaticContent(
         const rotation = progressive
           ? progressiveTileRotation(map.seed, originTileX + tx, originTileY + ty) * 90
           : Math.floor(tileRng!() * 4) * 90;
-        svg += getTileSvg(tile, originX + tx * TILE_SIZE, originY + ty * TILE_SIZE, regionId, rotation);
+        const kind = tileKindOf(tile);
+        const variantCount = tileImagesOf(regionVisual?.tiles, kind).length;
+        const variantIndex = tileVariantIndex(map.seed, originTileX + tx, originTileY + ty, variantCount);
+        const symbolId = tileSymbolId(regionId, kind, variantIndex);
+        svg += getTileSvg(symbolId, originX + tx * TILE_SIZE, originY + ty * TILE_SIZE, rotation);
       }
     }
 
-    let gridD = "";
-    if (progressive) {
-      const drawnEdges = new Set<string>();
-      const addEdge = (x1: number, y1: number, x2: number, y2: number) => {
-        const key = x1 < x2 || (x1 === x2 && y1 <= y2) ? `${x1},${y1},${x2},${y2}` : `${x2},${y2},${x1},${y1}`;
-        if (drawnEdges.has(key)) return;
-        drawnEdges.add(key);
-        gridD += `M${x1},${y1} L${x2},${y2} `;
-      };
-      for (let ty = 0; ty < map.height; ty++) {
-        for (let tx = 0; tx < map.width; tx++) {
-          if (map.tiles[ty]![tx]!.type === "void") continue;
-          const left = originX + tx * TILE_SIZE;
-          const top = originY + ty * TILE_SIZE;
-          const right = left + TILE_SIZE;
-          const bottom = top + TILE_SIZE;
-          addEdge(left, top, right, top);
-          addEdge(right, top, right, bottom);
-          addEdge(left, bottom, right, bottom);
-          addEdge(left, top, left, bottom);
-        }
-      }
-    } else {
-      for (let column = 0; column <= map.width; column++) {
-        gridD += `M${column * TILE_SIZE},0 L${column * TILE_SIZE},${mapHeightPx} `;
-      }
-      for (let row = 0; row <= map.height; row++) {
-        gridD += `M0,${row * TILE_SIZE} L${mapWidthPx},${row * TILE_SIZE} `;
-      }
-    }
-    svg += `<path d="${gridD}" fill="none" stroke="rgba(${BACKGROUND_RGB},0.8)" stroke-width="0.7" />`;
-
-    for (let spawnIndex = 0; spawnIndex < map.spawns.length; spawnIndex++) {
-      const spawn = map.spawns[spawnIndex]!;
-      const spawnX = originX + spawn.x * TILE_SIZE;
-      const spawnY = originY + spawn.y * TILE_SIZE;
-      svg += `<use id="spawn-${spawnIndex}" href="#spawn-closed" x="${spawnX}" y="${spawnY}" width="${TILE_SIZE}" height="${TILE_SIZE}"/>`;
-    }
+    svg += contourEdgeMarkup(buildContourEdges(map, originX, originY));
+    svg += `<rect x="${originX}" y="${originY}" width="${mapWidthPx}" height="${mapHeightPx}" fill="url(#map-vignette)" />`;
 
     if (map.base) {
-      svg += renderBaseStructure(map.base, region.base, originX, originY);
+      svg += renderBaseStructure(map.base, regionVisual?.base || "", originX, originY);
     }
 
     // Red target-edge overlay: one <line> per exposed base-edge segment whose

@@ -2,8 +2,8 @@ import { BUILDING_DETAILS, BUILDING_LABELS, PACKAGE_CLICK_RADIUS_TILES } from "@
 import { cacheOpenGold } from "@/sim/runBonuses.js";
 import type { MapBuildingSnapshot, MapCacheSnapshot, SupplyDropSnapshot } from "@/sim/SimulationSnapshot.js";
 
-// Half of the 16-world-unit glyph box MapSiteLayer draws, plus a pixel of grace.
-const BUILDING_HOVER_HALF = 9;
+// Half of the 26-world-unit glyph box MapSiteLayer draws, plus a pixel of grace.
+const BUILDING_HOVER_HALF = 14;
 
 export type SiteHoverKind = "drop" | "cache" | "building";
 

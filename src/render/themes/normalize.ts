@@ -1,14 +1,18 @@
 import type { MapsContent, ThemeMapsOverride } from "@/content/schemas/maps.js";
 import { resolveThemeMaps } from "@/content/themeMaps.js";
-import type {
-  EnemyVisualMeta,
-  MapThemeAnimation,
-  MapThemeData,
-  MapThemeFrame,
-  RegionMapLayout,
-  RegionVisualMeta,
-  SpawnPointVisualMeta,
-  TowerVisualMeta,
+import {
+  type EnemyVisualMeta,
+  type MapThemeAnimation,
+  type MapThemeData,
+  type MapThemeFrame,
+  type RegionMapLayout,
+  type RegionVisualMeta,
+  type SiteArtMeta,
+  type SpawnPointVisualMeta,
+  TILE_KINDS,
+  type TileKind,
+  type TileKindImages,
+  type TowerVisualMeta,
 } from "./index.js";
 
 function stripSvgWrapper(svgContent: string): string {
@@ -45,6 +49,21 @@ async function resolveImage(image: string): Promise<string> {
     return await fetchSvgText(image);
   }
   return image;
+}
+
+// Theme JSON may write one tile image or a list of variants; both normalize to
+// a non-empty list with the primary art first.
+type RawTileImages = Record<TileKind, string | string[]>;
+
+async function resolveTileImages(rawTiles: RawTileImages): Promise<TileKindImages> {
+  const resolved = {} as TileKindImages;
+  for (const kind of TILE_KINDS) {
+    const raw = rawTiles[kind];
+    const images = Array.isArray(raw) ? raw : [raw];
+    const stripped = await Promise.all(images.map((image) => resolveImage(image)));
+    resolved[kind] = stripped.map(stripSvgWrapper);
+  }
+  return resolved;
 }
 
 async function normalizeAnimation(raw: { duration: number; frames: { image: string }[] }): Promise<MapThemeAnimation> {
@@ -85,26 +104,33 @@ async function normalizeEnemyVisual(raw: {
 async function normalizeRegionVisual(raw: {
   id: number;
   name: string;
-  tiles: { path: string; terrain1: string; terrain2: string; terrain3: string; terrain4: string };
+  tiles: RawTileImages;
   base: string;
   mapImage: string;
   mapLayout: RegionMapLayout;
 }): Promise<RegionVisualMeta> {
-  const path = stripSvgWrapper(await resolveImage(raw.tiles.path));
-  const terrain1 = stripSvgWrapper(await resolveImage(raw.tiles.terrain1));
-  const terrain2 = stripSvgWrapper(await resolveImage(raw.tiles.terrain2));
-  const terrain3 = stripSvgWrapper(await resolveImage(raw.tiles.terrain3));
-  const terrain4 = stripSvgWrapper(await resolveImage(raw.tiles.terrain4));
+  const tiles = await resolveTileImages(raw.tiles);
   const base = stripSvgWrapper(await resolveImage(raw.base));
   const mapImage = stripSvgWrapper(await resolveImage(raw.mapImage));
-  return {
-    id: raw.id,
-    name: raw.name,
-    tiles: { path, terrain1, terrain2, terrain3, terrain4 },
-    base,
-    mapImage,
-    mapLayout: raw.mapLayout,
-  };
+  return { id: raw.id, name: raw.name, tiles, base, mapImage, mapLayout: raw.mapLayout };
+}
+
+async function normalizeSiteArt(raw: {
+  buildings: Record<"armory" | "magazine" | "ward" | "beacon", string>;
+  caches: Record<"sealed" | "unlocked" | "broken", string>;
+  supplyDrop?: string;
+}): Promise<SiteArtMeta> {
+  const buildings = {} as SiteArtMeta["buildings"];
+  for (const kind of Object.keys(raw.buildings) as (keyof SiteArtMeta["buildings"])[]) {
+    buildings[kind] = stripSvgWrapper(await resolveImage(raw.buildings[kind]));
+  }
+  const caches = {} as SiteArtMeta["caches"];
+  for (const state of Object.keys(raw.caches) as (keyof SiteArtMeta["caches"])[]) {
+    caches[state] = stripSvgWrapper(await resolveImage(raw.caches[state]));
+  }
+  const siteArt: SiteArtMeta = { buildings, caches };
+  if (raw.supplyDrop) siteArt.supplyDrop = stripSvgWrapper(await resolveImage(raw.supplyDrop));
+  return siteArt;
 }
 
 async function normalizeSpawnVisuals(raw: {
@@ -146,12 +172,17 @@ export async function normalizeThemeImages(raw: {
   regions: Array<{
     id: number;
     name: string;
-    tiles: { path: string; terrain1: string; terrain2: string; terrain3: string; terrain4: string };
+    tiles: RawTileImages;
     base: string;
     mapImage: string;
     mapLayout: RegionMapLayout;
   }>;
   spawns?: { closed: string; open: string; transition: string };
+  sites?: {
+    buildings: Record<"armory" | "magazine" | "ward" | "beacon", string>;
+    caches: Record<"sealed" | "unlocked" | "broken", string>;
+    supplyDrop?: string;
+  };
   maps?: ThemeMapsOverride;
 }): Promise<MapThemeData> {
   const normalizedTowers: Record<string, TowerVisualMeta> = {};
@@ -168,6 +199,8 @@ export async function normalizeThemeImages(raw: {
 
   const normalizedSpawns = raw.spawns ? await normalizeSpawnVisuals(raw.spawns) : undefined;
 
+  const normalizedSites = raw.sites ? await normalizeSiteArt(raw.sites) : undefined;
+
   const menuBackground = raw.menuBackground ? stripSvgWrapper(await resolveImage(raw.menuBackground)) : undefined;
 
   const result: {
@@ -178,6 +211,7 @@ export async function normalizeThemeImages(raw: {
     enemies: Record<string, EnemyVisualMeta>;
     regions: RegionVisualMeta[];
     spawns?: SpawnPointVisualMeta;
+    sites?: SiteArtMeta;
     maps?: MapsContent;
   } = {
     id: raw.id,
@@ -188,6 +222,9 @@ export async function normalizeThemeImages(raw: {
   };
   if (normalizedSpawns) {
     result.spawns = normalizedSpawns;
+  }
+  if (normalizedSites) {
+    result.sites = normalizedSites;
   }
   if (menuBackground) {
     result.menuBackground = menuBackground;

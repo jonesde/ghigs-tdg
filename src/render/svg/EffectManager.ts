@@ -69,6 +69,7 @@ export class EffectManager {
   private rangeCircleEl: SVGCircleElement | null = null;
   private baseRangeCirclePool: SVGCircleElement[] = [];
   private buildRangeCircleEl: SVGCircleElement | null = null;
+  private buildBaseRangeCircleEl: SVGCircleElement | null = null;
   private splashCircleEl: SVGCircleElement | null = null;
   private upgradeButtonEl: SVGGElement | null = null;
   private upgradeButtonBgEl: SVGRectElement | null = null;
@@ -124,7 +125,7 @@ export class EffectManager {
     layer.appendChild(this.buildPreviewSpriteEl);
 
     this.rangeCircleEl = document.createElementNS(SVG_NS, "circle");
-    this.rangeCircleEl.setAttribute("fill", "none");
+    this.rangeCircleEl.setAttribute("fill", "rgba(0,255,0,0.05)");
     this.rangeCircleEl.setAttribute("stroke", "rgba(255,255,255,0.4)");
     this.rangeCircleEl.setAttribute("stroke-width", "1.5");
     this.rangeCircleEl.style.visibility = "hidden";
@@ -140,12 +141,23 @@ export class EffectManager {
     }
 
     this.buildRangeCircleEl = document.createElementNS(SVG_NS, "circle");
-    this.buildRangeCircleEl.setAttribute("fill", "none");
+    this.buildRangeCircleEl.setAttribute("fill", "rgba(255,255,255,0.04)");
     this.buildRangeCircleEl.setAttribute("stroke", "rgba(0,255,0,0.6)");
     this.buildRangeCircleEl.setAttribute("stroke-width", "1.5");
     this.buildRangeCircleEl.setAttribute("stroke-dasharray", "4,3");
     this.buildRangeCircleEl.style.visibility = "hidden";
     layer.appendChild(this.buildRangeCircleEl);
+
+    this.buildBaseRangeCircleEl = document.createElementNS(SVG_NS, "circle");
+    this.buildBaseRangeCircleEl.setAttribute("fill", "none");
+    this.buildBaseRangeCircleEl.setAttribute("stroke", "var(--color-accent)");
+    this.buildBaseRangeCircleEl.setAttribute("stroke-opacity", "0.7");
+    this.buildBaseRangeCircleEl.setAttribute("stroke-width", "1.5");
+    // A tighter dash than the boosted circle's "4 3": at the smallest boost (0.25
+    // tiles) the two patterns would otherwise align and read as one ring.
+    this.buildBaseRangeCircleEl.setAttribute("stroke-dasharray", "2 4");
+    this.buildBaseRangeCircleEl.style.visibility = "hidden";
+    layer.appendChild(this.buildBaseRangeCircleEl);
 
     this.splashCircleEl = document.createElementNS(SVG_NS, "circle");
     this.splashCircleEl.setAttribute("fill", "none");
@@ -514,15 +526,26 @@ export class EffectManager {
         }
       }
 
+      const towerBase = TOWER_BASE[selectedTowerType];
+      const baseRangeTiles = towerBase?.range ?? 3.5;
+      const rangeTiles = buildRangeTiles != null ? buildRangeTiles : baseRangeTiles;
+
       if (this.buildRangeCircleEl) {
         this.buildRangeCircleEl.style.visibility = "visible";
         this.buildRangeCircleEl.setAttribute("transform", `translate(${centerX}, ${centerY})`);
-
-        const towerBase = TOWER_BASE[selectedTowerType];
-        const rangeTiles = buildRangeTiles != null ? buildRangeTiles : (towerBase?.range ?? 3.5);
         const rangePx = rangeTiles * TILE_SIZE;
         this.buildRangeCircleEl.setAttribute("r", String(rangePx));
         this.buildRangeCircleEl.setAttribute("stroke", buildValid ? "rgba(0,255,0,0.6)" : "rgba(255,0,0,0.6)");
+      }
+
+      if (this.buildBaseRangeCircleEl) {
+        if (rangeTiles > baseRangeTiles) {
+          this.buildBaseRangeCircleEl.style.visibility = "visible";
+          this.buildBaseRangeCircleEl.setAttribute("transform", `translate(${centerX}, ${centerY})`);
+          this.buildBaseRangeCircleEl.setAttribute("r", String(baseRangeTiles * TILE_SIZE));
+        } else {
+          this.buildBaseRangeCircleEl.style.visibility = "hidden";
+        }
       }
 
       const splashTiles = TOWER_BASE[selectedTowerType]?.splash ?? 0;
@@ -549,6 +572,9 @@ export class EffectManager {
       }
       if (this.buildRangeCircleEl) {
         this.buildRangeCircleEl.style.visibility = "hidden";
+      }
+      if (this.buildBaseRangeCircleEl) {
+        this.buildBaseRangeCircleEl.style.visibility = "hidden";
       }
       if (this.splashCircleEl) {
         this.splashCircleEl.style.visibility = "hidden";
@@ -744,6 +770,9 @@ export class EffectManager {
     this.baseRangeCirclePool = [];
     if (this.buildRangeCircleEl?.parentNode) {
       this.buildRangeCircleEl.parentNode.removeChild(this.buildRangeCircleEl);
+    }
+    if (this.buildBaseRangeCircleEl?.parentNode) {
+      this.buildBaseRangeCircleEl.parentNode.removeChild(this.buildBaseRangeCircleEl);
     }
     if (this.splashCircleEl?.parentNode) {
       this.splashCircleEl.parentNode.removeChild(this.splashCircleEl);

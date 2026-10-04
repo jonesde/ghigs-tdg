@@ -16,6 +16,10 @@ import { progressivePreviewFill } from "./progressivePreview.js";
 const gameStore = useGameStore();
 const themeStore = useMapThemeStore();
 
+// The offer cards paint with the live tiles of the active theme's region, so the
+// block preview reads the same ramp the stamped map will use.
+const regionVisual = computed(() => themeStore.getRegionVisual(gameStore.map?.regionId ?? 0));
+
 const catalog = computed(() => {
   const config = progressiveConfigFromMap(gameStore.map);
   if (!config) return null;
@@ -71,7 +75,7 @@ function previewCells(templateIndex: number): string {
   for (let localY = 0; localY < 5; localY++) {
     for (let localX = 0; localX < 5; localX++) {
       const tile = localTile(templates, block, localX, localY);
-      const fill = progressivePreviewFill(tile ?? { type: "terrain", height: 1 });
+      const fill = progressivePreviewFill(tile ?? { type: "terrain", height: 1 }, regionVisual.value);
       cells += `<rect x="${localX}" y="${localY}" width="1" height="1" fill="${fill}" />`;
     }
   }

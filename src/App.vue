@@ -99,10 +99,29 @@ html, body {
   animation: siteDropPulse 1.1s ease-in-out infinite;
 }
 
+@keyframes spawnPulse {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.spawn-marker {
+  animation: spawnPulse 2.4s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .site-drop-pulse {
     animation: none;
     stroke-opacity: 0.8;
+  }
+
+  .spawn-marker {
+    animation: none;
+    opacity: 0.9;
   }
 }
 </style>
