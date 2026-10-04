@@ -1,17 +1,12 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { clearBuildAndTowerForProgressive } from "@/composables/progressivePlacement.js";
-import { PROGRESSIVE_REROLL_GOLD_PER_WAVE } from "@/sim/Constants.js";
+import { progressiveRerollGoldPerWave } from "@/sim/Constants.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
-import {
-  generateProgressiveCatalog,
-  localTile,
-  type PlacedBlock,
-  progressiveConfigFromMap,
-} from "@/sim/grid/ProgressiveMap.js";
+import { generateProgressiveCatalog, progressiveConfigFromMap } from "@/sim/grid/ProgressiveMap.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
-import { progressivePreviewFill } from "./progressivePreview.js";
+import { progressiveCellRects } from "./progressivePreview.js";
 
 const gameStore = useGameStore();
 const themeStore = useMapThemeStore();
@@ -23,10 +18,9 @@ const catalog = computed(() => {
 });
 
 // Must match the engine's rerollProgressiveOffer, which reads the active
-// world's per-wave cost (theme override or default constant).
+// world's per-wave cost (theme override or the content-pack default).
 const rerollCost = computed(() => {
-  const perWave = themeStore.activeTheme?.maps?.progressive.rerollGoldPerWave ?? PROGRESSIVE_REROLL_GOLD_PER_WAVE;
-  return perWave * gameStore.currentWave;
+  return progressiveRerollGoldPerWave(themeStore.activeTheme?.maps) * gameStore.currentWave;
 });
 const rerollDisabled = computed(() => gameStore.gold < rerollCost.value);
 
@@ -55,27 +49,7 @@ function undoPlacement() {
 function previewCells(templateIndex: number): string {
   const templates = catalog.value;
   if (!templates) return "";
-  const block: PlacedBlock = {
-    kind: "catalog",
-    templateIndex,
-    rotation: gameStore.progressiveRotation,
-    blockX: 0,
-    blockY: 0,
-    fill: false,
-    entryEdges: [],
-    heightPattern: "slope",
-    flatHeight: 1,
-    peakCorner: 0,
-  };
-  let cells = "";
-  for (let localY = 0; localY < 5; localY++) {
-    for (let localX = 0; localX < 5; localX++) {
-      const tile = localTile(templates, block, localX, localY);
-      const fill = progressivePreviewFill(tile ?? { type: "terrain", height: 1 });
-      cells += `<rect x="${localX}" y="${localY}" width="1" height="1" fill="${fill}" />`;
-    }
-  }
-  return cells;
+  return progressiveCellRects(templates, templateIndex, gameStore.progressiveRotation, 0, 0, 1);
 }
 </script>
 

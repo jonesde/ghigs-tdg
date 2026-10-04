@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import EnemyChat from "@/components/EnemyChat.vue";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -25,6 +25,10 @@ describe("EnemyChat", () => {
     persistStore = usePersistStore();
     uiStore = useUiStore();
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    document.documentElement.style.removeProperty("--hud-height");
   });
 
   function activateLlm() {
@@ -61,6 +65,26 @@ describe("EnemyChat", () => {
     activateLlm();
     const wrapper = mount(EnemyChat, { global: { plugins: [pinia] } });
     expect(wrapper.find(".enemy-chat").exists()).toBe(true);
+  });
+
+  it("rests below the published HUD height rather than a fixed 40px bar", async () => {
+    activateLlm();
+    // GameHud publishes the measured bar height (124px when its rows wrap on a
+    // narrow viewport) on <html>; the panel must clear that, not the 40px
+    // default it falls back to before the publish lands.
+    document.documentElement.style.setProperty("--hud-height", "124px");
+    const wrapper = mount(EnemyChat, { global: { plugins: [pinia] } });
+    await wrapper.vm.$nextTick();
+    const panel = wrapper.get(".enemy-chat").element as HTMLElement;
+    expect(panel.style.top).toBe("140px");
+  });
+
+  it("falls back to below the 40px default bar when nothing is published", async () => {
+    activateLlm();
+    const wrapper = mount(EnemyChat, { global: { plugins: [pinia] } });
+    await wrapper.vm.$nextTick();
+    const panel = wrapper.get(".enemy-chat").element as HTMLElement;
+    expect(panel.style.top).toBe("56px");
   });
 
   it("send appends a player message and forwards to the relay", async () => {

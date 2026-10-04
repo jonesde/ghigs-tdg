@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { onUnmounted, ref } from "vue";
+import { ref } from "vue";
+import { usePanelDrag } from "@/composables/usePanelDrag.js";
+import { TIME_SCALES } from "@/sim/Constants.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -10,45 +12,15 @@ const persistStore = usePersistStore();
 const uiStore = useUiStore();
 
 const panelPos = ref({ x: 8, y: 48 });
+const panelRef = ref<HTMLElement | null>(null);
 
-let dragging = false;
-let dragStartX = 0;
-let dragStartY = 0;
-let panelStartX = 0;
-let panelStartY = 0;
-let currentOnMove: ((event: MouseEvent) => void) | null = null;
-let currentOnUp: (() => void) | null = null;
-
-function onHeaderMouseDown(event: MouseEvent) {
-  if (event.button !== 0) return;
-  dragging = true;
-  dragStartX = event.clientX;
-  dragStartY = event.clientY;
-  panelStartX = panelPos.value.x;
-  panelStartY = panelPos.value.y;
-
-  currentOnMove = (event: MouseEvent) => {
-    if (!dragging) return;
-    panelPos.value = { x: panelStartX + (event.clientX - dragStartX), y: panelStartY + (event.clientY - dragStartY) };
-  };
-  currentOnUp = () => {
-    dragging = false;
-    cleanupDragListeners();
-  };
-  document.addEventListener("mousemove", currentOnMove);
-  document.addEventListener("mouseup", currentOnUp);
-  event.preventDefault();
-}
-
-function cleanupDragListeners() {
-  if (currentOnMove) document.removeEventListener("mousemove", currentOnMove);
-  if (currentOnUp) document.removeEventListener("mouseup", currentOnUp);
-  currentOnMove = null;
-  currentOnUp = null;
-}
-
-onUnmounted(() => {
-  cleanupDragListeners();
+const { onHeaderMouseDown, onHeaderTouchStart } = usePanelDrag({
+  read: () => panelPos.value,
+  write: (position) => {
+    panelPos.value = position;
+  },
+  panelRef,
+  clampToViewport: true,
 });
 
 function dbgGold() {
@@ -81,18 +53,23 @@ function dbgUnlockAll() {
 }
 
 function dbgSpeed() {
-  // Cycle within the worker-accepted setTimeScale whitelist (1, 2, 4, 8); anything
-  // else is rejected by intake validation and would leave the speed unchanged.
-  const speeds = [1, 2, 4, 8];
-  const currentIndex = speeds.indexOf(gameStore.timeScale);
-  const nextSpeed = speeds[(currentIndex + 1 + speeds.length) % speeds.length]!;
+  // Cycle within the worker-accepted setTimeScale whitelist. Anything outside
+  // TIME_SCALES is rejected by intake validation and would leave the speed
+  // unchanged, so the same list is the only legal source for the next value.
+  const currentIndex = TIME_SCALES.indexOf(gameStore.timeScale as (typeof TIME_SCALES)[number]);
+  const nextSpeed = TIME_SCALES[(currentIndex + 1 + TIME_SCALES.length) % TIME_SCALES.length]!;
   dispatchCommand({ commandId: 0, type: "action:debug", kind: "setTimeScale", amount: nextSpeed });
 }
 </script>
 
 <template>
-  <div class="debug-panel" :class="{ hidden: !uiStore.debugPanelVisible }" :style="{ top: panelPos.y + 'px', left: panelPos.x + 'px' }">
-    <div class="debug-header" @mousedown="onHeaderMouseDown">
+  <div
+    ref="panelRef"
+    class="debug-panel"
+    :class="{ hidden: !uiStore.debugPanelVisible }"
+    :style="{ top: panelPos.y + 'px', left: panelPos.x + 'px' }"
+  >
+    <div class="debug-header" @mousedown="onHeaderMouseDown" @touchstart="onHeaderTouchStart">
       <span class="header-icon">⚙️</span>
       Debug
       <button class="debug-close" @click="uiStore.closeDebugPanel()" aria-label="Close debug panel">✕</button>
@@ -104,7 +81,7 @@ function dbgSpeed() {
     <button @click="dbgKillAll">💀 Kill All</button>
     <button @click="dbgWave">🎯 Set Wave 50</button>
     <button @click="dbgUnlockAll">🔓 Unlock All Maps</button>
-    <button @click="dbgSpeed">⚡ Toggle 16x Speed</button>
+    <button @click="dbgSpeed">⚡ Cycle Speed</button>
   </div>
 </template>
 

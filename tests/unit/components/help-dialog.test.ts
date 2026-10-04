@@ -99,6 +99,80 @@ describe("HelpDialog", () => {
       expect(document.querySelector("#help-enemy-wave")).toBeNull();
     });
 
+    it("wires each tab to its panel with the WAI-ARIA tabs pattern", () => {
+      mountHelpDialog();
+      const tablist = document.querySelector(".help-tabs");
+      expect(tablist.getAttribute("role")).toBe("tablist");
+      const tabs = Array.from(document.querySelectorAll(".help-tab"));
+      expect(tabs.length).toBe(3);
+      for (const tab of tabs) {
+        expect(tab.getAttribute("role")).toBe("tab");
+        expect(tab.getAttribute("aria-selected")).toMatch(/true|false/);
+      }
+      // Only the selected tab's panel is rendered, so only that tab may point at
+      // one; an aria-controls naming a missing id is invalid.
+      const active = document.querySelector(".help-tab[aria-selected='true']");
+      const controls = active.getAttribute("aria-controls");
+      expect(controls).not.toBeNull();
+      const panel = document.getElementById(controls);
+      expect(panel).not.toBeNull();
+      expect(panel.getAttribute("role")).toBe("tabpanel");
+      expect(panel.getAttribute("aria-labelledby")).toBe(active.id);
+      for (const tab of tabs.filter((candidate) => candidate !== active)) {
+        expect(tab.getAttribute("aria-controls")).toBeNull();
+      }
+    });
+
+    it("keeps one tab stop in the strip and moves it with the arrow keys", async () => {
+      mountHelpDialog();
+      const focusable = () =>
+        Array.from(document.querySelectorAll(".help-tab"))
+          .map((tab) => tab.getAttribute("tabindex"))
+          .filter((value) => value === "0");
+      expect(focusable().length).toBe(1);
+
+      const tablist = document.querySelector(".help-tabs");
+      tablist.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+      await nextTick();
+      expect(document.querySelector(".help-tab.active").textContent.trim()).toBe("Towers");
+      // The selected tab is the strip's only tab stop, so focus has to follow
+      // the selection or the keyboard is stranded on a tabindex="-1" button.
+      expect(document.activeElement.id).toBe("help-tab-towers");
+
+      tablist.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+      await nextTick();
+      expect(document.querySelector(".help-tab.active").textContent.trim()).toBe("How to Play");
+      expect(document.activeElement.id).toBe("help-tab-howto");
+    });
+
+    it("wraps around the strip and honors Home/End", async () => {
+      mountHelpDialog();
+      const tablist = document.querySelector(".help-tabs");
+
+      tablist.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+      await nextTick();
+      expect(document.querySelector(".help-tab.active").textContent.trim()).toBe("Enemies");
+      expect(document.activeElement.id).toBe("help-tab-enemies");
+
+      tablist.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+      await nextTick();
+      expect(document.querySelector(".help-tab.active").textContent.trim()).toBe("How to Play");
+      expect(document.activeElement.id).toBe("help-tab-howto");
+
+      tablist.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
+      await nextTick();
+      expect(document.querySelector(".help-tab.active").textContent.trim()).toBe("Enemies");
+      expect(document.activeElement.id).toBe("help-tab-enemies");
+    });
+
+    it("ignores keys that are not tab navigation", async () => {
+      mountHelpDialog();
+      const tablist = document.querySelector(".help-tabs");
+      tablist.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      await nextTick();
+      expect(document.querySelector(".help-tab.active").textContent.trim()).toBe("How to Play");
+    });
+
     it("lists one row per tower type at level 1", async () => {
       mountHelpDialog();
       clickTab(1);

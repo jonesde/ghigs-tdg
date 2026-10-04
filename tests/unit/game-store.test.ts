@@ -189,23 +189,6 @@ describe("GameStore", () => {
     });
   });
 
-  describe("cycleSpeed", () => {
-    it("cycles through [1, 2, 4, 8]", () => {
-      store.timeScale = 1;
-      expect(store.cycleSpeed()).toBe(2);
-      expect(store.timeScale).toBe(2);
-
-      expect(store.cycleSpeed()).toBe(4);
-      expect(store.timeScale).toBe(4);
-
-      expect(store.cycleSpeed()).toBe(8);
-      expect(store.timeScale).toBe(8);
-
-      expect(store.cycleSpeed()).toBe(1);
-      expect(store.timeScale).toBe(1);
-    });
-  });
-
   describe("selectTower / selectBuildType / setHoverTile", () => {
     it("selectTower sets selectedTower", () => {
       const tower = { id: 1 };

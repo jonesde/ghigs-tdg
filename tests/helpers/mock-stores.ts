@@ -178,12 +178,6 @@ export function createTestStores(): { game: GameStore; persist: PersistStore; ui
       game.selectedTowerType = null;
     },
   );
-  (game as unknown as Record<string, unknown>).cycleSpeed = vi.fn((): number => {
-    const speeds = [1, 2, 4, 8] as const;
-    const idx = speeds.indexOf(game.timeScale as (typeof speeds)[number]);
-    game.timeScale = speeds[(idx + 1) % speeds.length];
-    return game.timeScale;
-  });
   (game as unknown as Record<string, unknown>).togglePause = vi.fn(() => {
     if (game.state === "playing") game.state = "paused";
     else if (game.state === "paused") game.state = "playing";

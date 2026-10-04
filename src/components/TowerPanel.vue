@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onUnmounted } from "vue";
+import { computed, ref } from "vue";
+import { usePanelDrag } from "@/composables/usePanelDrag.js";
 import { MILESTONE_THRESHOLD, UPGRADE_COST_REDUCTION_PCT } from "@/sim/Constants.js";
 import {
   CANCEL_BUILD_WINDOW_MS,
@@ -66,47 +67,15 @@ const specName = computed(() => {
   return info[selectedTower.variant]?.name || null;
 });
 
-let dragging = false;
-let dragStartX = 0;
-let dragStartY = 0;
-let panelStartX = 0;
-let panelStartY = 0;
-let currentOnMove: ((event: MouseEvent) => void) | null = null;
-let currentOnUp: (() => void) | null = null;
+const panelRef = ref<HTMLElement | null>(null);
 
-function onHeaderMouseDown(event: MouseEvent) {
-  if (event.button !== 0) return;
-  dragging = true;
-  dragStartX = event.clientX;
-  dragStartY = event.clientY;
-  panelStartX = gameStore.towerPanelPos.x;
-  panelStartY = gameStore.towerPanelPos.y;
-
-  currentOnMove = (event: MouseEvent) => {
-    if (!dragging) return;
-    gameStore.towerPanelPos = {
-      x: panelStartX + (event.clientX - dragStartX),
-      y: panelStartY + (event.clientY - dragStartY),
-    };
-  };
-  currentOnUp = () => {
-    dragging = false;
-    cleanupDragListeners();
-  };
-  document.addEventListener("mousemove", currentOnMove);
-  document.addEventListener("mouseup", currentOnUp);
-  event.preventDefault();
-}
-
-function cleanupDragListeners() {
-  if (currentOnMove) document.removeEventListener("mousemove", currentOnMove);
-  if (currentOnUp) document.removeEventListener("mouseup", currentOnUp);
-  currentOnMove = null;
-  currentOnUp = null;
-}
-
-onUnmounted(() => {
-  cleanupDragListeners();
+const { onHeaderMouseDown, onHeaderTouchStart } = usePanelDrag({
+  read: () => gameStore.towerPanelPos,
+  write: (position) => {
+    gameStore.towerPanelPos = position;
+  },
+  panelRef,
+  clampToViewport: true,
 });
 
 const milestoneTier = computed(() => persistStore.generalAddons?.damageMilestoneBonus);
@@ -226,8 +195,13 @@ function handleFixedAim(dir: string | null) {
 </script>
 
 <template>
-  <div v-if="tower" class="tower-panel" :style="{ top: gameStore.towerPanelPos.y + 'px', left: gameStore.towerPanelPos.x + 'px' }">
-    <div class="panel-header" :style="{ color: tower.color }" @mousedown="onHeaderMouseDown">
+  <div
+    v-if="tower"
+    ref="panelRef"
+    class="tower-panel detail-panel"
+    :style="{ top: gameStore.towerPanelPos.y + 'px', left: gameStore.towerPanelPos.x + 'px' }"
+  >
+    <div class="panel-header" :style="{ color: tower.color }" @mousedown="onHeaderMouseDown" @touchstart="onHeaderTouchStart">
       {{ getTowerName(tower.type) }} Lv {{ tower.level }}
       <span v-if="specName" class="spec-badge">{{ specName }}</span>
     </div>
@@ -311,27 +285,10 @@ function handleFixedAim(dir: string | null) {
 </template>
 
 <style scoped>
+/* Shared panel chrome (position, rows, selects, buttons) is in
+   detailPanel.css. Only what differs from BasePanel belongs here. */
 .tower-panel {
-  position: absolute;
   width: 220px;
-  padding: 10px;
-  background: var(--color-panel);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  z-index: 11;
-  font-size: var(--font-sm);
-}
-
-.panel-header {
-  font-weight: bold;
-  font-size: var(--font-md);
-  margin-bottom: 8px;
-  cursor: grab;
-  user-select: none;
-}
-
-.panel-header:active {
-  cursor: grabbing;
 }
 
 .spec-badge {
@@ -341,20 +298,7 @@ function handleFixedAim(dir: string | null) {
   margin-left: 6px;
 }
 
-.stat-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 2px 0;
-  color: var(--color-text-dim);
-}
-
-.stat-row span:last-child {
-  color: var(--color-text);
-  font-weight: 500;
-}
-
-.ghost-row {
+.tower-panel .ghost-row {
   justify-content: center;
 }
 
@@ -374,17 +318,6 @@ function handleFixedAim(dir: string | null) {
   border-radius: 4px;
 }
 
-.target-select {
-  width: 100%;
-  padding: 4px;
-  margin: 4px 0;
-  background: var(--color-surface);
-  border: 1px solid var(--color-line-strong);
-  color: var(--color-text);
-  border-radius: 4px;
-  font-size: var(--font-sm);
-}
-
 .variant-section {
   margin-top: 8px;
 }
@@ -394,48 +327,14 @@ function handleFixedAim(dir: string | null) {
   margin-bottom: 4px;
 }
 
-.action-btn {
-  width: 100%;
-  margin-top: 6px;
-  padding: 6px 8px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-line-strong);
-  color: var(--color-text);
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: var(--font-sm);
-  transition: background 0.15s;
-}
-
-.action-btn:hover:not(:disabled) {
-  background: var(--color-surface-hover);
-}
-
-.action-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.sell-btn {
+.tower-panel .sell-btn {
   color: var(--color-danger);
   border-color: var(--color-danger-border);
 }
 
-.cancel-btn {
+.tower-panel .cancel-btn {
   color: var(--color-success);
   border-color: var(--color-success-border);
-}
-
-.downgrade-btn {
-  color: var(--color-accent);
-  border-color: var(--color-accent-border);
-}
-
-.btn-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
 }
 
 kbd {

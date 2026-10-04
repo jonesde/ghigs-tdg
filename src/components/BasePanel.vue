@@ -1,11 +1,24 @@
 <script setup lang="ts">
-import { computed, onUnmounted } from "vue";
+import { computed, ref } from "vue";
+import { usePanelDrag } from "@/composables/usePanelDrag.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
+import { BASE_SELECTION_ID } from "@/sim/towers/BaseDefense.js";
 import { useGameStore } from "@/stores/game.js";
 
 const gameStore = useGameStore();
 
-const defense = computed(() => (gameStore.selectedTowerId === "base" ? gameStore.baseDefense : null));
+const panelRef = ref<HTMLElement | null>(null);
+
+const { onHeaderMouseDown, onHeaderTouchStart } = usePanelDrag({
+  read: () => gameStore.basePanelPos,
+  write: (position) => {
+    gameStore.basePanelPos = position;
+  },
+  panelRef,
+  clampToViewport: true,
+});
+
+const defense = computed(() => (gameStore.selectedTowerId === BASE_SELECTION_ID ? gameStore.baseDefense : null));
 
 function fireRateLabel(fireRate: number): string {
   if (!(fireRate > 0)) return "—";
@@ -30,58 +43,16 @@ const canAffordUpgrade = computed(() => {
   if (!panel?.canUpgrade) return false;
   return gameStore.gold >= panel.upgradeCost;
 });
-
-let dragging = false;
-let dragStartX = 0;
-let dragStartY = 0;
-let panelStartX = 0;
-let panelStartY = 0;
-let currentOnMove: ((event: MouseEvent) => void) | null = null;
-let currentOnUp: (() => void) | null = null;
-
-function onHeaderMouseDown(event: MouseEvent) {
-  if (event.button !== 0) return;
-  dragging = true;
-  dragStartX = event.clientX;
-  dragStartY = event.clientY;
-  panelStartX = gameStore.towerPanelPos.x;
-  panelStartY = gameStore.towerPanelPos.y;
-
-  currentOnMove = (moveEvent: MouseEvent) => {
-    if (!dragging) return;
-    gameStore.towerPanelPos = {
-      x: panelStartX + (moveEvent.clientX - dragStartX),
-      y: panelStartY + (moveEvent.clientY - dragStartY),
-    };
-  };
-  currentOnUp = () => {
-    dragging = false;
-    cleanupDragListeners();
-  };
-  document.addEventListener("mousemove", currentOnMove);
-  document.addEventListener("mouseup", currentOnUp);
-  event.preventDefault();
-}
-
-function cleanupDragListeners() {
-  if (currentOnMove) document.removeEventListener("mousemove", currentOnMove);
-  if (currentOnUp) document.removeEventListener("mouseup", currentOnUp);
-  currentOnMove = null;
-  currentOnUp = null;
-}
-
-onUnmounted(() => {
-  cleanupDragListeners();
-});
 </script>
 
 <template>
   <div
     v-if="defense"
-    class="tower-panel"
-    :style="{ top: gameStore.towerPanelPos.y + 'px', left: gameStore.towerPanelPos.x + 'px' }"
+    ref="panelRef"
+    class="base-panel detail-panel"
+    :style="{ top: gameStore.basePanelPos.y + 'px', left: gameStore.basePanelPos.x + 'px' }"
   >
-    <div class="panel-header" @mousedown="onHeaderMouseDown">Base Lv {{ defense.level }}</div>
+    <div class="panel-header" @mousedown="onHeaderMouseDown" @touchstart="onHeaderTouchStart">Base Lv {{ defense.level }}</div>
 
     <div class="stat-row">
       <span>Health</span>
@@ -135,91 +106,22 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.tower-panel {
-  position: absolute;
+/* Shared panel chrome (position, rows, selects, buttons) is in
+   detailPanel.css. Only what differs from TowerPanel belongs here. */
+.base-panel {
   width: 240px;
-  padding: 10px;
-  background: var(--color-panel);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  z-index: 11;
-  font-size: var(--font-sm);
 }
 
-.panel-header {
-  font-weight: bold;
-  font-size: var(--font-md);
-  margin-bottom: 8px;
-  cursor: grab;
-  user-select: none;
+/* Identity class on the override: detailPanel.css's shared rule is also
+   (0,2,0), so a bare scoped .panel-header would tie it and lose to chunk
+   load order whenever the shared rule grows a conflicting property. */
+.base-panel .panel-header {
   color: var(--color-accent);
-}
-
-.panel-header:active {
-  cursor: grabbing;
 }
 
 .gun-label {
   margin-top: 6px;
   font-weight: bold;
   color: var(--color-text);
-}
-
-.stat-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 2px 0;
-  color: var(--color-text-dim);
-}
-
-.stat-row span:last-child {
-  color: var(--color-text);
-  font-weight: 500;
-}
-
-.target-select {
-  width: 100%;
-  padding: 4px;
-  margin: 4px 0;
-  background: var(--color-surface);
-  border: 1px solid var(--color-line-strong);
-  color: var(--color-text);
-  border-radius: 4px;
-  font-size: var(--font-sm);
-}
-
-.action-btn {
-  width: 100%;
-  margin-top: 6px;
-  padding: 6px 8px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-line-strong);
-  color: var(--color-text);
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: var(--font-sm);
-}
-
-.action-btn:hover:not(:disabled) {
-  background: var(--color-surface-hover);
-}
-
-.action-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.downgrade-btn {
-  color: var(--color-accent);
-  border-color: var(--color-accent-border);
-}
-
-.btn-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  gap: 8px;
 }
 </style>

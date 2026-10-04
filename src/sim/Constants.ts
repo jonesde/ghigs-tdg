@@ -1,5 +1,5 @@
 import { getGameContent } from "@/content/gameContent.js";
-import type { MapLevelConfigData, MapStyleData } from "@/content/schemas/maps.js";
+import type { MapLevelConfigData, MapStyleData, MapsContent } from "@/content/schemas/maps.js";
 
 // ===== Feature Flags / Engine Wiring (not content) =====
 
@@ -119,6 +119,10 @@ export const MAX_PROJECTILE_AGE = 12;
 export const PROJECTILE_RETARGET_CORRIDOR_TILE_FRACTION = 0.35;
 export const MAX_ACCUM = 0.1;
 export const MAX_STEPS_PER_FRAME = 12;
+// The only time scales the game will accept, in cycle order. The engine cycles
+// through it, validateCommand whitelists it for the debug setTimeScale command,
+// and the UI reads it to render the speed control, so it lives in one place.
+export const TIME_SCALES = [1, 2, 4, 8] as const;
 
 // ===== Game flow / economy (from content) =====
 
@@ -162,6 +166,13 @@ export const TOTAL_MAPS = MAP_LEVELS.length;
 export const PROGRESSIVE_BLOCK_SIZE = maps.progressive.blockSize;
 export const PROGRESSIVE_PLACEMENT_INTERVAL = maps.progressive.placementInterval;
 export const PROGRESSIVE_REROLL_GOLD_PER_WAVE = maps.progressive.rerollGoldPerWave;
+// The active world's re-roll price, falling back to the content-pack default when
+// the theme carries no maps override. The worker resolves this from its
+// ThemeBundle and the main thread from mapThemeStore.activeTheme, so both must
+// land on the same number or the button's cost disagrees with the charge.
+export function progressiveRerollGoldPerWave(worldMaps?: MapsContent | null): number {
+  return worldMaps?.progressive.rerollGoldPerWave ?? PROGRESSIVE_REROLL_GOLD_PER_WAVE;
+}
 export const PROGRESSIVE_VARIANTS = maps.progressive.variants;
 export const PROGRESSIVE_MAP_INDEX_BASE = TOTAL_MAPS;
 export const PROGRESSIVE_MAP_COUNT = PROGRESSIVE_VARIANTS.length;
@@ -189,11 +200,6 @@ export const BASE_GOLD_COST = economy.baseGoldCost;
 export const BASE_LEVEL_HEALTH_MULT = economy.baseLevelHealthMult;
 export const MILESTONE_BONUS_PCT = economy.milestoneBonusPct;
 export const MILESTONE_THRESHOLD = economy.milestoneThreshold;
-
-// ===== UI Layout (not content) =====
-
-export const HEADER_HEIGHT = 20;
-export const FOOTER_HEIGHT = 64;
 
 // ===== Wave Graph (not content) =====
 

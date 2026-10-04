@@ -1,6 +1,5 @@
 import { defineStore } from "pinia";
 import { BUILTIN_STUBBS, BUILTIN_STUBBY, setEnemyCommander as startEnemyCommander } from "@/commanders/index.js";
-import { GameState } from "@/sim/Constants.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { useGameStore } from "./game";
 
@@ -18,6 +17,7 @@ export interface UiStoreLike {
   showMinimap: boolean;
   debugPanelVisible: boolean;
   confirmDialog: ConfirmDialogState | null;
+  anyPauseOverlayOpen: boolean;
   closeAllDialogs: () => void;
   executeConfirm: () => void;
   openPauseMenu: () => void;
@@ -70,9 +70,7 @@ interface UiStateShape {
   enemyCommander: string | "none";
   chatLog: ChatLogEntry[];
   llmTraceLog: LlmTraceEntry[];
-  wasPlayingWhenPauseOpened: boolean;
-  wasPlayingWhenSkillTreeOpened: boolean;
-  wasPlayingWhenHelpOpened: boolean;
+  overlayPausedSim: boolean;
 }
 
 function defaultUiState(): UiStateShape {
@@ -89,9 +87,7 @@ function defaultUiState(): UiStateShape {
     enemyCommander: "none",
     chatLog: [],
     llmTraceLog: [],
-    wasPlayingWhenPauseOpened: false,
-    wasPlayingWhenSkillTreeOpened: false,
-    wasPlayingWhenHelpOpened: false,
+    overlayPausedSim: false,
   };
 }
 
@@ -100,6 +96,8 @@ export const useUiStore = defineStore("ui", {
 
   getters: {
     hasActiveDialog: (state) => !!state.confirmDialog,
+    anyPauseOverlayOpen: (state): boolean =>
+      state.showPauseMenu || state.showSkillTree || state.showStatsPanel || state.showHelpDialog,
     activeCommanderIsLlm: (state): boolean => {
       const commanderId = state.enemyCommander;
       return commanderId !== "none" && commanderId !== BUILTIN_STUBBY && commanderId !== BUILTIN_STUBBS;
@@ -140,47 +138,72 @@ export const useUiStore = defineStore("ui", {
       this.confirmDialog = null;
     },
 
-    openPauseMenu() {
-      const gameStore = useGameStore();
-      this.wasPlayingWhenPauseOpened = gameStore.isPlaying;
-      if (gameStore.isPlaying) {
+    // Single owner for the pause an overlay takes: the first overlay that opens
+    // while the sim is playing sets overlayPausedSim and dispatches the pause;
+    // stacked overlays neither set it again nor clear it. Resume authority is
+    // this flag, never gameStore.state, so a close resumes exactly what the
+    // first open stopped. Cross-store impact: both actions dispatch through the
+    // command bus into the worker, which flips the sim's paused bit.
+    beginOverlayPause() {
+      // The flag guard matters: postMessage is async, so gameStore still reads
+      // PLAYING for a frame or two after the first pause dispatch. Without it a
+      // second overlay opening in that window would toggle the pause back off.
+      if (this.overlayPausedSim) return;
+      if (useGameStore().isPlaying) {
+        this.overlayPausedSim = true;
         dispatchCommand({ commandId: 0, type: "action:togglePause" });
       }
+    },
+
+    endOverlayPause() {
+      if (this.overlayPausedSim && !this.anyPauseOverlayOpen) {
+        this.overlayPausedSim = false;
+        dispatchCommand({ commandId: 0, type: "action:togglePause" });
+      }
+    },
+
+    openPauseMenu() {
+      this.beginOverlayPause();
       this.showPauseMenu = true;
     },
 
     closePauseMenu() {
-      if (this.wasPlayingWhenPauseOpened) {
-        dispatchCommand({ commandId: 0, type: "action:togglePause" });
-      }
       this.showPauseMenu = false;
-      this.wasPlayingWhenPauseOpened = false;
+      this.endOverlayPause();
     },
 
     openSkillTreeFromGame() {
-      const gameStore = useGameStore();
-      this.wasPlayingWhenSkillTreeOpened = this.wasPlayingWhenPauseOpened || gameStore.isPlaying;
-      if (gameStore.isPlaying) {
-        dispatchCommand({ commandId: 0, type: "action:togglePause" });
-      }
-      this.showPauseMenu = false;
+      // Both flags are written before beginOverlayPause runs: showSkillTree must
+      // already be true so endOverlayPause cannot see a gap where no overlay is
+      // open, and showPauseMenu must drop without routing through
+      // closePauseMenu (which would end the pause this call is inheriting).
       this.showSkillTree = true;
+      this.showPauseMenu = false;
+      this.beginOverlayPause();
     },
 
     closeSkillTree() {
-      if (this.wasPlayingWhenSkillTreeOpened) {
-        dispatchCommand({ commandId: 0, type: "action:togglePause" });
-      }
       this.showSkillTree = false;
-      this.wasPlayingWhenSkillTreeOpened = false;
+      this.endOverlayPause();
     },
 
+    // The stats panel is a full-screen modal, so it pauses like the pause menu,
+    // skill tree, and help dialog do. beginOverlayPause makes closeStatsPanel
+    // resume only what opening the first of those overlays actually stopped.
     toggleStatsPanel() {
-      this.showStatsPanel = !this.showStatsPanel;
+      if (this.showStatsPanel) {
+        this.closeStatsPanel();
+        return;
+      }
+      this.beginOverlayPause();
+      this.showStatsPanel = true;
     },
 
+    // Same shape as closePauseMenu / closeSkillTree: clear the flag first, then
+    // let the single owner resume only when no other pause overlay is open.
     closeStatsPanel() {
       this.showStatsPanel = false;
+      this.endOverlayPause();
     },
 
     toggleHelpDialog() {
@@ -188,11 +211,7 @@ export const useUiStore = defineStore("ui", {
         this.closeHelpDialog();
         return;
       }
-      const gameStore = useGameStore();
-      if (gameStore.isPlaying) {
-        this.wasPlayingWhenHelpOpened = true;
-        dispatchCommand({ commandId: 0, type: "action:togglePause" });
-      }
+      this.beginOverlayPause();
       this.showHelpDialog = true;
     },
 
@@ -241,16 +260,11 @@ export const useUiStore = defineStore("ui", {
     },
 
     closeHelpDialog() {
-      const gameStore = useGameStore();
-      if (this.wasPlayingWhenHelpOpened && gameStore.state === GameState.PAUSED) {
-        dispatchCommand({ commandId: 0, type: "action:togglePause" });
-      }
       this.showHelpDialog = false;
-      this.wasPlayingWhenHelpOpened = false;
+      this.endOverlayPause();
     },
 
     closeAllDialogs() {
-      const _gameStore = useGameStore();
       if (this.showPauseMenu) this.closePauseMenu();
       if (this.showSkillTree) this.closeSkillTree();
       if (this.showStatsPanel) this.closeStatsPanel();

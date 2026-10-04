@@ -109,7 +109,7 @@ import {
   MILESTONE_GEMS,
   MILESTONE_WAVES,
   PROGRESSIVE_PLACEMENT_INTERVAL,
-  PROGRESSIVE_REROLL_GOLD_PER_WAVE,
+  progressiveRerollGoldPerWave,
   SELL_DISCOUNT_PCT,
   SELL_VALUE_RATIO,
   SLOW_HEALING_PER_ROUND,
@@ -1772,8 +1772,7 @@ export class GameEngine {
     const catalog = this.progressiveCatalog;
     const rng = this.progressiveRng;
     if (!board || !catalog || !rng) return false;
-    const rerollGoldPerWave = this.theme?.maps?.progressive.rerollGoldPerWave ?? PROGRESSIVE_REROLL_GOLD_PER_WAVE;
-    const cost = rerollGoldPerWave * this.runState.currentWave;
+    const cost = progressiveRerollGoldPerWave(this.theme?.maps) * this.runState.currentWave;
     if (this.runState.gold < cost) {
       this.host.notifyUi({ type: "showNotification", message: "Not enough gold to re-roll." });
       return false;

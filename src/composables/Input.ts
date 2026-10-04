@@ -48,19 +48,15 @@ function tileCenter(gameStore: GameStoreLike, tileX: number, tileY: number): { x
   return { x: originX + tileX * tileSize + tileSize / 2, y: originY + tileY * tileSize + tileSize / 2 };
 }
 
-function overlayBlocksCamera(uiStore: UiStoreLike): boolean {
-  return (
-    uiStore.showPauseMenu ||
-    uiStore.showSkillTree ||
-    uiStore.showStatsPanel ||
-    uiStore.showHelpDialog ||
-    uiStore.debugPanelVisible ||
-    !!uiStore.confirmDialog
-  );
+// True when a modal overlay owns the screen: the pause overlays (the uiStore
+// getter is their single definition) plus the debug panel and the confirm
+// dialog, which do not pause but still take input away from the game surface.
+function overlayBlocksGameInput(uiStore: UiStoreLike): boolean {
+  return uiStore.anyPauseOverlayOpen || uiStore.debugPanelVisible || !!uiStore.confirmDialog;
 }
 
 function applyCameraFollow(gameStore: GameStoreLike, uiStore: UiStoreLike, reveal: CameraReveal | null): void {
-  if (!reveal || overlayBlocksCamera(uiStore)) return;
+  if (!reveal || overlayBlocksGameInput(uiStore)) return;
   gameStore.revealCameraPoint(reveal.worldX, reveal.worldY);
 }
 
@@ -127,7 +123,7 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
   // Returns true when it acted, so the caller skips the bare-arrow behavior.
   function panCameraByArrow(event: KeyboardEvent): boolean {
     if (!event.ctrlKey) return false;
-    if (overlayBlocksCamera(uiStore)) return false;
+    if (overlayBlocksGameInput(uiStore)) return false;
     if (!canActNow(event.key)) return false;
     const fraction = ARROW_PAN_FRACTION;
     if (event.key === "ArrowRight") gameStore.panCameraByFraction(fraction, 0);
@@ -147,7 +143,7 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
 
     // The picker owns 1/2/3, swallows the other build digits, and keeps Space from
     // unpausing. Escape dismisses it. An open dialog still handles Escape first.
-    if (gs.bonusPicker && !overlayBlocksCamera(uiStore)) {
+    if (gs.bonusPicker && !overlayBlocksGameInput(uiStore)) {
       if (event.key === "Escape" || event.key === "x") {
         event.preventDefault();
         dispatch({ commandId: nextInputCommandId++, type: "action:dismissBonus" });
@@ -198,13 +194,8 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
           uiStore.executeConfirm();
           return;
         }
-        if (
-          uiStore.showPauseMenu ||
-          uiStore.showSkillTree ||
-          uiStore.showStatsPanel ||
-          uiStore.showHelpDialog ||
-          uiStore.debugPanelVisible
-        ) {
+        // confirmDialog is consumed above, so this is the modal-overlay check.
+        if (overlayBlocksGameInput(uiStore)) {
           return;
         }
         const templateIndex = gs.progressiveOffer?.[gs.progressiveSelectedOffer ?? 0];
@@ -259,7 +250,7 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
 
     switch (event.key) {
       case " ":
-        if (uiStore.showPauseMenu) {
+        if (uiStore.anyPauseOverlayOpen) {
           uiStore.closeAllDialogs();
         } else {
           dispatch({ commandId: nextInputCommandId++, type: "action:togglePause" });
@@ -268,14 +259,7 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         break;
       case "Escape":
       case "x":
-        if (
-          uiStore.showPauseMenu ||
-          uiStore.showSkillTree ||
-          uiStore.showStatsPanel ||
-          uiStore.showHelpDialog ||
-          uiStore.debugPanelVisible ||
-          uiStore.confirmDialog
-        ) {
+        if (overlayBlocksGameInput(uiStore)) {
           uiStore.closeAllDialogs();
         } else if (gs.selectedTowerType) {
           dispatch({ commandId: nextInputCommandId++, type: "action:cancelBuildMode" });
@@ -289,11 +273,12 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         if (gs.selectedTowerType) {
           handleTabCycle(gs, event.shiftKey);
         } else {
+          // Only dispatch. gameStore.timeScale is a mirror of the worker's
+          // authoritative value, so writing it here too would be a second
+          // writer the next snapshot diff can revert mid-press.
           if (event.shiftKey) {
-            gs.cycleSpeedReverse();
             dispatch({ commandId: nextInputCommandId++, type: "action:cycleSpeed", direction: -1 });
           } else {
-            gs.cycleSpeed();
             dispatch({ commandId: nextInputCommandId++, type: "action:cycleSpeed", direction: 1 });
           }
         }
@@ -338,7 +323,7 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         break;
       case "PageUp":
       case "PageDown": {
-        if (overlayBlocksCamera(uiStore)) break;
+        if (overlayBlocksGameInput(uiStore)) break;
         const focus = keyboardZoomFocus(gs);
         const magnification = event.key === "PageUp" ? ZOOM_STEP : 1 / ZOOM_STEP;
         gs.zoomCamera(magnification, focus?.x ?? null, focus?.y ?? null);
@@ -367,7 +352,6 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         break;
       case "a":
         if (canActNow(event.key)) {
-          gs.cycleSpeedReverse();
           dispatch({ commandId: nextInputCommandId++, type: "action:cycleSpeed", direction: -1 });
         }
         break;
@@ -384,7 +368,6 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         break;
       case "d":
         if (canActNow(event.key)) {
-          gs.cycleSpeed();
           dispatch({ commandId: nextInputCommandId++, type: "action:cycleSpeed", direction: 1 });
         }
         break;

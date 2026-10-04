@@ -69,7 +69,12 @@ router.beforeEach(async (to: RouteLocationNormalized, from: RouteLocationNormali
 
 export default router;
 
-export async function awaitDisposeWorker(worker: Worker): Promise<void> {
+// Posts dispose, waits for the worker's "disposed" ack (with a short safety
+// timeout), terminates it, then flushes persist state. Module-private: the
+// router guard is the only caller. SvgGameRoot.onUnmounted is the fallback
+// owner for unmounts this guard does not see; it skips dispose when this
+// function has already cleared gameStore.worker.
+async function awaitDisposeWorker(worker: Worker): Promise<void> {
   await new Promise<void>((resolve) => {
     const onDisposed = (event: MessageEvent): void => {
       const data = event.data as WorkerToMainMessage | null;

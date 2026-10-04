@@ -1,0 +1,96 @@
+/*
+ * Shared chrome for the two floating detail panels on /game: TowerPanel (a
+ * selected tower) and BasePanel (the base's own defenses). Both render the
+ * same header / stat-row / target-select / action-button structure, so these
+ * rules live here instead of being copied into two scoped blocks.
+ *
+ * Every rule is namespaced under .detail-panel, the identity class both
+ * panels carry, so nothing leaks to other components. Both panels keep their
+ * own <style scoped> block for the few things that differ, but scoping alone
+ * does not make an override win: these shared rules are descendant selectors
+ * at specificity (0,2,0), which TIES the scoped selector `.x[data-v-x]` also
+ * at (0,2,0), so chunk load order would decide the winner. An override in a
+ * scoped block must additionally carry the panel's identity class (e.g.
+ * `.tower-panel .sell-btn`, specificity (0,3,0)) to win outright.
+ */
+
+.detail-panel {
+  position: absolute;
+  padding: 10px;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  z-index: 11;
+  font-size: var(--font-sm);
+}
+
+.detail-panel .panel-header {
+  font-weight: bold;
+  font-size: var(--font-md);
+  margin-bottom: 8px;
+  cursor: grab;
+  user-select: none;
+}
+
+.detail-panel .panel-header:active {
+  cursor: grabbing;
+}
+
+.detail-panel .stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 0;
+  color: var(--color-text-dim);
+}
+
+.detail-panel .stat-row span:last-child {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.detail-panel .target-select {
+  width: 100%;
+  padding: 4px;
+  margin: 4px 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
+  color: var(--color-text);
+  border-radius: 4px;
+  font-size: var(--font-sm);
+}
+
+.detail-panel .action-btn {
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
+  color: var(--color-text);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: var(--font-sm);
+  transition: background 0.15s;
+}
+
+.detail-panel .action-btn:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+.detail-panel .action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.detail-panel .downgrade-btn {
+  color: var(--color-accent);
+  border-color: var(--color-accent-border);
+}
+
+.detail-panel .btn-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+}

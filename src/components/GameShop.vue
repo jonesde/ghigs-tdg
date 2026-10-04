@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { FOOTER_HEIGHT, HEADER_HEIGHT, SELL_DISCOUNT_PCT } from "@/sim/Constants.js";
+import { usePanelDrag } from "@/composables/usePanelDrag.js";
+import { SELL_DISCOUNT_PCT } from "@/sim/Constants.js";
 import type { TowerId } from "@/sim/ConstantsTower.js";
 import { TOWER_META, TowerIds } from "@/sim/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
@@ -41,26 +42,34 @@ function getTowerDisplayIcon(type: TowerId): string {
   return themeStore.getTowerVisual(type)?.icon || "\u2500";
 }
 
-let dragging = false;
-let dragStartX = 0;
-let dragStartY = 0;
-let shopStartX = 0;
-let shopStartY = 0;
-let currentOnMove: ((event: MouseEvent) => void) | null = null;
-let currentOnUp: (() => void) | null = null;
-let currentTouchMove: ((event: TouchEvent) => void) | null = null;
-let currentTouchEnd: (() => void) | null = null;
-
 const barRef = ref<HTMLElement | null>(null);
 const barStyle = computed(() => ({ top: `${gameStore.gameShopPos.y}px`, left: `${gameStore.gameShopPos.x}px` }));
+
+// Only the header drag comes from the shared composable. The shop also pins
+// itself to whichever viewport edge it was nearest when a resize lands, which
+// is a different concern than bounding a drag, so onResize stays here.
+const { onHeaderMouseDown, onHeaderTouchStart } = usePanelDrag({
+  read: () => gameStore.gameShopPos,
+  write: (position) => {
+    gameStore.gameShopPos = position;
+  },
+  panelRef: barRef,
+  clampToViewport: true,
+  clampOnResize: false,
+});
 
 let prevWidth = typeof window !== "undefined" ? window.innerWidth : 0;
 let prevHeight = typeof window !== "undefined" ? window.innerHeight : 0;
 
-function setInitialPosition() {
-  if (typeof window === "undefined") return;
-  // NOTE: 160 is width per button as per CSS; 84 = 20 (header/hud) + 64 (footer)
-  gameStore.gameShopPos = { x: (window.innerWidth - towerList.length * 160) / 2, y: window.innerHeight - 84 };
+// Rests the bar along the bottom edge, centered horizontally on the bar's own
+// measured size. Measuring beats restating the CSS here: the CSS owns the
+// layout, and a narrower or taller bar would silently move the resting spot.
+function setInitialPosition(): void {
+  const element = barRef.value;
+  if (!element) return;
+  const { offsetWidth: width, offsetHeight: height } = element;
+  if (width === 0 || height === 0) return;
+  gameStore.gameShopPos = { x: (window.innerWidth - width) / 2, y: window.innerHeight - height };
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -123,70 +132,6 @@ onMounted(() => {
   }, 20);
 });
 
-function onHeaderMouseDown(event: MouseEvent) {
-  if (event.button !== 0) return;
-  dragging = true;
-  dragStartX = event.clientX;
-  dragStartY = event.clientY;
-  shopStartX = gameStore.gameShopPos.x;
-  shopStartY = gameStore.gameShopPos.y;
-
-  currentOnMove = (event: MouseEvent) => {
-    if (!dragging) return;
-    gameStore.gameShopPos = {
-      x: shopStartX + (event.clientX - dragStartX),
-      y: shopStartY + (event.clientY - dragStartY),
-    };
-  };
-  currentOnUp = () => {
-    dragging = false;
-    cleanupDragListeners();
-  };
-  document.addEventListener("mousemove", currentOnMove);
-  document.addEventListener("mouseup", currentOnUp);
-  event.preventDefault();
-  event.stopPropagation();
-}
-
-function onHeaderTouchStart(event: TouchEvent) {
-  if (event.touches.length !== 1) return;
-  dragging = true;
-  dragStartX = event.touches[0].clientX;
-  dragStartY = event.touches[0].clientY;
-  shopStartX = gameStore.gameShopPos.x;
-  shopStartY = gameStore.gameShopPos.y;
-
-  currentTouchMove = (event: TouchEvent) => {
-    if (!dragging || event.touches.length !== 1) return;
-    gameStore.gameShopPos = {
-      x: shopStartX + (event.touches[0].clientX - dragStartX),
-      y: shopStartY + (event.touches[0].clientY - dragStartY),
-    };
-  };
-  currentTouchEnd = () => {
-    dragging = false;
-    cleanupTouchListeners();
-  };
-  document.addEventListener("touchmove", currentTouchMove, { passive: true });
-  document.addEventListener("touchend", currentTouchEnd);
-  event.preventDefault();
-  event.stopPropagation();
-}
-
-function cleanupDragListeners() {
-  if (currentOnMove) document.removeEventListener("mousemove", currentOnMove);
-  if (currentOnUp) document.removeEventListener("mouseup", currentOnUp);
-  currentOnMove = null;
-  currentOnUp = null;
-}
-
-function cleanupTouchListeners() {
-  if (currentTouchMove) document.removeEventListener("touchmove", currentTouchMove);
-  if (currentTouchEnd) document.removeEventListener("touchend", currentTouchEnd);
-  currentTouchMove = null;
-  currentTouchEnd = null;
-}
-
 onUnmounted(() => {
   if (initTimerId !== null) {
     clearTimeout(initTimerId);
@@ -195,8 +140,6 @@ onUnmounted(() => {
   if (typeof window !== "undefined") {
     window.removeEventListener("resize", onResize);
   }
-  cleanupDragListeners();
-  cleanupTouchListeners();
 });
 </script>
 
@@ -206,16 +149,22 @@ onUnmounted(() => {
       <span>Build Bar</span>
     </div>
     <div class="shop-bar">
-      <div v-for="id in towerList" :key="id" class="shop-tower"
-        :class="{ selected: gameStore.selectedTowerType === id, disabled: gameStore.gold < getCost(id), }"
-        @click="gameStore.gold >= getCost(id) && toggleBuild(id)"
+      <button
+        v-for="id in towerList"
+        :key="id"
+        type="button"
+        class="shop-tower"
+        :class="{ selected: gameStore.selectedTowerType === id }"
+        :disabled="gameStore.gold < getCost(id)"
+        :aria-pressed="gameStore.selectedTowerType === id"
+        @click="toggleBuild(id)"
       >
         <span class="tower-icon" :style="{ color: getTowerDisplayColor(id) }">{{ getTowerDisplayIcon(id) }}</span>
-        <div class="tower-name-wrap">
-          <div v-for="word in getTowerDisplayName(id).split(' ')" :key="word" class="tower-name">{{ word }}</div>
-        </div>
+        <span class="tower-name-wrap">
+          <span v-for="word in getTowerDisplayName(id).split(' ')" :key="word" class="tower-name">{{ word }}</span>
+        </span>
         <span class="tower-cost">{{ getCost(id) }}</span>
-      </div>
+      </button>
     </div>
   </div>
 </template>
@@ -234,7 +183,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 20px;
+  height: var(--build-bar-header-height);
   padding: 0 8px;
   cursor: grab;
   user-select: none;
@@ -253,7 +202,7 @@ onUnmounted(() => {
 
 .shop-bar {
   position: relative;
-  height: 64px;
+  height: var(--build-bar-footer-height);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -276,13 +225,21 @@ onUnmounted(() => {
   border-radius: 6px;
   border: 2px solid var(--color-line);
   background: var(--color-surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   transition: all 0.15s;
   user-select: none;
 }
 
-.shop-tower:hover {
+.shop-tower:hover:not(:disabled) {
   background: var(--color-surface-hover);
+}
+
+.shop-tower:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
 }
 
 .shop-tower.selected {
@@ -290,7 +247,7 @@ onUnmounted(() => {
   border-color: var(--color-success);
 }
 
-.shop-tower.disabled {
+.shop-tower:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }

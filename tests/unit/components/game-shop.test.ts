@@ -83,8 +83,33 @@ describe("GameShop", () => {
     const { pinia, gameStore, persistStore, uiStore } = mountGameShop();
     gameStore.gold = 0;
     const wrapper = mount(GameShop, { global: { plugins: [pinia] } });
-    const disabledTowers = wrapper.findAll(".shop-tower.disabled");
+    // Native :disabled rather than a cosmetic class, so the browser blocks the
+    // click and assistive tech reports the state.
+    const disabledTowers = wrapper.findAll<HTMLButtonElement>(".shop-tower[disabled]");
     expect(disabledTowers.length).toBe(8);
+    expect(disabledTowers.every((tower) => tower.element.tagName === "BUTTON")).toBe(true);
+  });
+
+  it("enables every tower the player can afford", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore } = mountGameShop();
+    gameStore.gold = 100000;
+    const wrapper = mount(GameShop, { global: { plugins: [pinia] } });
+    expect(wrapper.findAll(".shop-tower[disabled]").length).toBe(0);
+  });
+
+  it("marks the selected build type with aria-pressed", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore } = mountGameShop();
+    gameStore.gold = 100000;
+    const wrapper = mount(GameShop, { global: { plugins: [pinia] } });
+    const firstTower = wrapper.findAll(".shop-tower")[0];
+    expect(firstTower?.attributes("aria-pressed")).toBe("false");
+
+    await firstTower?.trigger("click");
+    await wrapper.vm.$nextTick();
+    const selected = wrapper.findAll(".shop-tower").filter((tower) => tower.attributes("aria-pressed") === "true");
+    expect(selected.length).toBe(1);
   });
 
   it("does not select unaffordable tower on click", async () => {

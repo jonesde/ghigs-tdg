@@ -23,14 +23,17 @@ src/
 ├── router/
 │   └── index.ts                 # Route definitions + navigation guards (dispose engine on route change)
 ├── stores/
-│   ├── game.ts                  # Volatile per-run state: lives, gold, wave, game state, selection, camera, tower/panel positions, hover state, frame id, run gem/boss counters, milestone breakdown, end-screen data, random-map params, worker reference
+│   ├── game.ts                  # Volatile per-run state: base health, gold, wave, game state, selection, time scale (mirror only), camera, tower/base-panel/minimap/shop positions, hover state, frame id, run gem/boss counters, milestone breakdown, end-screen data, random-map params, worker reference
 │   ├── persist.ts               # Persistent meta-progression: gems, unlocks, difficulty, map progress, random-map and progressive-map preferences, last-selected theme and map, sound preference (localStorage)
-│   ├── ui.ts                    # UI overlay state: confirm dialogs, notifications, menu/skill-tree/stats/help/minimap context, debug panel, enemy commander selection, random-map panel, wasPlaying flags for pause/skill-tree/help
+│   ├── ui.ts                    # UI overlay state: confirm dialogs, notifications, menu/skill-tree/stats/help/minimap context, debug panel, enemy commander selection, random-map panel, single overlayPausedSim flag for the pause an overlay takes
 │   └── mapTheme.ts              # Map theme state: activeTheme, defaultTheme, availableThemes, preload/load actions, resolvedMaps (active world's maps catalog), regionNames, ensureActiveTheme
 ├── composables/
-│   └── Input.ts                 # Keyboard input composable: dispatches to Pinia stores + engine via the command seam
+│   ├── Input.ts                 # Keyboard input composable: dispatches to Pinia stores + engine via the command seam
+│   ├── usePanelDrag.ts          # Header-drag composable shared by every floating panel (mouse + touch, optional viewport clamp)
+│   └── progressivePlacement.ts  # Offer selection / rotation / site probing helpers shared by the keyboard and the SVG click path
 ├── components/
-│   ├── GameScreen.vue           # Root game layout: SvgGameRoot + HUD + shop + tower panel + wave countdown + debug + wave graph + pause menu
+│   ├── GameScreen.vue           # Root game layout: SvgGameRoot + HUD + shop + tower/base panels + wave countdown + debug + wave graph + overlays
+│   ├── BasePanel.vue            # Base detail panel: health, both sentry gun stat blocks, upgrade/downgrade, targeting
 │   ├── SvgGameRoot.vue          # Single SVG root: creates the simulation Web Worker, owns SnapshotStore (render loop reads snapshots) and WorkerCommandDispatcher, imperative DOM rendering, SpawnManager
 │   ├── TextGameRoot.vue         # Second passive renderer: monospaced <pre> static base grid + canvas overlay; own rAF loop reads getLatestSnapshot() (no worker, no ack, no input)
 │   ├── MinimapPanel.vue         # Movable hovering panel (copy of TowerPanel drag pattern) hosting TextGameRoot; toggled by uiStore.showMinimap
@@ -42,7 +45,11 @@ src/
 │   ├── PauseMenu.vue            # Pause menu overlay: resume, skill tree, options, quit
 │   ├── ProgressivePlacement.vue # Block-offer cards (height-shaded 5×5 previews, rotation, site hint) plus the paused post-placement undo button
 │   ├── BonusPicker.vue          # Three-card reward picker for a supply drop or map cache: locked cache shows unlock-fee + Leave it, card copy, wave-scaled fee or Free, dismiss
-│   ├── HelpDialog.vue           # Help/controls overlay (toggled from in-game menu)
+│   ├── HelpDialog.vue           # Help/controls overlay: How to Play / Towers / Enemies tabs (WAI-ARIA tablist) + shortcut table
+│   ├── HelpTowerTab.vue         # Towers tab: per-tower stat table at a chosen level, variant rows from level 5
+│   ├── HelpEnemyTab.vue         # Enemies tab: per-enemy stat table at a chosen wave
+│   ├── progressivePreview.ts    # Shared block-preview markup: 5x5 cell rects + the on-map ghost wrapper
+│   ├── detailPanel.css          # Panel chrome shared by TowerPanel and BasePanel, namespaced under .detail-panel
 │   ├── MainMenu.vue             # Main menu: large theme buttons (faded menuBackground preview per theme, persisted select), New Game section (Select Map / Progressive Run / Generate Map buttons), skill tree, commanders, run history, difficulty slider
 │   ├── MapSelect.vue            # Map selection: region tabs + themed region map with level/progressive markers (last map index persisted, region tab derived from it, first level pre-selected when none) + header buttons opening the shared GeneratedMapDialog / ProgressiveMapDialog custom-run dialogs
 │   ├── GeneratedMapDialog.vue   # Generated-map custom-run dialog (teleported to body): region/level/style/width/height/seed form on persistStore, validates, resolves the active theme, starts the run via gameStore + /game
@@ -192,11 +199,15 @@ The SVG structure is:
 
 `GameScreen.vue` renders `<SvgGameRoot>` as a sibling with HUD/shop/tower panel overlays. Vue does **not** touch per-frame rendering. The component creates the Web Worker, posts `lifecycle:init` (with `persistState` + `themeBundle`), owns `SnapshotStore` and the `WorkerCommandDispatcher`, reads the reactive snapshot mirror from Pinia stores, and cleans up on unmount (posts `lifecycle:dispose`, awaits the worker's `disposed` ack, then terminates). The SVG mounts/unmounts with the `/game` route.
 
+**Worker disposal has exactly one owner per leave, and `GameScreen` is never it.** On a route change away from `/game` the router guard (`awaitDisposeWorker`, module-private to `router/index.ts`) runs first — before the old view unmounts — and posts `lifecycle:dispose`, waits for the `disposed` ack (with a short safety timeout), terminates, calls `gameStore.clearWorker()`, and saves progress. `SvgGameRoot.onUnmounted` is the fallback owner for unmounts the guard does not see: it runs the same dispose/terminate sequence only while `gameStore.worker` still names its worker (so a leave the guard already handled is skipped rather than double-disposed against a terminated worker), and it detaches the terminate behind `void promise.then(...)` so unmount is never blocked. Vue runs child `onUnmounted` before parent `onUnmounted`, so this all happens before `GameScreen.onUnmounted`, which only removes its popstate listener.
+
+**Overlay gating is split.** `GameScreen` gates `WaveCountdown`, `PauseMenu`, `SkillTree`, `StatsPanel`, `MinimapPanel`, and `HelpDialog` with `v-if` on the `uiStore`/`gameStore` flag. `BonusPicker`, `ProgressivePlacement`, `TowerPanel`, and `BasePanel` are mounted unconditionally and gate their own content (the first two on their store state, the last two on the resolved selection), so the parent cannot be the single place that decides what is on screen.
+
 ### Four Pinia Stores
 
-- **`gameStore`** — reactive mirror/projection of the simulation `SimulationSnapshot`. The worker is authoritative for simulation state; `gameStore` holds the subset the Vue UI binds to (lives, gold, wave, game state, selection, time scale, dialog visibility, frame id, run gem/boss counters, milestone breakdown, end-screen data) and is updated by snapshot diffs each frame. Main-thread-only state (camera, hover tile, hover-upgrade-button, tower/panel positions, random-map params, worker reference) also lives here. Reset when starting a new map.
+- **`gameStore`** — reactive mirror/projection of the simulation `SimulationSnapshot`. The worker is authoritative for simulation state; `gameStore` holds the subset the Vue UI binds to (lives, gold, wave, game state, selection, time scale, dialog visibility, frame id, run gem/boss counters, milestone breakdown, end-screen data) and is updated by snapshot diffs each frame. Main-thread-only state (camera, hover tile, hover-upgrade-button, tower/base-panel/minimap/shop positions, random-map params, worker reference) also lives here. Reset when starting a new map. `timeScale` is in the mirrored set and is **not** written by the UI.
 - **`persistStore`** — persistent meta-progression (gems, unlocked skills, map progress, difficulty, general add-ons, random-map and progressive-map preferences, last-selected theme and map) and LLM commander configurations (`llmCommanders` array). Auto-saved to `localStorage` via manual `save()` calls.
-- **`uiStore`** — UI overlay visibility and confirm dialog state, plus notifications, minimap toggle, enemy commander selection ("none"/"stubby"/"stubbs"), random-map panel visibility, and wasPlaying flags for pause/skill-tree/help (so closing these overlays restores the prior playing/paused state).
+- **`uiStore`** — UI overlay visibility and confirm dialog state, plus notifications, minimap toggle, enemy commander selection ("none"/"stubby"/"stubbs"), random-map panel visibility, and one `overlayPausedSim` flag that owns the pause the overlays take. `beginOverlayPause()` pauses only when the sim is actually running (so opening a second overlay on top of a paused one does not dispatch a second toggle), and `endOverlayPause()` resumes only when the last of `showPauseMenu` / `showSkillTree` / `showStatsPanel` / `showHelpDialog` has closed — the getter `anyPauseOverlayOpen` is what it tests. One flag, not four `wasPlayingWhen…` booleans: with per-panel flags, closing an overlay underneath another one resumed the run behind the overlay that was still up. Resume authority is the flag rather than `gameStore.state`, since the flag is set exactly when this store dispatched the pause. `Space` follows the same model — it calls `closeAllDialogs()` when `anyPauseOverlayOpen`, and only falls through to toggling the sim when nothing is up.
 - **`mapThemeStore`** — map theme state: `defaultTheme` (preloaded at app init for synchronous access by non-game screens) and `activeTheme` (resolved for the current run), plus `availableThemes` and preload/load actions. Also exposes `resolvedMaps` (the active world's effective maps catalog, `theme.maps` absent when the theme carries no override), `regionNames` (per-region display names, active theme over default over `Region N` fallback), and `ensureActiveTheme()` (resolves `activeTheme` to `persistStore.lastSelectedThemeId` before a run starts, so the main thread and worker both use the active world's catalog).
 
 ### Confirm Dialogs as a Single Component
@@ -422,6 +433,54 @@ Caches are gated: clicking an intact cache opens the picker locked — no gold c
 
 A cache broken by fire keeps its tile, offer, and reservation at hp 0 (towers stop targeting it; the click claim is free). Because the break happens inside `engine.update` while a picker may already be open, `pendingBrokenCaches` queues the break with the open picker's `wasPlaying` flag; `closeBonusPicker` drains the queue so a chain of simultaneous breaks holds the pause and resumes exactly once at the end, and a progressive placement hold that refuses the open retries on completion (`completeProgressivePlacement` → drain). Offer and specialist type resolve from the site at open time, which is what keeps a dismiss + reopen on the same roll. On the worker side, a picker opened mid-tick (not by a command) forces a snapshot post through the ack gate the same way the placement hold does (`bonusPickerPosted` latch in `decideSnapshotPost`).
 
+### Floating Panel Drag and Detail-Panel Positions
+
+Every floating in-game panel (tower, base, minimap, debug, shop, enemy chat) is
+dragged by its header, and each one needed the same gesture. `usePanelDrag`
+(`src/composables/usePanelDrag.ts`) is the single implementation: it records the
+position at `mousedown`/`touchstart`, applies the pointer delta to a `read`/`write`
+pair (so the panel tracks from wherever it already sits), and owns the gesture
+listeners. Both paths end on the same set of events — `mouseup`, `touchend`, window
+`blur`, document `touchcancel` — because a focus loss or an interrupted touch
+otherwise leaves the panel still tracking the pointer once the user comes back.
+Touch rides the same `applyMove` path as the mouse, and all six headers bind both.
+
+Cleanup also runs in the composable's `onUnmounted`, so a component torn down
+mid-drag drops its listeners. That is not the same as a panel disappearing: these
+components keep their root element behind a `v-if` while the component itself stays
+mounted, so hiding a panel mid-drag does **not** fire `onUnmounted` and the gesture
+listeners survive it. The `v-if` case is why the gesture-ending events above are the
+real guarantee.
+
+`clampToViewport` bounds the panel to `window.innerWidth/innerHeight` minus its own
+`offsetWidth/offsetHeight`. Without it a drag can push a panel fully off screen with
+no way to drag it back, which is why `GameShop` had that logic inline for its resize
+handler alone. The clamp needs the panel element for its size, so `panelRef` is a
+required option. A viewport shrink can strand a clamped panel off screen just as
+effectively as a drag, so the composable also re-clamps on `resize`; `GameShop`
+passes `clampOnResize: false` because its own resize handler repins the bar to
+whichever edge it was nearest, and that has to be the only writer for its position.
+
+`TowerPanel` and `BasePanel` are two different panels, so they hold two different
+positions: `gameStore.towerPanelPos` and `gameStore.basePanelPos`. They never render
+at the same time (`resolveSelectedTower` finds no tower whose id is `"base"`, so the
+tower selection is null and `TowerPanel` self-gates), which had masked the coupling
+when both wrote one slot. Neither position survives `initMap`, so the arrangement is
+per run.
+
+### Worker-TimeScale Is Snapshot-Only
+
+`gameStore.timeScale` is a mirror of `snapshot.meta.timeScale`, written only by
+`SnapshotStore.apply`. The UI therefore expresses a speed change by dispatching
+`action:cycleSpeed` and lets the mirror update the label. It used to also call
+`gameStore.cycleSpeed()` locally as an optimistic prediction; that made the store a
+second writer for a worker-authoritative field, and a mirror landing between two
+rapid presses could revert the base the second press computed from. `DebugPanel`'s
+time-scale debug command already dispatched only. `TIME_SCALES` in
+`src/sim/Constants.ts` is the one list of accepted values — the engine cycles it,
+`validateCommand` whitelists it for the debug `setTimeScale` command, and `DebugPanel`
+reads it.
+
 ### Router Navigation Guards
 
 `router.beforeEach` disposes the game engine and saves progress when leaving `/game`. Auto-redirects to `/game-over` or `/victory` when the game state transitions.
@@ -451,9 +510,9 @@ A cache broken by fire keeps its tile, offer, and reservation at hp 0 (towers st
 
 | File | Description |
 |---|---|
-| `src/stores/game.ts` | Volatile game state: lives, gold, wave, selection, time scale, camera, tower/panel positions, hover state, `bonusPickerLocked` (cache site at hp > 0 and not unlocked, gating the picker and the digit shortcuts), frame id, run gem/boss counters, milestone breakdown, end-screen data, random-map params, worker reference |
+| `src/stores/game.ts` | Volatile game state: base health, gold, wave, selection, time scale (mirror only), camera, `towerPanelPos` / `basePanelPos` / `minimapPanelPos` / `gameShopPos`, hover state, `bonusPickerLocked` (cache site at hp > 0 and not unlocked, gating the picker and the digit shortcuts), frame id, run gem/boss counters, milestone breakdown, end-screen data, random-map params, worker reference |
 | `src/stores/persist.ts` | Persistent state: gems, unlocks, difficulty, map progress, random-map and progressive-map preferences, last-selected theme and map, sound on/off preference, localStorage I/O |
-| `src/stores/ui.ts` | UI state: confirm dialog, notifications, main menu / skill tree / stats / help / minimap overlay flags, debug panel visibility, enemy commander selection, random-map panel, wasPlaying flags for pause/skill-tree/help |
+| `src/stores/ui.ts` | UI state: confirm dialog, notifications, main menu / skill tree / stats / help / minimap overlay flags, debug panel visibility, enemy commander selection, random-map panel, the `overlayPausedSim` flag plus the `beginOverlayPause` / `endOverlayPause` / `anyPauseOverlayOpen` trio that make the pause a single owner's problem |
 | `src/stores/mapTheme.ts` | Map theme state: activeTheme, defaultTheme (preloaded at app init), availableThemes, preload/load actions |
 
 ### Map Theme
@@ -468,16 +527,17 @@ A cache broken by fire keeps its tile, offer, and reservation at hp 0 (towers st
 
 | File | Description |
 |---|---|
-| `src/components/GameScreen.vue` | Game layout container: SvgGameRoot, HUD, shop, tower panel, wave countdown, debug panel, wave graph, pause menu overlay |
+| `src/components/GameScreen.vue` | Game layout container: SvgGameRoot, HUD, shop, tower + base panels, wave countdown, debug panel, wave graph, and the parent-gated overlays. Owns the popstate leave-guard and the terminal-state redirect; does not own worker disposal |
 | `src/components/SvgGameRoot.vue` | Single SVG root: RAF loop, GameEngine lifecycle (receives active theme), imperative DOM rendering, CTM-based input, SpawnManager initialization |
-| `src/components/GameHud.vue` | Top bar: lives, integer gold (floored, since Bounty pays fractional), gems, wave counter, speed/sound/pause/menu controls (sound toggles `persistStore.soundEnabled`, mirrored onto the live SoundManager by SvgGameRoot), and an `Effects xN` chip that opens a hover popup listing every active run effect; uses `getMapDisplayName` for map label |
-| `src/components/GameShop.vue` | Bottom bar: tower build selection with cost (from constants) and themed name/color/icon (from active theme) |
-| `src/components/TowerPanel.vue` | Right panel: tower stats, targeting mode, upgrade/sell, specialization; themed name/color/icon from active theme |
-| `src/components/WaveCountdown.vue` | Inter-wave countdown overlay shown before each wave spawns |
+| `src/components/GameHud.vue` | Top bar: base health, integer gold (floored, since Bounty pays fractional), gems, wave counter, speed/sound/pause/minimap/stats/help/menu controls (every button carries an `aria-label`; the state-stable toggles — sound, minimap — report `aria-pressed`, while the pause button does not, because its label already flips Pause/Resume and the two together announce "Resume, pressed". Sound toggles `persistStore.soundEnabled`, mirrored onto the live SoundManager by SvgGameRoot). The `Effects xN` chip is a real `<button aria-expanded>` whose popup opens on click, hover, or focus-within (anchored to the chip's right edge so long themed names cannot overflow, and itself focusable so the `overflow-x` list is reachable). Notifications are one `setTimeout` per notification against the store's absolute `expires`, not a poll interval — the toast's visibility is read straight off `uiStore.notification`, so there is no second flag to keep in step. The bar owns its own layout and publishes its measured height as `--hud-height` on `<html>` (mount + `ResizeObserver`) for the play area, the toast, and `EnemyChat` to clear. Uses `getMapDisplayName` for the map label |
+| `src/components/GameShop.vue` | Bottom bar: tower build selection with cost (from constants) and themed name/color/icon (from active theme). Cards are real `<button>`s with `:disabled` and `aria-pressed`. Header drag + touch drag come from `usePanelDrag`; the resize edge-pinning handler is local |
+| `src/components/TowerPanel.vue` | Floating detail panel: tower stats, targeting mode, upgrade/sell, specialization, fixed-aim pad; themed name/color/icon from active theme. Position is `gameStore.towerPanelPos`; shared panel chrome lives in `detailPanel.css` |
+| `src/components/BasePanel.vue` | Floating detail panel for the base: health, the short/long sentry gun stat blocks, targeting, upgrade/downgrade. Position is `gameStore.basePanelPos`, deliberately separate from `towerPanelPos` so dragging one panel cannot move the other; shared chrome lives in `detailPanel.css` |
+| `src/components/WaveCountdown.vue` | Inter-wave countdown overlay shown before each wave spawns; the label carries the next wave's rolled boss abilities |
 | `src/components/BonusPicker.vue` | Three-card reward picker for a supply drop or a map cache: card copy with current → next mults, themed specialist tower name (`Sharpened · Rifle Tower (Basic)`), wave-scaled cache fee or Free for a broken cache, dismiss leaves the package claimable. An intact cache opens locked — only `Unlock for N gold` and `Leave it`, dispatching `action:unlockCache` — and shows the cards once unlocked |
 | `src/components/WaveGraph.vue` | Per-wave graph overlay: damage dealt, gold earned, gems earned, max enemy HP across all waves |
 | `src/components/PauseMenu.vue` | Pause menu overlay: resume, skill tree, difficulty adjustment, quit to main menu |
-| `src/components/HelpDialog.vue` | Help/controls overlay (toggled from the in-game pause menu) |
+| `src/components/HelpDialog.vue` | Help overlay: three tabs in a WAI-ARIA `tablist` (roving `tabindex`; ArrowLeft/ArrowRight/Home/End move and select, and `selectTab` moves DOM focus onto the newly selected tab on the next tick — with a roving tabindex the selected tab is the strip's only tab stop, so focus has to follow the selection). `aria-controls` is bound only on the selected tab, because the inactive panels are not rendered. The shortcut table quotes the active world's re-roll price via `progressiveRerollGoldPerWave`, not the content-pack default |
 | `src/components/MainMenu.vue` | Main menu: large theme buttons (faded `menuBackground` preview per theme, persisted selection), New Game section (Select Map /map-select, Progressive Run and Generate Map buttons opening the shared `ProgressiveMapDialog` / `GeneratedMapDialog`), skill tree, commanders, run history, difficulty slider |
 | `src/components/GeneratedMapDialog.vue` | Generated-map custom-run dialog (`show` prop + `close` emit, teleported to body, closes on Escape while shown): region/level/style/width/height/seed form bound to `persistStore` random-map preferences (blank seed = auto-roll), validation via `alert()`, then `themeStore.ensureActiveTheme()`, `generateRandomMap` with `themeStore.resolvedMaps`, `gameStore.initMap(CUSTOM_RANDOM_MAP_INDEX, …)` + `randomMapParams`, push `/game` |
 | `src/components/ProgressiveMapDialog.vue` | Progressive-map custom-run dialog (same API): region/level/base-entries/seed form bound to `persistStore` progressive-map preferences (blank seed = auto-roll), validation via `alert()`, then `generateProgressiveMap(config)`, `gameStore.initMap(CUSTOM_PROGRESSIVE_MAP_INDEX, …)`, push `/game` (no theme resolve — the board is built from config only and the worker recovers it via `progressiveConfigFromMap`) |
@@ -490,19 +550,25 @@ A cache broken by fire keeps its tile, offer, and reservation at hp 0 (towers st
 | `src/components/StatsPanel.vue` | Wave composition, enemy list, and run statistics; reads enemy name/color/shape from active theme |
 | `src/components/HistoryScreen.vue` | Run history entries with gem breakdown formatting; reads default theme for region names |
 | `src/components/CommandersScreen.vue` | LLM commander management UI: create/edit/delete custom commanders, activate built-in or LLM commanders |
-| `src/components/EnemyChat.vue` | Draggable in-game chat panel for interacting with active LLM enemy commander |
+| `src/components/EnemyChat.vue` | Draggable in-game chat panel for interacting with an active LLM enemy commander. Resting position sits below the published `--hud-height` (16px gap) so it never covers the map title or the health/gold/gems readouts, including under a wrapped mobile bar; drag clamps to the viewport |
+| `src/components/HelpTowerTab.vue` | Towers help tab: per-tower stat table for a chosen level, with both specialization rows from level 5 |
+| `src/components/HelpEnemyTab.vue` | Enemies help tab: per-enemy stat table for a chosen wave, dimming types that cannot spawn yet |
+| `src/components/progressivePreview.ts` | `progressiveCellRects` (5x5 block cells in absolute coordinates) and `progressivePatternMarkup` (the on-map ghost, cells + selection stroke). Both the offer cards and the SVG ghost go through the one cell builder |
+| `src/components/detailPanel.css` | Panel chrome shared by `TowerPanel` and `BasePanel`, every rule namespaced under `.detail-panel`. Imported once from `App.vue` because Vue cannot scope an `@import`ed stylesheet. Each panel's `<style scoped>` block holds only its own differences, and it has to out-specify these rules deliberately: a shared descendant rule like `.detail-panel .action-btn` is (0,2,0), which **ties** a scoped `.action-btn[data-v-x]` rather than losing to it, so the winner is decided by CSS chunk load order. An override therefore repeats the panel's own identity class — `.tower-panel .sell-btn` compiles to (0,3,0) and wins on specificity alone |
 
 ### Game Engine
 
 | File | Description |
 |---|---|
 | `src/sim/GameEngine.ts` | Simulation core: no rendering. Takes plain `GameRunState` + `PersistState` + `HostBindings` + `ThemeBundle`; runs inside the Web Worker (`src/sim/WorkerEntry.ts`) on a `setTimeout` fixed-timestep loop; produces a `SimulationSnapshot` each tick and applies `Command`s via `applyCommand`; passes visual meta to Tower/Enemy constructors |
-| `src/sim/Constants.ts` | Facade over content packs + engine/UI wiring: wave/economy/map tables from `getGameContent()`, plus FIXED_DT, GameState, wave-graph colors |
+| `src/sim/Constants.ts` | Facade over content packs + engine/UI wiring: wave/economy/map tables from `getGameContent()`, plus FIXED_DT, `TIME_SCALES`, `progressiveRerollGoldPerWave(worldMaps)` (the active world's re-roll price, falling back to the pack default — shared by the engine, `ProgressivePlacement`, and the help dialog so the quoted cost cannot disagree with the charge), GameState, wave-graph colors. The old `HEADER_HEIGHT` / `FOOTER_HEIGHT` UI-layout exports are gone: chrome heights are CSS custom properties |
 | `src/sim/ConstantsTower.ts` | Facade: TowerIds, TOWER_BASE/META/VARIANTS/ADDON_EFFECTS and combat scalars from `src/content/data/towers.json` |
 | `src/sim/ConstantsEnemy.ts` | Facade: ENEMY_TYPES and enemy/wave scalars from `src/content/data/enemies.json` |
 | `src/content/data/*.json` | Declarative balance/content packs (towers, enemies, economy, maps, skill-tree) validated by Zod at load |
 | `src/content/schemas/*` | Zod schemas for game content, raw map themes, LLM responses, persist save shape |
-| `src/composables/Input.ts` | Keyboard input composable: dispatches build/upgrade/sell/speed/pause intents through the command seam, and Page Up/Down, Ctrl+arrow pan, plus arrow-key follow through the camera actions |
+| `src/composables/Input.ts` | Keyboard input composable: dispatches build/upgrade/sell/speed/pause intents through the command seam, and Page Up/Down, Ctrl+arrow pan, plus arrow-key follow through the camera actions. Speed keys dispatch only — `gameStore.timeScale` is a snapshot mirror, so the UI never writes it. `Space` calls `uiStore.closeAllDialogs()` whenever `anyPauseOverlayOpen` and only toggles the sim when nothing is up, so it cannot resume a run behind a modal that is still showing |
+| `src/composables/usePanelDrag.ts` | Header-drag behavior for every floating in-game panel: one implementation of the mouse and touch gesture against a `read`/`write` pair, ownership of the gesture listeners (released on `mouseup`/`touchend`/`blur`/`touchcancel` and on unmount), and an optional viewport clamp that needs the panel element for its size. `panelRef` is required; `clampOnResize: false` opts a caller out of the automatic re-clamp on viewport resize |
+| `src/composables/progressivePlacement.ts` | Main-thread placement helpers shared by the keyboard path and the SVG click path: offer selection/rotation, site probing, and the right-click rotate entry point |
 | `src/sim/ProjectileManager.ts` | Game-side projectile simulation: travel, hits, splash, chain, burn, knockback. `computeMaxHitCount` is the single pierce-total helper for every tower path; bounce falloff scales damage and burn/slow/stun magnitudes together; `creditDamage` is the public out-of-band credit entry used by burn ticks |
 | `src/sim/ParticleSystem.ts` | Game-side particle simulation: spawn, motion, life/expiry |
 | `src/sim/WaveGraphTracker.ts` | Per-wave graph data: damage dealt, gold earned, gems earned, peak enemy HP per wave |
@@ -567,7 +633,7 @@ A cache broken by fire keeps its tile, offer, and reservation at hp 0 (towers st
 | `src/render/text/TextOverlayRenderer.ts` | Canvas overlay: projectile dots, thin HP bars, lightning lines, stun marks (mirrors svg Projectile/UiOverlay/Effect managers) |
 | `src/render/text/types.ts` | `TextRenderScale` (separate x/y world→canvas scales) and `TextThemeAccess` interfaces |
 | `src/components/TextGameRoot.vue` | Second passive renderer: renders a `<pre>` static base grid + a `<canvas>` overlay, driven by its own rAF loop reading `getLatestSnapshot()`; no worker, no `snapshotAck`, no input |
-| `src/components/MinimapPanel.vue` | Movable hovering panel (TowerPanel drag-by-header pattern, uses `gameStore.minimapPanelPos`) hosting `TextGameRoot`; toggled by `uiStore.showMinimap` |
+| `src/components/MinimapPanel.vue` | Movable hovering panel (drag from `usePanelDrag`, uses `gameStore.minimapPanelPos`) hosting `TextGameRoot`; toggled by `uiStore.showMinimap` |
 | `src/components/SvgGameRoot.vue` | Single SVG root: creates the simulation Web Worker, owns `SnapshotStore` (render loop reads snapshots) and `WorkerCommandDispatcher` (click/key intents → commands); rAF render loop does imperative DOM writes; the SVG viewBox is the camera (wheel zoom, right-drag / Alt+left-drag / inert-point left-drag pan); CTM-based mouse→world coordinate conversion; passes theme bundle to worker at `lifecycle:init` and to `useSvgStaticContent`; initializes SpawnManager; owns map-site hover (`siteHoverAt` on the pointer, `.site-hover` tooltip div, suppressed while the picker or a pan is active) |
 
 ### Audio
@@ -610,7 +676,7 @@ Declarative balance and copy live under `src/content/data/` as split JSON packs,
 | `maps.json` | MAP_LEVELS (36), map-gen scalars |
 | `skill-tree.json` | level/addon costs, variant/addon labels, general-addon defs/categories |
 
-**Stays code (not packs):** engine loop constants (`FIXED_DT`, `MAX_ACCUM`), `GameState`, UI layout/wave-graph colors, skill unlock/refund logic, `applyVariantOps` interpreter, combat behavior in Tower/ProjectileManager.
+**Stays code (not packs):** engine loop constants (`FIXED_DT`, `MAX_ACCUM`), `TIME_SCALES`, `GameState`, wave-graph colors, skill unlock/refund logic, `applyVariantOps` interpreter, combat behavior in Tower/ProjectileManager. UI layout heights are not here either — they are CSS custom properties in `App.vue`.
 
 **Variant ops:** `TOWER_VARIANTS` no longer carry `apply` functions. Ops (`set`, `mul`, `mulTier`, `setTier`, `add`, `addPerTier`, `mulPowTier`) are interpreted in `src/content/applyVariantOps.ts` with `tierIdx = level - 5`.
 
@@ -712,14 +778,66 @@ and map tokens:
 --color-success-border, --color-warning, --color-region-0/1/2
 /* text and fonts */
 --color-text, --color-text-dim, --font-main
+/* game screen chrome heights */
+--hud-height, --build-bar-header-height, --build-bar-footer-height
 ```
+
+The three chrome heights are layout rather than palette, but they sit in the same
+`:root` block because the `/game` layout is built from them: `SvgGameRoot`'s wrapper
+insets its play area by `--hud-height` and `--build-bar-footer-height`, the
+notification toast below the HUD offsets by `--hud-height`, `EnemyChat`'s resting
+position clears it, and `GameShop` sizes its header and shop row by the other two.
+Nothing reads a chrome height from TypeScript any more — the old `HEADER_HEIGHT` /
+`FOOTER_HEIGHT` exports in `src/sim/Constants.ts` are gone (one of them named the
+build-bar header, not the HUD, which is what made the pair confusing). `GameShop`
+measures its own rendered size for the resting position rather than restating either
+the CSS button width or the header-plus-row height.
+
+`--hud-height` is measured, not written twice. `GameHud`'s bar owns its own layout
+(40px row, `height: auto` wrap under 720px) and is sized from neither the token nor
+a hand-counted wrapped height: on mount and on every `ResizeObserver` callback the
+component publishes `barRef.offsetHeight` as `--hud-height` on `<html>` (the root
+element is what both sibling consumers inherit; a scoped `:root` inside `GameHud`
+would compile to `:root[data-v-x]` and match nothing). The `:root` value in
+`App.vue` is only the pre-measurement default. `EnemyChat` re-anchors under the
+published value on mount, so the panel clears a wrapped mobile bar instead of
+sitting under it at a hard-coded `y = 56`.
 
 Theme JSON files hold map art colors only; gameplay effect colors (lightning, HP ramp,
 build validity) are intentionally not tokenized. Wave-graph series constants in
 `src/sim/Constants.ts` stay hex (sim-adjacent) but their values track the gold, gem,
 danger, and success palette values.
 
-All component styles use `<style scoped>` to prevent leakage.
+All component styles use `<style scoped>` to prevent leakage. Two places are global
+by necessity, not by choice: the `:root` token block and the `@keyframes site-drop-pulse` rule in `App.vue`
+(site glyphs are written into the SVG with `innerHTML`, so a scoped selector cannot
+reach them), and `src/components/detailPanel.css`, which holds the chrome shared by
+`TowerPanel` and `BasePanel` — Vue cannot apply a scope id to an `@import`ed
+stylesheet. Every rule in that file is namespaced under `.detail-panel`, and both
+panels keep a scoped block for their own differences.
+
+That last arrangement has a specificity trap worth writing down, because the naive
+version of it is wrong. Vue compiles `.action-btn` in a scoped block to
+`.action-btn[data-v-x]` = (0,2,0), and the shared file's `.detail-panel .action-btn`
+is *also* (0,2,0). A tie is not a win: the outcome then depends on which stylesheet
+the browser sees later, and Vite puts the entry chunk (`index-*.css`, which carries
+`detailPanel.css`) before the lazy chunk (`GameScreen-*.css`, which carries the
+scoped blocks). It happens to work today, and it silently stops working the moment
+import order changes. So an override in a scoped block repeats the panel's own
+identity class — `.tower-panel .sell-btn` → (0,3,0) — and wins on specificity instead
+of on file order. The same applies to the `.ghost-row` and `.cancel-btn` overrides in
+`TowerPanel`.
+
+**One lint gap worth knowing.** `biome.json` keeps `noUnusedVariables` and
+`noUnusedImports` off for `**/*.vue`, because Biome does not read the `<template>`
+block: every binding referenced only by a template expression reports as unused, and
+its autofix would delete working code (`GameHud`'s `gameStore`, every handler passed
+to `@click`). `tsc` is blinder still — it does not parse a `.vue` file's script block
+at all (only the `*.vue` module shim), and this `tsconfig.json` does not enable
+`noUnusedLocals` either. Dead-code detection inside a single-file component therefore
+rests on its tests — which is part of why `usePanelDrag` exists, to shrink the surface
+that has to be checked by hand. It also means an import that only a template used has
+to be removed by hand: nothing will flag it.
 
 ## Testing
 
@@ -730,13 +848,13 @@ All component styles use `<style scoped>` to prevent leakage.
 | `tests/unit/` | Unit test files covering all source modules (includes `map-theme.test.ts`, `spawn-manager.test.ts`, `enemy-attack.test.ts`, `snapshot-store.test.ts`, `snapshot-merge.test.ts`, `text-grid-builder.test.ts`, `text-render.test.ts`) |
 | `tests/unit/sim/` | Simulation unit tests: `applyCommand.test.ts`, `enemy-routing.test.ts`, `snapshot.test.ts`, `balance-wall.test.ts` (map-0 placement oracle), `gem-income.test.ts` (per-wave gem award paths), `run-bonuses.test.ts` (bonus offers and one-shot cache unlock), `map-sites.test.ts` (site placement rules), `command-validation.test.ts`, `boss-abilities.test.ts` |
 | `tests/unit/commanders/` | Commander unit tests: `observation.test.ts`, `stubby-brain.test.ts`, `stubbs-brain.test.ts` |
-| `tests/unit/components/` | Vue component tests (20 files, includes `pause-menu.test.ts`, `text-game-root.test.ts`, `bonus-picker.test.ts` locked/unlocked views, `game-hud.test.ts` gold floor and effects chip) |
-| `tests/unit/render/` | Render math tests: `camera-frame.test.ts`, `view-box-tween.test.ts`, `click-has-effect.test.ts`, `snapshot-anim-dt.test.ts`, `site-hover.test.ts` (site hover hit test and copy) |
+| `tests/unit/components/` | Vue component tests (22 files, includes `game-screen.test.ts` (which children are mounted and which overlays the parent gates), `base-panel.test.ts`, `use-panel-drag.test.ts` (drag, touch, viewport clamp, gesture-ending events, resize re-clamp, unmount cleanup), `pause-menu.test.ts`, `text-game-root.test.ts`, `bonus-picker.test.ts` locked/unlocked views, `game-hud.test.ts` gold floor / effects chip / notification timer / accessible names, `help-dialog.test.ts` roving tabindex and focus movement) |
+| `tests/unit/render/` | Render math tests: `camera-frame.test.ts`, `view-box-tween.test.ts`, `click-has-effect.test.ts`, `snapshot-anim-dt.test.ts`, `site-hover.test.ts` (site hover hit test and copy). Also `tests/unit/svg-map-site-layer.test.ts` for the site glyph layer |
 | `tests/integration/` | End-to-end wave simulation (`integration.test.ts`), worker command→snapshot round-trip (`worker-roundtrip.test.ts`), and commander worker round-trip (`commander.test.ts`) |
 | `tests/helpers/` | Shared mocks: `mock-stores.ts`, `mock-grid.ts`, `mock-managers.ts`, `mockDefaultTheme` |
 | `tests/setup.ts` | Global test setup: in-memory localStorage, Canvas 2D mock, performance.now |
 
-**1877 tests** across all files.
+**1946 tests** across all files.
 
 ### What's Covered
 
@@ -764,11 +882,11 @@ All component styles use `<style scoped>` to prevent leakage.
 | SVG Render Managers | `svg-effect-manager.test.ts` | Effect pool allocation, syncFromGameEngine DOM writes, element recycling, visibility toggling |
 | Map site layer | `tests/unit/svg-map-site-layer.test.ts` | Site glyphs and boss rings built once, layer rewritten only when the signature changes |
 | Sound | `sound-manager.test.ts` | WebAudio synth, all sound names, dispose, enabled flag |
-| Stores | `game-store.test.ts`, `persist-store.test.ts`, `ui-store.test.ts`, `map-theme.test.ts` | State, getters, actions, save/load, schema migration; theme registry, loader, normalize, store preload/load/visual getters |
+| Stores | `game-store.test.ts`, `persist-store.test.ts`, `ui-store.test.ts`, `map-theme.test.ts` | State, getters, actions, save/load, schema migration; theme registry, loader, normalize, store preload/load/visual getters. `ui-store.test.ts` also pins the overlay pause ownership: pause-on-open, no second toggle for a stacked overlay, and resume only when the last pause overlay closes |
 | Snapshot Store | `snapshot-store.test.ts`, `sim/snapshot.test.ts` | Latest-snapshot holding, meta mirroring into gameStore, snapshot serialization/round-trip |
 | Enemy Commanders | `tests/unit/commanders/observation.test.ts`, `lifecycle.test.ts`, `stubby-brain.test.ts`, `stubbs-brain.test.ts`, `tests/unit/sim/enemy-targeting.test.ts`, `integration/commander.test.ts`, `integration/commander-llm.test.ts` | Observation projection (world→tile, hp rename, type, targetingMode, base hp, countdown), switch clears route and targeting, Stubby hold-then-rush per wave, Stubbs ahead-tower routing + tower-set re-route, engagement-policy tower selection including snapped terrain towers, LLM transcript resend, tower distance, zero-hp removal, fence recovery, delta removals, instruction-change rebuild, chat forwarding |
 | Physics | `tests/unit/sim/physics/enemy-physics.test.ts`, `tests/unit/sim/physics/physics-world.test.ts`, `integration/physics-motion.test.ts` | Rapier2d body/collider creation, static geometry (base/towers/corridor), dynamic enemy motion, velocity integration, collision with walls and towers |
 | Router | `router.test.ts` | Navigation guards, block without map, save on leave, redirects, activeTheme requirement |
-| Input | `input.test.ts` | Keyboard dispatch, timeScale, pause, upgrade/sell, escape handling |
-| Components | 15 files in `tests/unit/components/` | Rendering, user interactions, store bindings (includes PauseMenu, CommandersScreen, EnemyChat) |
+| Input | `input.test.ts` | Keyboard dispatch, timeScale, pause, upgrade/sell, escape handling, `Space` closing a modal instead of resuming the sim behind it |
+| Components | 22 files in `tests/unit/components/` | Rendering, user interactions, store bindings. `game-screen.test.ts` stubs all sixteen children so it asserts GameScreen's own gating and the terminal-state redirect; `use-panel-drag.test.ts` covers the shared drag composable including its viewport clamp, the gesture-ending events, and the resize re-clamp |
 | Integration | `integration.test.ts`, `worker-roundtrip.test.ts` | Single wave simulation: kill enemies, gold economy, boss mechanics, victory; command→snapshot worker round-trip |

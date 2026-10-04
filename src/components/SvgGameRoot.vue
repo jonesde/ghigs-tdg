@@ -931,7 +931,7 @@ function renderLoop(): void {
   );
   effectManager.syncBaseSelection(
     baseDefense,
-    snapshot.meta.selectedTowerId === "base",
+    snapshot.meta.selectedTowerId === BASE_SELECTION_ID,
     baseCenter && baseTile
       ? {
           x: baseCenter.x,
@@ -1102,8 +1102,13 @@ onUnmounted(() => {
   // Ask the worker to flush any dirty persist state and dispose, then wait for
   // the "disposed" ack before terminating so the final flush is not dropped
   // (fix #3). A short safety timeout prevents a hung worker from blocking unmount.
+  // On a route change the router guard's awaitDisposeWorker runs before this
+  // unmount and leaves gameStore.worker null after terminating, so dispose is
+  // skipped here to avoid a dead postMessage and a dead 500ms fallback against
+  // an already-terminated worker. This path owns disposal only when the guard
+  // did not run (unmount without a navigation away from /game).
   const workerRef = worker;
-  if (workerRef) {
+  if (workerRef && gameStore.worker === workerRef) {
     const disposeDone = new Promise<void>((resolve) => {
       const onDisposed = (event: MessageEvent): void => {
         const data = event.data as { type?: string } | null;
@@ -1146,8 +1151,8 @@ onUnmounted(() => {
 <style scoped>
 .svg-wrapper {
   position: absolute;
-  top: 40px;
-  bottom: 64px;
+  top: var(--hud-height);
+  bottom: var(--build-bar-footer-height);
   left: 0;
   right: 0;
   display: flex;
