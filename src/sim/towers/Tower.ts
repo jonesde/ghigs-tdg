@@ -7,7 +7,6 @@ interface AuraTarget {
   takeDamage(amount: number, armorPiercing?: boolean): number | undefined;
 }
 
-import { applyVariantOps } from "@/content/applyVariantOps.js";
 import type { MapThemeAnimation, MapThemeData, TowerVisualMeta } from "@/render/themes/index.js";
 import {
   MILESTONE_BONUS_PCT,
@@ -39,13 +38,7 @@ import {
   TERRAIN_DAMAGE_BONUS_MAX_MULT,
   TOWER_ADDON_EFFECTS,
   TOWER_BASE,
-  TOWER_LEVEL_DMG_MULT,
-  TOWER_LEVEL_HEALTH_MULT,
-  TOWER_LEVEL_RANGE_MULT,
-  TOWER_LEVEL_RATE_MULT,
-  TOWER_LEVEL_SPLASH_MULT,
   TOWER_META,
-  TOWER_VARIANTS,
   type TowerId,
   type TowerMeta,
   UPGRADE_COST_BASE,
@@ -53,6 +46,12 @@ import {
 import type { SoundPlayer } from "@/sim/HostBindings.js";
 import type { PersistState } from "@/sim/PersistState.js";
 import { createDefaultPersistState } from "@/sim/PersistState.js";
+import {
+  computeTowerCoreStats,
+  computeTowerMaxHealth,
+  resolveEffectiveBase,
+  type TowerBaseConfig,
+} from "@/sim/towers/towerCoreStats.js";
 import { getGeneralAddonValue, maxLevelFor } from "./SkillTree.js";
 
 interface GridRef {
@@ -62,20 +61,6 @@ interface GridRef {
   tileToWorld(tx: number, ty: number): { x: number; y: number };
   worldToTile(wx: number, wy: number): { x: number; y: number };
   clearTowerGhost(x: number, y: number): void;
-}
-
-// The shape of a tower's base config as stored on the Tower instance. A
-// superset of the TowerBase config (adds `pierce`, keeps optional projSpeed).
-type TowerBaseConfig = NonNullable<Tower["base"]>;
-
-// Merges a tower's active variant `settings` over its TOWER_BASE entry. This is
-// the single source of truth for all base stat reads, so any variant can
-// override any TowerBase field (knockback, damage, health, projSpeed, …)
-// declaratively via `settings`.
-function resolveEffectiveBase(base: TowerBaseConfig, type: TowerId, variant: "A" | "B" | null): TowerBaseConfig {
-  const variantConfig = variant ? TOWER_VARIANTS[type]?.[variant] : undefined;
-  const variantSettings = variantConfig?.settings;
-  return variantSettings ? { ...base, ...variantSettings } : base;
 }
 
 // Fixed-aim barrels look along one of four world directions. Module constant so
@@ -282,24 +267,7 @@ export class Tower {
   x: number;
   y: number;
   meta: TowerMeta;
-  base: {
-    range: number;
-    damage: number;
-    fireRate: number;
-    splash?: number;
-    chain?: number;
-    stun?: number;
-    pierce?: number;
-    pierceFalloff?: number;
-    slowAmt?: number;
-    slowDur?: number;
-    projSpeed?: number;
-    fixedAim?: boolean;
-    groundOnly?: boolean;
-    health: number;
-    knockbackBase?: number;
-    knockbackScale?: number;
-  };
+  base: TowerBaseConfig;
   color: string;
   icon: string;
   name: string;
@@ -471,135 +439,28 @@ export class Tower {
 
   _computeStats(): TowerStats {
     const level = this.level;
-    const dmgMult = TOWER_LEVEL_DMG_MULT ** (level - 1);
-    const rateMult = TOWER_LEVEL_RATE_MULT ** (level - 1);
-    const effectiveBase = resolveEffectiveBase(this.base, this.type as TowerId, this.variant);
-    let range = effectiveBase.range * TOWER_LEVEL_RANGE_MULT ** (level - 1);
-    let damage = effectiveBase.damage * dmgMult;
-    let fireRate = effectiveBase.fireRate * rateMult;
-    let splash = (effectiveBase.splash || 0) * TOWER_LEVEL_SPLASH_MULT ** (level - 1);
-    let chain = effectiveBase.chain || 0;
-    let stun = effectiveBase.stun || 0;
-    let pierce = effectiveBase.pierce || 0;
-    let pierceFalloff = effectiveBase.pierceFalloff || 0;
-    let slowAmt = effectiveBase.slowAmt || 0;
-    let slowDur = effectiveBase.slowDur || 0;
-    let marksman = false;
-    let napalm = false;
-    let stormcall = false;
-    let knockbackBase = effectiveBase.knockbackBase ?? 0;
-    let knockbackScale = effectiveBase.knockbackScale ?? 0;
-    let thornReflectPct = 0;
-    let fenceDamage = 0;
-    let fenceStun = 0;
-    let healthMult = 1;
-    let armorPiercing = false;
-    let groundOnly = effectiveBase.groundOnly ?? false;
-
-    if (this.level >= 5 && this.variant === "A") {
-      const variantA = TOWER_VARIANTS[this.type as TowerId]?.A;
-      if (variantA?.statOps?.length) {
-        ({
-          range,
-          damage,
-          fireRate,
-          splash,
-          chain,
-          stun,
-          pierce,
-          pierceFalloff,
-          slowAmt,
-          slowDur,
-          marksman,
-          napalm,
-          stormcall,
-          knockbackBase,
-          knockbackScale,
-          thornReflectPct,
-          fenceDamage,
-          fenceStun,
-          healthMult,
-          armorPiercing,
-        } = applyVariantOps(
-          {
-            range,
-            damage,
-            fireRate,
-            splash,
-            chain,
-            stun,
-            pierce,
-            pierceFalloff,
-            slowAmt,
-            slowDur,
-            marksman,
-            napalm,
-            stormcall,
-            knockbackBase,
-            knockbackScale,
-            thornReflectPct,
-            fenceDamage,
-            fenceStun,
-            healthMult,
-            armorPiercing,
-          },
-          variantA.statOps,
-          level - 5,
-        ));
-      }
-    }
-    if (this.level >= 5 && this.variant === "B") {
-      const variantB = TOWER_VARIANTS[this.type as TowerId]?.B;
-      if (variantB?.statOps?.length) {
-        ({
-          range,
-          damage,
-          fireRate,
-          splash,
-          chain,
-          stun,
-          pierce,
-          pierceFalloff,
-          slowAmt,
-          slowDur,
-          marksman,
-          napalm,
-          stormcall,
-          knockbackBase,
-          knockbackScale,
-          thornReflectPct,
-          fenceDamage,
-          fenceStun,
-          healthMult,
-          armorPiercing,
-        } = applyVariantOps(
-          {
-            range,
-            damage,
-            fireRate,
-            splash,
-            chain,
-            stun,
-            pierce,
-            pierceFalloff,
-            slowAmt,
-            slowDur,
-            marksman,
-            napalm,
-            stormcall,
-            knockbackBase,
-            knockbackScale,
-            thornReflectPct,
-            fenceDamage,
-            fenceStun,
-            healthMult,
-            armorPiercing,
-          },
-          variantB.statOps,
-          level - 5,
-        ));
-      }
-    }
+    const core = computeTowerCoreStats(this.base, this.type as TowerId, level, this.variant);
+    let range = core.range;
+    let damage = core.damage;
+    let fireRate = core.fireRate;
+    let splash = core.splash;
+    let chain = core.chain;
+    let stun = core.stun;
+    let pierce = core.pierce;
+    const pierceFalloff = core.pierceFalloff;
+    let slowAmt = core.slowAmt;
+    const slowDur = core.slowDur;
+    const marksman = core.marksman;
+    const napalm = core.napalm;
+    const stormcall = core.stormcall;
+    const knockbackBase = core.knockbackBase;
+    const knockbackScale = core.knockbackScale;
+    const thornReflectPct = core.thornReflectPct;
+    const fenceDamage = core.fenceDamage;
+    const fenceStun = core.fenceStun;
+    let healthMult = core.healthMult;
+    let armorPiercing = core.armorPiercing;
+    let groundOnly = core.groundOnly;
 
     // Apply data-driven addon effects
     const addonEffects = TOWER_ADDON_EFFECTS[this.type as TowerId];
@@ -825,11 +686,7 @@ export class Tower {
   // the damage growth (levelDmgMult vs levelHealthMult), tuned separately.
   computeMaxHealth(): number {
     const healthMult = this.stats?.healthMult ?? 1;
-    return (
-      resolveEffectiveBase(this.base, this.type as TowerId, this.variant).health *
-      TOWER_LEVEL_HEALTH_MULT ** (this.level - 1) *
-      healthMult
-    );
+    return computeTowerMaxHealth(this.base, this.type as TowerId, this.level, this.variant, healthMult);
   }
 
   recomputeMaxHealth(): void {

@@ -72,3 +72,19 @@ export const BREACH_REEVAL_SECONDS = enemies.breachReevalSeconds;
 export const WAVE_COUNT_BASE = enemies.waveCountBase;
 export const WAVE_COUNT_SCALE = enemies.waveCountScale;
 export const BOSS_CADENCE = enemies.bossCadence;
+
+// Enemy level grows one tier per three waves over the map level. The wave
+// generator and the help dialog's enemy table read the same progression.
+export function enemyLevelForWave(wave: number, mapLevel: number): number {
+  return Math.max(1, Math.floor(wave / 3) + mapLevel);
+}
+
+export function waveUnitCount(wave: number): number {
+  return WAVE_COUNT_BASE + Math.floor(wave * WAVE_COUNT_SCALE);
+}
+
+// Cadence waves carry a boss, and a second one once the wave number passes 30.
+export function waveBossCount(wave: number, bossCadence: number): number {
+  if (bossCadence <= 0 || wave % bossCadence !== 0) return 0;
+  return 1 + Math.floor(wave / 30);
+}

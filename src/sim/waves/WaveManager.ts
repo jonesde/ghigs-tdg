@@ -3,9 +3,10 @@ import { BETWEEN_WAVES_TIMER, PRE_EMPTIVE_WAVE_TIMER, VICTORY_WAVE } from "@/sim
 import {
   ENEMY_TIER_THRESHOLDS,
   ENEMY_TYPES,
+  enemyLevelForWave,
   HEALER_MIN_GAP,
-  WAVE_COUNT_BASE,
-  WAVE_COUNT_SCALE,
+  waveBossCount,
+  waveUnitCount,
 } from "@/sim/ConstantsEnemy.js";
 import { mulberry32 } from "@/sim/grid/Map.js";
 
@@ -222,14 +223,9 @@ export class WaveManager {
   }
 
   generateWave(n: number): WaveEntry[] {
-    const baseCount = WAVE_COUNT_BASE + Math.floor(n * WAVE_COUNT_SCALE);
-    const regionLevel = this.map.level;
-    const enemyLevel = Math.max(1, Math.floor(n / 3) + regionLevel);
-
-    let bossCount = 0;
-    if (n % this.bossCadence === 0) {
-      bossCount = 1 + Math.floor(n / 30);
-    }
+    const baseCount = waveUnitCount(n);
+    const enemyLevel = enemyLevelForWave(n, this.map.level);
+    const bossCount = waveBossCount(n, this.bossCadence);
 
     // Render-pool size is not a gameplay balance lever; non-boss count is purely
     // driven by wave scaling. Overflow is absorbed by EnemyManager's pending queue.

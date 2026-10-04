@@ -1,0 +1,146 @@
+// @ts-nocheck
+/** @vitest-environment node */
+
+import { createPinia, setActivePinia } from "pinia";
+import { beforeEach, describe, expect, it } from "vitest";
+import { getGameContent } from "@/content/gameContent.js";
+import { DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
+import {
+  ENEMY_TYPES,
+  enemyLevelBounty,
+  enemyLevelForWave,
+  waveBossCount,
+  waveUnitCount,
+} from "@/sim/ConstantsEnemy.js";
+import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
+import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
+import { computeEnemyWaveStats } from "@/sim/enemies/enemyWaveStats.js";
+import { Grid } from "@/sim/grid/Grid.js";
+import { WaveManager } from "@/sim/waves/WaveManager.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
+import { makeBastionMap } from "../helpers/mock-grid";
+import { makeParticleSystem } from "../helpers/mock-managers";
+import { mockDefaultTheme } from "../helpers/mock-stores";
+
+const ENEMY_ORDER = ["minion", "runner", "tank", "shielded", "healer", "flyer", "jet", "aegis", "boss"];
+const SAMPLE_COMBOS = [
+  { level: 1, wave: 1, difficultyTick: 0 },
+  { level: 3, wave: 10, difficultyTick: 0 },
+  { level: 17, wave: 50, difficultyTick: 0 },
+  { level: 34, wave: 100, difficultyTick: 0 },
+  { level: 7, wave: 20, difficultyTick: 4 },
+  { level: 12, wave: 30, difficultyTick: 9 },
+];
+
+function levelMultFromContent(level, coefficients) {
+  return coefficients.intercept + coefficients.slopePerLevel * (level - 1);
+}
+
+function makeWaveManager(mapData) {
+  resetEnemyId();
+  const grid = new Grid(mapData);
+  const particles = makeParticleSystem();
+  const enemyManager = new EnemyManager(grid, particles, 0);
+  return new WaveManager(mapData, enemyManager);
+}
+
+beforeEach(() => {
+  const pinia = createPinia();
+  setActivePinia(pinia);
+  const themeStore = useMapThemeStore();
+  themeStore.defaultTheme = mockDefaultTheme;
+  themeStore.activeTheme = mockDefaultTheme;
+});
+
+describe("computeEnemyWaveStats", () => {
+  describe("closed-form scaling", () => {
+    it("matches the content coefficients for every enemy type", () => {
+      const enemyContent = getGameContent().enemies;
+      for (const type of ENEMY_ORDER) {
+        const meta = ENEMY_TYPES[type];
+        for (const combo of SAMPLE_COMBOS) {
+          const label = `${type} level ${combo.level} wave ${combo.wave} tick ${combo.difficultyTick}`;
+          const diffMult = 1 + combo.difficultyTick * DIFFICULTY_MULT_TICK;
+          const hpLevelMult = levelMultFromContent(combo.level, enemyContent.levelHpMult);
+          const damageLevelMult = levelMultFromContent(combo.level, enemyContent.levelDamageMult);
+          const waveHpMult = 1 + enemyContent.waveHpMult * (combo.wave - 1);
+          const waveDamageMult = 1 + enemyContent.waveDamageMult * (combo.wave - 1);
+          const expectedDamage = meta.attackDamage * damageLevelMult * waveDamageMult * diffMult;
+
+          const stats = computeEnemyWaveStats(meta, combo.level, combo.wave, combo.difficultyTick);
+          expect(stats.maxHp, `${label} hp`).toBeCloseTo(meta.baseHp * hpLevelMult * waveHpMult * diffMult, 8);
+          expect(stats.attackDamage, `${label} damage`).toBeCloseTo(expectedDamage, 8);
+          expect(stats.attackDps, `${label} dps`).toBeCloseTo(expectedDamage * meta.attackSpeed, 8);
+          expect(stats.bounty, `${label} bounty`).toBe(enemyLevelBounty(meta.bounty, combo.level, combo.wave));
+          expect(stats.shield, `${label} shield`).toBe(meta.shield ? meta.shield * combo.level : 0);
+        }
+      }
+    });
+
+    it("scales hp and damage with difficulty ticks", () => {
+      const meta = ENEMY_TYPES.minion;
+      const base = computeEnemyWaveStats(meta, 5, 20, 0);
+      const harder = computeEnemyWaveStats(meta, 5, 20, 2);
+      expect(harder.maxHp).toBeCloseTo(base.maxHp * (1 + 2 * DIFFICULTY_MULT_TICK), 8);
+      expect(harder.attackDamage).toBeCloseTo(base.attackDamage * (1 + 2 * DIFFICULTY_MULT_TICK), 8);
+      expect(harder.bounty).toBe(base.bounty);
+    });
+  });
+
+  describe("parity with spawned enemies", () => {
+    it("matches an Enemy constructed with the same level, wave, and difficulty", () => {
+      const grid = new Grid(makeBastionMap());
+      for (const type of ENEMY_ORDER) {
+        const meta = ENEMY_TYPES[type];
+        for (const combo of SAMPLE_COMBOS) {
+          const label = `${type} level ${combo.level} wave ${combo.wave} tick ${combo.difficultyTick}`;
+          const expected = computeEnemyWaveStats(meta, combo.level, combo.wave, combo.difficultyTick);
+          const enemy = new Enemy(type, combo.level, 0, grid, combo.wave, combo.difficultyTick);
+          expect(enemy.maxHp, `${label} hp`).toBeCloseTo(expected.maxHp, 8);
+          expect(enemy.hp, `${label} hp now`).toBeCloseTo(expected.maxHp, 8);
+          expect(enemy.attackDamage, `${label} damage`).toBeCloseTo(expected.attackDamage, 8);
+          expect(enemy.bounty, `${label} bounty`).toBe(expected.bounty);
+          expect(enemy.shield, `${label} shield`).toBe(expected.shield);
+        }
+      }
+    });
+
+    it("matches an EnemyManager spawn that carries the difficulty tick", () => {
+      const grid = new Grid(makeBastionMap());
+      const enemyManager = new EnemyManager(grid, makeParticleSystem(), 4);
+      for (const type of ENEMY_ORDER) {
+        const enemy = enemyManager.spawn(type, 6, 0, 30);
+        expect(enemy, type).not.toBeNull();
+        const expected = computeEnemyWaveStats(ENEMY_TYPES[type], 6, 30, 4);
+        expect(enemy.maxHp, `${type} hp`).toBeCloseTo(expected.maxHp, 8);
+        expect(enemy.attackDamage, `${type} damage`).toBeCloseTo(expected.attackDamage, 8);
+      }
+    });
+  });
+
+  describe("wave inputs used by the help tab", () => {
+    it("derives the same enemy level as WaveManager for the current map", () => {
+      const mapData = makeBastionMap();
+      const waveManager = makeWaveManager(mapData);
+      for (const wave of [1, 7, 10, 30, 50, 100]) {
+        const orders = waveManager.generateWave(wave);
+        const expectedLevel = enemyLevelForWave(wave, mapData.level);
+        for (const order of orders) {
+          expect(order.level, `wave ${wave}`).toBe(expectedLevel);
+        }
+      }
+    });
+
+    it("reports unit and boss counts consistent with generated waves", () => {
+      const mapData = makeBastionMap();
+      const waveManager = makeWaveManager(mapData);
+      for (const wave of [1, 10, 40, 100]) {
+        const orders = waveManager.generateWave(wave);
+        const nonBoss = orders.filter((order) => order.type !== "boss");
+        expect(nonBoss.length, `wave ${wave} non-boss count`).toBe(waveUnitCount(wave));
+        const bosses = orders.filter((order) => order.type === "boss");
+        expect(bosses.length, `wave ${wave} boss count`).toBe(waveBossCount(wave, mapData.bossCadence));
+      }
+    });
+  });
+});

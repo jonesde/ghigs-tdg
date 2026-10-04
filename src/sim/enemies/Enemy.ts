@@ -1,18 +1,12 @@
 import type RAPIER from "@dimforge/rapier2d-compat";
 import type { CrowdAgent } from "recast-navigation";
 import type { EnemyVisualMeta, MapThemeAnimation, MapThemeData } from "@/render/themes/index.js";
-import { DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
 import {
   AGENT_RESYNC_RADIUS_FRACTION,
   BOSS_STUN_REDUCTION,
   BREACH_HYSTERESIS_SECONDS,
   BREACH_REEVAL_SECONDS,
-  ENEMY_LEVEL_DAMAGE_MULT,
-  ENEMY_LEVEL_HP_MULT,
   ENEMY_TYPES,
-  ENEMY_WAVE_DAMAGE_MULT,
-  ENEMY_WAVE_HP_MULT,
-  enemyLevelBounty,
   MAX_BURN_STACKS,
   MIN_SLOW_FACTOR,
   STUCK_RECOVERY_SECONDS,
@@ -22,6 +16,7 @@ import { restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdManager.js";
 import { fromRecast, toRecast } from "@/sim/navmesh/coords.js";
 import { launchEnemy } from "@/sim/physics/launchEnemy.js";
 import type { Tower } from "@/sim/towers/Tower.js";
+import { computeEnemyWaveStats } from "./enemyWaveStats.js";
 import {
   canTraverseTile,
   type LiveTowerAt,
@@ -414,19 +409,17 @@ export class Enemy {
     this.resist = meta.resist || 0;
     this.slowResist = meta.slowResist || 0;
     this.knockResist = meta.knockResist || 0;
-    this.shield = meta.shield ? meta.shield * level : 0;
+    const waveStats = computeEnemyWaveStats(meta, level, wave, difficultyTick);
+    this.shield = waveStats.shield;
     this.maxShield = this.shield;
     this.heal = meta.heal || 0;
     this.healRange = (meta.healRange || 0) * grid.tileSize;
 
-    const waveHpMult = 1 + ENEMY_WAVE_HP_MULT * (wave - 1);
-    const waveDamageMult = 1 + ENEMY_WAVE_DAMAGE_MULT * (wave - 1);
-    const diffMult = (difficultyTick || 0) * DIFFICULTY_MULT_TICK + 1;
-    this.maxHp = meta.baseHp * ENEMY_LEVEL_HP_MULT(level) * waveHpMult * diffMult;
+    this.maxHp = waveStats.maxHp;
     this.hp = this.maxHp;
     this.speed = meta.speed;
-    this.bounty = enemyLevelBounty(meta.bounty, level, wave);
-    this.attackDamage = meta.attackDamage * ENEMY_LEVEL_DAMAGE_MULT(level) * waveDamageMult * diffMult;
+    this.bounty = waveStats.bounty;
+    this.attackDamage = waveStats.attackDamage;
     this.attackSpeed = meta.attackSpeed;
     this.attackTimer = 0;
     this.blockedByTower = null;
