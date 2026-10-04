@@ -67,6 +67,33 @@ describe("GameHud", () => {
     expect(wrapper.text()).toContain("250");
   });
 
+  it("floors fractional gold, which the 1.1x bounty multiplier produces", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore } = mountGameHud();
+    gameStore.gold = 250.7;
+    const wrapper = mount(GameHud, { global: { plugins: [pinia] } });
+    expect(wrapper.get(".gold .hud-value").text()).toBe("250");
+    gameStore.gold = 100.2;
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get(".gold .hud-value").text()).toBe("100");
+  });
+
+  it("counts active effects in a chip and lists every one of them in the hover popup", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore } = mountGameHud();
+    const wrapper = mount(GameHud, { global: { plugins: [pinia] } });
+    expect(wrapper.find(".effects-chip").exists()).toBe(false);
+
+    gameStore.runBonuses.damageMult = 1.2;
+    gameStore.runBonuses.bountyMult = 1.1;
+    gameStore.runBonuses.typeRangeMult = { basic: 1.2 };
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.get(".effects-chip").text()).toContain("Effects ×3");
+    const parts = wrapper.findAll(".effects-part").map((part) => part.text());
+    expect(parts).toEqual(["Dmg 1.20×", "Gold 1.10×", "Basic range 1.20×"]);
+  });
+
   it("displays current wave", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore } = mountGameHud();

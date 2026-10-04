@@ -80,4 +80,29 @@ html, body {
   width: 100%;
   height: 100%;
 }
+
+/* Site glyphs are written into the SVG with innerHTML, so their animation rules
+   have to live in the global sheet: a scoped selector never reaches them. */
+@keyframes siteDropPulse {
+  0%,
+  100% {
+    stroke-opacity: 0.3;
+    stroke-width: 1.5;
+  }
+  50% {
+    stroke-opacity: 1;
+    stroke-width: 3;
+  }
+}
+
+.site-drop-pulse {
+  animation: siteDropPulse 1.1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-drop-pulse {
+    animation: none;
+    stroke-opacity: 0.8;
+  }
+}
 </style>

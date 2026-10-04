@@ -77,6 +77,9 @@ export interface BonusCard {
 export interface BonusContext {
   wave: number;
   specialistType: TowerId;
+  // Themed display name for the specialist type, supplied by the picker from the
+  // active map theme. Plain string so this module stays clear of the theme store.
+  themeTowerName?: string;
 }
 
 export interface OfferCurationContext {
@@ -86,6 +89,9 @@ export interface OfferCurationContext {
 }
 
 const PERSISTENT_FACTOR = 1.1;
+// A card that buffs one tower type is worth more than one that buffs them all,
+// so the specialist draws pay 20% instead of 10%.
+const TYPED_PERSISTENT_FACTOR = 1.2;
 const ARMOR_FACTOR = 0.9;
 const SMALL_PURSE_BASE_GOLD = 50;
 const SMALL_PURSE_GOLD_PER_WAVE = 5;
@@ -117,10 +123,15 @@ const PERSISTENT_CARDS: Record<GlobalBonusId, { name: string; field: GlobalMultF
   };
 
 const TYPED_CARDS: Record<TypedBonusId, { name: string; field: TypedMultField; factor: number; noun: string }> = {
-  sharpenedType: { name: "Sharpened", field: "typeDamageMult", factor: PERSISTENT_FACTOR, noun: "damage" },
-  quickHandsType: { name: "Quick Hands", field: "typeFireRateMult", factor: PERSISTENT_FACTOR, noun: "fire rate" },
-  fortifyType: { name: "Fortify", field: "typeHealthMult", factor: PERSISTENT_FACTOR, noun: "health" },
-  farSightType: { name: "Far Sight", field: "typeRangeMult", factor: PERSISTENT_FACTOR, noun: "range" },
+  sharpenedType: { name: "Sharpened", field: "typeDamageMult", factor: TYPED_PERSISTENT_FACTOR, noun: "damage" },
+  quickHandsType: {
+    name: "Quick Hands",
+    field: "typeFireRateMult",
+    factor: TYPED_PERSISTENT_FACTOR,
+    noun: "fire rate",
+  },
+  fortifyType: { name: "Fortify", field: "typeHealthMult", factor: TYPED_PERSISTENT_FACTOR, noun: "health" },
+  farSightType: { name: "Far Sight", field: "typeRangeMult", factor: TYPED_PERSISTENT_FACTOR, noun: "range" },
 };
 
 // Sturdy Wall has no damage, fire rate, or range, so three of the four typed cards
@@ -204,9 +215,13 @@ export function bonusCard(bonusId: BonusId, bonuses: RunBonuses, context: BonusC
     const card = TYPED_CARDS[bonusId];
     const current = bonuses[card.field][context.specialistType] ?? 1;
     const next = current * card.factor;
+    // The theme's name leads, the base tower name follows in parentheses for
+    // reference, so a themed run still reads against the shop and help copy.
+    const themed = context.themeTowerName ?? label;
+    const towerLabel = `${themed} (${label})`;
     return {
-      name: `${card.name} · ${label}`,
-      detail: `${label} tower ${card.noun}`,
+      name: `${card.name} · ${towerLabel}`,
+      detail: `${towerLabel} tower ${card.noun}`,
       change: `${formatMultiplier(current)} → ${formatMultiplier(next)}`,
       persistent: true,
     };
@@ -226,7 +241,9 @@ export function formatMultiplier(value: number): string {
   return `${value.toFixed(2)}×`;
 }
 
-export function formatRunBonusSummary(bonuses: RunBonuses): string {
+// One entry per active effect, so the header can list them in a popup instead of
+// truncating a single joined line.
+export function runBonusSummaryParts(bonuses: RunBonuses): string[] {
   const parts: string[] = [];
   if (bonuses.damageMult !== 1) parts.push(`Dmg ${formatMultiplier(bonuses.damageMult)}`);
   if (bonuses.fireRateMult !== 1) parts.push(`Rate ${formatMultiplier(bonuses.fireRateMult)}`);
@@ -243,7 +260,11 @@ export function formatRunBonusSummary(bonuses: RunBonuses): string {
       parts.push(`${TOWER_TYPE_LABELS[towerId]} ${TYPED_SUMMARY_SHORT[field]} ${formatMultiplier(value)}`);
     }
   }
-  return parts.join("  ");
+  return parts;
+}
+
+export function formatRunBonusSummary(bonuses: RunBonuses): string {
+  return runBonusSummaryParts(bonuses).join("  ");
 }
 
 export interface TowerBonusFactors {

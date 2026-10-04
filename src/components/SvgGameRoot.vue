@@ -2,7 +2,8 @@
   <div class="svg-wrapper">
     <svg ref="svgRoot" class="game-svg" xmlns="http://www.w3.org/2000/svg"
          :class="{ panning: panActive }" :viewBox="displayedViewBox" preserveAspectRatio="xMidYMid meet"
-         @mousemove="onMouseMove" @click="onClick" @mousedown="onMouseDown" @wheel.prevent="onWheel" @contextmenu.prevent>
+         @mousemove="onMouseMove" @click="onClick" @mousedown="onMouseDown" @wheel.prevent="onWheel"
+         @contextmenu.prevent @mouseleave="siteHoverState = null">
       <defs ref="defsLayer"></defs>
 
       <g ref="worldLayer" class="camera-wrapper">
@@ -15,6 +16,10 @@
         <g ref="effectLayer" class="effect-layer"></g>
       </g>
     </svg>
+    <div v-if="siteHoverTextValue && siteHoverStyle" class="site-hover" :style="siteHoverStyle">
+      <span class="site-hover-title">{{ siteHoverTextValue.title }}</span>
+      <span v-for="line in siteHoverTextValue.lines" :key="line" class="site-hover-line">{{ line }}</span>
+    </div>
   </div>
 </template>
 
@@ -30,6 +35,7 @@ import { MapSiteLayer, siteGlyphMarkup } from "@/render/svg/MapSiteLayer.js";
 import { ParticleManager } from "@/render/svg/ParticleManager.js";
 import { ProjectileManager } from "@/render/svg/ProjectileManager.js";
 import { SpawnManager } from "@/render/svg/SpawnManager.js";
+import { type SiteHoverRef, type SiteHoverSites, siteHoverAt, siteHoverText } from "@/render/svg/siteHover.js";
 import { isNewSnapshotRendered, snapshotAnimDt } from "@/render/svg/snapshotAnimDt.js";
 import { TowerManager } from "@/render/svg/TowerManager.js";
 import { UiOverlayManager } from "@/render/svg/UiOverlayManager.js";
@@ -105,6 +111,39 @@ const { staticDefsContent, mapDefsContent, gridContent } = useSvgStaticContent(
 );
 
 const mouseWorldPos = ref<{ x: number; y: number } | null>(null);
+
+// Custom tooltip over a map site. Client offsets are relative to .svg-wrapper,
+// so the tooltip sits with the pointer without reaching into the camera math.
+const siteHoverState = ref<{ site: SiteHoverRef; offsetX: number; offsetY: number } | null>(null);
+
+const siteHoverSites = computed<SiteHoverSites>(() => ({
+  drops: gameStore.supplyDrops,
+  caches: gameStore.mapCaches,
+  buildings: gameStore.mapBuildings,
+}));
+
+// Resolved from the live site lists every time they or the wave change, so a
+// cache broken open under the pointer refreshes its copy and a consumed site
+// drops the tooltip without a separate clear path.
+const siteHoverTextValue = computed(() => {
+  const state = siteHoverState.value;
+  if (!state || gameStore.bonusPicker || panActive.value) return null;
+  return siteHoverText(state.site, siteHoverSites.value, gameStore.currentWave);
+});
+
+const siteHoverStyle = computed(() => {
+  const state = siteHoverState.value;
+  const text = siteHoverTextValue.value;
+  if (!state || !text) return null;
+  const wrapper = svgRoot.value?.parentElement;
+  const boxWidth = 250;
+  const boxHeight = 36 + text.lines.length * 18;
+  const maxX = (wrapper?.clientWidth ?? 1200) - boxWidth - 8;
+  const maxY = (wrapper?.clientHeight ?? 800) - boxHeight - 8;
+  const left = Math.max(8, Math.min(state.offsetX + 14, maxX));
+  const top = Math.max(8, Math.min(state.offsetY + 18, maxY));
+  return { left: `${left}px`, top: `${top}px` };
+});
 
 const buildPreviewTilePos = computed(() => {
   if (gameStore.selectedTowerType) {
@@ -516,6 +555,8 @@ const flushHover = (): void => {
 
   mouseWorldPos.value = worldPos;
 
+  updateSiteHover(worldPos.x, worldPos.y);
+
   const grid = gameStore.grid;
   const tile = grid
     ? grid.worldToTile(worldPos.x, worldPos.y)
@@ -529,6 +570,20 @@ const flushHover = (): void => {
   }
 
   gameStore.setHoverUpgradeBtn(computeHoverUpgradeBtn(worldPos.x, worldPos.y));
+};
+
+// The site tooltip shares the pointer's world position but renders in wrapper
+// pixels, so it stays under the cursor at every zoom level.
+const updateSiteHover = (worldX: number, worldY: number): void => {
+  const wrapper = svgRoot.value?.parentElement;
+  const rect = wrapper?.getBoundingClientRect();
+  const tileSize = gameStore.grid?.tileSize || TILE_SIZE;
+  const site = siteHoverAt(siteHoverSites.value, tileSize, worldX, worldY);
+  if (!site || !rect) {
+    siteHoverState.value = null;
+    return;
+  }
+  siteHoverState.value = { site, offsetX: pendingHoverX - rect.left, offsetY: pendingHoverY - rect.top };
 };
 
 // The upgrade button hit-test that used to live on GameEngine.setHover. It
@@ -1111,5 +1166,33 @@ onUnmounted(() => {
 
 .game-svg.panning {
   cursor: grabbing;
+}
+
+.site-hover {
+  position: absolute;
+  pointer-events: none;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 260px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-panel);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+  color: var(--color-text);
+  font-size: var(--font-md);
+  line-height: 1.35;
+}
+
+.site-hover-title {
+  display: block;
+  font-weight: 700;
+}
+
+.site-hover-line {
+  display: block;
+  color: var(--color-text-dim);
 }
 </style>

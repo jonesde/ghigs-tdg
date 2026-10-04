@@ -41,7 +41,7 @@ src/
 │   ├── WaveGraph.vue            # Per-wave graph overlay: damage, gold, gems, max enemy HP
 │   ├── PauseMenu.vue            # Pause menu overlay: resume, skill tree, options, quit
 │   ├── ProgressivePlacement.vue # Block-offer cards (height-shaded 5×5 previews, rotation, site hint) plus the paused post-placement undo button
-│   ├── BonusPicker.vue          # Three-card reward picker for a supply drop or map cache: card copy, wave-scaled cache fee or Free, dismiss
+│   ├── BonusPicker.vue          # Three-card reward picker for a supply drop or map cache: locked cache shows unlock-fee + Leave it, card copy, wave-scaled fee or Free, dismiss
 │   ├── HelpDialog.vue           # Help/controls overlay (toggled from in-game menu)
 │   ├── MainMenu.vue             # Main menu: large theme buttons (faded menuBackground preview per theme, persisted select), New Game section (Select Map / Progressive Run / Generate Map buttons), skill tree, commanders, run history, difficulty slider
 │   ├── MapSelect.vue            # Map selection: region tabs + themed region map with level/progressive markers (last map index persisted, region tab derived from it, first level pre-selected when none) + header buttons opening the shared GeneratedMapDialog / ProgressiveMapDialog custom-run dialogs
@@ -80,8 +80,8 @@ src/
 │   ├── WaveGraphTracker.ts      # Per-wave graph data tracking: damage, gold, gems, peak enemy HP
 │   ├── MapSiteManager.ts        # Claimable site lists (buildings, caches, supply drops), tile reservations, package placement
 │   ├── bossAbilities.ts         # Boss ability pool, per-wave roll without replacement, ability ticks, Mend source suppression
-│   ├── mapSites.ts              # Site placement rules: clearances, rank hash, progressive stamp reconcile
-│   ├── runBonuses.ts            # Bonus cards: offer rolls, typed and specialist draws, wave-scaled purses and cache fee
+│   ├── mapSites.ts              # Site placement rules: clearances, rank hash, progressive stamp reconcile; site icons, building details, cache unlocked flag
+│   ├── runBonuses.ts            # Bonus cards: offer rolls, typed and specialist draws, 1.2x typed mults, wave-scaled purses and cache fee, summary parts
 │   ├── grid/
 │   │   ├── Grid.ts              # Grid data structure: path, base, spawn queries, build validation
 │   │   ├── Map.ts               # Procedural map generation: 36 maps, 3 regions, 6 layout styles
@@ -127,7 +127,8 @@ src/
 │       ├── EffectManager.ts     # Lightning, stun aura, build preview, range circle, upgrade button
 │       ├── UiOverlayManager.ts  # HP bars, shield bars, boss HP text rendering
 │       ├── SpawnManager.ts      # Spawn point rendering pool: <use> elements for spawn indicators
-│       ├── MapSiteLayer.ts      # Site glyph markup (drops, caches with HP bars, buildings) keyed by a signature cache
+│       ├── MapSiteLayer.ts      # Site glyph markup (pulsing drop ring, icon glyphs, caches with HP bars, buildings) keyed by a signature cache
+│       ├── siteHover.ts         # Site hover hit test (package radius, building box, nearest wins) plus tooltip copy per site state
 │       ├── useSvgStaticContent.ts # Composable: builds <defs> symbols/filters + grid layer from active theme
 │       ├── cameraFrame.ts       # View frame: fit, zoom, pan, reveal, wheel factor. The SVG viewBox is this frame
 │       └── types.ts             # Shared types for render proxies and managers
@@ -415,6 +416,10 @@ Ability ticks run in `BossAbilityRuntime.tick` (engine-owned services; no per-ti
 
 **Run bonuses** (`src/sim/runBonuses.ts`). Bosses drop a supply package on death; terrain caches are destructible by tower fire (only while no enemy is in range) or openable for gold. Both open the `BonusPicker`: pause, pick 1 of 3, resume to the pre-open state. The pool is 10 base cards — 7 persistent mults (Sharpened, Quick Hands, Fortify, Far Sight, Bounty, Heavy Frost, Armor) that stack multiplicatively per run, plus Small Purse, Large Purse, Field Repair — and 4 typed variants (one tower type, excluded Sturdy Wall) drawn into at most one offer slot. Three separate seeded streams keyed `mapSeed + packageId` keep draws stable across dismiss/reopen: the offer (`bonusOfferSeed`), the specialist type (`specialistSeed`, weighted by live tower counts), and the Heavy Frost curation pass (`curationSeed`, swaps the card out once on first open when no tower can apply a slow). Purses and the cache fee scale together (`smallPurseGold(wave)`), so an intact cache costs exactly one Small Purse and the no-reward pressure holds late into a run.
 
+The four typed cards pay `TYPED_PERSISTENT_FACTOR` (1.2) instead of the 1.1 the base cards use, which is what makes one tower type worth more than all of them at once; the card copy carries the themed tower name from `BonusContext.themeTowerName` (`mapThemeStore.getTowerVisual(typeId)?.name`, shipped as a plain string so `src/sim` never imports a store), e.g. `Sharpened · Sub Tractor (Basic)` over `Sub Tractor (Basic) tower damage`.
+
+Caches are gated: clicking an intact cache opens the picker locked — no gold check on the click, so a short purse still reaches the button — showing only `Unlock for N gold` and `Leave it`. `GameEngine.unlockCache` charges `cacheOpenGold(wave)` once and sets `cache.unlocked`; `pickBonus` refuses while locked, and `cacheOpenCost` reports 0 once the site is unlocked or broken, so a dismiss after paying never recharges. Breaking the cache with tower fire sets `unlocked` at hp 0 and opens it for free, which is what keeps the damage path and the paid path on the same flag.
+
 A cache broken by fire keeps its tile, offer, and reservation at hp 0 (towers stop targeting it; the click claim is free). Because the break happens inside `engine.update` while a picker may already be open, `pendingBrokenCaches` queues the break with the open picker's `wasPlaying` flag; `closeBonusPicker` drains the queue so a chain of simultaneous breaks holds the pause and resumes exactly once at the end, and a progressive placement hold that refuses the open retries on completion (`completeProgressivePlacement` → drain). Offer and specialist type resolve from the site at open time, which is what keeps a dismiss + reopen on the same roll. On the worker side, a picker opened mid-tick (not by a command) forces a snapshot post through the ack gate the same way the placement hold does (`bonusPickerPosted` latch in `decideSnapshotPost`).
 
 ### Router Navigation Guards
@@ -446,7 +451,7 @@ A cache broken by fire keeps its tile, offer, and reservation at hp 0 (towers st
 
 | File | Description |
 |---|---|
-| `src/stores/game.ts` | Volatile game state: lives, gold, wave, selection, time scale, camera, tower/panel positions, hover state, frame id, run gem/boss counters, milestone breakdown, end-screen data, random-map params, worker reference |
+| `src/stores/game.ts` | Volatile game state: lives, gold, wave, selection, time scale, camera, tower/panel positions, hover state, `bonusPickerLocked` (cache site at hp > 0 and not unlocked, gating the picker and the digit shortcuts), frame id, run gem/boss counters, milestone breakdown, end-screen data, random-map params, worker reference |
 | `src/stores/persist.ts` | Persistent state: gems, unlocks, difficulty, map progress, random-map and progressive-map preferences, last-selected theme and map, sound on/off preference, localStorage I/O |
 | `src/stores/ui.ts` | UI state: confirm dialog, notifications, main menu / skill tree / stats / help / minimap overlay flags, debug panel visibility, enemy commander selection, random-map panel, wasPlaying flags for pause/skill-tree/help |
 | `src/stores/mapTheme.ts` | Map theme state: activeTheme, defaultTheme (preloaded at app init), availableThemes, preload/load actions |
@@ -465,11 +470,11 @@ A cache broken by fire keeps its tile, offer, and reservation at hp 0 (towers st
 |---|---|
 | `src/components/GameScreen.vue` | Game layout container: SvgGameRoot, HUD, shop, tower panel, wave countdown, debug panel, wave graph, pause menu overlay |
 | `src/components/SvgGameRoot.vue` | Single SVG root: RAF loop, GameEngine lifecycle (receives active theme), imperative DOM rendering, CTM-based input, SpawnManager initialization |
-| `src/components/GameHud.vue` | Top bar: lives, gold, gems, wave counter, speed/sound/pause/menu controls (sound toggles `persistStore.soundEnabled`, mirrored onto the live SoundManager by SvgGameRoot); uses `getMapDisplayName` for map label |
+| `src/components/GameHud.vue` | Top bar: lives, integer gold (floored, since Bounty pays fractional), gems, wave counter, speed/sound/pause/menu controls (sound toggles `persistStore.soundEnabled`, mirrored onto the live SoundManager by SvgGameRoot), and an `Effects xN` chip that opens a hover popup listing every active run effect; uses `getMapDisplayName` for map label |
 | `src/components/GameShop.vue` | Bottom bar: tower build selection with cost (from constants) and themed name/color/icon (from active theme) |
 | `src/components/TowerPanel.vue` | Right panel: tower stats, targeting mode, upgrade/sell, specialization; themed name/color/icon from active theme |
 | `src/components/WaveCountdown.vue` | Inter-wave countdown overlay shown before each wave spawns |
-| `src/components/BonusPicker.vue` | Three-card reward picker for a supply drop or a map cache: card copy with current → next mults, wave-scaled cache fee or Free for a broken cache, dismiss leaves the package claimable |
+| `src/components/BonusPicker.vue` | Three-card reward picker for a supply drop or a map cache: card copy with current → next mults, themed specialist tower name (`Sharpened · Rifle Tower (Basic)`), wave-scaled cache fee or Free for a broken cache, dismiss leaves the package claimable. An intact cache opens locked — only `Unlock for N gold` and `Leave it`, dispatching `action:unlockCache` — and shows the cards once unlocked |
 | `src/components/WaveGraph.vue` | Per-wave graph overlay: damage dealt, gold earned, gems earned, max enemy HP across all waves |
 | `src/components/PauseMenu.vue` | Pause menu overlay: resume, skill tree, difficulty adjustment, quit to main menu |
 | `src/components/HelpDialog.vue` | Help/controls overlay (toggled from the in-game pause menu) |
@@ -520,7 +525,7 @@ A cache broken by fire keeps its tile, offer, and reservation at hp 0 (towers st
 |---|---|
 | `src/sim/mapSites.ts` | Site placement rules for buildings, caches, and supply drops: clearance constants (building ring, cache-to-building, cache-to-path, spawn/base), rank hash of the world position, quota fill for the opening board, and the progressive stamp reconcile |
 | `src/sim/MapSiteManager.ts` | Owns the board's claimable site lists and the reserved-tile set derived from them (sites block construction but stay out of the navmesh); nearest-package click test, free corridor tile for a drop, shift/snap when the layout moves |
-| `src/sim/runBonuses.ts` | Run rewards: bonus id pool, three-card offer rolls keyed by map seed + package id, Heavy Frost curation on first open, specialist type draw weighted by live towers, wave-scaled purse and cache-fee helpers, run bonus mult records |
+| `src/sim/runBonuses.ts` | Run rewards: bonus id pool, three-card offer rolls keyed by map seed + package id, Heavy Frost curation on first open, specialist type draw weighted by live towers, `TYPED_PERSISTENT_FACTOR` (1.2) for the four typed cards, themed card copy via `BonusContext.themeTowerName`, wave-scaled purse and cache-fee helpers, run bonus mult records, `runBonusSummaryParts` for the HUD effects list |
 
 ### Towers
 
@@ -550,7 +555,8 @@ A cache broken by fire keeps its tile, offer, and reservation at hp 0 (towers st
 | `src/render/svg/EffectManager.ts` | Lightning paths, stun aura paths, build preview rect, range circle, upgrade button SVG elements |
 | `src/render/svg/UiOverlayManager.ts` | HP bars (enemy bars only while hp < maxHp, matching the text renderer; tower bars only while damaged), shield bars, boss HP text as pooled `<rect>` and `<text>` elements |
 | `src/render/svg/SpawnManager.ts` | Spawn point rendering pool: `<use>` elements for spawn location indicators |
-| `src/render/svg/MapSiteLayer.ts` | Site glyph markup (supply drops, caches with HP bars and wave-scaled open cost, buildings with buff blurbs) behind a signature cache, so the layer only rewrites when a site or the wave changes |
+| `src/render/svg/MapSiteLayer.ts` | Site glyph markup (supply drops with the `site-drop-pulse` halo ring and `aria-label`, caches with HP bars plus icon and wave-scaled lock/unlock label, buildings with icon and `buildingBlurb` detail) behind a signature cache that includes `unlocked`, so the layer only rewrites when a site, its unlock state, or the wave changes |
+| `src/render/svg/siteHover.ts` | Map-site hover: `siteHoverAt` (package click radius, ±9-unit building box, nearest package wins over the building behind it) and `siteHoverText` (per-state tooltip copy for drops, locked/unlocked/broken caches, buildings); consumed by `SvgGameRoot` into the `.site-hover` tooltip div |
 | `src/render/svg/useSvgStaticContent.ts` | Composable: builds `<defs>` (symbols from active theme's tower/enemy frames, region gradients, filters) and grid layer SVG strings (tile images + base art from theme) |
 | `src/render/svg/cameraFrame.ts` | Pure view-frame math: `fitFrame`, `zoomFrame`, `panFrame`, `revealPoint`, `wheelZoomFactor`, plus frame constants (`EDGE_BUFFER_FRACTION`, `ARROW_PAN_FRACTION`, zoom/step limits). `SvgGameRoot` writes the result into the SVG `viewBox` |
 | `src/render/svg/types.ts` | Shared types for render proxies and managers |
@@ -562,7 +568,7 @@ A cache broken by fire keeps its tile, offer, and reservation at hp 0 (towers st
 | `src/render/text/types.ts` | `TextRenderScale` (separate x/y world→canvas scales) and `TextThemeAccess` interfaces |
 | `src/components/TextGameRoot.vue` | Second passive renderer: renders a `<pre>` static base grid + a `<canvas>` overlay, driven by its own rAF loop reading `getLatestSnapshot()`; no worker, no `snapshotAck`, no input |
 | `src/components/MinimapPanel.vue` | Movable hovering panel (TowerPanel drag-by-header pattern, uses `gameStore.minimapPanelPos`) hosting `TextGameRoot`; toggled by `uiStore.showMinimap` |
-| `src/components/SvgGameRoot.vue` | Single SVG root: creates the simulation Web Worker, owns `SnapshotStore` (render loop reads snapshots) and `WorkerCommandDispatcher` (click/key intents → commands); rAF render loop does imperative DOM writes; the SVG viewBox is the camera (wheel zoom, right-drag / Alt+left-drag / inert-point left-drag pan); CTM-based mouse→world coordinate conversion; passes theme bundle to worker at `lifecycle:init` and to `useSvgStaticContent`; initializes SpawnManager |
+| `src/components/SvgGameRoot.vue` | Single SVG root: creates the simulation Web Worker, owns `SnapshotStore` (render loop reads snapshots) and `WorkerCommandDispatcher` (click/key intents → commands); rAF render loop does imperative DOM writes; the SVG viewBox is the camera (wheel zoom, right-drag / Alt+left-drag / inert-point left-drag pan); CTM-based mouse→world coordinate conversion; passes theme bundle to worker at `lifecycle:init` and to `useSvgStaticContent`; initializes SpawnManager; owns map-site hover (`siteHoverAt` on the pointer, `.site-hover` tooltip div, suppressed while the picker or a pan is active) |
 
 ### Audio
 
@@ -722,14 +728,15 @@ All component styles use `<style scoped>` to prevent leakage.
 | Directory | Description |
 |---|---|
 | `tests/unit/` | Unit test files covering all source modules (includes `map-theme.test.ts`, `spawn-manager.test.ts`, `enemy-attack.test.ts`, `snapshot-store.test.ts`, `snapshot-merge.test.ts`, `text-grid-builder.test.ts`, `text-render.test.ts`) |
-| `tests/unit/sim/` | Simulation unit tests: `applyCommand.test.ts`, `enemy-routing.test.ts`, `snapshot.test.ts`, `balance-wall.test.ts` (map-0 placement oracle), `gem-income.test.ts` (per-wave gem award paths), `run-bonuses.test.ts` (bonus offers and claims), `map-sites.test.ts` (site placement rules), `boss-abilities.test.ts` |
+| `tests/unit/sim/` | Simulation unit tests: `applyCommand.test.ts`, `enemy-routing.test.ts`, `snapshot.test.ts`, `balance-wall.test.ts` (map-0 placement oracle), `gem-income.test.ts` (per-wave gem award paths), `run-bonuses.test.ts` (bonus offers and one-shot cache unlock), `map-sites.test.ts` (site placement rules), `command-validation.test.ts`, `boss-abilities.test.ts` |
 | `tests/unit/commanders/` | Commander unit tests: `observation.test.ts`, `stubby-brain.test.ts`, `stubbs-brain.test.ts` |
-| `tests/unit/components/` | Vue component tests (15 files, includes `pause-menu.test.ts`, `text-game-root.test.ts`) |
+| `tests/unit/components/` | Vue component tests (20 files, includes `pause-menu.test.ts`, `text-game-root.test.ts`, `bonus-picker.test.ts` locked/unlocked views, `game-hud.test.ts` gold floor and effects chip) |
+| `tests/unit/render/` | Render math tests: `camera-frame.test.ts`, `view-box-tween.test.ts`, `click-has-effect.test.ts`, `snapshot-anim-dt.test.ts`, `site-hover.test.ts` (site hover hit test and copy) |
 | `tests/integration/` | End-to-end wave simulation (`integration.test.ts`), worker command→snapshot round-trip (`worker-roundtrip.test.ts`), and commander worker round-trip (`commander.test.ts`) |
 | `tests/helpers/` | Shared mocks: `mock-stores.ts`, `mock-grid.ts`, `mock-managers.ts`, `mockDefaultTheme` |
 | `tests/setup.ts` | Global test setup: in-memory localStorage, Canvas 2D mock, performance.now |
 
-**1857 tests** across all files.
+**1877 tests** across all files.
 
 ### What's Covered
 
@@ -743,7 +750,7 @@ All component styles use `<style scoped>` to prevent leakage.
 | Enemies | `enemies.test.ts`, `enemy-manager.test.ts` | HP/speed formulas, wave scaling, status effects (slow/stun/burn/shield/heal), shield/burn damage returns and credit, knockResist, headless `postPhysics` |
 | Waves | `waves.test.ts` | Composition, boss placement, level calculation, inter-wave timing |
 | Boss abilities | `tests/unit/sim/boss-abilities.test.ts` | Ability roll on a stream of its own, vanilla-first first boss, bombard/minion/haste/Mend behavior, per-tick source collection, debug-jump stamping matches the preview |
-| Bonus economy | `tests/unit/sim/run-bonuses.test.ts` | Offer distinctness and the one-typed-card rule, specialist draw weights, Heavy Frost curation for caches and drops, wave-scaled purses and cache fee break-even, typed hp/range/rate refresh, armor and bounty application, package placement, chained broken-cache claims |
+| Bonus economy | `tests/unit/sim/run-bonuses.test.ts` | Offer distinctness and the one-typed-card rule, 1.2x typed mults, specialist draw weights, Heavy Frost curation for caches and drops, wave-scaled purses and cache fee break-even, one-shot cache unlock (short-purse refusal, no re-charge after dismiss, free break), typed hp/range/rate refresh, armor and bounty application, package placement, chained broken-cache claims |
 | Content packs | `content/game-content.test.ts` | Zod parse, facade constants, variant ops, recursive deep freeze |
 | Balance wall | `tests/unit/sim/balance-wall.test.ts` | Map-0 placement oracle: wave-10 basic+ice level-2 boss survival, wave-20 level-2 boss survival, wave-20 basic level-3 boss survival plus raw-damage step-up, milestone threshold, region boss cadence |
 | Gem income | `tests/unit/sim/gem-income.test.ts` | Clears, expiry, and debug jumps pay no gems; wave 15 pays the first-time milestone only; first full clear doubles boss, milestone, and completion; custom maps still use the region/level boss multiplier |

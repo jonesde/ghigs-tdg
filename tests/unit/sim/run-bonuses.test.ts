@@ -95,9 +95,11 @@ describe("bonus offers", () => {
     };
     expect(engine.pickBonus(0)).toBe(true);
 
-    expect(basicTower.stats.damage / basicDamage).toBeCloseTo(1.1, 5);
+    // A typed card pays 20%, the global cards 10%: one tower type is worth more
+    // than all of them at once.
+    expect(basicTower.stats.damage / basicDamage).toBeCloseTo(1.2, 5);
     expect(sniperTower.stats.damage / sniperDamage).toBeCloseTo(1, 5);
-    expect(engine.runState.runBonuses.typeDamageMult.basic).toBeCloseTo(1.1, 5);
+    expect(engine.runState.runBonuses.typeDamageMult.basic).toBeCloseTo(1.2, 5);
     expect(sniperTower.runDamageMult).toBe(1);
     expect(engine.runState.runBonuses.damageMult).toBe(1);
   });
@@ -130,18 +132,18 @@ describe("bonus offers", () => {
     pick(engine, "quickHandsType");
     pick(engine, "fortifyType");
 
-    expect(basicTower.stats.range / basicRange).toBeCloseTo(1.1, 5);
-    expect(basicTower.stats.fireRate / basicRate).toBeCloseTo(1.1, 5);
-    expect(basicTower.maxHealth / basicMaxHealth).toBeCloseTo(1.1, 5);
+    expect(basicTower.stats.range / basicRange).toBeCloseTo(1.2, 5);
+    expect(basicTower.stats.fireRate / basicRate).toBeCloseTo(1.2, 5);
+    expect(basicTower.maxHealth / basicMaxHealth).toBeCloseTo(1.2, 5);
     expect(basicTower.health / basicTower.maxHealth).toBeCloseTo(basicHealth / basicMaxHealth, 5);
-    expect(basicTower.runRangeMult).toBeCloseTo(1.1, 5);
-    expect(basicTower.runFireRateMult).toBeCloseTo(1.1, 5);
-    expect(basicTower.runHealthMult).toBeCloseTo(1.1, 5);
+    expect(basicTower.runRangeMult).toBeCloseTo(1.2, 5);
+    expect(basicTower.runFireRateMult).toBeCloseTo(1.2, 5);
+    expect(basicTower.runHealthMult).toBeCloseTo(1.2, 5);
 
     expect(sniperTower.stats.range / sniperRange).toBeCloseTo(1, 5);
     expect(sniperTower.stats.fireRate / sniperRate).toBeCloseTo(1, 5);
     expect(sniperTower.maxHealth / sniperMaxHealth).toBeCloseTo(1, 5);
-    expect(engine.runState.runBonuses.typeRangeMult.basic).toBeCloseTo(1.1, 5);
+    expect(engine.runState.runBonuses.typeRangeMult.basic).toBeCloseTo(1.2, 5);
     expect(engine.runState.runBonuses.typeRangeMult.sniper).toBeUndefined();
   });
 
@@ -359,7 +361,7 @@ describe("supply drops and the bonus picker", () => {
 });
 
 describe("cache claims", () => {
-  it("spends the wave's cache fee when a card is taken and nothing when the offer is declined", () => {
+  it("gates an intact cache behind a one-shot gold unlock and never charges a broken one", () => {
     const engine = freshEngine();
     const grid = engine.grid;
     const cache = engine.mapCaches[0];
@@ -369,43 +371,50 @@ describe("cache claims", () => {
     const host = engine.host as MockHostBindings;
     engine.runState.state = GameState.PLAYING;
     engine.runState.gold = openCost - 1;
+
+    // Clicking an intact cache opens it locked: no cards, no charge, no refusal.
     engine.handleClick(world.x, world.y);
-    expect(engine.runState.bonusPicker).toBeNull();
+    if (!engine.runState.bonusPicker) throw new Error("locked picker did not open");
     expect(engine.runState.gold).toBe(openCost - 1);
-    expect(engine.runState.state).toBe(GameState.PLAYING);
+    expect(engine.runState.state).toBe(GameState.PAUSED);
+    expect(cache.unlocked).toBe(false);
+    expect(engine.pickBonus(0)).toBe(false);
+    expect(engine.mapCaches.some((site) => site.id === cache.id)).toBe(true);
+
+    // A short purse refuses at the unlock, which is where the fee is charged now.
+    expect(engine.unlockCache()).toBe(false);
+    expect(engine.runState.gold).toBe(openCost - 1);
+    expect(cache.unlocked).toBe(false);
     expect(
       host.uiEvents.some(
-        (event) => event.type === "showNotification" && event.message === "50 gold is required to open a cache.",
+        (event) =>
+          event.type === "showNotification" && event.message === `${openCost} gold is required to open a cache.`,
       ),
     ).toBe(true);
 
-    engine.runState.gold = openCost;
-    engine.handleClick(world.x, world.y);
-    expect(engine.runState.bonusPicker?.source).toBe("cache");
-    expect(engine.runState.state).toBe(GameState.PAUSED);
     // First open fixes the specialist type and the curated offer on the site, so a
     // dismiss and reopen cannot reroll what the cards promise.
     const firstSpecialistType = engine.runState.bonusPicker?.specialistType;
     const firstOffer = [...(engine.runState.bonusPicker?.offer ?? [])];
     expect(firstSpecialistType).toBeTruthy();
+
+    engine.runState.gold = openCost;
+    expect(engine.unlockCache()).toBe(true);
+    expect(engine.runState.gold).toBe(0);
+    expect(cache.unlocked).toBe(true);
+
     expect(engine.dismissBonus()).toBe(true);
-    expect(engine.runState.gold).toBe(openCost);
-    expect(engine.mapCaches.some((site) => site.id === cache.id)).toBe(true);
+    expect(cache.unlocked).toBe(true);
+    expect(engine.runState.gold).toBe(0);
     expect(engine.runState.state).toBe(GameState.PLAYING);
     expect(grid.canBuild(cache.tileX, cache.tileY)).toBe(false);
 
+    // Reopening after payment goes straight to the cards and charges nothing more.
     engine.handleClick(world.x, world.y);
     const picker = engine.runState.bonusPicker;
     if (!picker) throw new Error("picker did not open");
     expect(picker.specialistType).toBe(firstSpecialistType);
     expect([...picker.offer]).toEqual(firstOffer);
-    engine.runState.gold = openCost - 1;
-    expect(engine.pickBonus(0)).toBe(false);
-    expect(engine.runState.bonusPicker?.id).toBe(cache.id);
-    expect(engine.mapCaches.some((site) => site.id === cache.id)).toBe(true);
-    expect(engine.runState.gold).toBe(openCost - 1);
-
-    engine.runState.gold = openCost;
     picker.offer = sampleOffer();
     expect(engine.pickBonus(0)).toBe(true);
     expect(engine.runState.gold).toBe(0);

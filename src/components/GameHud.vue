@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { getMapDisplayName } from "@/sim/grid/Map.js";
-import { formatRunBonusSummary } from "@/sim/runBonuses.js";
+import { runBonusSummaryParts } from "@/sim/runBonuses.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -19,7 +19,7 @@ const baseHealthRatio = computed(() =>
   gameStore.maxBaseHealth > 0 ? gameStore.baseHealth / gameStore.maxBaseHealth : 0,
 );
 
-const bonusSummary = computed(() => formatRunBonusSummary(gameStore.runBonuses));
+const bonusParts = computed(() => runBonusSummaryParts(gameStore.runBonuses));
 
 let checkInterval: number | null = null;
 
@@ -99,7 +99,7 @@ watch(
         </span>
         <span class="hud-stat gold">
           <span class="hud-icon">🪙</span>
-          <span class="hud-value">{{ gameStore.gold }}</span>
+          <span class="hud-value">{{ Math.floor(gameStore.gold) }}</span>
         </span>
         <span class="hud-stat gems">
           <span class="hud-icon">💎</span>
@@ -112,7 +112,12 @@ watch(
           <span>Wave</span>
           <span class="hud-value">{{ gameStore.currentWave }}</span>
         </span>
-        <span v-if="bonusSummary" class="run-bonuses" :title="bonusSummary">{{ bonusSummary }}</span>
+        <span v-if="bonusParts.length" class="effects-chip">
+          Effects ×{{ bonusParts.length }}
+          <span class="effects-pop">
+            <span v-for="part in bonusParts" :key="part" class="effects-part">{{ part }}</span>
+          </span>
+        </span>
         <span v-if="gameStore.commanderHold" class="commander-hold">Paused for commander</span>
       </div>
       <div class="hud-right">
@@ -258,13 +263,45 @@ watch(
   font-size: var(--font-2xl);
 }
 
-.run-bonuses {
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.effects-chip {
+  position: relative;
+  padding: 2px 8px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 4px;
+  background: var(--color-surface-subtle);
   color: var(--color-text-dim);
   font-size: var(--font-sm);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.effects-pop {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 170px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-panel);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+  color: var(--color-text);
+  font-size: var(--font-md);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.effects-chip:hover .effects-pop {
+  display: flex;
+}
+
+.effects-part {
+  display: block;
+  text-align: left;
 }
 
 .commander-hold {

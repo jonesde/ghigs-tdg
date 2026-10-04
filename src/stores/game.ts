@@ -213,6 +213,8 @@ export interface GameStoreLike {
   selectProgressiveOffer?: (index: number) => void;
   moveProgressiveSite?: (direction: ProgressiveSiteDirection) => void;
   bonusPicker?: BonusPickerState | null;
+  // Store getter: the open picker is a cache whose cards are still locked.
+  bonusPickerLocked?: boolean;
 }
 
 interface GameStateShape {
@@ -324,6 +326,15 @@ export const useGameStore = defineStore("game", {
     isPaused: (state) => state.state === GameState.PAUSED,
     isInGame: (state) => state.state === GameState.PLAYING || state.state === GameState.PAUSED,
     claimedMilestoneSet: (state) => new Set(Object.keys(state.milestoneRewardsClaimed)),
+    // True while the open picker is a cache whose cards are still gated behind the
+    // gold-or-damage unlock: the picker then offers only unlock and leave, and the
+    // card digits must not claim anything.
+    bonusPickerLocked: (state) => {
+      const picker = state.bonusPicker;
+      if (picker?.source !== "cache") return false;
+      const cache = state.mapCaches.find((site) => site.id === picker.id);
+      return cache !== undefined && cache.hp > 0 && !cache.unlocked;
+    },
   },
 
   actions: {

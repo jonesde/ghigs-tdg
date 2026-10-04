@@ -237,6 +237,7 @@ function snapshotCaches(engine: GameEngine): MapCacheSnapshot[] {
       hp: cache.hp,
       maxHp: cache.maxHp,
       offer: cache.offer,
+      unlocked: cache.unlocked,
     };
   });
 }

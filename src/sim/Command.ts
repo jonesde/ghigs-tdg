@@ -94,6 +94,9 @@ export type Command =
   | { commandId: number; type: "action:pickBonus"; index: number }
   // Escape backs out. The package stays, and pause returns to the state it had.
   | { commandId: number; type: "action:dismissBonus" }
+  // Pays the wave-scaled fee on the open cache picker and reveals its cards. The
+  // engine refuses it when the purse is short or the cache is already unlocked.
+  | { commandId: number; type: "action:unlockCache" }
 
   // ---- Lifecycle ----
   | {

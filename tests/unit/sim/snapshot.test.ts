@@ -72,6 +72,20 @@ describe("SnapshotSerializer (Phase 5)", () => {
     expect(snap.debugPhysics!.vertices.length).toBeGreaterThan(0);
   });
 
+  it("ships map site state, including the cache unlock flag", () => {
+    const engine = makeEngine();
+    expect(engine.mapCaches.length).toBeGreaterThan(0);
+    const snap = buildSnapshot(engine, 0);
+    expect(snap.meta.mapCaches).toHaveLength(engine.mapCaches.length);
+    expect(snap.meta.mapCaches.every((cache) => cache.unlocked === false)).toBe(true);
+    expect(snap.meta.mapBuildings.length).toBe(engine.mapBuildings.length);
+
+    engine.mapCaches[0].unlocked = true;
+    const unlocked = buildSnapshot(engine, 1);
+    expect(unlocked.meta.mapCaches[0].unlocked).toBe(true);
+    expect(unlocked.schemaVersion).toBe(SNAPSHOT_SCHEMA_VERSION);
+  });
+
   it("builds a complete snapshot from a live engine", () => {
     const engine = makeEngine();
     const grid = engine.runState.grid;

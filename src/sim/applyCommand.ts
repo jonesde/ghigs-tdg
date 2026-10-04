@@ -141,6 +141,8 @@ export function applyCommand(engine: GameEngine, command: Command, enemyLookup?:
       return engine.pickBonus(command.index);
     case "action:dismissBonus":
       return engine.dismissBonus();
+    case "action:unlockCache":
+      return engine.unlockCache();
     // NOTE: lifecycle:setTheme is intentionally absent — mid-run theme
     // switching is out of scope per README.md.
     // LLM / enemy-commander commands (Phase 1 commander seam). These mutate enemy

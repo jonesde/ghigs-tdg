@@ -1109,12 +1109,9 @@ export class GameEngine {
 
     const packageHit = this.sites.nearestPackage(this.grid, worldX, worldY);
     if (packageHit) {
-      const openCost = packageHit.source === "cache" ? this.cacheOpenCost(packageHit.id) : 0;
-      if (openCost === null) return;
-      if (openCost > 0 && this.runState.gold < openCost) {
-        this.host.notifyUi({ type: "showNotification", message: `${openCost} gold is required to open a cache.` });
-        return;
-      }
+      // An intact cache opens its picker locked: the fee is charged by
+      // unlockCache, never by the click itself, so a short purse still shows the
+      // unlock button instead of a toast.
       this.openBonusPicker(packageHit.source, packageHit.id);
       return;
     }
@@ -2065,6 +2062,8 @@ export class GameEngine {
     // skip hp<=0 so towers stop firing it, and the free card claim below is what
     // finally removes it.
     cache.hp = 0;
+    // Breaking it open is the damage unlock path: the cards become free to claim.
+    cache.unlocked = true;
     this.host.notifyUi({
       type: "showNotification",
       message: "A cache was broken open. Click it to claim a card for free.",
@@ -2140,13 +2139,36 @@ export class GameEngine {
     );
   }
 
-  // Zero while a cache is broken open: breaking it is the free claim path, and the
-  // gold charge is what a player pays to open an intact one from a distance.
+  // The wave-scaled fee an intact, still-locked cache wants. Zero after either
+  // unlock path: the gold fee is paid up front by unlockCache, and breaking the
+  // cache open with tower fire is free by definition.
   private cacheOpenCost(cacheId: number): number | null {
     const cache = this.mapCaches.find((site) => site.id === cacheId);
     if (!cache) return null;
-    if (cache.hp <= 0) return 0;
+    if (cache.unlocked || cache.hp <= 0) return 0;
     return cacheOpenGold(this.runState.currentWave);
+  }
+
+  // Pays the fee and flips the site to unlocked, which is what lets the picker
+  // show its cards. The unlocked flag makes the charge one-shot: a dismiss after
+  // paying leaves the cache claimable for free on reopen.
+  unlockCache(): boolean {
+    const picker = this.runState.bonusPicker;
+    if (picker?.source !== "cache") return false;
+    const cost = this.cacheOpenCost(picker.id);
+    if (cost === null) {
+      this.closeBonusPicker(true);
+      return false;
+    }
+    if (cost === 0) return false;
+    if (this.runState.gold < cost) {
+      this.host.notifyUi({ type: "showNotification", message: `${cost} gold is required to open a cache.` });
+      return false;
+    }
+    setGold(this.runState, this.runState.gold - cost);
+    const cache = this.mapCaches.find((site) => site.id === picker.id);
+    if (cache) cache.unlocked = true;
+    return true;
   }
 
   pickBonus(index: number): boolean {
@@ -2155,18 +2177,13 @@ export class GameEngine {
     const bonusId = picker.offer[index];
     if (!bonusId) return false;
     if (picker.source === "cache") {
-      const cost = this.cacheOpenCost(picker.id);
-      if (cost === null) {
+      const cache = this.mapCaches.find((site) => site.id === picker.id);
+      if (!cache) {
         this.closeBonusPicker(true);
         return false;
       }
-      if (cost > 0) {
-        if (this.runState.gold < cost) {
-          this.host.notifyUi({ type: "showNotification", message: `${cost} gold is required to open a cache.` });
-          return false;
-        }
-        setGold(this.runState, this.runState.gold - cost);
-      }
+      // Cards are gated behind the unlock, and its fee was already charged there.
+      if (!cache.unlocked) return false;
     }
     const context = { wave: this.runState.currentWave, specialistType: picker.specialistType };
     this.applyBonus(describeBonus(bonusId, context));

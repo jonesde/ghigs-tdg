@@ -93,6 +93,8 @@ describe("map sites", () => {
     expect(grid.canBuild(cache.tileX, cache.tileY)).toBe(false);
     expect(grid.blocked.has(`${cache.tileX},${cache.tileY}`)).toBe(false);
     expect(nearestPathDistance(grid, cache.tileX, cache.tileY)).toBeGreaterThanOrEqual(2);
+    // A placed cache waits locked until the player pays or breaks it open.
+    expect(cache.unlocked).toBe(false);
   });
 
   it("fills the opening board to the target and stamps later blocks without passing it", () => {

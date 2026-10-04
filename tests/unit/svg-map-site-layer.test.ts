@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MapSiteLayer } from "@/render/svg/MapSiteLayer.js";
+import { BUILDING_ICONS, BUILDING_LABELS } from "@/sim/mapSites.js";
 import { cacheOpenGold } from "@/sim/runBonuses.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import { createTestEngine } from "../helpers/engine-snapshot.js";
@@ -41,11 +42,19 @@ describe("map site layer", () => {
     layer.sync(snapshot);
     expect(writeCount()).toBe(1);
     const first = readMarkup();
-    expect(first).toContain("<title>Supply drop</title>");
-    expect(first).toContain("<title>Cache ");
-    expect(first).toContain(`open for ${cacheOpenGold(snapshot.meta.currentWave)} gold`);
+    expect(first).toContain('aria-label="Boss package');
+    expect(first).toContain('class="site-drop-pulse"');
+    expect(first).toContain('aria-label="Cache ');
+    expect(first).toContain(`unlock for ${cacheOpenGold(snapshot.meta.currentWave)} gold`);
     expect(first).toContain('stroke="#c98aff"');
-    expect(first.indexOf("<title>Supply drop</title>")).toBeLessThan(first.indexOf('stroke="#c98aff"'));
+    expect(first.indexOf('class="site-drop-pulse"')).toBeLessThan(first.indexOf('stroke="#c98aff"'));
+    // Icon characters, so a cache and each building kind read without color.
+    expect(first).toContain(">▣</text>");
+    for (const building of snapshot.meta.mapBuildings ?? []) {
+      expect(first).toContain(`aria-label="${BUILDING_LABELS[building.kind]}:`);
+      expect(first).toContain(`>${BUILDING_ICONS[building.kind]}</text>`);
+    }
+    expect(first).not.toContain("<title>");
 
     layer.sync(buildSnapshot(engine, 1));
     expect(writeCount()).toBe(1);
@@ -58,13 +67,19 @@ describe("map site layer", () => {
     layer.sync(changed);
     expect(writeCount()).toBe(2);
     const updated = readMarkup();
-    expect(updated).toContain(`open for ${cacheOpenGold(7)} gold`);
+    expect(updated).toContain(`unlock for ${cacheOpenGold(7)} gold`);
     expect(updated).toContain(`Cache ${Math.ceil(cache.hp)}/`);
     expect(updated).toContain('fill="#d0d0d0"');
     expect(updated).toContain('stroke="#c98aff"');
 
+    // Unlocking without touching hp changes the label, so it has to rewrite too.
+    cache.unlocked = true;
+    layer.sync(changed);
+    expect(writeCount()).toBe(3);
+    expect(readMarkup()).toContain("Cache unlocked");
+
     layer.dispose();
     expect(readMarkup()).toBe("");
-    expect(writeCount()).toBe(3);
+    expect(writeCount()).toBe(4);
   });
 });

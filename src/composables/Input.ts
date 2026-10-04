@@ -160,7 +160,8 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
       const bonusDigit = parseInt(event.key, 10);
       if (bonusDigit >= 1 && bonusDigit <= 9) {
         event.preventDefault();
-        if (bonusDigit <= 3) {
+        // A locked cache shows no cards, so its digits claim nothing: unlock first.
+        if (bonusDigit <= 3 && !gs.bonusPickerLocked) {
           dispatch({ commandId: nextInputCommandId++, type: "action:pickBonus", index: bonusDigit - 1 });
         }
         return;

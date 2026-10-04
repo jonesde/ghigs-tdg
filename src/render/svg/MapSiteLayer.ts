@@ -1,5 +1,5 @@
 import { HASTE_AURA_RANGE_TILES, HEAL_AURA_RANGE_TILES } from "@/sim/bossAbilities.js";
-import { BUILDING_COLORS, buildingBlurb } from "@/sim/mapSites.js";
+import { BUILDING_COLORS, BUILDING_ICONS, buildingBlurb, CACHE_ICON } from "@/sim/mapSites.js";
 import { cacheOpenGold } from "@/sim/runBonuses.js";
 import type {
   BombardShotSnapshot,
@@ -11,6 +11,8 @@ import type {
 } from "@/sim/SimulationSnapshot.js";
 
 const GLYPH_SIZE = 16;
+const ICON_FONT_SIZE = 11;
+const PULSE_GROWTH = 3;
 
 // Procedural marks, shared by the live layer and the progressive placement ghost.
 // Theme JSON stays untouched: these are not sprites.
@@ -68,11 +70,13 @@ export class MapSiteLayer {
 }
 
 // Covers every field siteGlyphMarkup reads: positions come from tile coords plus
-// the run's tile size and world origin, cache titles from hp and the current wave.
+// the run's tile size and world origin, cache titles from hp, unlock state, and
+// the current wave.
 function siteSignature(meta: SnapshotMeta): string {
   let signature = `t${meta.tileSize ?? 36}:${meta.worldOriginX ?? 0},${meta.worldOriginY ?? 0}w${meta.currentWave}`;
   for (const drop of meta.supplyDrops ?? []) signature += `d${drop.id}:${drop.tileX},${drop.tileY}`;
-  for (const cache of meta.mapCaches ?? []) signature += `c${cache.id}:${cache.tileX},${cache.tileY}:${cache.hp}`;
+  for (const cache of meta.mapCaches ?? [])
+    signature += `c${cache.id}:${cache.tileX},${cache.tileY}:${cache.hp}:${cache.unlocked}`;
   for (const building of meta.mapBuildings ?? [])
     signature += `b${building.id}:${building.tileX},${building.tileY}:${building.kind}`;
   return signature;
@@ -98,7 +102,18 @@ function overlayMarkup(snapshot: SimulationSnapshot): string {
 function dropGlyph(worldX: number, worldY: number): string {
   const half = GLYPH_SIZE / 2;
   const points = `${worldX},${worldY - half} ${worldX + half},${worldY} ${worldX},${worldY + half} ${worldX - half},${worldY}`;
-  return `<polygon points="${points}" fill="#e0c040" stroke="#8a7020" stroke-width="1"><title>Supply drop</title></polygon>`;
+  const pulseHalf = half + PULSE_GROWTH;
+  const pulse =
+    `${worldX},${worldY - pulseHalf} ${worldX + pulseHalf},${worldY} ` +
+    `${worldX},${worldY + pulseHalf} ${worldX - pulseHalf},${worldY}`;
+  // The pulse ring is what makes a fresh boss package findable across a busy
+  // corridor; the class animates from the global stylesheet, so the signature
+  // cache never has to rewrite this markup to keep it moving.
+  return (
+    `<polygon points="${pulse}" class="site-drop-pulse" fill="none" stroke="#ffd84d" stroke-width="2"/>` +
+    `<polygon points="${points}" fill="#e0c040" stroke="#8a7020" stroke-width="1" ` +
+    `aria-label="Boss package — click to claim one of three bonus cards"></polygon>`
+  );
 }
 
 function cacheGlyph(cache: MapCacheSnapshot, currentWave: number): string {
@@ -106,17 +121,24 @@ function cacheGlyph(cache: MapCacheSnapshot, currentWave: number): string {
   const left = cache.worldX - half;
   const top = cache.worldY - half;
   const broken = cache.hp <= 0;
+  const unlocked = broken || cache.unlocked;
   const bar =
     !broken && cache.hp < cache.maxHp
       ? `<rect x="${left}" y="${top - 4}" width="${GLYPH_SIZE * Math.max(0, cache.hp / cache.maxHp)}" height="2" fill="#d0d0d0"/>`
       : "";
-  const title = broken
-    ? "Broken cache · free card"
-    : `Cache ${Math.ceil(cache.hp)}/${Math.ceil(cache.maxHp)} · open for ${cacheOpenGold(currentWave)} gold`;
+  const label = broken
+    ? "Broken cache — click to claim a card for free"
+    : unlocked
+      ? "Cache unlocked — click to claim a card"
+      : `Cache ${Math.ceil(cache.hp)}/${Math.ceil(cache.maxHp)} — unlock for ` +
+        `${cacheOpenGold(currentWave)} gold or break it open`;
   const fill = broken ? "#5a4a30" : "#8a6230";
+  const ink = broken ? "#c8b898" : "#f4e6cc";
   return (
-    `<rect x="${left}" y="${top}" width="${GLYPH_SIZE}" height="${GLYPH_SIZE}" fill="${fill}" stroke="#4a3018" stroke-width="1">` +
-    `<title>${title}</title></rect>${bar}`
+    `<rect x="${left}" y="${top}" width="${GLYPH_SIZE}" height="${GLYPH_SIZE}" fill="${fill}" stroke="#4a3018" ` +
+    `stroke-width="1" aria-label="${label}"></rect>` +
+    iconText(cache.worldX, cache.worldY, CACHE_ICON, ink) +
+    bar
   );
 }
 
@@ -125,7 +147,15 @@ function buildingGlyph(building: MapBuildingSnapshot): string {
   const color = BUILDING_COLORS[building.kind];
   return (
     `<rect x="${building.worldX - half}" y="${building.worldY - half}" width="${GLYPH_SIZE}" height="${GLYPH_SIZE}" ` +
-    `fill="${color}" stroke="#1a1a1a" stroke-width="1"><title>${buildingBlurb(building.kind)}</title></rect>`
+    `fill="${color}" stroke="#1a1a1a" stroke-width="1" aria-label="${buildingBlurb(building.kind)}"></rect>` +
+    iconText(building.worldX, building.worldY, BUILDING_ICONS[building.kind], "#141414")
+  );
+}
+
+function iconText(centerX: number, centerY: number, glyph: string, ink: string): string {
+  return (
+    `<text x="${centerX}" y="${centerY}" font-size="${ICON_FONT_SIZE}" font-weight="bold" font-family="sans-serif" ` +
+    `text-anchor="middle" dominant-baseline="central" fill="${ink}" aria-hidden="true">${glyph}</text>`
   );
 }
 

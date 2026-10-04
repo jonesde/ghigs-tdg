@@ -1,0 +1,94 @@
+/** @vitest-environment node */
+import { describe, expect, it } from "vitest";
+import { type SiteHoverSites, siteHoverAt, siteHoverText } from "@/render/svg/siteHover.js";
+import type { BonusOffer } from "@/sim/runBonuses.js";
+import type { MapBuildingSnapshot, MapCacheSnapshot, SupplyDropSnapshot } from "@/sim/SimulationSnapshot.js";
+
+const TILE_SIZE = 36;
+const OFFER: BonusOffer = ["sharpened", "smallPurse", "largePurse"];
+
+function makeDrop(id: number, worldX: number, worldY: number): SupplyDropSnapshot {
+  return { id, tileX: 0, tileY: 0, worldX, worldY, offer: OFFER };
+}
+
+function makeCache(
+  id: number,
+  worldX: number,
+  worldY: number,
+  fields: Partial<MapCacheSnapshot> = {},
+): MapCacheSnapshot {
+  return { id, tileX: 1, tileY: 1, worldX, worldY, hp: 60, maxHp: 60, offer: OFFER, unlocked: false, ...fields };
+}
+
+function makeBuilding(id: number, worldX: number, worldY: number): MapBuildingSnapshot {
+  return { id, kind: "armory", tileX: 2, tileY: 2, worldX, worldY };
+}
+
+function sitesOf(sites: Partial<SiteHoverSites>): SiteHoverSites {
+  return { drops: [], caches: [], buildings: [], ...sites };
+}
+
+describe("site hover hit test", () => {
+  it("returns nothing when the pointer is off every site", () => {
+    const sites = sitesOf({ drops: [makeDrop(1, 100, 100)] });
+    expect(siteHoverAt(sites, TILE_SIZE, 140, 140)).toBeNull();
+    expect(siteHoverAt(sitesOf({}), TILE_SIZE, 100, 100)).toBeNull();
+  });
+
+  it("uses the package click radius for drops and caches", () => {
+    const sites = sitesOf({ drops: [makeDrop(1, 100, 100)], caches: [makeCache(2, 300, 300)] });
+    // 0.75 tiles = 27 world units, matching the click test the engine uses.
+    expect(siteHoverAt(sites, TILE_SIZE, 126, 100)).toEqual({ kind: "drop", id: 1 });
+    expect(siteHoverAt(sites, TILE_SIZE, 128, 100)).toBeNull();
+    expect(siteHoverAt(sites, TILE_SIZE, 300, 320)).toEqual({ kind: "cache", id: 2 });
+  });
+
+  it("hits a building glyph box and stops at its edge", () => {
+    const sites = sitesOf({ buildings: [makeBuilding(4, 200, 200)] });
+    expect(siteHoverAt(sites, TILE_SIZE, 208, 192)).toEqual({ kind: "building", id: 4 });
+    expect(siteHoverAt(sites, TILE_SIZE, 210, 200)).toBeNull();
+  });
+
+  it("gives a package under the pointer priority over the building behind it", () => {
+    const sites = sitesOf({ drops: [makeDrop(1, 205, 200)], buildings: [makeBuilding(4, 200, 200)] });
+    expect(siteHoverAt(sites, TILE_SIZE, 205, 200)).toEqual({ kind: "drop", id: 1 });
+  });
+});
+
+describe("site hover copy", () => {
+  it("describes a boss package", () => {
+    const sites = sitesOf({ drops: [makeDrop(1, 100, 100)] });
+    const text = siteHoverText({ kind: "drop", id: 1 }, sites, 0);
+    expect(text?.title).toBe("Boss package");
+    expect(text?.lines.join(" ")).toContain("one of three bonus cards");
+  });
+
+  it("prices a locked cache and switches copy as it unlocks or breaks", () => {
+    const sites = sitesOf({ caches: [makeCache(2, 100, 100)] });
+    const locked = siteHoverText({ kind: "cache", id: 2 }, sites, 3);
+    expect(locked?.title).toBe("Cache 60/60");
+    expect(locked?.lines[0]).toBe("Unlock for 60 gold");
+
+    const cache = sites.caches[0]!;
+    cache.unlocked = true;
+    expect(siteHoverText({ kind: "cache", id: 2 }, sites, 3)?.lines[0]).toBe("Fee already paid.");
+
+    cache.hp = 0;
+    const broken = siteHoverText({ kind: "cache", id: 2 }, sites, 3);
+    expect(broken?.title).toBe("Cache — broken open");
+    expect(broken?.lines[0]).toContain("free");
+  });
+
+  it("names the building and its buff", () => {
+    const sites = sitesOf({ buildings: [makeBuilding(4, 100, 100)] });
+    const text = siteHoverText({ kind: "building", id: 4 }, sites, 0);
+    expect(text?.title).toBe("Armory");
+    expect(text?.lines[0]).toBe("Adjacent towers deal ×1.20 damage.");
+  });
+
+  it("returns nothing for a site consumed since the pointer arrived", () => {
+    expect(siteHoverText({ kind: "drop", id: 9 }, sitesOf({}), 0)).toBeNull();
+    expect(siteHoverText({ kind: "cache", id: 9 }, sitesOf({}), 0)).toBeNull();
+    expect(siteHoverText({ kind: "building", id: 9 }, sitesOf({}), 0)).toBeNull();
+  });
+});

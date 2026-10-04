@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { applyCommand } from "@/sim/applyCommand.js";
 import type { Command } from "@/sim/Command.js";
 import type { CommandDispatcher } from "@/sim/CommandDispatcher.js";
-import { BETWEEN_WAVES_TIMER, MILESTONE_WAVES } from "@/sim/Constants.js";
+import { BETWEEN_WAVES_TIMER, GameState, MILESTONE_WAVES } from "@/sim/Constants.js";
 import { CANCEL_BUILD_WINDOW_MS } from "@/sim/ConstantsTower.js";
 import { dispatchCommand, setCommandDispatcher } from "@/sim/commandBus.js";
 import { createCommandQueueReceipt, drainCommandQueue } from "@/sim/commandDrain.js";
 import { GameEngine } from "@/sim/GameEngine.js";
+import { cacheOpenGold } from "@/sim/runBonuses.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import { type CommandGridInfo, validateCommand } from "@/sim/validateCommand.js";
 import { WorkerCommandDispatcher } from "@/sim/WorkerCommandDispatcher.js";
@@ -128,6 +129,13 @@ describe("validateCommand (pure)", () => {
     ).toMatch(/creditAmount/);
     expect(validateCommand({ commandId: 1, type: "action:executeSell", towerId: "" })).toMatch(/towerId/);
   });
+
+  it("bounds the bonus card index and accepts the picker actions", () => {
+    expect(validateCommand({ commandId: 1, type: "action:pickBonus", index: 3 })).toMatch(/0-2/);
+    expect(validateCommand({ commandId: 1, type: "action:pickBonus", index: 0 })).toBeNull();
+    expect(validateCommand({ commandId: 1, type: "action:dismissBonus" })).toBeNull();
+    expect(validateCommand({ commandId: 1, type: "action:unlockCache" })).toBeNull();
+  });
 });
 
 describe("command intake through applyCommand", () => {
@@ -179,6 +187,31 @@ describe("command intake through applyCommand", () => {
     expect(applyCommand(engine, { commandId: 13, type: "input:click", worldX: outsideX, worldY: 10 })).toBe(false);
     expect(engine.runState.gold).toBe(goldBefore);
     expect(engine.runState.selectedTowerType).toBeNull();
+  });
+
+  it("charges action:unlockCache exactly once for the open cache", () => {
+    const cache = engine.mapCaches[0];
+    const grid = engine.grid;
+    if (!cache || !grid) throw new Error("no cache");
+    const cost = cacheOpenGold(engine.runState.currentWave);
+    const world = grid.tileToWorld(cache.tileX, cache.tileY);
+    engine.runState.state = GameState.PLAYING;
+    engine.handleClick(world.x, world.y);
+    if (!engine.runState.bonusPicker) throw new Error("picker did not open");
+
+    engine.runState.gold = cost - 1;
+    expect(applyCommand(engine, { commandId: 34, type: "action:unlockCache" })).toBe(false);
+    expect(cache.unlocked).toBe(false);
+    expect(engine.runState.gold).toBe(cost - 1);
+
+    engine.runState.gold = cost;
+    expect(applyCommand(engine, { commandId: 35, type: "action:unlockCache" })).toBe(true);
+    expect(cache.unlocked).toBe(true);
+    expect(engine.runState.gold).toBe(0);
+
+    engine.runState.gold = cost;
+    expect(applyCommand(engine, { commandId: 36, type: "action:unlockCache" })).toBe(false);
+    expect(engine.runState.gold).toBe(cost);
   });
 
   it("rejects undoProgressivePlacement when there is no undo stash", () => {

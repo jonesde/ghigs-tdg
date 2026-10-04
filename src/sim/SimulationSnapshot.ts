@@ -11,7 +11,9 @@ import type { BonusOffer, BonusPickerState, RunBonuses } from "./runBonuses.js";
 // rejects (warn once, keep previous) any snapshot stamped with another version.
 // 2: runBonuses gained the typed per-tower records and bonusPicker gained
 // specialistType (boss abilities / run bonuses pass).
-export const SNAPSHOT_SCHEMA_VERSION = 2;
+// 3: MapCacheSnapshot gained unlocked, gating the bonus cards behind a gold or
+// damage unlock.
+export const SNAPSHOT_SCHEMA_VERSION = 3;
 
 export interface SimulationSnapshot {
   schemaVersion: number; // SNAPSHOT_SCHEMA_VERSION; consumers reject mismatches
@@ -227,6 +229,8 @@ export interface MapCacheSnapshot {
   hp: number;
   maxHp: number;
   offer: BonusOffer;
+  // False while the cards are still gated behind a gold unlock or tower damage.
+  unlocked: boolean;
 }
 
 export interface MapBuildingSnapshot {

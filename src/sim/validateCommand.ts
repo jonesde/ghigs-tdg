@@ -206,6 +206,7 @@ export function validateCommand(command: Command, grid?: CommandGridInfo | null)
       }
       return null;
     case "action:dismissBonus":
+    case "action:unlockCache":
       return null;
     case "action:placeProgressiveBlock": {
       if (!Number.isInteger(command.templateIndex) || command.templateIndex < 0 || command.templateIndex > 11) {

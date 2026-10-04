@@ -42,11 +42,21 @@ export const BUILDING_COLORS: Record<BuildingKind, string> = {
   beacon: "#70a0e0",
 };
 
+// Text-presentation-default code points so an SVG <text> draws them monochrome
+// instead of as color emoji. Theme JSON stays untouched: these are procedural marks.
+export const BUILDING_ICONS: Record<BuildingKind, string> = { armory: "⚔", magazine: "✸", ward: "⛨", beacon: "✦" };
+
+export const CACHE_ICON = "▣";
+
+export const BUILDING_DETAILS: Record<BuildingKind, string> = {
+  armory: "adjacent towers deal ×1.20 damage",
+  magazine: "adjacent towers fire ×1.20 faster",
+  ward: "adjacent towers have ×1.25 health",
+  beacon: "adjacent towers have ×1.15 range",
+};
+
 export function buildingBlurb(kind: BuildingKind): string {
-  if (kind === "armory") return "Armory: adjacent towers deal ×1.20 damage";
-  if (kind === "magazine") return "Magazine: adjacent towers fire ×1.20 faster";
-  if (kind === "ward") return "Ward: adjacent towers have ×1.25 health";
-  return "Beacon: adjacent towers have ×1.15 range";
+  return `${BUILDING_LABELS[kind]}: ${BUILDING_DETAILS[kind]}`;
 }
 
 export interface MapBuildingSite {
@@ -63,6 +73,11 @@ export interface MapCacheSite {
   hp: number;
   maxHp: number;
   offer: BonusOffer;
+  // Cards stay hidden until the player unlocks the cache, either by paying the
+  // wave-scaled fee or by breaking it open with tower fire. Breaking sets hp to 0
+  // and unlocks it for free; a gold unlock keeps the site intact but paid-for, so
+  // a dismiss and reopen never charges twice.
+  unlocked: boolean;
   // Drawn on first open and kept on the site so a dismiss and reopen cannot reroll
   // the specialist type the offer's typed cards promise. Absent until first open.
   specialistType?: TowerId;
@@ -423,6 +438,7 @@ function placeCaches(input: ReconcileSitesInput, occupied: Set<string>, target: 
       hp: maxHp,
       maxHp,
       offer: input.rollOffer(id),
+      unlocked: false,
     });
     occupied.add(tileKey(candidate.tileX, candidate.tileY));
   }
