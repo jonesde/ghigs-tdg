@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { getMapDisplayName } from "@/sim/grid/Map.js";
+import { formatRunBonusSummary } from "@/sim/runBonuses.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -17,6 +18,8 @@ const notificationVisible = ref(false);
 const baseHealthRatio = computed(() =>
   gameStore.maxBaseHealth > 0 ? gameStore.baseHealth / gameStore.maxBaseHealth : 0,
 );
+
+const bonusSummary = computed(() => formatRunBonusSummary(gameStore.runBonuses));
 
 let checkInterval: number | null = null;
 
@@ -109,6 +112,7 @@ watch(
           <span>Wave</span>
           <span class="hud-value">{{ gameStore.currentWave }}</span>
         </span>
+        <span v-if="bonusSummary" class="run-bonuses" :title="bonusSummary">{{ bonusSummary }}</span>
         <span v-if="gameStore.commanderHold" class="commander-hold">Paused for commander</span>
       </div>
       <div class="hud-right">
@@ -252,6 +256,15 @@ watch(
 
 .hud-btn.wave-counter .hud-icon {
   font-size: var(--font-2xl);
+}
+
+.run-bonuses {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-dim);
+  font-size: var(--font-sm);
 }
 
 .commander-hold {

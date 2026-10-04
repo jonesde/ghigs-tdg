@@ -90,6 +90,10 @@ export type Command =
   // Reverts the placement made in the current paused undo window. The worker
   // checks the stash and the paused state before truncating the stamp log.
   | { commandId: number; type: "action:undoProgressivePlacement" }
+  // Picks a card from the open supply-drop or cache offer. Index is 0, 1, or 2.
+  | { commandId: number; type: "action:pickBonus"; index: number }
+  // Escape backs out. The package stays, and pause returns to the state it had.
+  | { commandId: number; type: "action:dismissBonus" }
 
   // ---- Lifecycle ----
   | {

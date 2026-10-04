@@ -1,4 +1,5 @@
 import type { SpawnState } from "@/render/themes/index.js";
+import type { BossAbilityId } from "@/sim/bossAbilities.js";
 import { BETWEEN_WAVES_TIMER, PRE_EMPTIVE_WAVE_TIMER, VICTORY_WAVE } from "@/sim/Constants.js";
 import {
   ENEMY_TIER_THRESHOLDS,
@@ -20,8 +21,8 @@ interface MapRef {
 
 interface EnemyManagerRef {
   enemies: unknown[];
-  spawn(type: string, level: number, spawnIndex: number, wave: number): unknown;
-  enqueueOrSpawn(type: string, level: number, spawnIndex: number, wave: number): void;
+  spawn(type: string, level: number, spawnIndex: number, wave: number, bossAbility?: BossAbilityId): unknown;
+  enqueueOrSpawn(type: string, level: number, spawnIndex: number, wave: number, bossAbility?: BossAbilityId): void;
   releaseOnePending(spawnIndex: number): void;
   hasPendingEnemies(): boolean;
   getTotalPendingCount(): number;
@@ -34,6 +35,7 @@ interface WaveEntry {
   type: string;
   level: number;
   delay: number;
+  bossAbility?: BossAbilityId;
 }
 
 export class WaveManager {
@@ -384,7 +386,7 @@ export class WaveManager {
           ? secondCandidate
           : firstCandidate;
       this.markSpawnUsed(spawnIdx);
-      this.enemyManager.enqueueOrSpawn(next.type, next.level, spawnIdx, this.currentWave);
+      this.enemyManager.enqueueOrSpawn(next.type, next.level, spawnIdx, this.currentWave, next.bossAbility);
       this.waveComposition[next.type] = (this.waveComposition[next.type] || 0) - 1;
       this.spawnTimer = next.delay;
     }

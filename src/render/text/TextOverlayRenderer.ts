@@ -1,5 +1,13 @@
+import type { BuildingKind } from "@/sim/mapSites.js";
+import { BUILDING_COLORS } from "@/sim/mapSites.js";
 import type { SimulationSnapshot } from "@/sim/SimulationSnapshot.js";
 import { type TextRenderScale, textPixelX, textPixelY } from "./types.js";
+
+const BUILDING_LETTERS: Record<BuildingKind, string> = { armory: "A", magazine: "M", ward: "W", beacon: "B" };
+
+function buildingLetter(kind: BuildingKind): string {
+  return BUILDING_LETTERS[kind];
+}
 
 const HP_BAR_HALF_WIDTH = 6;
 const HP_BAR_OFFSET = 8;
@@ -21,6 +29,7 @@ export class TextOverlayRenderer {
       this.renderNextCorners(ctx, snapshot, scale);
     }
     this.renderProjectiles(ctx, snapshot, scale);
+    this.renderSites(ctx, snapshot, scale);
     this.renderHealthBars(ctx, snapshot, scale);
     this.renderLightning(ctx, snapshot, scale);
     this.renderStuns(ctx, snapshot, scale);
@@ -65,6 +74,48 @@ export class TextOverlayRenderer {
       ctx.arc(pixelX, pixelY, PROJECTILE_RADIUS, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  private renderSites(ctx: CanvasRenderingContext2D, snapshot: SimulationSnapshot, scale: TextRenderScale): void {
+    const meta = snapshot.meta;
+    if (!meta) return;
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `${Math.max(8, 11 * scale.scaleY)}px sans-serif`;
+    for (const drop of meta.supplyDrops ?? []) {
+      ctx.fillStyle = "#e0c040";
+      ctx.fillText("$", textPixelX(drop.worldX, scale), textPixelY(drop.worldY, scale));
+    }
+    for (const cache of meta.mapCaches ?? []) {
+      ctx.fillStyle = "#c08050";
+      ctx.fillText("C", textPixelX(cache.worldX, scale), textPixelY(cache.worldY, scale));
+      if (cache.hp >= cache.maxHp) continue;
+      const fraction = cache.maxHp > 0 ? Math.max(0, Math.min(1, cache.hp / cache.maxHp)) : 0;
+      const centerX = textPixelX(cache.worldX, scale);
+      const topY = textPixelY(cache.worldY, scale) - HP_BAR_OFFSET * scale.scaleY;
+      const barWidth = HP_BAR_HALF_WIDTH * scale.scaleX;
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(centerX - barWidth, topY);
+      ctx.lineTo(centerX + barWidth, topY);
+      ctx.stroke();
+      ctx.strokeStyle = fraction > 0.5 ? "#00ff00" : fraction > 0.25 ? "#ffff00" : "#ff0000";
+      ctx.beginPath();
+      ctx.moveTo(centerX - barWidth, topY);
+      ctx.lineTo(centerX - barWidth + barWidth * 2 * fraction, topY);
+      ctx.stroke();
+    }
+    for (const building of meta.mapBuildings ?? []) {
+      ctx.fillStyle = BUILDING_COLORS[building.kind];
+      ctx.fillText(
+        buildingLetter(building.kind),
+        textPixelX(building.worldX, scale),
+        textPixelY(building.worldY, scale),
+      );
+    }
+    ctx.restore();
   }
 
   private renderHealthBars(ctx: CanvasRenderingContext2D, snapshot: SimulationSnapshot, scale: TextRenderScale): void {

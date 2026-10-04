@@ -35,7 +35,7 @@ export class EnemyManager {
       if (proxyIndex >= this.pool.length) break;
 
       const proxy = this.pool[proxyIndex]!;
-      proxy.sync(enemy, this.resolveEnemyVisual(enemy.type));
+      proxy.sync(enemy, this.resolveEnemyVisual(enemy.type), this.resolveEnemyVisual("healer"));
       proxyIndex++;
     }
 
@@ -54,10 +54,7 @@ export class EnemyManager {
 
   dispose(): void {
     for (const proxy of this.pool) {
-      const el = proxy.getEl();
-      if (el.parentNode) {
-        el.parentNode.removeChild(el);
-      }
+      proxy.dispose();
     }
     this.pool = [];
   }
@@ -82,6 +79,8 @@ class EnemyRenderProxy {
   private lastWidth: string = "";
   private lastHeight: string = "";
   private lastFilter: string = "";
+  private overlay: SVGUseElement | null = null;
+  private overlaySpriteId = "";
 
   constructor(el: SVGUseElement) {
     this.el = el;
@@ -91,7 +90,7 @@ class EnemyRenderProxy {
     return this.el;
   }
 
-  sync(enemy: EnemySnapshot, visual: EnemyVisualMeta | null): void {
+  sync(enemy: EnemySnapshot, visual: EnemyVisualMeta | null, healerVisual: EnemyVisualMeta | null): void {
     if (!this.active) {
       this.lastSpriteId = "";
     }
@@ -167,6 +166,8 @@ class EnemyRenderProxy {
       this.lastHeight = heightStr;
     }
 
+    this.syncMendOverlay(enemy, healerVisual, transform, spriteSize);
+
     if (enemy.slowFactor < 1) {
       const filterLevel = Math.ceil((1 - enemy.slowFactor) * 10);
       const filterValue = `url(#slow-${filterLevel})`;
@@ -192,5 +193,61 @@ class EnemyRenderProxy {
       this.lastHeight = "";
       this.lastFilter = "";
     }
+    this.hideOverlay();
+  }
+
+  dispose(): void {
+    this.hide();
+    this.overlay?.remove();
+    this.overlay = null;
+    this.el.remove();
+  }
+
+  // Healer walking frames drawn behind a Mend boss. Missing cycle: no overlay.
+  // The green ring is drawn by MapSiteLayer either way.
+  private syncMendOverlay(
+    enemy: EnemySnapshot,
+    healerVisual: EnemyVisualMeta | null,
+    transform: string,
+    spriteSize: number,
+  ): void {
+    const walking = healerVisual?.walking ?? null;
+    const show =
+      enemy.type === "boss" &&
+      enemy.bossAbility === "healAura" &&
+      !enemy.mendSuppressed &&
+      !!walking &&
+      walking.referenceImages.length > 0;
+    if (!show || !walking) {
+      this.hideOverlay();
+      return;
+    }
+    const overlay = this.ensureOverlay();
+    overlay.style.visibility = "visible";
+    overlay.setAttribute("transform", transform);
+    overlay.setAttribute("width", String(spriteSize));
+    overlay.setAttribute("height", String(spriteSize));
+    overlay.setAttribute("opacity", "0.65");
+    const frame = computeEnemyFrame(enemy, walking);
+    const spriteId = `enemy-healer-f${frame}`;
+    if (spriteId !== this.overlaySpriteId) {
+      overlay.setAttribute("href", `#${spriteId}`);
+      this.overlaySpriteId = spriteId;
+    }
+  }
+
+  private ensureOverlay(): SVGUseElement {
+    if (this.overlay) return this.overlay;
+    const overlay = document.createElementNS(SVG_NS, "use");
+    overlay.style.visibility = "hidden";
+    this.el.parentNode?.insertBefore(overlay, this.el);
+    this.overlay = overlay;
+    return overlay;
+  }
+
+  private hideOverlay(): void {
+    if (!this.overlay) return;
+    this.overlay.style.visibility = "hidden";
+    this.overlaySpriteId = "";
   }
 }

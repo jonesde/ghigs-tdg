@@ -81,6 +81,7 @@ export interface ProjectileGame {
   hitEnemyIds?: Set<number>;
   fixedAimHits?: number;
   fixedAim: boolean;
+  cacheId?: number;
   // Last homing flight direction (unit); used to retarget along path when target dies.
   lastDirX: number;
   lastDirY: number;
@@ -257,6 +258,7 @@ export class ProjectileManager {
   private physicsWorld: PhysicsWorld | null = null;
   private onStunEffect: OnStunEffectCallback | null;
   private onGoldReward: OnGoldRewardCallback | null;
+  private onCacheHit: ((cacheId: number, damage: number) => void) | null = null;
   private nextProjectileId: number;
   private towerLookup: ((towerId: string) => DamageCreditTarget | null) | null = null;
   private pendingLightning: LightningVisualEffect[];
@@ -330,6 +332,11 @@ export class ProjectileManager {
     this.onGoldReward = callback;
   }
 
+  // Cross-module: GameEngine applies the hit to mapCaches when the shot arrives.
+  setOnCacheHit(callback: ((cacheId: number, damage: number) => void) | null): void {
+    this.onCacheHit = callback;
+  }
+
   setTowerLookup(callback: ((towerId: string) => DamageCreditTarget | null) | null): void {
     this.towerLookup = callback;
   }
@@ -372,6 +379,7 @@ export class ProjectileManager {
     pierceFalloff?: number;
     stunDur?: number;
     splash?: number;
+    cacheId?: number;
   }): void {
     const projectile: ProjectileGame = {
       id: this.nextProjectileId++,
@@ -416,11 +424,19 @@ export class ProjectileManager {
       burnCircuit: false,
       pierceFalloff: opts.pierceFalloff ?? 0,
       fixedAim: opts.targetId === 0,
+      ...(opts.cacheId !== undefined ? { cacheId: opts.cacheId } : {}),
       lastDirX: 0,
       lastDirY: 0,
       sweepOriginX: opts.x,
       sweepOriginY: opts.y,
     };
+
+    if (projectile.cacheId !== undefined) {
+      // No body: a sensor would still register enemy contacts on the way to the cache.
+      this.projectiles.push(projectile);
+      this.projectilesById.set(projectile.id, projectile);
+      return;
+    }
 
     // Roll crit only if tower has crit ability
     if (projectile.critChance > 0 && this.rng() < projectile.critChance) {
@@ -733,8 +749,28 @@ export class ProjectileManager {
 
   // `positionFromBody`: when true, body already advanced position this step — only
   // run hit casts and range checks, do not double-integrate translation.
+  private advanceCacheShot(projectile: ProjectileGame, dt: number, positionFromBody: boolean): void {
+    const cacheId = projectile.cacheId;
+    if (cacheId === undefined) return;
+    const ballRadius = this.glyphHitRadius(projectile);
+    const segment = this.stepCast(projectile, dt, positionFromBody, projectile.targetX, projectile.targetY, true);
+    if (!positionFromBody && segment.moveDist > 0) {
+      projectile.x += segment.directionX * segment.moveDist;
+      projectile.y += segment.directionY * segment.moveDist;
+    }
+    const finalDeltaX = projectile.targetX - projectile.x;
+    const finalDeltaY = projectile.targetY - projectile.y;
+    if (Math.hypot(finalDeltaX, finalDeltaY) > ballRadius) return;
+    this.onCacheHit?.(cacheId, projectile.damage);
+    this.removeProjectile(projectile, "reached-target");
+  }
+
   private updateCircleProjectile(projectile: ProjectileGame, dt: number, positionFromBody = false): void {
     if (projectile.targetId === 0) {
+      if (projectile.cacheId !== undefined) {
+        this.advanceCacheShot(projectile, dt, positionFromBody);
+        return;
+      }
       const ballRadius = this.glyphHitRadius(projectile);
       if (projectile.hitEnemyIds === undefined) {
         projectile.hitEnemyIds = new Set<number>();

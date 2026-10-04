@@ -142,6 +142,10 @@ export class SnapshotStore {
   private current: SimulationSnapshot | null = null;
   private gameStore: GameStore;
   private lastSelectedTowerId: string | null = null;
+  private bonusSignature = "";
+  private pickerSignature = "";
+  private bossNameSignature = "";
+  private siteSignature = "";
   private cachedSelectedTower: Tower | null = null;
   // Per-tower last-frame waveDamage, used to derive `previousWaveDamage` for the
   // deserialized tower model (see capturePreviousWaveDamage). Keyed by tower id.
@@ -336,6 +340,7 @@ export class SnapshotStore {
     ) {
       gs.applyProgressiveLayout(meta.layoutGeneration, snapshot.progressivePlacements);
     }
+    this.mirrorRunRewards(gs, meta);
     // hoverTile is host-authoritative (updated directly on gameStore by Input.ts /
     // SvgGameRoot.vue) — do NOT mirror it or it would clobber the main-thread
     // value. camera is main-thread-only — NOT mirrored.
@@ -370,6 +375,57 @@ export class SnapshotStore {
     // hoverUpgradeBtn is intentionally NOT mirrored here — the engine no longer
     // writes it (GameEngine.setHover was removed in Phase 7), so mirroring would
     // clobber the main-thread value with the engine's always-false default.
+  }
+
+  // Copies run rewards and map sites only when their values change, so a
+  // progressive ghost computed that reads the site arrays does not rerun every frame.
+  private mirrorRunRewards(gs: GameStore, meta: SimulationSnapshot["meta"]): void {
+    const bonuses = meta.runBonuses;
+    if (bonuses) {
+      const signature = [
+        meta.runId ?? 0,
+        bonuses.damageMult,
+        bonuses.fireRateMult,
+        bonuses.healthMult,
+        bonuses.rangeMult,
+        bonuses.bountyMult,
+        bonuses.slowMult,
+        bonuses.armorMult,
+      ].join("|");
+      if (signature !== this.bonusSignature) {
+        this.bonusSignature = signature;
+        gs.runBonuses = { ...bonuses };
+      }
+    }
+    const picker = meta.bonusPicker ?? null;
+    const pickerSignature = picker
+      ? `${picker.source}:${picker.id}:${picker.wasPlaying ? 1 : 0}:${picker.offer.join(",")}`
+      : "";
+    if (pickerSignature !== this.pickerSignature) {
+      this.pickerSignature = pickerSignature;
+      gs.bonusPicker = picker;
+    }
+    const names = meta.nextBossAbilityNames ?? [];
+    const nameSignature = `${meta.runId ?? 0}|${names.join("|")}`;
+    if (nameSignature !== this.bossNameSignature) {
+      this.bossNameSignature = nameSignature;
+      gs.nextBossAbilityNames = names.slice();
+    }
+    const drops = meta.supplyDrops ?? [];
+    const caches = meta.mapCaches ?? [];
+    const buildings = meta.mapBuildings ?? [];
+    const siteSignature = [
+      meta.runId ?? 0,
+      ...drops.map((drop) => `d${drop.id}:${drop.tileX},${drop.tileY}`),
+      ...caches.map((cache) => `c${cache.id}:${cache.tileX},${cache.tileY}`),
+      ...buildings.map((building) => `b${building.id}:${building.kind}:${building.tileX},${building.tileY}`),
+    ].join("|");
+    if (siteSignature === this.siteSignature) return;
+    this.siteSignature = siteSignature;
+    gs.supplyDrops = drops;
+    gs.mapCaches = caches;
+    gs.mapBuildings = buildings;
+    gs.syncSiteReservations();
   }
 
   // Resolve selectedTowerId → Tower object for components that bind to the live

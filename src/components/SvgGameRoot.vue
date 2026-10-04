@@ -7,6 +7,7 @@
 
       <g ref="worldLayer" class="camera-wrapper">
         <g class="grid-layer" v-html="gridContent"></g>
+        <g ref="siteLayer" class="site-layer"></g>
         <g class="progressive-ghost" v-html="progressiveGhost"></g>
         <g ref="entityLayer" class="entity-layer"></g>
         <g ref="uiOverlayLayer" class="ui-overlay-layer"></g>
@@ -25,6 +26,7 @@ import { fitFrame, frameFromCenter, TILE_SIZE, wheelZoomFactor } from "@/render/
 import { type ClickEffectInput, clickHasEffect } from "@/render/svg/clickHasEffect.js";
 import { EffectManager } from "@/render/svg/EffectManager.js";
 import { EnemyManager } from "@/render/svg/EnemyManager.js";
+import { MapSiteLayer, siteGlyphMarkup } from "@/render/svg/MapSiteLayer.js";
 import { ParticleManager } from "@/render/svg/ParticleManager.js";
 import { ProjectileManager } from "@/render/svg/ProjectileManager.js";
 import { SpawnManager } from "@/render/svg/SpawnManager.js";
@@ -49,15 +51,28 @@ import {
 import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
 import { TOWER_BASE, TOWER_META, type TowerId, TowerIds } from "@/sim/ConstantsTower.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
+import { Grid } from "@/sim/grid/Grid.js";
 import {
+  blockCoordinateForTile,
+  boardToGeneratedMap,
+  boardWithPlayerStamp,
   progressiveBlockWorldCorner,
   progressiveConfigFromMap,
   replayProgressiveBoard,
   sitesAtRotation,
 } from "@/sim/grid/ProgressiveMap.js";
 import type { ThemeBundle } from "@/sim/HostBindings.js";
+import {
+  collectWorldKeys,
+  PACKAGE_CLICK_RADIUS_TILES,
+  playerPlacedBlockCount,
+  reconcileMapSites,
+  worldKey,
+} from "@/sim/mapSites.js";
 import { ParticleSystem } from "@/sim/ParticleSystem.js";
 import type { PersistState } from "@/sim/PersistState.js";
+import type { BonusOffer } from "@/sim/runBonuses.js";
+import type { MapBuildingSnapshot, MapCacheSnapshot } from "@/sim/SimulationSnapshot.js";
 import { SnapshotStore } from "@/sim/SnapshotStore.js";
 import { BASE_SELECTION_ID } from "@/sim/towers/BaseDefense.js";
 import { WorkerCommandDispatcher } from "@/sim/WorkerCommandDispatcher.js";
@@ -75,6 +90,7 @@ const svgRoot = ref<SVGSVGElement | null>(null);
 const defsLayer = ref<SVGDefsElement | null>(null);
 const worldLayer = ref<SVGGElement | null>(null);
 const entityLayer = ref<SVGGElement | null>(null);
+const siteLayer = ref<SVGGElement | null>(null);
 const uiOverlayLayer = ref<SVGGElement | null>(null);
 const projectileLayer = ref<SVGGElement | null>(null);
 const effectLayer = ref<SVGGElement | null>(null);
@@ -139,6 +155,8 @@ const buildRangeTiles = computed((): number | null => {
 const displayedViewBox = ref<string | undefined>(undefined);
 const panActive = ref(false);
 
+const GHOST_OFFER: BonusOffer = ["smallPurse", "largePurse", "sharpened"];
+
 const progressiveGhost = computed(() => {
   if (!gameStore.progressivePlacementHold || !gameStore.map) return "";
   const config = progressiveConfigFromMap(gameStore.map);
@@ -147,7 +165,7 @@ const progressiveGhost = computed(() => {
   const replayed = replayProgressiveBoard(config, gameStore.progressivePlacements);
   const sites = sitesAtRotation(replayed.board, replayed.catalog, templateIndex, gameStore.progressiveRotation);
   const selectedSite = gameStore.progressiveSelectedSite;
-  return sites
+  const blockMarkup = sites
     .map((site) => {
       const corner = progressiveBlockWorldCorner(site.blockX, site.blockY, TILE_SIZE);
       const selected =
@@ -163,7 +181,93 @@ const progressiveGhost = computed(() => {
       );
     })
     .join("");
+  return blockMarkup + previewNewSites(config, templateIndex, replayed.board, replayed.catalog);
 });
+
+function previewNewSites(
+  config: NonNullable<ReturnType<typeof progressiveConfigFromMap>>,
+  templateIndex: number,
+  board: ReturnType<typeof replayProgressiveBoard>["board"],
+  catalog: ReturnType<typeof replayProgressiveBoard>["catalog"],
+): string {
+  const selected = gameStore.progressiveSelectedSite;
+  const currentGrid = gameStore.grid;
+  if (!selected || !currentGrid) return "";
+  const stamped = boardWithPlayerStamp(
+    board,
+    catalog,
+    templateIndex,
+    gameStore.progressiveRotation,
+    selected.blockX,
+    selected.blockY,
+  );
+  if (!stamped) return "";
+  const nextMap = boardToGeneratedMap(config, stamped, catalog);
+  const nextGrid = new Grid(nextMap);
+  const previousWorldKeys = collectWorldKeys(currentGrid);
+  const shiftX = Math.round((currentGrid.worldOriginX - nextGrid.worldOriginX) / currentGrid.tileSize);
+  const shiftY = Math.round((currentGrid.worldOriginY - nextGrid.worldOriginY) / currentGrid.tileSize);
+  const buildings = gameStore.mapBuildings.map((building) => ({
+    id: building.id,
+    kind: building.kind,
+    tileX: building.tileX + shiftX,
+    tileY: building.tileY + shiftY,
+  }));
+  const caches = gameStore.mapCaches.map((cache) => ({
+    id: cache.id,
+    tileX: cache.tileX + shiftX,
+    tileY: cache.tileY + shiftY,
+    hp: cache.hp,
+    maxHp: cache.maxHp,
+    offer: cache.offer,
+  }));
+  const originTileX = Math.round(nextGrid.worldOriginX / nextGrid.tileSize);
+  const originTileY = Math.round(nextGrid.worldOriginY / nextGrid.tileSize);
+  const stampWorldKeys = new Set<string>();
+  for (let tileY = 0; tileY < nextGrid.height; tileY++) {
+    for (let tileX = 0; tileX < nextGrid.width; tileX++) {
+      const block = blockCoordinateForTile(originTileX, originTileY, tileX, tileY);
+      if (block.blockX !== selected.blockX || block.blockY !== selected.blockY) continue;
+      stampWorldKeys.add(worldKey(nextGrid, tileX, tileY));
+    }
+  }
+  let localId = 1;
+  reconcileMapSites({
+    grid: nextGrid,
+    seed: nextMap.seed,
+    regionId: nextMap.regionId,
+    mapLevel: nextMap.level,
+    buildings,
+    caches,
+    previousWorldKeys,
+    placedBlocks: playerPlacedBlockCount(gameStore.progressivePlacements) + 1,
+    stampWorldKeys,
+    allocateId: () => localId++,
+    rollOffer: () => GHOST_OFFER,
+  });
+  const newBuildings: MapBuildingSnapshot[] = [];
+  for (const building of buildings) {
+    if (previousWorldKeys.has(worldKey(nextGrid, building.tileX, building.tileY))) continue;
+    const world = nextGrid.tileToWorld(building.tileX, building.tileY);
+    newBuildings.push({ ...building, worldX: world.x, worldY: world.y });
+  }
+  const newCaches: MapCacheSnapshot[] = [];
+  for (const cache of caches) {
+    if (previousWorldKeys.has(worldKey(nextGrid, cache.tileX, cache.tileY))) continue;
+    const world = nextGrid.tileToWorld(cache.tileX, cache.tileY);
+    newCaches.push({
+      id: cache.id,
+      tileX: cache.tileX,
+      tileY: cache.tileY,
+      worldX: world.x,
+      worldY: world.y,
+      hp: cache.hp,
+      maxHp: cache.maxHp,
+      offer: cache.offer,
+    });
+  }
+  return siteGlyphMarkup([], newCaches, newBuildings);
+}
 
 let enemyManager!: EnemyManager;
 let towerManager!: TowerManager;
@@ -177,6 +281,7 @@ const mainParticleSystem = new ParticleSystem();
 let effectManager!: EffectManager;
 let uiOverlayManager!: UiOverlayManager;
 let spawnManager!: SpawnManager;
+let mapSiteLayer: MapSiteLayer | null = null;
 // Last (frameId, workerGeneration) pair rendered by the render loop. Animation
 // dt applies only when a new snapshot renders, because the ack gate can hold
 // one snapshot across multiple rAF frames (see snapshotAnimDt).
@@ -518,7 +623,22 @@ function clickHasEffectAt(worldX: number, worldY: number): boolean {
   input.towerOnTile = input.inBounds && towerOnTileAt(tile.x, tile.y);
   input.baseTile = input.inBounds && grid.isBase(tile.x, tile.y);
   input.buildable = input.inBounds && grid.canBuild(tile.x, tile.y);
+  input.packageHit = packageHitAt(worldX, worldY, grid.tileSize);
   return clickHasEffect(input);
+}
+
+function packageHitAt(worldX: number, worldY: number, tileSize: number): boolean {
+  const snapshot = snapshotStore.get();
+  if (!snapshot) return false;
+  const radius = (snapshot.meta.tileSize ?? tileSize) * PACKAGE_CLICK_RADIUS_TILES;
+  const radiusSquared = radius * radius;
+  const sites = [...(snapshot.meta.supplyDrops ?? []), ...(snapshot.meta.mapCaches ?? [])];
+  for (const site of sites) {
+    const deltaX = site.worldX - worldX;
+    const deltaY = site.worldY - worldY;
+    if (deltaX * deltaX + deltaY * deltaY <= radiusSquared) return true;
+  }
+  return false;
 }
 
 const onMouseMove = (e: MouseEvent): void => {
@@ -746,6 +866,7 @@ function renderLoop(): void {
   lastRenderedFrameId = snapshot.frameId;
   lastRenderedWorkerGeneration = snapshot.meta.workerGeneration ?? null;
 
+  mapSiteLayer?.sync(snapshot);
   enemyManager.syncFromGameEngine(snapshot.enemies);
   towerManager.syncFromGameEngine(snapshot.towers, animDt);
   const grid = gameStore.grid;
@@ -870,8 +991,10 @@ onMounted(async () => {
   effectManager = new EffectManager();
   uiOverlayManager = new UiOverlayManager();
   spawnManager = new SpawnManager();
+  mapSiteLayer = new MapSiteLayer();
 
   enemyManager.init(el);
+  if (siteLayer.value) mapSiteLayer.init(siteLayer.value);
   towerManager.init(el);
   uiOverlayManager.init(uol);
   projectileManager.init(pl);
@@ -934,6 +1057,7 @@ watch(
     if (!map || !svgRoot.value || disposed || !spawnManager) return;
     const { Grid } = await import("@/sim/grid/Grid.js");
     gameStore.grid = new Grid(map);
+    gameStore.syncSiteReservations();
     await nextTick();
     spawnManager.init(svgRoot.value, map.spawns.length);
   },
@@ -989,6 +1113,7 @@ onUnmounted(() => {
   resizeObserver.value?.disconnect();
   resizeObserver.value = null;
 
+  mapSiteLayer?.dispose();
   enemyManager.dispose();
   towerManager.dispose();
   projectileManager.dispose();

@@ -2,7 +2,10 @@ import type { MapThemeAnimation, SpawnState } from "@/render/themes/index.js";
 import type { ProgressiveStamp } from "@/sim/grid/ProgressiveMap.js";
 import type { ParticleSpawnRequest } from "@/sim/ParticleSystem.js";
 import type { ProjectileManager } from "@/sim/ProjectileManager.js";
+import type { BossAbilityId } from "./bossAbilities.js";
 import type { GameRunState } from "./GameRunState.js";
+import type { BuildingKind } from "./mapSites.js";
+import type { BonusOffer, BonusPickerState, RunBonuses } from "./runBonuses.js";
 
 // Bump on incompatible schema changes. Builders stamp it; SnapshotStore.apply
 // rejects (warn once, keep previous) any snapshot stamped with another version.
@@ -193,6 +196,52 @@ export interface SnapshotMeta {
   layoutGeneration?: number;
   // Optional so hand-built test metas compile. The serializer always sets it.
   baseDefense?: BaseDefenseSnapshot;
+  // Run rewards and map sites. Optional so hand-built test metas compile.
+  // The serializer always sets them.
+  runBonuses?: RunBonuses;
+  bonusPicker?: BonusPickerState | null;
+  supplyDrops?: SupplyDropSnapshot[];
+  mapCaches?: MapCacheSnapshot[];
+  mapBuildings?: MapBuildingSnapshot[];
+  nextBossAbilityNames?: string[];
+  bombardShots?: BombardShotSnapshot[];
+}
+
+export interface SupplyDropSnapshot {
+  id: number;
+  tileX: number;
+  tileY: number;
+  worldX: number;
+  worldY: number;
+  offer: BonusOffer;
+}
+
+export interface MapCacheSnapshot {
+  id: number;
+  tileX: number;
+  tileY: number;
+  worldX: number;
+  worldY: number;
+  hp: number;
+  maxHp: number;
+  offer: BonusOffer;
+}
+
+export interface MapBuildingSnapshot {
+  id: number;
+  kind: BuildingKind;
+  tileX: number;
+  tileY: number;
+  worldX: number;
+  worldY: number;
+}
+
+export interface BombardShotSnapshot {
+  originX: number;
+  originY: number;
+  targetX: number;
+  targetY: number;
+  progress: number;
 }
 
 // Entity snapshots — plain data only, no methods, no closures.
@@ -264,6 +313,9 @@ export interface EnemySnapshot {
   flyingHeight?: number;
   nextCorner?: { x: number; y: number } | null;
   targetingMode?: string | null;
+  // Present on bosses. Omitted for every other enemy so the payload stays small.
+  bossAbility?: BossAbilityId;
+  mendSuppressed?: boolean;
 }
 
 export interface StatusEffectSnapshot {
@@ -334,6 +386,8 @@ export interface TowerSnapshot {
   sellValue?: number;
   milestoneBonus?: { damagePct: number; speedPct: number; tiers: number };
   stats?: TowerStatsSnapshot;
+  // Selected tower only. Persistent run cards and adjacent buildings, as one line.
+  bonusLine?: string;
 }
 
 // Projectile snapshot reuses the sim getRenderData() DTO shape (id, x, y, radius, color, icon).

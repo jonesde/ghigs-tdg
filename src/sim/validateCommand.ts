@@ -200,6 +200,13 @@ export function validateCommand(command: Command, grid?: CommandGridInfo | null)
       return null;
     case "action:undoProgressivePlacement":
       return null;
+    case "action:pickBonus":
+      if (!Number.isInteger(command.index) || command.index < 0 || command.index > 2) {
+        return "action:pickBonus index must be an integer 0-2";
+      }
+      return null;
+    case "action:dismissBonus":
+      return null;
     case "action:placeProgressiveBlock": {
       if (!Number.isInteger(command.templateIndex) || command.templateIndex < 0 || command.templateIndex > 11) {
         return "action:placeProgressiveBlock templateIndex must be an integer 0-11";

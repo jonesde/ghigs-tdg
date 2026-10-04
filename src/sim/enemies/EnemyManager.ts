@@ -1,4 +1,5 @@
 import type { EnemyVisualMeta, MapThemeData } from "@/render/themes/index.js";
+import type { BossAbilityId } from "@/sim/bossAbilities.js";
 import { GAMEPLAY_ENEMY_CAP, MAX_PENDING_PER_SPAWN } from "@/sim/Constants.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
@@ -15,6 +16,7 @@ interface PendingEnemyEntry {
   type: string;
   level: number;
   wave: number;
+  bossAbility?: BossAbilityId;
 }
 
 // One emerge order. Null fields mean that part of the order is unset.
@@ -47,6 +49,9 @@ export class EnemyManager {
   // (applied inside Enemy.updateStatusTimers) credit the inflicting tower's
   // totalDamageDealt/waveDamage like direct hits do.
   private damageCreditSink: ((towerId: string, amount: number) => void) | null = null;
+  // GameEngine configures a boss when the body is created, including a release
+  // from the pending queue. Direct constructions leave this null.
+  onSpawned: ((enemy: Enemy) => void) | null = null;
   private idToEnemy: Map<number, Enemy>;
   private pendingQueues: Map<number, PendingEnemyEntry[]>;
   // Overflow evictions since run start. Bounded queues must stay lossless-visible:
@@ -354,7 +359,7 @@ export class EnemyManager {
     }
   }
 
-  spawn(type: string, level: number, spawnIndex: number, wave: number): Enemy | null {
+  spawn(type: string, level: number, spawnIndex: number, wave: number, bossAbility?: BossAbilityId): Enemy | null {
     const enemy = new Enemy(
       type,
       level,
@@ -366,6 +371,10 @@ export class EnemyManager {
       this.defaultEnemyVisuals[type] ?? null,
       this.baseTarget,
     );
+    if (bossAbility !== undefined) enemy.bossAbility = bossAbility;
+    // Cross-module: the engine counts a boss and writes its ability fields here,
+    // before the crowd agent is added, so the first maxSpeed already includes haste.
+    this.onSpawned?.(enemy);
     this.enemies.push(enemy);
     this.idToEnemy.set(enemy.id, enemy);
     this.physicsWorld?.addEnemy(enemy);
@@ -385,19 +394,25 @@ export class EnemyManager {
     return enemy;
   }
 
-  enqueueOrSpawn(type: string, level: number, spawnIndex: number, wave: number): void {
+  enqueueOrSpawn(type: string, level: number, spawnIndex: number, wave: number, bossAbility?: BossAbilityId): void {
     if (this.enemies.length < GAMEPLAY_ENEMY_CAP) {
-      this.spawn(type, level, spawnIndex, wave);
+      this.spawn(type, level, spawnIndex, wave, bossAbility);
       return;
     }
-    this.enqueuePending(type, level, spawnIndex, wave);
+    this.enqueuePending(type, level, spawnIndex, wave, bossAbility);
   }
 
   // Bounded-queue policy: spill to the least-pending spawn first (merges the
   // oldest backlogs across spawn points instead of growing one queue without
   // bound), and only when every queue is full evict the oldest lowest-level
   // non-boss entry — bosses are never merged away. Evictions are counted, never silent.
-  private enqueuePending(type: string, level: number, spawnIndex: number, wave: number): void {
+  private enqueuePending(
+    type: string,
+    level: number,
+    spawnIndex: number,
+    wave: number,
+    bossAbility?: BossAbilityId,
+  ): void {
     let targetIndex = spawnIndex;
     const targetQueue = this.pendingQueues.get(spawnIndex);
     if (targetQueue && targetQueue.length >= MAX_PENDING_PER_SPAWN) {
@@ -414,7 +429,9 @@ export class EnemyManager {
         return;
       }
     }
-    queue.push({ type, level, wave });
+    const entry: PendingEnemyEntry = { type, level, wave };
+    if (bossAbility !== undefined) entry.bossAbility = bossAbility;
+    queue.push(entry);
   }
 
   private findLeastPendingSpawn(preferredIndex: number): number {
@@ -453,7 +470,7 @@ export class EnemyManager {
     if (!queue || queue.length === 0) return;
     if (this.enemies.length >= GAMEPLAY_ENEMY_CAP) return;
     const entry = queue.shift()!;
-    this.spawn(entry.type, entry.level, spawnIndex, entry.wave);
+    this.spawn(entry.type, entry.level, spawnIndex, entry.wave, entry.bossAbility);
   }
 
   // Per-tick drain: releases backlog whenever the live count is under the cap,
@@ -473,7 +490,7 @@ export class EnemyManager {
       if (bestIndex < 0) return;
       const queue = this.pendingQueues.get(bestIndex)!;
       const entry = queue.shift()!;
-      this.spawn(entry.type, entry.level, bestIndex, entry.wave);
+      this.spawn(entry.type, entry.level, bestIndex, entry.wave, entry.bossAbility);
     }
   }
 

@@ -11,6 +11,8 @@ export interface ClickEffectInput {
   buildable: boolean;
   gold: number;
   buildCost: number;
+  // A supply drop or map cache under the cursor. Optional so older call sites compile.
+  packageHit?: boolean;
 }
 
 // Mirrors GameEngine.handleClick so a main-thread press can decide whether the
@@ -20,6 +22,7 @@ export function clickHasEffect(input: ClickEffectInput): boolean {
   if (input.progressivePlacementHold) return true;
   if (input.placementSiteHit) return true;
   if (input.upgradeButtonHit) return true;
+  if (input.packageHit) return true;
   if (!input.inBounds) return input.selectedTowerType !== null;
   if (input.towerOnTile || input.baseTile) return true;
   return input.selectedTowerType !== null && input.buildable && input.gold >= input.buildCost;

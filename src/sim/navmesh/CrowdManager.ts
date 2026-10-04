@@ -73,7 +73,7 @@ export class CrowdManager {
 
   addAgent(enemy: Enemy): void {
     const profile = getCrowdAgentProfile(enemy.type);
-    const maxSpeed = enemy.speed * this.tileSize;
+    const maxSpeed = enemy.speed * enemy.hasteFactor * this.tileSize;
     const agent = this.crowd.addAgent(toRecast({ x: enemy.x, y: enemy.y }), {
       radius: enemy.radius,
       maxSpeed,
@@ -151,7 +151,7 @@ export class CrowdManager {
     for (const enemy of enemies) {
       if (!enemy.agent || !enemy.body) continue;
       const profile = getCrowdAgentProfile(enemy.type);
-      const maxSpeed = enemy.speed * enemy.slowFactor * this.tileSize;
+      const maxSpeed = enemy.speed * enemy.slowFactor * enemy.hasteFactor * this.tileSize;
       if (Math.abs(enemy.agent.maxSpeed - maxSpeed) > 1e-6) {
         enemy.agent.updateParameters({ maxSpeed, maxAcceleration: maxSpeed * profile.maxAccelFactor });
       }

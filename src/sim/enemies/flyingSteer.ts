@@ -106,7 +106,7 @@ export function writeFlightVelocities(
       enemy.body.setLinvel({ x: 0, y: 0 }, true);
       continue;
     }
-    const speed = enemy.speed * enemy.slowFactor * tileSize;
+    const speed = enemy.speed * enemy.slowFactor * enemy.hasteFactor * tileSize;
     let velocityX = (deltaX / distance) * speed;
     let velocityY = (deltaY / distance) * speed;
     if (forceFieldSystem) {

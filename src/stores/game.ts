@@ -25,7 +25,14 @@ import {
   replayProgressiveBoard,
   sitesAtRotation,
 } from "@/sim/grid/ProgressiveMap.js";
-import type { BaseDefenseSnapshot } from "@/sim/SimulationSnapshot.js";
+import type { BonusPickerState, RunBonuses } from "@/sim/runBonuses.js";
+import { freshRunBonuses } from "@/sim/runBonuses.js";
+import type {
+  BaseDefenseSnapshot,
+  MapBuildingSnapshot,
+  MapCacheSnapshot,
+  SupplyDropSnapshot,
+} from "@/sim/SimulationSnapshot.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 
 export type BasePanelState = Omit<BaseDefenseSnapshot, "sentries">;
@@ -205,6 +212,7 @@ export interface GameStoreLike {
   rotateProgressiveBlock?: () => void;
   selectProgressiveOffer?: (index: number) => void;
   moveProgressiveSite?: (direction: ProgressiveSiteDirection) => void;
+  bonusPicker?: BonusPickerState | null;
 }
 
 interface GameStateShape {
@@ -248,6 +256,12 @@ interface GameStateShape {
   progressivePlacements: ProgressiveStamp[];
   progressiveUndoAvailable: boolean;
   layoutGeneration: number;
+  runBonuses: RunBonuses;
+  bonusPicker: BonusPickerState | null;
+  nextBossAbilityNames: string[];
+  supplyDrops: SupplyDropSnapshot[];
+  mapCaches: MapCacheSnapshot[];
+  mapBuildings: MapBuildingSnapshot[];
 }
 
 export const useGameStore = defineStore("game", {
@@ -297,6 +311,12 @@ export const useGameStore = defineStore("game", {
     progressivePlacements: [],
     progressiveUndoAvailable: false,
     layoutGeneration: 0,
+    runBonuses: freshRunBonuses(),
+    bonusPicker: null,
+    nextBossAbilityNames: [],
+    supplyDrops: [],
+    mapCaches: [],
+    mapBuildings: [],
   }),
 
   getters: {
@@ -408,6 +428,12 @@ export const useGameStore = defineStore("game", {
       this.progressivePlacements = [];
       this.progressiveUndoAvailable = false;
       this.layoutGeneration = 0;
+      this.runBonuses = freshRunBonuses();
+      this.bonusPicker = null;
+      this.nextBossAbilityNames = [];
+      this.supplyDrops = [];
+      this.mapCaches = [];
+      this.mapBuildings = [];
     },
 
     rotateProgressiveBlock() {
@@ -474,6 +500,7 @@ export const useGameStore = defineStore("game", {
       const map = generateProgressiveMap(config, stamps);
       this.map = map;
       this.grid = new Grid(map);
+      this.syncSiteReservations();
       this.progressivePlacements = stamps.map((stamp) => ({ ...stamp }));
       this.layoutGeneration = layoutGeneration;
     },
@@ -620,6 +647,22 @@ export const useGameStore = defineStore("game", {
       this.progressivePlacements = [];
       this.progressiveUndoAvailable = false;
       this.layoutGeneration = 0;
+      this.runBonuses = freshRunBonuses();
+      this.bonusPicker = null;
+      this.nextBossAbilityNames = [];
+      this.supplyDrops = [];
+      this.mapCaches = [];
+      this.mapBuildings = [];
+    },
+
+    syncSiteReservations() {
+      const grid = this.grid;
+      // Input tests install a coordinate stub that is not a Grid. Skip it.
+      if (!grid || typeof grid.setReservedTerrain !== "function") return;
+      const keys: string[] = [];
+      for (const building of this.mapBuildings) keys.push(`${building.tileX},${building.tileY}`);
+      for (const cache of this.mapCaches) keys.push(`${cache.tileX},${cache.tileY}`);
+      grid.setReservedTerrain(keys);
     },
   },
 });

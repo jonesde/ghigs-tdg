@@ -212,8 +212,15 @@ export class TowerManager {
     return removedCost;
   }
 
-  update(dt: number, enemyManager: EnemyManagerRef): void {
-    for (const tower of this.towers) tower.update(dt, enemyManager, this.projectiles, this.sound);
+  update(
+    dt: number,
+    enemyManager: EnemyManagerRef,
+    caches: readonly { id: number; x: number; y: number }[] = [],
+    onCacheHit: (cacheId: number, damage: number) => void = () => {},
+  ): void {
+    for (const tower of this.towers) {
+      tower.update(dt, enemyManager, this.projectiles, this.sound, caches, onCacheHit);
+    }
   }
 
   getTowerById(id: string): Tower | undefined {

@@ -7,6 +7,7 @@ import { dispatchCommand } from "@/sim/commandBus.js";
 import { useGameStore } from "@/stores/game.js";
 import { useUiStore } from "@/stores/ui.js";
 import BasePanel from "./BasePanel.vue";
+import BonusPicker from "./BonusPicker.vue";
 import DebugPanel from "./DebugPanel.vue";
 import EnemyChat from "./EnemyChat.vue";
 import GameHud from "./GameHud.vue";
@@ -92,6 +93,7 @@ onUnmounted(() => {
 
     <!-- Wave countdown overlay -->
     <WaveCountdown v-if="gameStore.waveCountdown" />
+    <BonusPicker />
     <ProgressivePlacement />
 
     <!-- PauseMenu overlay -->

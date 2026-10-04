@@ -192,6 +192,7 @@ interface ProjectileManagerRef {
     pierceFalloff?: number;
     stunDur?: number;
     splash?: number;
+    cacheId?: number;
   }): void;
   fireLightning(opts: {
     originX: number;
@@ -258,6 +259,37 @@ interface CanUpgradeResult {
   needVariant?: boolean;
 }
 
+interface CacheShotTarget {
+  id: number;
+  x: number;
+  y: number;
+}
+
+function nearestCache(
+  originX: number,
+  originY: number,
+  rangeSquared: number,
+  caches: readonly CacheShotTarget[],
+  aim?: { x: number; y: number },
+): CacheShotTarget | null {
+  let best: CacheShotTarget | null = null;
+  let bestDistance = rangeSquared;
+  for (const cache of caches) {
+    const deltaX = cache.x - originX;
+    const deltaY = cache.y - originY;
+    const distanceSquared = deltaX * deltaX + deltaY * deltaY;
+    if (distanceSquared === 0 || distanceSquared > bestDistance) continue;
+    if (aim) {
+      const distance = Math.sqrt(distanceSquared);
+      const dot = (deltaX / distance) * aim.x + (deltaY / distance) * aim.y;
+      if (dot <= 0.5) continue;
+    }
+    bestDistance = distanceSquared;
+    best = cache;
+  }
+  return best;
+}
+
 export class Tower {
   type: string;
   id: string;
@@ -312,6 +344,18 @@ export class Tower {
   // A corner body's radius overlaps the adjacent terrain cuboid. That tower is
   // not a path block, so the overlap must not damage it or count as a siege.
   enemyAttackImmune: boolean = false;
+  // Run cards and adjacent map buildings. 1 until GameEngine.refreshAllTowerBonuses.
+  // Crowd and combat read the product inside _computeStats; armor is incoming only.
+  runDamageMult = 1;
+  runFireRateMult = 1;
+  runHealthMult = 1;
+  runRangeMult = 1;
+  runSlowMult = 1;
+  siteDamageMult = 1;
+  siteFireRateMult = 1;
+  siteHealthMult = 1;
+  siteRangeMult = 1;
+  incomingDamageMult = 1;
   // Tile nav-distance to base (−1 unreachable). Null → Euclidean fallback.
   navDistanceToBase: ((tileX: number, tileY: number, flyingHeight?: number) => number) | null = null;
 
@@ -430,7 +474,7 @@ export class Tower {
     const m = typeof milestoneTier === "number" ? milestoneTier : -1;
     // addons are fixed at construction today; joining them keeps the key correct
     // if addon membership ever becomes runtime-mutable, at negligible cost.
-    return `${h}|${r}|${m}|${milestoneLevels}|${this.level}|${this.variant ?? ""}|${this.addons.join(",")}`;
+    return `${h}|${r}|${m}|${milestoneLevels}|${this.level}|${this.variant ?? ""}|${this.addons.join(",")}|${this.runDamageMult}|${this.runFireRateMult}|${this.runHealthMult}|${this.runRangeMult}|${this.runSlowMult}|${this.siteDamageMult}|${this.siteFireRateMult}|${this.siteHealthMult}|${this.siteRangeMult}`;
   }
 
   clearStatsCache(): void {
@@ -538,6 +582,13 @@ export class Tower {
       }
     }
 
+    damage *= this.runDamageMult * this.siteDamageMult;
+    fireRate *= this.runFireRateMult * this.siteFireRateMult;
+    range *= this.runRangeMult * this.siteRangeMult;
+    healthMult *= this.runHealthMult * this.siteHealthMult;
+    slowAmt *= this.runSlowMult;
+    const slowedDuration = slowDur * this.runSlowMult;
+
     return {
       range,
       damage,
@@ -548,7 +599,7 @@ export class Tower {
       pierce,
       pierceFalloff,
       slowAmt,
-      slowDur,
+      slowDur: slowedDuration,
       marksman,
       napalm,
       stormcall,
@@ -655,16 +706,17 @@ export class Tower {
 
   takeDamage(amount: number, attacker?: Enemy): void {
     if (this.enemyAttackImmune) return;
-    // Thorn reflect before ghosting so a lethal hit still reflects. Ground-only
-    // towers skip the reflect at flying attackers: they cannot engage air at all.
+    // Armor is applied before thorn reflect so the reflected hit uses the damage
+    // the tower actually took. GameEngine writes incomingDamageMult from the run.
+    const incoming = amount * this.incomingDamageMult;
     const stats = this.stats;
     const attackerFlying = (attacker?.flyingHeight ?? 0) > 0;
     if (stats.thornReflectPct > 0 && attacker && !this.isGhost && (!stats.groundOnly || !attackerFlying)) {
-      const reflected = amount * stats.thornReflectPct;
+      const reflected = incoming * stats.thornReflectPct;
       const dealtDamage = attacker.takeDamage(reflected) ?? reflected;
       this.creditDamage(dealtDamage);
     }
-    this.health -= amount;
+    this.health -= incoming;
     if (this.health < 0) this.health = 0;
     if (this.health <= 0 && !this.isGhost) {
       this.isGhost = true;
@@ -786,7 +838,14 @@ export class Tower {
     return target;
   }
 
-  update(dt: number, enemyManager: EnemyManagerRef, projectileManager: ProjectileManagerRef, sound: SoundPlayer) {
+  update(
+    dt: number,
+    enemyManager: EnemyManagerRef,
+    projectileManager: ProjectileManagerRef,
+    sound: SoundPlayer,
+    caches: readonly CacheShotTarget[] = [],
+    onCacheHit: (cacheId: number, damage: number) => void = () => {},
+  ) {
     this._gameSeconds += dt;
     if (this.cooldown > 0) this.cooldown -= dt;
 
@@ -908,6 +967,9 @@ export class Tower {
           this.fire(aimTarget, enemyManager, projectileManager, sound);
           this.cooldown = 1 / stats.fireRate;
         }
+      } else {
+        const cache = nearestCache(this.x, this.y, rangeSquared, caches, { x: ddx, y: ddy });
+        if (cache) fireAtCache(this, cache, projectileManager, sound, onCacheHit);
       }
       return;
     }
@@ -945,7 +1007,10 @@ export class Tower {
         this.fire(target, enemyManager, projectileManager, sound);
         this.cooldown = 1 / stats.fireRate;
       }
+      return;
     }
+    const cache = nearestCache(this.x, this.y, rangeSquared, caches);
+    if (cache) fireAtCache(this, cache, projectileManager, sound, onCacheHit);
   }
 
   fire(
@@ -1030,4 +1095,48 @@ export class Tower {
     this.fireAnimTime = this._gameSeconds;
     if (sound) sound.playSound(`shoot_${this.type as TowerId}`);
   }
+}
+
+function fireAtCache(
+  tower: Tower,
+  cache: CacheShotTarget,
+  projectileManager: ProjectileManagerRef,
+  sound: SoundPlayer,
+  onCacheHit: (cacheId: number, damage: number) => void,
+): void {
+  tower.angle = Math.atan2(cache.y - tower.y, cache.x - tower.x);
+  if (tower.cooldown > 0) return;
+  const stats = tower.stats;
+  let fireDamage = stats.damage;
+  if (stats.chargeShot) {
+    tower.chargeShotCount = (tower.chargeShotCount + 1) % CHARGE_SHOT_COUNT;
+    if (tower.chargeShotCount === 0) fireDamage *= CHARGE_SHOT_MULT;
+  }
+  const tileSize = tower.grid?.tileSize || 36;
+  const barrelOffset = tileSize * 0.45;
+  tower.fireAnimTime = tower._gameSeconds;
+  tower.cooldown = 1 / stats.fireRate;
+  if (sound) sound.playSound(`shoot_${tower.type as TowerId}`);
+  if (tower.type === "lightning") {
+    onCacheHit(cache.id, fireDamage);
+    return;
+  }
+  const base = resolveEffectiveBase(tower.base, tower.type as TowerId, tower.variant);
+  projectileManager.spawn({
+    towerId: tower.id,
+    x: tower.x + Math.cos(tower.angle) * barrelOffset,
+    y: tower.y + Math.sin(tower.angle) * barrelOffset,
+    damage: fireDamage,
+    speed: (base.projSpeed || 1) * tileSize * PROJECTILE_SPEED_MULTIPLIER,
+    range: stats.range,
+    towerType: tower.type,
+    towerLevel: tower.level,
+    targetId: 0,
+    targetX: cache.x,
+    targetY: cache.y,
+    cacheId: cache.id,
+    color: tower.color,
+    icon: tower.icon,
+    variant: tower.variant,
+  });
 }

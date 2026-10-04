@@ -1,6 +1,16 @@
 import type { MapThemeData, SpawnState } from "@/render/themes/index.js";
 import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
+import type { BossAbilityId } from "@/sim/bossAbilities.js";
+import {
+  bossAbilityLabel,
+  configureBossAbility,
+  minionPulseCount,
+  nearerMendBlocks,
+  rollBossAbilities,
+  tickBossAbilities,
+} from "@/sim/bossAbilities.js";
 import type { DebugKind } from "@/sim/Command.js";
+import { enemyLevelForWave, waveBossCount } from "@/sim/ConstantsEnemy.js";
 import { ICE_AURA_RANGE, STATIC_FIELD_RANGE } from "@/sim/ConstantsTower.js";
 import type { AttackTarget, Enemy } from "@/sim/enemies/Enemy.js";
 import { invalidateNearestWalkableCache, resetEnemyId } from "@/sim/enemies/Enemy.js";
@@ -25,6 +35,7 @@ import type { GeneratedMap } from "@/sim/grid/Map.js";
 import { forkRunSeed, generateRandomMap, mulberry32 } from "@/sim/grid/Map.js";
 import {
   type BlockTemplate,
+  blockCoordinateForTile,
   boardToGeneratedMap,
   boardWithPlayerStamp,
   commitPlacement,
@@ -41,6 +52,17 @@ import {
   resolveGeneratedMap,
 } from "@/sim/grid/ProgressiveMap.js";
 import type { HostBindings, ThemeBundle } from "@/sim/HostBindings.js";
+import type { MapBuildingSite, MapCacheSite, SupplyDropSite } from "@/sim/mapSites.js";
+import {
+  CACHE_OPEN_GOLD,
+  collectWorldKeys,
+  nearestPathTile,
+  neighborBonus,
+  PACKAGE_CLICK_RADIUS_TILES,
+  playerPlacedBlockCount,
+  reconcileMapSites,
+  worldKey,
+} from "@/sim/mapSites.js";
 import { CrowdManager, restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdManager.js";
 import { toRecast } from "@/sim/navmesh/coords.js";
 import { FlightDistanceField } from "@/sim/navmesh/FlightDistanceField.js";
@@ -67,6 +89,8 @@ import { ContactProcessor } from "@/sim/physics/ContactProcessor.js";
 import { ForceFieldSystem } from "@/sim/physics/ForceFieldSystem.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { separateEnemiesFromTowers } from "@/sim/physics/separateEnemiesFromTowers.js";
+import type { BonusApplication, BonusOffer } from "@/sim/runBonuses.js";
+import { describeBonus, freshRunBonuses, rollBonusOfferFor } from "@/sim/runBonuses.js";
 import type { BaseDefenseSnapshot } from "@/sim/SimulationSnapshot.js";
 import { BASE_SELECTION_ID, BaseDefense } from "@/sim/towers/BaseDefense.js";
 import { maxLevelForBase } from "@/sim/towers/SkillTree.js";
@@ -128,6 +152,7 @@ interface WaveManagerRef {
   startNextWave(): void;
   debugJumpToWave(wave: number): void;
   getRemainingScheduledSpawns(): number;
+  queue: { type: string; level: number; delay: number; bossAbility?: BossAbilityId }[];
 }
 
 export class GameEngine {
@@ -199,6 +224,11 @@ export class GameEngine {
   progressivePlacementUndo: { stampCount: number; offer: number[] } | null = null;
   layoutGeneration = 0;
   lastPostedLayoutGeneration = -1;
+  supplyDrops: SupplyDropSite[] = [];
+  mapCaches: MapCacheSite[] = [];
+  mapBuildings: MapBuildingSite[] = [];
+  nextSiteId = 1;
+  nextBossAbilityNames: string[] = [];
   private progressiveBoard: ProgressiveBoard | null = null;
   private progressiveCatalog: BlockTemplate[] | null = null;
   private progressiveRng: (() => number) | null = null;
@@ -298,6 +328,11 @@ export class GameEngine {
     this.progressivePlacementUndo = null;
     this.layoutGeneration = 0;
     this.lastPostedLayoutGeneration = -1;
+    this.supplyDrops = [];
+    this.mapCaches = [];
+    this.mapBuildings = [];
+    this.nextSiteId = 1;
+    this.nextBossAbilityNames = [];
     this.progressiveBoard = null;
     this.progressiveCatalog = null;
     this.progressiveRng = null;
@@ -323,6 +358,9 @@ export class GameEngine {
       runGemsEarned: 0,
       bossesKilledThisRun: 0,
       bossesReachedBaseThisRun: 0,
+      bossesSpawned: 0,
+      runBonuses: freshRunBonuses(),
+      bonusPicker: null,
       milestoneRewardsClaimed: {},
       gemBreakdown: createFreshGemBreakdown(),
       endScreenData: null,
@@ -345,7 +383,11 @@ export class GameEngine {
       this.theme,
       this.themeBundle.defaultEnemyVisuals,
     );
+    // Runs inside spawn, after the ability field is set and before the crowd agent.
+    this.enemyManager.onSpawned = (enemy) => this.onEnemySpawned(enemy);
     this.projectileManager = new ProjectileManager(this.enemyManager, this.particleSpawner, null, this.grid);
+    // Arrival is in ProjectileManager, after the tower that fired has returned.
+    this.projectileManager.setOnCacheHit((cacheId, damage) => this.damageCache(cacheId, damage));
     this.towerManager = new TowerManager(
       this.grid,
       this.particleSpawner,
@@ -453,6 +495,8 @@ export class GameEngine {
     );
 
     this._applyStartingBonuses();
+    // Sites stay out of the navmesh. Reservations only block construction.
+    this.syncMapSites(null);
 
     setWave(this.runState, this.waveManager.currentWave);
     this.totalGoldEarned = 0;
@@ -550,9 +594,15 @@ export class GameEngine {
       if (!stored || stored.remaining !== currentRemaining) {
         this.runState.waveCountdown = { remaining: currentRemaining, nextWave: wm.currentWave + 1 };
       }
-    } else if (this.runState.waveCountdown !== null) {
-      this.runState.waveCountdown = null;
+      this.refreshBossPreview();
+    } else {
+      if (this.runState.waveCountdown !== null) this.runState.waveCountdown = null;
+      if (this.nextBossAbilityNames.length > 0) this.nextBossAbilityNames = [];
     }
+
+    // Haste and the minion attack timestamp are written before crowd update and
+    // before preStep increments gameSeconds, so the first frame of the attack plays.
+    this.tickBossCombat(dt);
 
     if (this.grid!.pathVersion !== this.lastPathVersion) {
       this.physicsWorld!.rebuildTowers(this.towerManager!);
@@ -617,7 +667,9 @@ export class GameEngine {
     // tick's prePhysics — it is drawn bodiless for exactly one tick. The tick is NOT
     // reordered: moving tower fire earlier showed no perf win and would shift every
     // combat roll by a tick.
-    this.towerManager.update(dt, this.enemyManager);
+    this.towerManager.update(dt, this.enemyManager, this.cacheShotTargets(), (cacheId, damage) =>
+      this.damageCache(cacheId, damage),
+    );
     if (this.baseDefense && this.projectileManager) {
       this.baseDefense.update(dt, this.enemyManager, this.projectileManager, this.host, this.simSeconds);
     }
@@ -784,6 +836,9 @@ export class GameEngine {
 
   onWaveStart(wave: number): void {
     setWave(this.runState, wave);
+    // The queue for this wave already exists. Spawn happens on a later tick, so a
+    // stamp here is on the plan, and bossesSpawned still counts only bodies that appear.
+    this.stampBossAbilities(wave);
     this.waveGraphTracker?.onWaveStart(wave);
 
     const ranked: { towerId: string; damage: number; totalDamage: number }[] = [];
@@ -845,9 +900,13 @@ export class GameEngine {
   }
 
   onEnemyKill(enemy: Enemy): void {
-    const bounty = enemy.bounty || 1;
-    this.waveGraphTracker?.onGoldBounty(bounty);
-    this.earnGold(bounty);
+    // Summoned minions keep bounty 0. `bounty || 1` would pay 1 gold for that 0.
+    if (!enemy.summoned) {
+      const bounty = (enemy.bounty || 1) * this.runState.runBonuses.bountyMult;
+      this.waveGraphTracker?.onGoldBounty(bounty);
+      this.earnGold(bounty);
+    }
+    if (enemy.type === "boss") this.dropSupplyPackage(enemy);
   }
 
   earnGold(amount: number): void {
@@ -1004,6 +1063,8 @@ export class GameEngine {
     const tx = tile.x;
     const ty = tile.y;
 
+    if (this.runState.bonusPicker) return;
+
     if (this.progressivePlacementHold) {
       // A missed site used to select the tower under the cursor and reopen the
       // tower panel on top of the block choices. The hold owns selection.
@@ -1014,6 +1075,16 @@ export class GameEngine {
 
     if (this.isUpgradeBtnAt(worldX, worldY)) {
       this.upgradeSelected();
+      return;
+    }
+
+    const packageHit = this.nearestPackage(worldX, worldY);
+    if (packageHit) {
+      if (packageHit.source === "cache" && this.runState.gold < CACHE_OPEN_GOLD) {
+        this.host.notifyUi({ type: "showNotification", message: "50 gold is required to open a cache." });
+        return;
+      }
+      this.openBonusPicker(packageHit.source, packageHit.id, packageHit.offer);
       return;
     }
 
@@ -1046,6 +1117,8 @@ export class GameEngine {
             setGold(this.runState, this.runState.gold - cost);
             this.runState.selectedTowerId = String(tower.id);
             this.host.syncGridTower(tx, ty, true);
+            // The constructor filled HP from unbuffed stats. Scale to the run and site factors.
+            this.refreshAllTowerBonuses();
           }
         }
       }
@@ -1308,6 +1381,7 @@ export class GameEngine {
     this.waveManager?.debugJumpToWave(wave);
     this.runState.waveCountdown =
       this.waveManager === null ? null : { remaining: Math.ceil(BETWEEN_WAVES_TIMER), nextWave: wave + 1 };
+    this.refreshBossPreview();
     this.applyWaveProgressRewards(wave);
     // Only the destination wave holds. Missed intervals are not replayed, and wave 100 is victory.
     if (this.isProgressiveHoldWave(wave) && this.armPlacementHold("countdown")) this.runState.waveCountdown = null;
@@ -1487,6 +1561,7 @@ export class GameEngine {
 
   togglePause(): void {
     if (this.progressivePlacementHold) return;
+    if (this.runState.bonusPicker) return;
     togglePauseState(this.runState);
     if (this.runState.state === GameState.PLAYING) this.applyPendingProgressiveResume();
   }
@@ -1576,6 +1651,7 @@ export class GameEngine {
     }
     const previousSpawns = previousMap.spawns;
     this.runState.map = nextMap;
+    const previousWorldKeys = collectWorldKeys(grid);
     const shift = grid.replaceFromMap(nextMap);
     const keeper = new NavMeshBuilder(grid);
     if (!keeper.isSuccess() || !keeper.getNavMesh()) {
@@ -1589,6 +1665,10 @@ export class GameEngine {
     }
     this.towerManager.shiftLayoutIndices(shift.shiftX, shift.shiftY);
     this.enemyManager.shiftLayoutIndices(shift.shiftX, shift.shiftY);
+    this.shiftMapSites(shift.shiftX, shift.shiftY);
+    const playerBlock = committed.added.find((block) => !block.fill);
+    const stampWorldKeys = playerBlock ? this.playerStampKeys(playerBlock.blockX, playerBlock.blockY) : null;
+    this.adoptLayoutSites(previousWorldKeys, playerPlacedBlockCount(this.progressivePlacements), stampWorldKeys);
     this.enemyManager.reindexSpawns(previousSpawns, nextMap.spawns);
     this.waveManager.map = nextMap;
     this.waveManager.resizeSpawnStatesById(previousSpawns, nextMap.spawns);
@@ -1655,6 +1735,7 @@ export class GameEngine {
     this.runState.selectedTowerId = null;
     setGameState(this.runState, GameState.PAUSED);
     this.runState.waveCountdown = null;
+    this.nextBossAbilityNames = [];
   }
 
   rerollProgressiveOffer(): boolean {
@@ -1718,6 +1799,7 @@ export class GameEngine {
       remaining: Math.ceil(BETWEEN_WAVES_TIMER),
       nextWave: this.waveManager.currentWave + 1,
     };
+    this.refreshBossPreview();
   }
 
   // Reverts the last placement inside the paused undo window: truncate the stamp
@@ -1754,6 +1836,7 @@ export class GameEngine {
     this.progressiveBoard = replayed.board;
     this.runState.map = nextMap;
     const previousSpawns = previousMap.spawns;
+    const previousWorldKeys = collectWorldKeys(grid);
     const shift = grid.replaceFromMap(nextMap);
     const keeper = new NavMeshBuilder(grid);
     if (!keeper.isSuccess() || !keeper.getNavMesh()) {
@@ -1767,6 +1850,8 @@ export class GameEngine {
     }
     this.towerManager.shiftLayoutIndices(shift.shiftX, shift.shiftY);
     this.enemyManager.shiftLayoutIndices(shift.shiftX, shift.shiftY);
+    this.shiftMapSites(shift.shiftX, shift.shiftY);
+    this.adoptLayoutSites(previousWorldKeys);
     this.enemyManager.reindexSpawns(previousSpawns, nextMap.spawns);
     this.waveManager.map = nextMap;
     this.waveManager.resizeSpawnStatesById(previousSpawns, nextMap.spawns);
@@ -1829,6 +1914,345 @@ export class GameEngine {
     this.lastPathVersion = grid.pathVersion;
     separateEnemiesFromTowers(enemyManager.enemies, towerManager.towers, grid, this.crowdManager);
   }
+
+  private onEnemySpawned(enemy: Enemy): void {
+    if (enemy.type !== "boss" || !this.grid) return;
+    this.runState.bossesSpawned += 1;
+    configureBossAbility(enemy, enemy.bossAbility, this.grid.tileSize);
+    if (enemy.bossAbility !== "healAura") return;
+    enemy.mendSuppresses = (source, ally) => nearerMendBlocks(source, ally, this.enemyManager?.enemies ?? []);
+  }
+
+  private stampBossAbilities(waveNumber: number): void {
+    const manager = this.waveManager;
+    const map = this.runState.map;
+    if (!manager || !map) return;
+    const unstamped = manager.queue.filter((entry) => entry.type === "boss" && entry.bossAbility === undefined);
+    if (unstamped.length === 0) return;
+    const vanillaFirst = this.runState.bossesSpawned === 0;
+    const abilities = rollBossAbilities(map.seed, waveNumber, unstamped.length, vanillaFirst);
+    for (let index = 0; index < unstamped.length; index++) {
+      const ability = abilities[index];
+      if (ability !== undefined) unstamped[index]!.bossAbility = ability;
+    }
+  }
+
+  private refreshBossPreview(): void {
+    const manager = this.waveManager;
+    const map = this.runState.map;
+    if (!manager || !map || !manager.countdownActive) {
+      if (this.nextBossAbilityNames.length > 0) this.nextBossAbilityNames = [];
+      return;
+    }
+    const nextWave = manager.currentWave + 1;
+    const count = waveBossCount(nextWave, map.bossCadence);
+    if (count === 0) {
+      if (this.nextBossAbilityNames.length > 0) this.nextBossAbilityNames = [];
+      return;
+    }
+    const vanillaFirst = this.runState.bossesSpawned === 0;
+    const abilities = rollBossAbilities(map.seed, nextWave, count, vanillaFirst);
+    const names = abilities.map((ability) => bossAbilityLabel(ability));
+    if (names.join("|") !== this.nextBossAbilityNames.join("|")) this.nextBossAbilityNames = names;
+  }
+
+  private tickBossCombat(dt: number): void {
+    const enemyManager = this.enemyManager;
+    const towerManager = this.towerManager;
+    const grid = this.grid;
+    if (!enemyManager || !towerManager || !grid) return;
+    const towers = towerManager.towers.map((tower) => ({
+      id: String(tower.id),
+      x: tower.x,
+      y: tower.y,
+      isGhost: tower.isGhost,
+    }));
+    tickBossAbilities(enemyManager.enemies, dt, {
+      tileSize: grid.tileSize,
+      towers,
+      spawnMinions: (boss) => this.spawnBossMinions(boss),
+      damageTower: (towerId, amount, attacker) => {
+        const tower = towerManager.getTowerById(towerId);
+        if (!tower || tower.isGhost) return;
+        tower.takeDamage(amount, attacker);
+      },
+    });
+  }
+
+  private spawnBossMinions(boss: Enemy): void {
+    const enemyManager = this.enemyManager;
+    const grid = this.grid;
+    const map = this.runState.map;
+    if (!enemyManager || !grid || !map) return;
+    const waveNumber = this.waveManager?.currentWave ?? boss.wave;
+    const count = minionPulseCount(waveNumber, enemyManager.enemies.length, GAMEPLAY_ENEMY_CAP);
+    const level = enemyLevelForWave(waveNumber, map.level);
+    for (let index = 0; index < count; index++) {
+      if (enemyManager.enemies.length >= GAMEPLAY_ENEMY_CAP) break;
+      const minion = enemyManager.spawn("minion", level, boss.spawnIndex, waveNumber);
+      if (!minion) continue;
+      minion.bounty = 0;
+      minion.summoned = true;
+      minion.body?.setTranslation({ x: boss.x, y: boss.y }, true);
+      minion.x = boss.x;
+      minion.y = boss.y;
+      minion.centerX = boss.x;
+      minion.centerY = boss.y;
+      this.crowdManager?.teleportAgent(minion, { x: boss.x, y: boss.y });
+    }
+  }
+
+  private cacheShotTargets(): { id: number; x: number; y: number }[] {
+    const grid = this.grid;
+    if (!grid || this.mapCaches.length === 0) return [];
+    const targets: { id: number; x: number; y: number }[] = [];
+    for (const cache of this.mapCaches) {
+      if (cache.hp <= 0) continue;
+      const world = grid.tileToWorld(cache.tileX, cache.tileY);
+      targets.push({ id: cache.id, x: world.x, y: world.y });
+    }
+    return targets;
+  }
+
+  private damageCache(cacheId: number, amount: number): void {
+    if (amount <= 0) return;
+    const cache = this.mapCaches.find((site) => site.id === cacheId);
+    if (!cache) return;
+    cache.hp -= amount;
+    if (cache.hp > 0) return;
+    this.mapCaches = this.mapCaches.filter((site) => site.id !== cacheId);
+    this.syncReservedTiles();
+    const picker = this.runState.bonusPicker;
+    if (picker && picker.source === "cache" && picker.id === cacheId) this.closeBonusPicker(false);
+  }
+
+  private playerStampKeys(blockX: number, blockY: number): Set<string> {
+    const grid = this.grid;
+    const keys = new Set<string>();
+    if (!grid) return keys;
+    const originTileX = Math.round(grid.worldOriginX / grid.tileSize);
+    const originTileY = Math.round(grid.worldOriginY / grid.tileSize);
+    for (let tileY = 0; tileY < grid.height; tileY++) {
+      for (let tileX = 0; tileX < grid.width; tileX++) {
+        const block = blockCoordinateForTile(originTileX, originTileY, tileX, tileY);
+        if (block.blockX !== blockX || block.blockY !== blockY) continue;
+        keys.add(worldKey(grid, tileX, tileY));
+      }
+    }
+    return keys;
+  }
+
+  private dropSupplyPackage(enemy: Enemy): void {
+    const grid = this.grid;
+    const map = this.runState.map;
+    if (!grid || !map) return;
+    const tile = grid.worldToTile(enemy.x, enemy.y);
+    const pathTile = nearestPathTile(grid, tile.x, tile.y);
+    if (!pathTile) return;
+    const id = this.nextSiteId++;
+    this.supplyDrops.push({ id, tileX: pathTile.x, tileY: pathTile.y, offer: rollBonusOfferFor(map.seed, id) });
+  }
+
+  private nearestPackage(
+    worldX: number,
+    worldY: number,
+  ): { source: "drop" | "cache"; id: number; offer: BonusOffer } | null {
+    const grid = this.grid;
+    if (!grid) return null;
+    const radius = grid.tileSize * PACKAGE_CLICK_RADIUS_TILES;
+    let bestDistance = radius * radius;
+    let best: { source: "drop" | "cache"; id: number; offer: BonusOffer } | null = null;
+    const consider = (source: "drop" | "cache", id: number, tileX: number, tileY: number, offer: BonusOffer): void => {
+      const world = grid.tileToWorld(tileX, tileY);
+      const deltaX = world.x - worldX;
+      const deltaY = world.y - worldY;
+      const distance = deltaX * deltaX + deltaY * deltaY;
+      if (distance > bestDistance) return;
+      bestDistance = distance;
+      best = { source, id, offer };
+    };
+    for (const drop of this.supplyDrops) consider("drop", drop.id, drop.tileX, drop.tileY, drop.offer);
+    for (const cache of this.mapCaches) consider("cache", cache.id, cache.tileX, cache.tileY, cache.offer);
+    return best;
+  }
+
+  private openBonusPicker(source: "drop" | "cache", id: number, offer: BonusOffer): void {
+    if (this.runState.bonusPicker || this.progressivePlacementHold) return;
+    const wasPlaying = this.runState.state === GameState.PLAYING;
+    this.runState.bonusPicker = { source, id, offer, wasPlaying };
+    if (wasPlaying) setGameState(this.runState, GameState.PAUSED);
+  }
+
+  pickBonus(index: number): boolean {
+    const picker = this.runState.bonusPicker;
+    if (!picker || !Number.isInteger(index) || index < 0 || index > 2) return false;
+    const bonusId = picker.offer[index];
+    if (!bonusId) return false;
+    if (picker.source === "cache") {
+      if (this.runState.gold < CACHE_OPEN_GOLD) {
+        this.host.notifyUi({ type: "showNotification", message: "50 gold is required to open a cache." });
+        return false;
+      }
+      setGold(this.runState, this.runState.gold - CACHE_OPEN_GOLD);
+    }
+    this.applyBonus(describeBonus(bonusId));
+    this.consumePackage(picker.source, picker.id);
+    this.closeBonusPicker(true);
+    return true;
+  }
+
+  dismissBonus(): boolean {
+    if (!this.runState.bonusPicker) return false;
+    this.closeBonusPicker(true);
+    return true;
+  }
+
+  private closeBonusPicker(resume: boolean): void {
+    const picker = this.runState.bonusPicker;
+    if (!picker) return;
+    this.runState.bonusPicker = null;
+    if (resume && picker.wasPlaying && this.runState.state === GameState.PAUSED) {
+      setGameState(this.runState, GameState.PLAYING);
+    }
+  }
+
+  private applyBonus(application: BonusApplication): void {
+    if (application.kind === "gold") {
+      this.earnGold(application.amount);
+      return;
+    }
+    if (application.kind === "mult") {
+      this.runState.runBonuses[application.field] *= application.factor;
+      this.refreshAllTowerBonuses();
+      return;
+    }
+    this.repairField(application.fraction);
+  }
+
+  private repairField(fraction: number): void {
+    const maxHealth = this.runState.maxBaseHealth;
+    const before = this.runState.baseHealth;
+    this.runState.baseHealth = Math.min(maxHealth, before + maxHealth * fraction);
+    this.totalHealingReceived += this.runState.baseHealth - before;
+    for (const tower of this.towerManager?.towers ?? []) {
+      if (tower.isGhost) continue;
+      tower.health = Math.min(tower.maxHealth, tower.health + tower.maxHealth * fraction);
+    }
+  }
+
+  private consumePackage(source: "drop" | "cache", id: number): void {
+    if (source === "drop") {
+      this.supplyDrops = this.supplyDrops.filter((drop) => drop.id !== id);
+      return;
+    }
+    this.mapCaches = this.mapCaches.filter((cache) => cache.id !== id);
+    this.syncReservedTiles();
+  }
+
+  // Recomputes max health only when the multiplied value changes, so an unchanged
+  // tower does not drift its current HP through a ratio round-trip.
+  private refreshAllTowerBonuses(): void {
+    const bonuses = this.runState.runBonuses;
+    const defense = this.baseDefense;
+    if (defense && defense.runHealthMult !== bonuses.healthMult) {
+      defense.runHealthMult = bonuses.healthMult;
+      defense.recomputeMaxHealth();
+    }
+    const towers = this.towerManager?.towers;
+    if (!towers) return;
+    for (const tower of towers) {
+      tower.runDamageMult = bonuses.damageMult;
+      tower.runFireRateMult = bonuses.fireRateMult;
+      tower.runHealthMult = bonuses.healthMult;
+      tower.runRangeMult = bonuses.rangeMult;
+      tower.runSlowMult = bonuses.slowMult;
+      tower.incomingDamageMult = bonuses.armorMult;
+      const site = neighborBonus(tower.tileX, tower.tileY, this.mapBuildings);
+      tower.siteDamageMult = site.damageMult;
+      tower.siteFireRateMult = site.fireRateMult;
+      tower.siteHealthMult = site.healthMult;
+      tower.siteRangeMult = site.rangeMult;
+      const previousMax = tower.maxHealth;
+      tower.clearStatsCache();
+      if (tower.computeMaxHealth() !== previousMax) tower.recomputeMaxHealth();
+    }
+  }
+
+  private syncMapSites(
+    previousWorldKeys: ReadonlySet<string> | null,
+    placedBlocks = 0,
+    stampWorldKeys: ReadonlySet<string> | null = null,
+  ): void {
+    const grid = this.grid;
+    const map = this.runState.map;
+    if (!grid || !map) return;
+    reconcileMapSites({
+      grid,
+      seed: map.seed,
+      regionId: map.regionId,
+      mapLevel: map.level,
+      buildings: this.mapBuildings,
+      caches: this.mapCaches,
+      previousWorldKeys,
+      placedBlocks,
+      stampWorldKeys,
+      allocateId: () => this.nextSiteId++,
+      rollOffer: (packageId) => rollBonusOfferFor(map.seed, packageId),
+    });
+    this.syncReservedTiles();
+    this.refreshAllTowerBonuses();
+  }
+
+  private syncReservedTiles(): void {
+    const grid = this.grid;
+    if (!grid) return;
+    const keys: string[] = [];
+    for (const building of this.mapBuildings) keys.push(`${building.tileX},${building.tileY}`);
+    for (const cache of this.mapCaches) keys.push(`${cache.tileX},${cache.tileY}`);
+    grid.setReservedTerrain(keys);
+  }
+
+  private shiftMapSites(shiftX: number, shiftY: number): void {
+    if (shiftX === 0 && shiftY === 0) return;
+    for (const building of this.mapBuildings) {
+      building.tileX += shiftX;
+      building.tileY += shiftY;
+    }
+    for (const cache of this.mapCaches) {
+      cache.tileX += shiftX;
+      cache.tileY += shiftY;
+    }
+    for (const drop of this.supplyDrops) {
+      drop.tileX += shiftX;
+      drop.tileY += shiftY;
+    }
+  }
+
+  private adoptLayoutSites(
+    previousWorldKeys: ReadonlySet<string>,
+    placedBlocks = 0,
+    stampWorldKeys: ReadonlySet<string> | null = null,
+  ): void {
+    const grid = this.grid;
+    if (!grid) return;
+    for (let index = this.supplyDrops.length - 1; index >= 0; index--) {
+      const drop = this.supplyDrops[index]!;
+      if (grid.isPath(drop.tileX, drop.tileY)) continue;
+      const snapped = nearestPathTile(grid, drop.tileX, drop.tileY);
+      if (!snapped) {
+        this.supplyDrops.splice(index, 1);
+        continue;
+      }
+      drop.tileX = snapped.x;
+      drop.tileY = snapped.y;
+    }
+    this.syncMapSites(previousWorldKeys, placedBlocks, stampWorldKeys);
+    const picker = this.runState.bonusPicker;
+    if (!picker) return;
+    const sites = picker.source === "drop" ? this.supplyDrops : this.mapCaches;
+    if (sites.some((site) => site.id === picker.id)) return;
+    this.closeBonusPicker(false);
+  }
 }
 
 class BaseTarget implements AttackTarget {
@@ -1838,7 +2262,7 @@ class BaseTarget implements AttackTarget {
     this.engine = engine;
   }
   takeDamage(amount: number, _attacker?: Enemy): void {
-    this.engine.damageBase(amount);
+    this.engine.damageBase(amount * this.engine.runState.runBonuses.armorMult);
   }
   get centerX(): number {
     const base = this.engine.grid?.getBase();

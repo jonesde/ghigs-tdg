@@ -5,12 +5,19 @@ import { useGameStore } from "@/stores/game.js";
 const gameStore = useGameStore();
 
 const isLast = computed(() => gameStore.waveCountdown?.remaining === 1);
+
+const headline = computed(() => {
+  const names = gameStore.nextBossAbilityNames;
+  const nextWave = gameStore.waveCountdown?.nextWave;
+  if (!names || names.length === 0 || nextWave === undefined) return "Next Wave";
+  return `Wave ${nextWave} — ${names.join(", ")}`;
+});
 </script>
 
 <template>
   <div class="wave-countdown-overlay">
     <div class="wave-countdown-text">
-      <span class="wave-countdown-label">Next Wave</span>
+      <span class="wave-countdown-label">{{ headline }}</span>
       <span class="wave-countdown-number" :class="{ 'countdown-final': isLast }" :key="gameStore.waveCountdown?.remaining">{{ gameStore.waveCountdown?.remaining }}</span>
     </div>
   </div>

@@ -145,6 +145,28 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
     // Space is cancelled for pause and would never be inserted into the field.
     if (isTextEntryTarget(event)) return;
 
+    // The picker owns 1/2/3, swallows the other build digits, and keeps Space from
+    // unpausing. Escape dismisses it. An open dialog still handles Escape first.
+    if (gs.bonusPicker && !overlayBlocksCamera(uiStore)) {
+      if (event.key === "Escape" || event.key === "x") {
+        event.preventDefault();
+        dispatch({ commandId: nextInputCommandId++, type: "action:dismissBonus" });
+        return;
+      }
+      if (event.key === " ") {
+        event.preventDefault();
+        return;
+      }
+      const bonusDigit = parseInt(event.key, 10);
+      if (bonusDigit >= 1 && bonusDigit <= 9) {
+        event.preventDefault();
+        if (bonusDigit <= 3) {
+          dispatch({ commandId: nextInputCommandId++, type: "action:pickBonus", index: bonusDigit - 1 });
+        }
+        return;
+      }
+    }
+
     // A placement hold freezes the simulation clock. Pause and speed keys must not reach the
     // worker: the main-thread timeScale would change while the board stays paused.
     if (gs.progressivePlacementHold) {

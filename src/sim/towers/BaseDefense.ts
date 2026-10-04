@@ -98,6 +98,8 @@ export class BaseDefense {
   previousWaveDamage = 0;
   totalInvested = 0;
   levelOneHealth = 0;
+  // Fortify multiplies the level curve. 1 until a persistent health card is picked.
+  runHealthMult = 1;
   readonly sentries: BaseSentryRuntime[] = [];
 
   private levelCosts: number[] = [];
@@ -125,14 +127,14 @@ export class BaseDefense {
     this.totalDamageDealt = 0;
     this.waveDamage = 0;
     this.previousWaveDamage = 0;
-    const maxHealth = levelOneHealth * BASE_LEVEL_HEALTH_MULT ** 0;
+    const maxHealth = levelOneHealth * BASE_LEVEL_HEALTH_MULT ** 0 * this.runHealthMult;
     this.runState.baseHealth = maxHealth;
     this.runState.maxBaseHealth = maxHealth;
     this.setEngineMax(maxHealth);
   }
 
   recomputeMaxHealth(): void {
-    const newMax = this.levelOneHealth * BASE_LEVEL_HEALTH_MULT ** (this.level - 1);
+    const newMax = this.levelOneHealth * BASE_LEVEL_HEALTH_MULT ** (this.level - 1) * this.runHealthMult;
     const ratio = this.runState.maxBaseHealth > 0 ? this.runState.baseHealth / this.runState.maxBaseHealth : 1;
     const nextHealth = Math.max(0, newMax * ratio);
     this.runState.maxBaseHealth = newMax;

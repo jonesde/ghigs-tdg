@@ -234,6 +234,7 @@ function handleFixedAim(dir: string | null) {
 
     <div v-if="tower.isGhost" class="stat-row ghost-row"><span class="ghost-label">Ghost</span></div>
     <div v-else class="stat-row"><span>Health</span><span>{{ Math.ceil(tower.health) }} / {{ Math.round(tower.maxHealth) }}</span></div>
+    <div v-if="tower.bonusLine" class="stat-row"><span>Bonuses</span><span>{{ tower.bonusLine }}</span></div>
     <div class="stat-row"><span>Damage</span><span>{{ Math.round(tower.stats.damage) }}</span></div>
     <div class="stat-row"><span>Range</span><span>{{ tower.stats.range.toFixed(1) }}</span></div>
     <div class="stat-row"><span>Targets</span><span>{{ targetLabel }}</span></div>

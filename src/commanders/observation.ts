@@ -22,6 +22,8 @@ export interface ObservationEnemy {
   targetingMode?: string | null;
   wave?: number;
   spawnIndex?: number;
+  // Boss ability id. Omitted for ordinary enemies and for a vanilla boss.
+  ability?: string;
 }
 
 export interface ObservationTower {
@@ -105,6 +107,7 @@ export function buildObservation(slice: CommanderSnapshotSlice): CommanderObserv
     if (enemy.wave !== undefined) observationEnemy.wave = enemy.wave;
     if (enemy.spawnIndex !== undefined) observationEnemy.spawnIndex = enemy.spawnIndex;
     if (enemy.flyingHeight !== undefined) observationEnemy.flyingHeight = enemy.flyingHeight;
+    if (enemy.bossAbility !== undefined && enemy.bossAbility !== "none") observationEnemy.ability = enemy.bossAbility;
     return observationEnemy;
   });
   const towers: ObservationTower[] = slice.towers.map((tower) => {

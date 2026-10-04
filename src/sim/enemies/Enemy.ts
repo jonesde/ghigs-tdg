@@ -1,6 +1,7 @@
 import type RAPIER from "@dimforge/rapier2d-compat";
 import type { CrowdAgent } from "recast-navigation";
 import type { EnemyVisualMeta, MapThemeAnimation, MapThemeData } from "@/render/themes/index.js";
+import type { BossAbilityId } from "@/sim/bossAbilities.js";
 import {
   AGENT_RESYNC_RADIUS_FRACTION,
   BOSS_STUN_REDUCTION,
@@ -372,10 +373,28 @@ export class Enemy {
   markTargetMult!: number;
   markTargetTimer!: number;
   antiHealTimer!: number;
+  // "none" until a boss wave stamps an ability onto the spawn. Minions stay none.
+  bossAbility: BossAbilityId = "none";
+  // CrowdManager, flyingSteer, and integrateKinematic multiply speed by this.
+  // A Haste boss keeps 1.2 and does not also take the 1.5 aura.
+  hasteFactor = 1;
+  healSelf = false;
+  // True for minions emitted by a boss. Their bounty stays 0 and they drop nothing.
+  summoned = false;
+  minionTimer = 0;
+  shieldTimer = 0;
+  bombardTimer = 0;
+  bombardTelegraphRemaining = 0;
+  bombardTargetId: string | null = null;
+  bombardTargetX = 0;
+  bombardTargetY = 0;
+  // GameEngine points Mend bosses at nearerMendBlocks. Null for every other enemy.
+  mendSuppresses: ((source: Enemy, ally: Enemy) => boolean) | null = null;
   private healTickDt: number = 0;
   private applyHealAura = (ally: Enemy): void => {
-    if (ally === this) return;
     if (ally.antiHealTimer > 0) return;
+    if (ally === this && !this.healSelf) return;
+    if (ally !== this && this.healSelf && this.mendSuppresses?.(this, ally)) return;
     ally.hp = Math.min(ally.maxHp, ally.hp + ally.maxHp * this.heal * this.healTickDt);
   };
 
@@ -1135,7 +1154,7 @@ export class Enemy {
     const deltaY = target.y - this.y;
     const distance = Math.hypot(deltaX, deltaY);
     if (distance <= 1e-6) return;
-    const stepDistance = Math.min(distance, this.speed * this.slowFactor * this.grid.tileSize * dt);
+    const stepDistance = Math.min(distance, this.speed * this.slowFactor * this.hasteFactor * this.grid.tileSize * dt);
     const directionX = deltaX / distance;
     const directionY = deltaY / distance;
     this.x += directionX * stepDistance;

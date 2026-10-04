@@ -3,6 +3,7 @@ import { STARTING_BASE_HEALTH, StartingGold } from "@/sim/Constants.js";
 import type { TowerId } from "@/sim/ConstantsTower.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
+import { type BonusPickerState, freshRunBonuses, type RunBonuses } from "@/sim/runBonuses.js";
 
 // Authoritative run state for the simulation. Formerly the Pinia gameStore's
 // GameStateShape. In Phase 1 this replaces the Pinia store on the engine —
@@ -28,6 +29,10 @@ export interface GameRunState {
   runGemsEarned: number;
   bossesKilledThisRun: number;
   bossesReachedBaseThisRun: number;
+  // Bosses that have actually entered the world. The first one of a run is vanilla.
+  bossesSpawned: number;
+  runBonuses: RunBonuses;
+  bonusPicker: BonusPickerState | null;
   milestoneRewardsClaimed: Record<number, boolean>;
   gemBreakdown: GemBreakdown;
   endScreenData: EndScreenPayload | null;
@@ -167,6 +172,9 @@ export function initRunState(state: GameRunState, mapIndex: number, mapData: Gen
   state.runGemsEarned = 0;
   state.bossesKilledThisRun = 0;
   state.bossesReachedBaseThisRun = 0;
+  state.bossesSpawned = 0;
+  state.runBonuses = freshRunBonuses();
+  state.bonusPicker = null;
   state.milestoneRewardsClaimed = {};
   state.gemBreakdown = createFreshGemBreakdown();
   state.selectedTowerId = null;

@@ -48,6 +48,11 @@ describe("clickHasEffect", () => {
     expect(clickHasEffect(input())).toBe(false);
   });
 
+  it("acts on a supply drop or cache even when the tile would otherwise pan", () => {
+    expect(clickHasEffect(input({ packageHit: true, buildable: false }))).toBe(true);
+    expect(clickHasEffect(input({ packageHit: true, inBounds: false }))).toBe(true);
+  });
+
   it("cancels build mode on an out-of-bounds press and ignores one without it", () => {
     expect(clickHasEffect(input({ inBounds: false, selectedTowerType: "basic" }))).toBe(true);
     expect(clickHasEffect(input({ inBounds: false }))).toBe(false);

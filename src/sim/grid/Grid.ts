@@ -17,6 +17,7 @@ interface GridLayoutSnapshot {
   blocked: Set<string>;
   terrainTowers: Set<string>;
   ghostTowers: Set<string>;
+  reservedTerrain: Set<string>;
   worldOriginX: number;
   worldOriginY: number;
   pathVersion: number;
@@ -46,6 +47,8 @@ export class Grid {
   blocked: Set<string>;
   terrainTowers: Set<string>;
   ghostTowers: Set<string>;
+  // Terrain tiles a building or an unopened cache occupies. Not a nav obstacle.
+  reservedTerrain: Set<string> = new Set();
   regionId: number = 0;
   // World position of tiles[0][0]'s minimum corner. West/north growth lowers this
   // and shifts tile indices so an existing tile keeps the same world position.
@@ -54,8 +57,9 @@ export class Grid {
   // Bumped on every tower build/sell/ghost/restore, terrain included, so Rapier
   // tower colliders and navmesh TileCache obstacles rebuild and the EnemyManager
   // live-tower cache (keyed on this value) refreshes. Corridor walls are static
-  // per map.
+  // per map. Map buildings and caches do not bump this: they never enter `blocked`.
   pathVersion: number = 0;
+  private reservedSignature = "";
   private _blockCount: number = 0;
 
   constructor(map: MapData) {
@@ -68,6 +72,7 @@ export class Grid {
     this.blocked = new Set();
     this.terrainTowers = new Set();
     this.ghostTowers = new Set();
+    this.reservedTerrain = new Set();
     this.regionId = map.regionId ?? 0;
     this.worldOriginX = (map.originTileX ?? 0) * this.tileSize;
     this.worldOriginY = (map.originTileY ?? 0) * this.tileSize;
@@ -86,6 +91,8 @@ export class Grid {
       this.blocked = shiftKeySet(this.blocked, shiftX, shiftY);
       this.terrainTowers = shiftKeySet(this.terrainTowers, shiftX, shiftY);
       this.ghostTowers = shiftKeySet(this.ghostTowers, shiftX, shiftY);
+      this.reservedTerrain = shiftKeySet(this.reservedTerrain, shiftX, shiftY);
+      this.reservedSignature = "";
     }
     this.worldOriginX = nextOriginX;
     this.worldOriginY = nextOriginY;
@@ -111,6 +118,7 @@ export class Grid {
       blocked: this.blocked,
       terrainTowers: this.terrainTowers,
       ghostTowers: this.ghostTowers,
+      reservedTerrain: this.reservedTerrain,
       worldOriginX: this.worldOriginX,
       worldOriginY: this.worldOriginY,
       pathVersion: this.pathVersion,
@@ -129,6 +137,8 @@ export class Grid {
     this.blocked = snapshot.blocked;
     this.terrainTowers = snapshot.terrainTowers;
     this.ghostTowers = snapshot.ghostTowers;
+    this.reservedTerrain = snapshot.reservedTerrain;
+    this.reservedSignature = "";
     this.worldOriginX = snapshot.worldOriginX;
     this.worldOriginY = snapshot.worldOriginY;
     this.pathVersion = snapshot.pathVersion;
@@ -137,6 +147,15 @@ export class Grid {
 
   get blockCount(): number {
     return this._blockCount;
+  }
+
+  // Replaces the reservation set without bumping pathVersion. The main thread
+  // calls this from the snapshot so the build preview matches the worker.
+  setReservedTerrain(keys: readonly string[]): void {
+    const signature = keys.join("|");
+    if (this.reservedSignature === signature) return;
+    this.reservedSignature = signature;
+    this.reservedTerrain = new Set(keys);
   }
 
   isPath(x: number, y: number): boolean {
@@ -172,7 +191,12 @@ export class Grid {
     if (!this.inBounds(x, y)) return false;
     const tileType = this.tiles[y]![x]!;
     if (tileType.type === "base") return false;
-    if (tileType.type === "terrain") return !this.terrainTowers.has(`${x},${y}`);
+    if (tileType.type === "terrain") {
+      // Buildings and unopened caches reserve the tile. They stay out of `blocked`
+      // so enemy routing and the navmesh keep the corridor they already had.
+      const tileKey = `${x},${y}`;
+      return !this.terrainTowers.has(tileKey) && !this.reservedTerrain.has(tileKey);
+    }
     if (tileType.type === "path") {
       return !this.blocked.has(`${x},${y}`) && !this.ghostTowers.has(`${x},${y}`);
     }

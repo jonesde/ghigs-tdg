@@ -1,13 +1,19 @@
+import { BOMBARD_TELEGRAPH_SECONDS } from "@/sim/bossAbilities.js";
 import { UPGRADE_COST_REDUCTION_PCT, WAVE_GRAPH_MAX_SEND } from "@/sim/Constants.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { GameEngine } from "@/sim/GameEngine.js";
+import { formatTowerBonusLine } from "@/sim/runBonuses.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import type { PersistState } from "./PersistState.js";
 import type {
+  BombardShotSnapshot,
   EnemySnapshot,
+  MapBuildingSnapshot,
+  MapCacheSnapshot,
   SimulationSnapshot,
   SnapshotMeta,
   StatusEffectSnapshot,
+  SupplyDropSnapshot,
   TowerSnapshot,
   WaveGraphDot,
 } from "./SimulationSnapshot.js";
@@ -198,7 +204,73 @@ function buildMeta(engine: GameEngine, receipt: SnapshotCommandReceipt): Snapsho
     worldOriginY: engine.grid?.worldOriginY ?? 0,
     layoutGeneration: engine.layoutGeneration,
     ...(baseDefense !== undefined ? { baseDefense } : {}),
+    runBonuses: rs.runBonuses,
+    bonusPicker: rs.bonusPicker,
+    supplyDrops: snapshotSupplyDrops(engine),
+    mapCaches: snapshotCaches(engine),
+    mapBuildings: snapshotBuildings(engine),
+    nextBossAbilityNames: engine.nextBossAbilityNames,
+    bombardShots: snapshotBombards(engine),
   };
+}
+
+function snapshotSupplyDrops(engine: GameEngine): SupplyDropSnapshot[] {
+  const grid = engine.grid;
+  if (!grid) return [];
+  return engine.supplyDrops.map((drop) => {
+    const world = grid.tileToWorld(drop.tileX, drop.tileY);
+    return { id: drop.id, tileX: drop.tileX, tileY: drop.tileY, worldX: world.x, worldY: world.y, offer: drop.offer };
+  });
+}
+
+function snapshotCaches(engine: GameEngine): MapCacheSnapshot[] {
+  const grid = engine.grid;
+  if (!grid) return [];
+  return engine.mapCaches.map((cache) => {
+    const world = grid.tileToWorld(cache.tileX, cache.tileY);
+    return {
+      id: cache.id,
+      tileX: cache.tileX,
+      tileY: cache.tileY,
+      worldX: world.x,
+      worldY: world.y,
+      hp: cache.hp,
+      maxHp: cache.maxHp,
+      offer: cache.offer,
+    };
+  });
+}
+
+function snapshotBuildings(engine: GameEngine): MapBuildingSnapshot[] {
+  const grid = engine.grid;
+  if (!grid) return [];
+  return engine.mapBuildings.map((building) => {
+    const world = grid.tileToWorld(building.tileX, building.tileY);
+    return {
+      id: building.id,
+      kind: building.kind,
+      tileX: building.tileX,
+      tileY: building.tileY,
+      worldX: world.x,
+      worldY: world.y,
+    };
+  });
+}
+
+function snapshotBombards(engine: GameEngine): BombardShotSnapshot[] {
+  const shots: BombardShotSnapshot[] = [];
+  for (const enemy of engine.enemyManager?.enemies ?? []) {
+    if (enemy.removed || enemy.bombardTelegraphRemaining <= 0 || enemy.bombardTargetId === null) continue;
+    const progress = 1 - enemy.bombardTelegraphRemaining / BOMBARD_TELEGRAPH_SECONDS;
+    shots.push({
+      originX: enemy.x,
+      originY: enemy.y,
+      targetX: enemy.bombardTargetX,
+      targetY: enemy.bombardTargetY,
+      progress: Math.max(0, Math.min(1, progress)),
+    });
+  }
+  return shots;
 }
 
 function snapshotEnemy(e: Enemy, engine?: GameEngine): EnemySnapshot {
@@ -240,6 +312,7 @@ function snapshotEnemy(e: Enemy, engine?: GameEngine): EnemySnapshot {
     flyingHeight: e.flyingHeight,
     nextCorner: e.nextCornerWorld(),
     targetingMode: e.targetingMode,
+    ...(e.type === "boss" ? { bossAbility: e.bossAbility, mendSuppressed: e.antiHealTimer > 0 } : {}),
   };
 }
 
@@ -298,8 +371,10 @@ function snapshotTower(t: Tower, persistState: PersistState, isSelected: boolean
 
   if (!isSelected) return base;
 
+  const bonusLine = formatTowerBonusLine(t);
   return {
     ...base,
+    ...(bonusLine.length > 0 ? { bonusLine } : {}),
     sellValue: t.sellValue(),
     canUpgrade: t.canUpgrade(persistState),
     levelCosts: [...t.levelCosts],

@@ -1,3 +1,4 @@
+import { bossAbilityLabel } from "@/sim/bossAbilities.js";
 import {
   WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN,
   WAVE_GRAPH_COLOR_BASE_HEALTH_RED,
@@ -304,7 +305,8 @@ export class UiOverlayManager {
           text.setAttribute("transform", bossTransform);
           this.bossLastTransform[bossGroup] = bossTransform;
         }
-        const bossHpText = Math.ceil(enemy.hp).toLocaleString();
+        const bossName = enemy.bossAbility ? bossAbilityLabel(enemy.bossAbility) : "Boss";
+        const bossHpText = `${bossName} ${Math.ceil(enemy.hp).toLocaleString()}`;
         if (this.bossLastText[bossGroup] !== bossHpText) {
           text.textContent = bossHpText;
           this.bossLastText[bossGroup] = bossHpText;
