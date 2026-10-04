@@ -903,6 +903,30 @@ describe("Theme tile art", () => {
         expect(image.includes("<filter")).toBe(false);
       }
     });
+
+    it(`${label} ships three variants per tile kind`, () => {
+      const theme = RawMapThemeSchema.parse(raw);
+      for (const region of theme.regions) {
+        for (const kind of TILE_KINDS) {
+          expect(variantsOf(region.tiles[kind])).toHaveLength(3);
+        }
+      }
+    });
+
+    it(`${label} ships 36x36 art for every map site`, () => {
+      const theme = RawMapThemeSchema.parse(raw);
+      const sites = theme.sites;
+      expect(new Set(Object.keys(sites?.buildings ?? {}))).toEqual(new Set(["armory", "magazine", "ward", "beacon"]));
+      expect(new Set(Object.keys(sites?.caches ?? {}))).toEqual(new Set(["sealed", "unlocked", "broken"]));
+      // Drawn at 26 world px inside a 26px box, so the 36x36 viewBox is what
+      // scales the glyph: art authored in any other box clips.
+      const images = [...Object.values(sites?.buildings ?? {}), ...Object.values(sites?.caches ?? {})];
+      if (sites?.supplyDrop) images.push(sites.supplyDrop);
+      expect(images).toHaveLength(8);
+      for (const image of images) {
+        expect(image).toContain('<svg viewBox="0 0 36 36">');
+      }
+    });
   }
 
   it("keeps Polymath tile blobs inside the edge band", () => {

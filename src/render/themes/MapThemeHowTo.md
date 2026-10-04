@@ -197,7 +197,7 @@ Tiles fill each grid cell exactly. Each tile, including path and the tile under 
 
 Two consequences for the art:
 
-- **The outer 3px band of a tile carries no art.** Rotated neighbours have to meet on identical pixels, so nothing (including a stroke) may reach inside 3px of a cell edge. The one deliberate exception is a rotationally symmetric inner ring — a `rect` at `x=1 y=1 width=34 height=34` stroked at low opacity — because all four rotations paint the same band. Shipped Polymath tiles use one.
+- **Nothing structural may reach inside 3px of a cell edge.** Rotated neighbours have to meet on identical pixels, so a stroke or a shape that crosses the band shows as a seam. The Polymath tiles hold this line by keeping every blob out of the band and repeating one rotationally symmetric inner ring instead. The Aftermath tiles take the opposite route on purpose: they cross the edge with low-opacity tonal smears (0.24-0.28), which read as one continuous ground tone under rotation because a smear has no direction to give away. Pick one convention per theme and hold it — mixed conventions seam.
 - **Fine line work does not survive rotation.** Concentric arcs with a per-tile random start angle, and marks under ~2px, read as scratches and speckle rather than ground, because neighbouring cells show unrelated fragments. Large soft shapes do survive: field fill plus a few low-opacity ellipses is what both shipped themes use.
 
 The first `fill="#..."` in a tile string must be the full-bleed 36x36 field rect. The region backdrop tone and the progressive block preview both parse that first fill (`src/render/themes/fieldFill.ts`), so a tile that leads with anything else silently loses its field color.
@@ -211,6 +211,8 @@ The first `fill="#..."` in a tile string must be the full-bleed 36x36 field rect
 ```
 
 One image per kind repeats a single stamp across a whole height blob, and the seeded rotation only supplies four looks. The renderer emits one `<symbol>` per variant (`tile-r{regionId}-{kind}` for variant 0, `tile-r{regionId}-{kind}-v{n}` beyond) and picks a variant per cell from a hash of the map seed and that cell's absolute tile position, so a cell keeps its variant across a progressive board rebuild (`src/render/themes/tileArt.ts`). Every variant of a kind must share the field fill — the preview reads variant 0's.
+
+Both shipped themes ship three variants per kind, generated from a per-region palette by a seeded scatter rather than hand-placed. Give every variant of a kind the same construction (the same element types in the same order, the same opacity ranges, the same drift radius band) or the extra looks read as patches of a different material. Variant 0 is the one the progressive block preview and the region backdrop tone parse, so keep it the strongest of the three.
 
 ### Map Site Art
 
@@ -297,19 +299,25 @@ The normalizer strips XML prologues, HTML comments, and whitespace. For inline S
 
 ## Complete Image Set Count
 
+Per theme:
+
 | Category | Count |
 |---|---|
 | Tower animation sets | 8 |
 | Tower walking sets | 8 (stored; not drawn) |
-| Enemy walking sets | 6 |
-| Enemy hit reaction sets | 6 |
-| Enemy attack sets | 6 (optional per enemy) |
-| Region tile sets | 15 (3 regions × 5 tile types) |
+| Enemy walking sets | 9 |
+| Enemy hit reaction sets | 9 |
+| Enemy attack sets | 9 |
+| Region tile kinds | 15 (3 regions × 5 tile types) |
 | Region base sets | 3 |
 | Region map images | 3 (plus a `mapLayout` data structure each) |
-| Spawn images | 3 (optional) |
-| Main menu background | 1 (optional) |
-| **Total image sets, both shipped themes** | **58** |
+| Map site images | 8 (4 buildings, 3 cache states, supply drop) |
+| Spawn images | 3 |
+| Main menu background | 1 |
+| **Total image sets per theme** | **76** |
+| **Total image sets, both shipped themes** | **152** |
+
+A set is not one image: each enemy set carries 8 walking, 3 hit, and 3 attack frames, each tower set 2 or 3 animation frames, and each tile kind ships 3 images, so one theme holds a little over 200 individual images.
 
 ---
 
