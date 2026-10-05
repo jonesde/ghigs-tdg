@@ -30,15 +30,14 @@ export class TextTowerManager {
     scale: TextRenderScale,
   ): void {
     if (sentries.length === 0) return;
-    const visual = themeAccess.getTowerVisual("basic");
-    const icon = visual?.icon ?? "T";
-    const color = visual?.color ?? "#ffffff";
     const previousFont = ctx.font;
     ctx.font = previousFont.replace(/(\d+(?:\.\d+)?)px/, (_match, size: string) => `${Number(size) * 0.55}px`);
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = color;
     for (const sentry of sentries) {
+      const visual = themeAccess.getTowerVisual(sentry.sprite);
+      const icon = visual?.icon ?? "T";
+      ctx.fillStyle = visual?.color ?? "#ffffff";
       ctx.fillText(icon, textPixelX(sentry.x, scale), textPixelY(sentry.y, scale));
     }
     ctx.font = previousFont;

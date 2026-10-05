@@ -681,7 +681,7 @@ export class EffectManager {
       | {
           shortStats: { range: number } | null;
           longStats: { range: number } | null;
-          sentries: { x: number; y: number }[];
+          sentries: { x: number; y: number; sprite: "basic" | "sniper" }[];
         }
       | undefined,
     selected: boolean,
@@ -710,22 +710,14 @@ export class EffectManager {
     let circleIndex = 0;
     const sentries = defense.sentries;
     for (const sentry of sentries) {
-      if (defense.shortStats && circleIndex < this.baseRangeCirclePool.length) {
+      const stats = sentry.sprite === "basic" ? defense.shortStats : defense.longStats;
+      if (stats && circleIndex < this.baseRangeCirclePool.length) {
         const circle = this.baseRangeCirclePool[circleIndex]!;
         circle.style.visibility = "visible";
-        circle.setAttribute("stroke", "rgba(0,255,0,0.6)");
+        circle.setAttribute("stroke", sentry.sprite === "basic" ? "rgba(0,255,0,0.6)" : "rgba(255,180,40,0.55)");
         circle.removeAttribute("stroke-dasharray");
         circle.setAttribute("transform", `translate(${sentry.x}, ${sentry.y})`);
-        circle.setAttribute("r", String(defense.shortStats.range * TILE_SIZE));
-        circleIndex++;
-      }
-      if (defense.longStats && circleIndex < this.baseRangeCirclePool.length) {
-        const circle = this.baseRangeCirclePool[circleIndex]!;
-        circle.style.visibility = "visible";
-        circle.setAttribute("stroke", "rgba(255,180,40,0.55)");
-        circle.removeAttribute("stroke-dasharray");
-        circle.setAttribute("transform", `translate(${sentry.x}, ${sentry.y})`);
-        circle.setAttribute("r", String(defense.longStats.range * TILE_SIZE));
+        circle.setAttribute("r", String(stats.range * TILE_SIZE));
         circleIndex++;
       }
     }

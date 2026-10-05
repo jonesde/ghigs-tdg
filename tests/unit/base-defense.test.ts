@@ -7,7 +7,13 @@ import { GameEngine } from "@/sim/GameEngine.js";
 import type { GameRunState } from "@/sim/GameRunState.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
-import { BASE_SELECTION_ID, BaseDefense, type BaseDefenseEnemy } from "@/sim/towers/BaseDefense.js";
+import {
+  BASE_SELECTION_ID,
+  BaseDefense,
+  type BaseDefenseEnemy,
+  type BaseDefenseEnemyQuery,
+  type BaseDefenseProjectileSpawn,
+} from "@/sim/towers/BaseDefense.js";
 import { makeMapData } from "../helpers/mock-grid";
 import { createTestPersistState, createTestThemeBundle, MockHostBindings } from "../helpers/mock-stores";
 
@@ -31,6 +37,17 @@ function insetDefense(): { defense: BaseDefense; runState: GameRunState } {
 function enemyNear(x: number, y: number): BaseDefenseEnemy {
   return { id: 7, x, y, hp: 40, maxHp: 40, removed: false, flyingHeight: 0 };
 }
+
+const emptyQuery: BaseDefenseEnemyQuery = {
+  forEachEnemyInRange() {},
+  getEnemyById() {
+    return null;
+  },
+};
+
+const noProjectileSpawn: BaseDefenseProjectileSpawn = { spawn() {} };
+
+const noSound = { playSound() {} };
 
 describe("BaseDefense", () => {
   it("scales health from the level-1 pool and keeps the current ratio", () => {
@@ -57,27 +74,44 @@ describe("BaseDefense", () => {
     }
   });
 
-  it("places one sentry on each in-bounds base corner", () => {
+  it("places short turrets on each in-bounds base corner and long turrets on the edge tiles", () => {
     const { defense } = insetDefense();
-    expect(defense.sentries.map((sentry) => [sentry.tileX, sentry.tileY])).toEqual([
+    expect(defense.shortSentries.map((turret) => [turret.tileX, turret.tileY])).toEqual([
       [3, 3],
       [5, 3],
       [3, 5],
       [5, 5],
     ]);
+    expect(defense.longSentries).toHaveLength(0);
+
+    defense.level = 4;
+    defense.update(0.016, emptyQuery, noProjectileSpawn, noSound, 1);
+    expect(defense.longSentries.map((turret) => [turret.tileX, turret.tileY])).toEqual([
+      [4, 3],
+      [3, 4],
+      [4, 5],
+      [5, 4],
+    ]);
+    defense.level = 3;
+    defense.update(0.016, emptyQuery, noProjectileSpawn, noSound, 2);
+    expect(defense.longSentries).toHaveLength(0);
+
     const edge = new BaseDefense(
       new Grid(makeMapData({ width: 8, height: 6, base: { x: 7, y: 3 } })),
       { baseHealth: 0, maxBaseHealth: 0 } as GameRunState,
       () => {},
     );
-    expect(edge.sentries).toHaveLength(2);
+    expect(edge.shortSentries).toHaveLength(2);
+    edge.level = 4;
+    edge.update(0.016, emptyQuery, noProjectileSpawn, noSound, 3);
+    expect(edge.longSentries).toHaveLength(3);
   });
 
-  it("fires short-range shots at level 1, adds long range at level 4, and doubles both at level 7", () => {
+  it("fires short-range shots at level 1, adds edge long-range turrets at level 4, and applies the level-7 multiplier", () => {
     const { defense } = insetDefense();
     defense.applyStartingHealth(STARTING_BASE_HEALTH);
-    const sentry = defense.sentries[0]!;
-    const enemy = enemyNear(sentry.x + 36, sentry.y + 36);
+    const corner = defense.shortSentries[0]!;
+    const enemy = enemyNear(corner.x + 36, corner.y + 36);
     const spawned: { damage: number; color: string; towerType: string; towerId: string }[] = [];
     const query = {
       forEachEnemyInRange(x: number, y: number, range: number, callback: (candidate: BaseDefenseEnemy) => void) {
@@ -94,8 +128,7 @@ describe("BaseDefense", () => {
         spawned.push(opts);
       },
     };
-    const sound = { playSound() {} };
-    defense.update(0.016, query, projectiles, sound, 1);
+    defense.update(0.016, query, projectiles, noSound, 1);
     expect(spawned).toHaveLength(4);
     expect(
       spawned.every(
@@ -106,28 +139,32 @@ describe("BaseDefense", () => {
 
     defense.level = 3;
     spawned.length = 0;
-    for (const corner of defense.sentries) corner.shortCooldown = 0;
-    defense.update(0.016, query, projectiles, sound, 2);
-    expect(spawned.every((shot) => shot.color === "#e6c35c")).toBe(true);
+    for (const turret of defense.shortSentries) turret.cooldown = 0;
+    defense.update(0.016, query, projectiles, noSound, 2);
+    expect(spawned).toHaveLength(4);
+    expect(
+      spawned.every((shot) => shot.color === "#e6c35c" && shot.damage === baseDefenseContent.shortRange[2]!.damage),
+    ).toBe(true);
     expect(defense.longGun()).toBeNull();
 
     defense.level = 4;
     spawned.length = 0;
-    for (const corner of defense.sentries) {
-      corner.shortCooldown = 0;
-      corner.longCooldown = 0;
-    }
-    defense.update(0.016, query, projectiles, sound, 3);
+    for (const turret of defense.shortSentries) turret.cooldown = 0;
+    defense.update(0.016, query, projectiles, noSound, 3);
+    expect(spawned).toHaveLength(8);
+    const shortShots = spawned.filter((shot) => shot.color === "#e6c35c");
     const longShots = spawned.filter((shot) => shot.color === "#d7e4ff");
+    expect(shortShots).toHaveLength(4);
     expect(longShots).toHaveLength(4);
+    expect(shortShots.every((shot) => shot.damage === baseDefenseContent.shortRange[3]!.damage)).toBe(true);
     expect(longShots.every((shot) => shot.damage === LEVEL_FOUR_LONG_DAMAGE)).toBe(true);
 
+    defense.level = 5;
+    expect(defense.shortGun()!.damage).toBe(baseDefenseContent.shortRange[4]!.damage);
     defense.level = 6;
-    const shortAtSix = defense.shortGun()!.damage;
-    const longAtSix = defense.longGun()!.damage;
+    expect(defense.shortGun()!.damage).toBe(baseDefenseContent.shortRange[5]!.damage);
+    expect(defense.longGun()!.damage).toBe(baseDefenseContent.longRange[2]!.damage);
     defense.level = 7;
-    expect(defense.shortGun()!.damage).toBe(shortAtSix * 2);
-    expect(defense.longGun()!.damage).toBe(longAtSix * 2);
     expect(defense.shortGun()!.damage).toBe(LEVEL_SEVEN_SHORT_DAMAGE);
     expect(defense.longGun()!.damage).toBe(LEVEL_SEVEN_LONG_DAMAGE);
   });
@@ -216,6 +253,7 @@ describe("GameEngine base selection", () => {
     const snapshot = buildSnapshot(engine, 0);
     expect(snapshot.meta.baseDefense?.level).toBe(1);
     expect(snapshot.meta.baseDefense?.sentries.length).toBeGreaterThan(0);
+    expect(snapshot.meta.baseDefense?.sentries.every((sentry) => sentry.sprite === "basic")).toBe(true);
     expect(snapshot.towers.some((tower) => tower.id === BASE_SELECTION_ID)).toBe(false);
     expect(snapshot.meta.baseDefense?.shortStats?.damage).toBe(LEVEL_ONE_SHORT_DAMAGE);
     expect(snapshot.meta.baseDefense?.longStats).toBeNull();

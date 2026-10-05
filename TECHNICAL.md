@@ -94,6 +94,7 @@ src/
 │   │   ├── Map.ts               # Procedural map generation: 36 maps, 3 regions, 6 layout styles
 │   │   └── ProgressiveMap.ts    # Progressive board, stamp log replay, placement legality, generated map
 │   ├── towers/
+│   │   ├── BaseDefense.ts       # Base health pool + base turrets: 4 corner short-range and 4 edge long-range turrets (level 4), each targeting independently
 │   │   ├── Tower.ts             # Tower stats, behavior, targeting, upgrades, variants, sell value
 │   │   ├── TowerManager.ts      # Tower placement, upgrade, sell, sell-value refund/discount
 │   │   └── SkillTree.ts         # Gem upgrade costs, unlock logic, variant definitions, general add-ons
@@ -597,6 +598,7 @@ reads it.
 
 | File | Description |
 |---|---|
+| `src/sim/towers/BaseDefense.ts` | Base health pool + base turrets: four corner short-range turrets (small basic-tower render) and four long-range turrets on the edge tiles between the corners (small sniper-tower render), the edge group present only at base level 4+. Each turret owns its own target, cooldown, angle, and fire animation and fires independently. Short tiers run level 1–7 (7 tiers); long tiers run level 4–6 (3 tiers); the level-7 damage multiplier applies to both |
 | `src/sim/towers/Tower.ts` | Tower entity: stats, targeting modes, level scaling, variants, sell value, milestone bonuses; accepts `visualMeta` param (color, icon, name, animation, walking) from active theme. Milestone tiers are capped by `milestoneMaxTiers`; the stats cache key encodes the capped tiers plus `addons.join(",")`. Terrain damage multiplier is capped by `terrainDamageBonusMaxMult`; ghost restore time is clamped by `ghostRestoreMinSeconds`; `recomputeMaxHealth` keeps float precision; thorn reflect and electric fence credit `totalDamageDealt`/`waveDamage` |
 | `src/sim/towers/TowerManager.ts` | Tower placement, upgrade, sell with refund/discount modes; receives visual meta from GameEngine |
 | `src/sim/towers/SkillTree.ts` | Gem upgrade costs, unlock/refund logic, variant definitions, general add-on config. `isAvailable`/`tryUnlock` share one precondition helper; individual general-addon refunds (`canRefundGeneral`/`tryRefundGeneral`) mirror the bulk path, including per-flag `sellOption` refunds and clearing `sellActive` when the active mode is refunded |

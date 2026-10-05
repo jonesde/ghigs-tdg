@@ -80,8 +80,8 @@
   "baseLevels": [
     { "label": "Short Range", "desc": "Corner sentries fire at short range." },
     { "label": "Short Range II", "desc": "Stronger short-range sentries." },
-    { "label": "Short Range III", "desc": "Short-range sentries reach their final tier." },
-    { "label": "Long Range", "desc": "Corner sentries also fire at long range." },
+    { "label": "Short Range III", "desc": "Stronger short-range sentries with extra range." },
+    { "label": "Long Range", "desc": "Long-range sentries are added on the edge tiles between the base corners." },
     { "label": "Long Range II", "desc": "Stronger long-range sentries." },
     { "label": "Long Range III", "desc": "Long-range sentries reach their final tier." },
     { "label": "Double Damage", "desc": "Short-range and long-range sentries deal double damage." }
