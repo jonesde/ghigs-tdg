@@ -4,7 +4,6 @@ import { useRouter } from "vue-router";
 import GeneratedMapDialog from "@/components/GeneratedMapDialog.vue";
 import ProgressiveMapDialog from "@/components/ProgressiveMapDialog.vue";
 import { DIFFICULTY_MULT_GEM_BASE, DIFFICULTY_MULT_TICK, MAPS_PER_REGION } from "@/sim/Constants.js";
-import { resolveGeneratedMap } from "@/sim/grid/ProgressiveMap.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -59,8 +58,8 @@ function selectThemeFromKeyboard(event: KeyboardEvent, themeId: string) {
 
 async function playThemeHighestMap(themeId: string) {
   const mapIndex = highestUnlockedIndex(themeId);
-  // Starting a run touches persist, theme, and run state in one gesture, so follow
-  // MapSelect.startMap ordering: resolve the world first, then record the map choice.
+  // Always route through the region map: set this world and its furthest unlocked
+  // map as the active values, then let the run be started from the map view.
   if (themeId !== persistStore.lastSelectedThemeId) {
     persistStore.lastSelectedThemeId = themeId;
     persistStore.save();
@@ -68,11 +67,8 @@ async function playThemeHighestMap(themeId: string) {
   }
   persistStore.lastSelectedMapIndex = mapIndex;
   persistStore.save();
-  persistStore.clearActiveWave(themeId, mapIndex);
-  await themeStore.ensureActiveTheme();
-  const mapData = resolveGeneratedMap(mapIndex, themeStore.resolvedMaps);
-  gameStore.initMap(mapIndex, mapData, null);
-  router.push("/game");
+  gameStore.resetToMenu();
+  router.push("/map-select");
 }
 
 function newGame() {
