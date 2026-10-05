@@ -5,6 +5,12 @@ import { GRID_TILE_SIZE, SVG_NS, TOWER_SCALED_SIZE } from "./types.js";
 
 const SENTRY_SCALED_SIZE = GRID_TILE_SIZE * 0.5;
 
+// Theme visual pair for one base-turret sprite ("basic" corners, "sniper" edges).
+export interface SentryVisual {
+  animation: MapThemeAnimation | null;
+  color: string;
+}
+
 export class TowerManager {
   private layer: SVGGElement | null = null;
   private towerMap: Map<string, TowerRenderProxy> = new Map();
@@ -101,8 +107,8 @@ export class TowerManager {
     sentries: BaseSentrySnapshot[],
     level: number,
     baseCenter: { x: number; y: number } | null,
-    animation: MapThemeAnimation | null,
-    color: string,
+    shortVisual: SentryVisual,
+    longVisual: SentryVisual,
     dt: number,
   ): void {
     if (!this.layer) return;
@@ -115,8 +121,12 @@ export class TowerManager {
     for (let index = 0; index < this.sentryProxies.length; index++) {
       const sentry = sentries[index];
       const proxy = this.sentryProxies[index]!;
-      if (!sentry) proxy.hide();
-      else proxy.sync(sentry, animation, color, dt);
+      if (!sentry) {
+        proxy.hide();
+      } else {
+        const visual = sentry.sprite === "basic" ? shortVisual : longVisual;
+        proxy.sync(sentry, visual.animation, visual.color, dt);
+      }
     }
 
     const pipCount = baseCenter ? Math.max(0, level - 1) : 0;
@@ -306,7 +316,7 @@ class SentryRenderProxy {
       frameIndex = computeTowerFrame(this.animConfig, elapsed);
       if (elapsed >= this.animConfig.duration) this.animConfig = null;
     }
-    const spriteId = `tower-basic-f${frameIndex}`;
+    const spriteId = `tower-${sentry.sprite}-f${frameIndex}`;
     if (spriteId !== this.lastSpriteId) {
       this.el.setAttribute("href", `#${spriteId}`);
       this.lastSpriteId = spriteId;

@@ -116,7 +116,7 @@ const BaseGunTierSchema = z.object({
 });
 
 export const BaseDefenseContentSchema = z.object({
-  shortRange: z.array(BaseGunTierSchema).length(3),
+  shortRange: z.array(BaseGunTierSchema).length(7),
   longRange: z.array(BaseGunTierSchema).length(3),
   levelSevenDamageMultiplier: z.number(),
 });

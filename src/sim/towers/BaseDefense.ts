@@ -24,6 +24,13 @@ const CORNER_OFFSETS: { deltaX: number; deltaY: number }[] = [
   { deltaX: 1, deltaY: 1 },
 ];
 
+const EDGE_OFFSETS: { deltaX: number; deltaY: number }[] = [
+  { deltaX: 0, deltaY: -1 },
+  { deltaX: -1, deltaY: 0 },
+  { deltaX: 0, deltaY: 1 },
+  { deltaX: 1, deltaY: 0 },
+];
+
 export interface BaseGunStats {
   range: number;
   damage: number;
@@ -72,10 +79,8 @@ export interface BaseSentryRuntime {
   y: number;
   angle: number;
   fireAnimTime: number;
-  shortCooldown: number;
-  longCooldown: number;
-  shortTargetId: number | null;
-  longTargetId: number | null;
+  cooldown: number;
+  targetId: number | null;
 }
 
 type GunKind = "short" | "long";
@@ -89,8 +94,9 @@ function scaledGun(tier: BaseGunStats, multiplier: number): BaseGunStats {
   return { range: tier.range, damage: tier.damage * multiplier, fireRate: tier.fireRate, projSpeed: tier.projSpeed };
 }
 
-// Corner sentries and the base health pool. Not a Tower: no hit points, sell, ghost,
-// nav obstacle, or shop entry. One in-run level drives both guns.
+// Corner short-range turrets, edge long-range turrets (unlocked with the base
+// level), and the base health pool. Not a Tower: no hit points, sell, ghost,
+// nav obstacle, or shop entry. One in-run level drives both turret groups.
 export class BaseDefense {
   level = 1;
   targeting = "first";
@@ -101,13 +107,14 @@ export class BaseDefense {
   levelOneHealth = 0;
   // Fortify multiplies the level curve. 1 until a persistent health card is picked.
   runHealthMult = 1;
-  // Whole-board half of the powered buildings. The sentries sit on the base, so they
+  // Whole-board half of the powered buildings. The turrets sit on the base, so they
   // are never adjacent to a building and these are the only building bonuses they get.
   buildingDamageMult = 1;
   buildingFireRateMult = 1;
   buildingRangeMult = 1;
   buildingFlyingDamageMult = 1;
-  readonly sentries: BaseSentryRuntime[] = [];
+  readonly shortSentries: BaseSentryRuntime[] = [];
+  readonly longSentries: BaseSentryRuntime[] = [];
 
   private levelCosts: number[] = [];
   private readonly inRangeScratch: BaseDefenseEnemy[] = [];
@@ -182,9 +189,8 @@ export class BaseDefense {
 
   setTargeting(mode: string): void {
     this.targeting = mode;
-    for (const sentry of this.sentries) {
-      sentry.shortTargetId = null;
-      sentry.longTargetId = null;
+    for (const turret of [...this.shortSentries, ...this.longSentries]) {
+      turret.targetId = null;
     }
   }
 
@@ -195,7 +201,7 @@ export class BaseDefense {
 
   shortGun(): BaseGunStats | null {
     if (this.level < 1) return null;
-    const tier = SHORT_RANGE_TIERS[Math.min(2, this.level - 1)];
+    const tier = SHORT_RANGE_TIERS[this.level - 1];
     if (!tier) return null;
     const multiplier = this.level >= BASE_LEVEL_COUNT ? LEVEL_SEVEN_DAMAGE_MULTIPLIER : 1;
     return this.applyBuildingBonus(scaledGun(tier, multiplier));
@@ -229,16 +235,16 @@ export class BaseDefense {
     const shortStats = this.shortGun();
     const longStats = this.longGun();
     const tileSize = this.grid.tileSize || 36;
-    for (const sentry of this.sentries) {
-      if (shortStats)
-        this.tickGun(sentry, shortStats, "short", dt, enemyQuery, projectileSpawn, sound, simSeconds, tileSize);
-      if (longStats)
-        this.tickGun(sentry, longStats, "long", dt, enemyQuery, projectileSpawn, sound, simSeconds, tileSize);
-    }
+    if (shortStats)
+      for (const turret of this.shortSentries)
+        this.tickTurret(turret, shortStats, "short", dt, enemyQuery, projectileSpawn, sound, simSeconds, tileSize);
+    if (longStats)
+      for (const turret of this.longSentries)
+        this.tickTurret(turret, longStats, "long", dt, enemyQuery, projectileSpawn, sound, simSeconds, tileSize);
   }
 
-  private tickGun(
-    sentry: BaseSentryRuntime,
+  private tickTurret(
+    turret: BaseSentryRuntime,
     stats: BaseGunStats,
     kind: GunKind,
     dt: number,
@@ -248,42 +254,37 @@ export class BaseDefense {
     simSeconds: number,
     tileSize: number,
   ): void {
-    if (kind === "short") sentry.shortCooldown -= dt;
-    else sentry.longCooldown -= dt;
+    turret.cooldown -= dt;
     if (!(stats.fireRate > 0) || !(stats.range > 0)) return;
     const rangePx = stats.range * tileSize;
     const rangeSquared = rangePx * rangePx;
-    const cachedId = kind === "short" ? sentry.shortTargetId : sentry.longTargetId;
     let target: BaseDefenseEnemy | null = null;
-    if (this.targeting === "closest" && cachedId !== null) {
-      const cached = enemyQuery.getEnemyById(cachedId);
+    if (this.targeting === "closest" && turret.targetId !== null) {
+      const cached = enemyQuery.getEnemyById(turret.targetId);
       if (cached && !cached.removed) {
-        const deltaX = cached.x - sentry.x;
-        const deltaY = cached.y - sentry.y;
+        const deltaX = cached.x - turret.x;
+        const deltaY = cached.y - turret.y;
         if (deltaX * deltaX + deltaY * deltaY <= rangeSquared) target = cached;
       }
     }
     if (!target) {
       const inRange = this.inRangeScratch;
       inRange.length = 0;
-      enemyQuery.forEachEnemyInRange(sentry.x, sentry.y, rangePx, (enemy) => {
+      enemyQuery.forEachEnemyInRange(turret.x, turret.y, rangePx, (enemy) => {
         if (!enemy.removed) inRange.push(enemy);
       });
-      target = this.selectTarget(inRange, sentry.x, sentry.y);
-      if (kind === "short") sentry.shortTargetId = target ? target.id : null;
-      else sentry.longTargetId = target ? target.id : null;
+      target = this.selectTarget(inRange, turret.x, turret.y);
+      turret.targetId = target ? target.id : null;
     }
     if (!target) return;
-    sentry.angle = Math.atan2(target.y - sentry.y, target.x - sentry.x);
-    const cooldown = kind === "short" ? sentry.shortCooldown : sentry.longCooldown;
-    if (cooldown > 0) return;
-    this.fire(sentry, stats, kind, target, projectileSpawn, sound, simSeconds, tileSize);
-    if (kind === "short") sentry.shortCooldown = 1 / stats.fireRate;
-    else sentry.longCooldown = 1 / stats.fireRate;
+    turret.angle = Math.atan2(target.y - turret.y, target.x - turret.x);
+    if (turret.cooldown > 0) return;
+    this.fire(turret, stats, kind, target, projectileSpawn, sound, simSeconds, tileSize);
+    turret.cooldown = 1 / stats.fireRate;
   }
 
   private fire(
-    sentry: BaseSentryRuntime,
+    turret: BaseSentryRuntime,
     stats: BaseGunStats,
     kind: GunKind,
     target: BaseDefenseEnemy,
@@ -296,8 +297,8 @@ export class BaseDefense {
     const barrelOffset = tileSize * SENTRY_BARREL_OFFSET_RATIO;
     projectileSpawn.spawn({
       towerId: BASE_SELECTION_ID,
-      x: sentry.x + Math.cos(sentry.angle) * barrelOffset,
-      y: sentry.y + Math.sin(sentry.angle) * barrelOffset,
+      x: turret.x + Math.cos(turret.angle) * barrelOffset,
+      y: turret.y + Math.sin(turret.angle) * barrelOffset,
       damage: stats.damage,
       speed: stats.projSpeed * tileSize * PROJECTILE_SPEED_MULTIPLIER,
       range: stats.range,
@@ -310,7 +311,7 @@ export class BaseDefense {
       icon: "•",
       flyingDamageMult: this.buildingFlyingDamageMult,
     });
-    sentry.fireAnimTime = simSeconds;
+    turret.fireAnimTime = simSeconds;
     sound.playSound(presentation.sound);
   }
 
@@ -375,39 +376,54 @@ export class BaseDefense {
 
   private syncSentryPositions(): void {
     const base = this.grid.getBase();
-    const desired: { tileX: number; tileY: number; x: number; y: number }[] = [];
-    for (const offset of CORNER_OFFSETS) {
-      const tileX = base.x + offset.deltaX;
-      const tileY = base.y + offset.deltaY;
+    const shortPositions = this.turretPositions(base.x, base.y, CORNER_OFFSETS);
+    const longPositions =
+      this.level >= LONG_RANGE_UNLOCK_LEVEL ? this.turretPositions(base.x, base.y, EDGE_OFFSETS) : [];
+    this.reconcileTurrets(this.shortSentries, shortPositions);
+    this.reconcileTurrets(this.longSentries, longPositions);
+  }
+
+  private turretPositions(
+    baseX: number,
+    baseY: number,
+    offsets: { deltaX: number; deltaY: number }[],
+  ): { tileX: number; tileY: number; x: number; y: number }[] {
+    const positions: { tileX: number; tileY: number; x: number; y: number }[] = [];
+    for (const offset of offsets) {
+      const tileX = baseX + offset.deltaX;
+      const tileY = baseY + offset.deltaY;
       if (!this.grid.inBounds(tileX, tileY) || !this.grid.isBase(tileX, tileY)) continue;
       const world = this.grid.tileToWorld(tileX, tileY);
-      desired.push({ tileX, tileY, x: world.x, y: world.y });
+      positions.push({ tileX, tileY, x: world.x, y: world.y });
     }
+    return positions;
+  }
+
+  private reconcileTurrets(
+    turrets: BaseSentryRuntime[],
+    positions: { tileX: number; tileY: number; x: number; y: number }[],
+  ): void {
     const sameLayout =
-      desired.length === this.sentries.length &&
-      desired.every(
-        (entry, index) => entry.tileX === this.sentries[index]!.tileX && entry.tileY === this.sentries[index]!.tileY,
-      );
+      positions.length === turrets.length &&
+      positions.every((entry, index) => entry.tileX === turrets[index]!.tileX && entry.tileY === turrets[index]!.tileY);
     if (sameLayout) {
-      for (let index = 0; index < desired.length; index++) {
-        this.sentries[index]!.x = desired[index]!.x;
-        this.sentries[index]!.y = desired[index]!.y;
+      for (let index = 0; index < positions.length; index++) {
+        turrets[index]!.x = positions[index]!.x;
+        turrets[index]!.y = positions[index]!.y;
       }
       return;
     }
-    this.sentries.length = 0;
-    for (const entry of desired) {
-      this.sentries.push({
+    turrets.length = 0;
+    for (const entry of positions) {
+      turrets.push({
         tileX: entry.tileX,
         tileY: entry.tileY,
         x: entry.x,
         y: entry.y,
         angle: 0,
         fireAnimTime: 0,
-        shortCooldown: 0,
-        longCooldown: 0,
-        shortTargetId: null,
-        longTargetId: null,
+        cooldown: 0,
+        targetId: null,
       });
     }
   }

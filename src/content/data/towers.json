@@ -137,7 +137,11 @@
     "shortRange": [
       { "range": 2.5, "damage": 12, "fireRate": 0.9, "projSpeed": 12 },
       { "range": 3, "damage": 25, "fireRate": 1.2, "projSpeed": 12 },
-      { "range": 3.5, "damage": 50, "fireRate": 1.5, "projSpeed": 12 }
+      { "range": 3.5, "damage": 50, "fireRate": 1.5, "projSpeed": 12 },
+      { "range": 3.5, "damage": 75, "fireRate": 1.5, "projSpeed": 12 },
+      { "range": 4, "damage": 125, "fireRate": 1.6, "projSpeed": 12 },
+      { "range": 4, "damage": 200, "fireRate": 1.7, "projSpeed": 12 },
+      { "range": 4.5, "damage": 400, "fireRate": 1.8, "projSpeed": 12 }
     ],
     "longRange": [
       { "range": 5, "damage": 100, "fireRate": 0.5, "projSpeed": 22 },

@@ -1250,13 +1250,14 @@ export class GameEngine {
       downgradeRefund,
       shortStats: shortGun ? { range: shortGun.range, damage: shortGun.damage, fireRate: shortGun.fireRate } : null,
       longStats: longGun ? { range: longGun.range, damage: longGun.damage, fireRate: longGun.fireRate } : null,
-      sentries: defense.sentries.map((sentry) => ({
+      sentries: [...defense.shortSentries, ...defense.longSentries].map((sentry, index) => ({
         x: sentry.x,
         y: sentry.y,
         angle: sentry.angle,
         tileX: sentry.tileX,
         tileY: sentry.tileY,
         fireAnimTime: sentry.fireAnimTime,
+        sprite: index < defense.shortSentries.length ? ("basic" as const) : ("sniper" as const),
       })),
     };
   }

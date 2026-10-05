@@ -957,12 +957,13 @@ function renderLoop(): void {
   const baseCenter = grid && baseTile ? grid.tileToWorld(baseTile.x, baseTile.y) : null;
   const baseDefense = snapshot.meta.baseDefense;
   const basicVisual = themeStore.getTowerVisual("basic");
+  const sniperVisual = themeStore.getTowerVisual("sniper");
   towerManager.syncBaseSentries(
     baseDefense?.sentries ?? [],
     baseDefense?.level ?? 1,
     baseCenter,
-    basicVisual?.animation ?? null,
-    basicVisual?.color ?? "#c8c8c8",
+    { animation: basicVisual?.animation ?? null, color: basicVisual?.color ?? "#c8c8c8" },
+    { animation: sniperVisual?.animation ?? null, color: sniperVisual?.color ?? "#c8c8c8" },
     animDt,
   );
   projectileManager.syncFromGameEngine(snapshot.projectiles);

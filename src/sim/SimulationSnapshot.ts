@@ -110,6 +110,9 @@ export interface BaseSentrySnapshot {
   tileX: number;
   tileY: number;
   fireAnimTime: number;
+  // Theme tower key the renderers resolve to the `tower-${sprite}-f${i}` symbol
+  // and text icon: "basic" for corner turrets, "sniper" for edge turrets.
+  sprite: "basic" | "sniper";
 }
 
 export interface BaseDefenseSnapshot {
