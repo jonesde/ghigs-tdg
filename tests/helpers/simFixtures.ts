@@ -107,7 +107,7 @@ export function sampleOffer(): BonusOffer {
 
 export function reconcileSample(
   grid: Grid,
-  map: { seed: number; regionId: number; level: number },
+  map: { seed: number; regionId: number; level: number; style?: string | undefined },
   buildings: MapBuildingSite[],
   caches: MapCacheSite[],
   previousWorldKeys: ReadonlySet<string> | null,
@@ -120,6 +120,7 @@ export function reconcileSample(
     seed: map.seed,
     regionId: map.regionId,
     mapLevel: map.level,
+    mapStyle: map.style,
     buildings,
     caches,
     previousWorldKeys,

@@ -14,14 +14,58 @@ export const BUILDING_RANGE_MULT = 1.15;
 // Chebyshev gap so two buildings' 8-neighborhoods do not share a tile.
 const BUILDING_CLEARANCE = 3;
 const BUILDING_NEIGHBOR_MINIMUM = 3;
-const CACHE_CLEARANCE = 6;
-const CACHE_SPAWN_CLEARANCE = 4;
-// Capped so the base ring and the spawn ring (CACHE_SPAWN_CLEARANCE) leave at
-// least one clear column on the smallest catalog boards (15x10, 10x15).
-const CACHE_BASE_CLEARANCE = 4;
-const CACHE_BUILDING_CLEARANCE = 2;
-const CACHE_PATH_GAP = 2;
 export const PACKAGE_CLICK_RADIUS_TILES = 0.75;
+
+// Spacing a board is asked for, best first, and how far it may give way when the
+// board cannot fit its quota at that spacing. The measured capacity of the
+// smallest catalog boards (15x10, 10x15) is 2 caches at 6 tiles apart, so without
+// the ladder those boards finish a third of their cache quota unfilled.
+const CACHE_CLEARANCE_LADDER = [6, 5, 4, 3, 2];
+// Outer rung of the two, because cache-to-cache spacing gives up first: two caches
+// close together only costs spread, while a cache beside a building takes one of
+// the eight tower slots the building buffs.
+const CACHE_BUILDING_CLEARANCE_LADDER = [2, 1];
+const CACHE_BUILDING_CLEARANCE = CACHE_BUILDING_CLEARANCE_LADDER[0]!;
+
+interface SiteClearances {
+  // Tiles between a cache tile and the nearest path tile. 0 puts a cache directly
+  // beside the corridor, which a progressive block needs; candidates already
+  // require terrain, so 0 rejects only a direct collision, not anything go.
+  cachePathGap: number;
+  cacheBase: number;
+  cacheSpawn: number;
+  buildingBase: number;
+  buildingSpawn: number;
+}
+
+const GENERATED_CLEARANCES: SiteClearances = {
+  cachePathGap: 2,
+  // Capped so the base ring and the spawn ring leave at least one clear column on
+  // the smallest catalog boards (15x10, 10x15).
+  cacheBase: 4,
+  cacheSpawn: 4,
+  buildingBase: 3,
+  buildingSpawn: 3,
+};
+
+// A progressive board is 5x5 blocks, and a block's terrain hugs the corridor that
+// runs through it, so the rings a generated board can afford leave no legal tile
+// inside a block at all: a cache pool of zero on all 12 variants. Every ring that
+// pushes a site away from the corridor, the base, or a spawn drops to 0 here.
+// Building clearance and the neighbor minimum stay put, so neighborBonus keeps
+// its one-building-per-tower-tile rule on both kinds of board.
+const PROGRESSIVE_CLEARANCES: SiteClearances = {
+  cachePathGap: 0,
+  cacheBase: 0,
+  cacheSpawn: 0,
+  buildingBase: 0,
+  buildingSpawn: 0,
+};
+
+function siteClearancesFor(mapStyle: string | undefined): SiteClearances {
+  return mapStyle === "progressive" ? PROGRESSIVE_CLEARANCES : GENERATED_CLEARANCES;
+}
+
 const SITE_RANK_TAG = 0xc0de;
 const BUILDING_STAMP_TAG = 0xb1d;
 const CACHE_STAMP_TAG = 0xcace;
@@ -230,7 +274,12 @@ export interface PlannedCacheSite extends MapCacheSite {
 
 export interface StampedBoardSitesInput {
   grid: SiteGrid;
-  map: { readonly seed: number; readonly regionId: number; readonly level: number };
+  map: {
+    readonly seed: number;
+    readonly regionId: number;
+    readonly level: number;
+    readonly style?: string | undefined;
+  };
   buildings: MapBuildingSite[];
   caches: MapCacheSite[];
   previousWorldKeys: ReadonlySet<string>;
@@ -252,6 +301,7 @@ export function planSitesForStampedBoard(input: StampedBoardSitesInput): {
     seed: input.map.seed,
     regionId: input.map.regionId,
     mapLevel: input.map.level,
+    mapStyle: input.map.style,
     buildings: input.buildings,
     caches: input.caches,
     previousWorldKeys: input.previousWorldKeys,
@@ -276,11 +326,16 @@ function atWorld<T extends { tileX: number; tileY: number }>(
   return { ...site, worldX: world.x, worldY: world.y };
 }
 
+// The world keys the board has already materialized. A progressive rectangle is
+// padded with a ring of void margin, and counting those would mark a freshly
+// stamped block as pre-existing world, so tileIsNew would reject every tile of it
+// and the stamp reconcile could place nothing. Generated boards have no void
+// tiles, so for them this is every in-bounds tile as before.
 export function collectWorldKeys(grid: SiteGrid): Set<string> {
   const keys = new Set<string>();
   for (let tileY = 0; tileY < grid.height; tileY++) {
     for (let tileX = 0; tileX < grid.width; tileX++) {
-      if (!grid.inBounds(tileX, tileY)) continue;
+      if (!grid.isTerrain(tileX, tileY) && !grid.isPath(tileX, tileY)) continue;
       keys.add(worldKey(grid, tileX, tileY));
     }
   }
@@ -292,6 +347,9 @@ export interface ReconcileSitesInput {
   seed: number;
   regionId: number;
   mapLevel: number;
+  // Picks the clearance profile. Absent or anything but "progressive" is a
+  // generated board.
+  mapStyle?: string | undefined;
   buildings: MapBuildingSite[];
   caches: MapCacheSite[];
   // Null places against the whole board. A set is the world keys that already
@@ -328,23 +386,27 @@ interface RankedTile {
   tileX: number;
   tileY: number;
   rank: number;
+}
+
+interface RankedBuildingTile extends RankedTile {
   kind: BuildingKind;
 }
 
-function buildingCandidates(input: ReconcileSitesInput, occupied: Set<string>): RankedTile[] {
-  const candidates: RankedTile[] = [];
+function buildingCandidates(input: ReconcileSitesInput, occupied: Set<string>): RankedBuildingTile[] {
+  const candidates: RankedBuildingTile[] = [];
+  const clearances = siteClearancesFor(input.mapStyle);
   const grid = input.grid;
   for (let tileY = 0; tileY < grid.height; tileY++) {
     for (let tileX = 0; tileX < grid.width; tileX++) {
       if (!grid.isTerrain(tileX, tileY) || occupied.has(tileKey(tileX, tileY))) continue;
       if (!tileIsNew(input, tileX, tileY)) continue;
       if (!tileOnStamp(input, tileX, tileY)) continue;
-      if (!clearOfPoint(tileX, tileY, grid.base, BUILDING_CLEARANCE)) continue;
-      if (!clearOfPoints(tileX, tileY, grid.spawns, BUILDING_CLEARANCE)) continue;
+      if (!clearOfPoint(tileX, tileY, grid.base, clearances.buildingBase)) continue;
+      if (!clearOfPoints(tileX, tileY, grid.spawns, clearances.buildingSpawn)) continue;
       if (!clearOf(tileX, tileY, input.buildings, BUILDING_CLEARANCE)) continue;
-      // The mirror of the cache-side check below: a building stamped onto an
-      // existing board must not sit a cache's ring away, or the cache ends up
-      // occupying a slot the building's buff promised the player.
+      // The widest rung of the ladder, so a stamped building never lands inside a
+      // cache's ring any closer than a generated board would allow. planCacheAdditions
+      // re-tests this per rung when the board is short on room.
       if (!clearOf(tileX, tileY, input.caches, CACHE_BUILDING_CLEARANCE)) continue;
       if (buildableNeighborCount(grid, tileX, tileY, occupied) < BUILDING_NEIGHBOR_MINIMUM) continue;
       const rolled = rollSite(input.seed, grid, tileX, tileY);
@@ -357,21 +419,18 @@ function buildingCandidates(input: ReconcileSitesInput, occupied: Set<string>): 
 
 function cacheCandidates(input: ReconcileSitesInput, occupied: Set<string>): RankedTile[] {
   const candidates: RankedTile[] = [];
+  const clearances = siteClearancesFor(input.mapStyle);
   const grid = input.grid;
   for (let tileY = 0; tileY < grid.height; tileY++) {
     for (let tileX = 0; tileX < grid.width; tileX++) {
       if (!grid.isTerrain(tileX, tileY) || occupied.has(tileKey(tileX, tileY))) continue;
       if (!tileIsNew(input, tileX, tileY)) continue;
       if (!tileOnStamp(input, tileX, tileY)) continue;
-      if (pathWithinOne(grid, tileX, tileY)) continue;
-      if (chebyshev(tileX, tileY, grid.base.x, grid.base.y) <= CACHE_BASE_CLEARANCE) continue;
-      if (!spawnClear(grid, tileX, tileY)) continue;
-      if (!clearOf(tileX, tileY, input.caches, CACHE_CLEARANCE)) continue;
-      // A cache two tiles from a building would sit in the ring of buffed tower
-      // slots, so the player could never build there without dropping the buff.
-      if (!clearOf(tileX, tileY, input.buildings, CACHE_BUILDING_CLEARANCE)) continue;
+      if (pathWithin(grid, tileX, tileY, clearances.cachePathGap)) continue;
+      if (chebyshev(tileX, tileY, grid.base.x, grid.base.y) <= clearances.cacheBase) continue;
+      if (!spawnClear(grid, tileX, tileY, clearances.cacheSpawn)) continue;
       const rolled = rollSite(input.seed, grid, tileX, tileY);
-      candidates.push({ tileX, tileY, rank: rolled.rank, kind: rolled.kind });
+      candidates.push({ tileX, tileY, rank: rolled.rank });
     }
   }
   candidates.sort(compareRanked);
@@ -426,24 +485,62 @@ function placeBuildings(input: ReconcileSitesInput, occupied: Set<string>, targe
 }
 
 function placeCaches(input: ReconcileSitesInput, occupied: Set<string>, target: number): void {
-  if (input.caches.length >= target) return;
-  const candidates = cacheCandidates(input, occupied);
-  for (const candidate of candidates) {
-    if (input.caches.length >= target) break;
-    if (!clearOf(candidate.tileX, candidate.tileY, input.caches, CACHE_CLEARANCE)) continue;
+  for (const addition of planCacheAdditions(input, occupied, target - input.caches.length)) {
     const id = input.allocateId();
     const maxHp = cacheMaxHealth(input.mapLevel);
     input.caches.push({
       id,
-      tileX: candidate.tileX,
-      tileY: candidate.tileY,
+      tileX: addition.tileX,
+      tileY: addition.tileY,
       hp: maxHp,
       maxHp,
       offer: input.rollOffer(id),
       unlocked: false,
     });
-    occupied.add(tileKey(candidate.tileX, candidate.tileY));
+    occupied.add(tileKey(addition.tileX, addition.tileY));
   }
+}
+
+// Picks the whole set of additions at one rung rather than filling in place, so a
+// cache added at a wide rung never ends up crowding one added at a narrow one.
+// Returns the first plan that reaches `needed`, or the longest plan when no rung
+// fits the quota. Nothing is committed here, so a discarded rung costs no site id
+// and no offer roll.
+function planCacheAdditions(input: ReconcileSitesInput, occupied: Set<string>, needed: number): RankedTile[] {
+  if (needed <= 0) return [];
+  const candidates = cacheCandidates(input, occupied);
+  let best: RankedTile[] = [];
+  for (const buildingClearance of CACHE_BUILDING_CLEARANCE_LADDER) {
+    for (const cacheClearance of CACHE_CLEARANCE_LADDER) {
+      const plan = planCacheAdditionsAt(candidates, input, cacheClearance, buildingClearance, needed);
+      if (plan.length > best.length) best = plan;
+      if (best.length >= needed) return best;
+    }
+  }
+  return best;
+}
+
+function planCacheAdditionsAt(
+  candidates: readonly RankedTile[],
+  input: ReconcileSitesInput,
+  cacheClearance: number,
+  buildingClearance: number,
+  needed: number,
+): RankedTile[] {
+  const plan: RankedTile[] = [];
+  while (plan.length < needed) {
+    const next = candidates.find(
+      (candidate) =>
+        clearOf(candidate.tileX, candidate.tileY, input.caches, cacheClearance) &&
+        // A cache two tiles from a building would sit in the ring of buffed tower
+        // slots, so the player could never build there without dropping the buff.
+        clearOf(candidate.tileX, candidate.tileY, input.buildings, buildingClearance) &&
+        clearOf(candidate.tileX, candidate.tileY, plan, cacheClearance),
+    );
+    if (!next) break;
+    plan.push(next);
+  }
+  return plan;
 }
 
 function stampRoll(seed: number, placedBlocks: number, kindTag: number): number {
@@ -484,8 +581,10 @@ function buildableNeighborCount(grid: SiteGrid, tileX: number, tileY: number, oc
   return count;
 }
 
-function pathWithinOne(grid: SiteGrid, tileX: number, tileY: number): boolean {
-  const reach = CACHE_PATH_GAP - 1;
+// True when a path tile sits within `gap - 1` tiles, so a gap of 2 keeps a cache
+// one tile clear of the corridor and a gap of 0 rejects nothing.
+function pathWithin(grid: SiteGrid, tileX: number, tileY: number, gap: number): boolean {
+  const reach = gap - 1;
   for (let deltaY = -reach; deltaY <= reach; deltaY++) {
     for (let deltaX = -reach; deltaX <= reach; deltaX++) {
       if (deltaX === 0 && deltaY === 0) continue;
@@ -495,9 +594,9 @@ function pathWithinOne(grid: SiteGrid, tileX: number, tileY: number): boolean {
   return false;
 }
 
-function spawnClear(grid: SiteGrid, tileX: number, tileY: number): boolean {
+function spawnClear(grid: SiteGrid, tileX: number, tileY: number, clearance: number): boolean {
   for (const spawn of grid.spawns) {
-    if (chebyshev(tileX, tileY, spawn.x, spawn.y) <= CACHE_SPAWN_CLEARANCE) return false;
+    if (chebyshev(tileX, tileY, spawn.x, spawn.y) <= clearance) return false;
   }
   return true;
 }

@@ -274,7 +274,7 @@ function previewNewSites(
   }));
   const plan = planSitesForStampedBoard({
     grid: nextGrid,
-    map: nextMap,
+    map: { seed: nextMap.seed, regionId: nextMap.regionId, level: nextMap.level, style: nextMap.style },
     buildings,
     caches,
     previousWorldKeys,

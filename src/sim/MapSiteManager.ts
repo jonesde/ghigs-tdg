@@ -16,6 +16,9 @@ export interface MapSiteSource {
   readonly seed: number;
   readonly regionId: number;
   readonly level: number;
+  // Selects the site clearance profile in reconcileMapSites. Absent is a
+  // generated board.
+  readonly style?: string;
 }
 
 // Owns the board's claimable sites: which tiles hold a building, an unopened
@@ -112,6 +115,7 @@ export class MapSiteManager {
       seed: map.seed,
       regionId: map.regionId,
       mapLevel: map.level,
+      mapStyle: map.style,
       buildings: this.mapBuildings,
       caches: this.mapCaches,
       previousWorldKeys,
