@@ -27,7 +27,7 @@ const routes: RouteRecordRaw[] = [
   { path: "/commanders", name: "commanders", component: () => import("@/components/CommandersScreen.vue") },
 ];
 
-const router = createRouter({ history: createWebHistory(), routes });
+const router = createRouter({ history: createWebHistory(import.meta.env.BASE_URL), routes });
 
 router.beforeEach(async (to: RouteLocationNormalized, from: RouteLocationNormalized, next: NavigationGuardNext) => {
   const gameStore = useGameStore();

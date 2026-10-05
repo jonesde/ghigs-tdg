@@ -89,7 +89,11 @@ Outputs optimized, code-split assets to `dist/`.
 ```bash
 npm run preview
 ```
-Serves the `dist/` directory locally.
+Serves the `dist/` directory locally. A production build uses base `/ghigs-tdg/`, so preview is at `http://localhost:4173/ghigs-tdg/`. `npm run dev` stays at `http://localhost:3000/`.
+
+### GitHub Pages
+
+Pushes to `master` run `.github/workflows/pages.yml`, which builds with the Pages base path and deploys `dist/`. The project site is `https://<user>.github.io/ghigs-tdg/`. In the repo, set **Settings → Pages → Source** to **GitHub Actions**. `PAGES_BASE_PATH` overrides the base (an empty value serves at `/`, which is what a custom domain uses).
 
 ### Linting & Formatting
 

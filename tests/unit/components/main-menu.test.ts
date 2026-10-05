@@ -194,9 +194,9 @@ describe("MainMenu", () => {
     expect(cardBackground.html()).toContain("themebgmarker");
   });
 
-  it("starts the highest unlocked map from a world card and activates that world", async () => {
+  it("activates that world and selects its farthest unlocked map for the region map", async () => {
     // biome-ignore lint/correctness/noUnusedVariables: themeStore prepared by mount helper
-    const { pinia, gameStore, persistStore, themeStore, router } = mountMainMenu();
+    const { pinia, persistStore, themeStore, router } = mountMainMenu();
     persistStore.lastSelectedThemeId = "the-aftermath";
     persistStore.ensureThemeProgress("the-aftermath").highestUnlockedMap = 13;
     const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
@@ -207,14 +207,12 @@ describe("MainMenu", () => {
     await flushNavigation();
     expect(persistStore.lastSelectedThemeId).toBe("default");
     expect(persistStore.lastSelectedMapIndex).toBe(0);
-    expect(gameStore.mapIndex).toBe(0);
-    expect(gameStore.map).not.toBeNull();
-    expect(router.currentRoute.value.path).toBe("/game");
+    expect(router.currentRoute.value.path).toBe("/map-select");
   });
 
-  it("starts the active world's farthest map without switching worlds", async () => {
+  it("selects the active world's farthest map without switching worlds", async () => {
     // biome-ignore lint/correctness/noUnusedVariables: themeStore prepared by mount helper
-    const { pinia, gameStore, persistStore, themeStore, router } = mountMainMenu();
+    const { pinia, persistStore, themeStore, router } = mountMainMenu();
     persistStore.ensureThemeProgress("default").highestUnlockedMap = 14;
     const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
     const card = wrapper.findAll(".world-card").find((c) => c.text().includes("Polymath"))!;
@@ -222,8 +220,7 @@ describe("MainMenu", () => {
     await flushNavigation();
     expect(persistStore.lastSelectedThemeId).toBe("default");
     expect(persistStore.lastSelectedMapIndex).toBe(14);
-    expect(gameStore.mapIndex).toBe(14);
-    expect(router.currentRoute.value.path).toBe("/game");
+    expect(router.currentRoute.value.path).toBe("/map-select");
   });
 
   it("hides the custom map dialogs until a New Game section button opens them", () => {
