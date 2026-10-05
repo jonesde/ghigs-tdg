@@ -144,6 +144,7 @@ export class SnapshotStore {
   private gameStore: GameStore;
   private lastSelectedTowerId: string | null = null;
   private bonusSignature = "";
+  private buildingEffectSignature = "";
   private pickerSignature = "";
   private bossNameSignature = "";
   private siteSignature = "";
@@ -412,6 +413,30 @@ export class SnapshotStore {
         };
       }
     }
+    const effects = meta.activeBuildingEffects;
+    if (effects) {
+      // Five scalars, so a string signature is the whole diff: a powered building
+      // coming or going rewrites the store object once, and a static board writes
+      // nothing on the ticks between.
+      const effectSignature = [
+        meta.runId ?? 0,
+        effects.activeCount,
+        effects.damageMult,
+        effects.fireRateMult,
+        effects.rangeMult,
+        effects.flyingDamageMult,
+      ].join("|");
+      if (effectSignature !== this.buildingEffectSignature) {
+        this.buildingEffectSignature = effectSignature;
+        gs.buildingEffects = {
+          damageMult: effects.damageMult,
+          fireRateMult: effects.fireRateMult,
+          rangeMult: effects.rangeMult,
+          flyingDamageMult: effects.flyingDamageMult,
+          activeCount: effects.activeCount,
+        };
+      }
+    }
     const picker = meta.bonusPicker ?? null;
     const pickerSignature = picker
       ? `${meta.runId ?? 0}:${picker.source}:${picker.id}:${picker.wasPlaying ? 1 : 0}:` +
@@ -436,7 +461,11 @@ export class SnapshotStore {
       // hp travels too: a cache damaged between layout changes has to refresh the
       // store copies the progressive ghost preview reads.
       ...caches.map((cache) => `c${cache.id}:${cache.tileX},${cache.tileY}:${Math.ceil(cache.hp)}`),
-      ...buildings.map((building) => `b${building.id}:${building.kind}:${building.tileX},${building.tileY}`),
+      ...buildings.map(
+        // active travels too: a tower built or sold beside a building changes which
+        // glyph is dimmed, and the copies here are what the render layer reads.
+        (building) => `b${building.id}:${building.kind}:${building.tileX},${building.tileY}:${building.active ? 1 : 0}`,
+      ),
     ].join("|");
     if (siteSignature === this.siteSignature) return;
     this.siteSignature = siteSignature;

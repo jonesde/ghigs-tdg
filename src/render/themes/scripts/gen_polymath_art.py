@@ -45,7 +45,7 @@ PREVIEW_DIRECTORY = os.path.normpath(
 TILE_KINDS = ["path", "terrain1", "terrain2", "terrain3", "terrain4"]
 TILE_VARIANT_COUNT = 3
 SPAWN_STATES = ["closed", "open", "transition"]
-BUILDING_KINDS = ["armory", "magazine", "ward", "beacon"]
+BUILDING_KINDS = ["armory", "magazine", "beacon", "foundry", "clocktower", "aviary"]
 CACHE_STATES = ["sealed", "unlocked", "broken"]
 
 TILE_SIZE = 36
@@ -59,7 +59,14 @@ TILE_BYTE_MAX = 900
 SPAWN_RED = "#e85a6a"
 SPAWN_OPEN_GREEN = "#6abf6a"
 
-BUILDING_COLORS = {"armory": "#e07040", "magazine": "#d0a040", "ward": "#40c0a0", "beacon": "#70a0e0"}
+BUILDING_COLORS = {
+    "armory": "#e07040",
+    "magazine": "#d0a040",
+    "beacon": "#70a0e0",
+    "foundry": "#d05050",
+    "clocktower": "#b070e0",
+    "aviary": "#40c0a0",
+}
 BUILDING_OUTLINE = "#1a1a1a"
 FOOTPRINT_SHADOW_FILL = "rgba(0,0,0,0.25)"
 PLINTH_FILL = "#2a2a2c"
@@ -349,15 +356,7 @@ def building_svg(kind: str) -> str:
                                              fill=color if tier % 2 == 0 else light,
                                              stroke=BUILDING_OUTLINE, stroke_width=0.8))
         parts.append(region_map_art.line(11.5, 22.8, 24.5, 22.8, stroke=light, stroke_width=0.7, opacity=0.6))
-    elif kind == "ward":
-        # Buttressed shield: a shield face between two side buttresses.
-        parts.append(region_map_art.path_shape("M18,5.5 L27,9 L27,19 Q27,26 18,28.5 Q9,26 9,19 L9,9 Z",
-                                               fill=color, stroke=BUILDING_OUTLINE, stroke_width=0.9))
-        parts.append(region_map_art.path_shape("M18,9.5 L23.5,11.6 L23.5,18.6 Q23.5,23 18,24.8 Q12.5,23 12.5,18.6 "
-                                               "L12.5,11.6 Z", fill=light, opacity=0.55))
-        parts.append(region_map_art.rect(6.5, 12, 3.2, 12, fill=dark, stroke=BUILDING_OUTLINE, stroke_width=0.8))
-        parts.append(region_map_art.rect(26.3, 12, 3.2, 12, fill=dark, stroke=BUILDING_OUTLINE, stroke_width=0.8))
-    else:
+    elif kind == "beacon":
         # Lamp tower: a tapered mast with a lit diamond.
         parts.append(region_map_art.path_shape("M14.5,24.5 L16.6,12 L19.4,12 L21.5,24.5 Z",
                                                fill=dark, stroke=BUILDING_OUTLINE, stroke_width=0.8))
@@ -368,6 +367,61 @@ def building_svg(kind: str) -> str:
         parts.append(region_map_art.line(18, 2.6, 18, 4.4, stroke=light, stroke_width=0.9))
         parts.append(region_map_art.line(12.4, 8.5, 14.2, 8.5, stroke=light, stroke_width=0.9))
         parts.append(region_map_art.line(23.6, 8.5, 21.8, 8.5, stroke=light, stroke_width=0.9))
+    elif kind == "foundry":
+        # Forge: a squat furnace body with a wide arched firebox and a capped
+        # chimney climbing the left side. The chimney is the one mark that rises
+        # clear of the body, so the silhouette is notched where the magazine is
+        # stepped.
+        parts.append(region_map_art.path_shape("M9.5,24.5 L9.5,15.5 L26.5,15.5 L26.5,24.5 Z",
+                                               fill=color, stroke=BUILDING_OUTLINE, stroke_width=0.8))
+        parts.append(region_map_art.rect(9.5, 15.5, 17, 1.8, fill=light, opacity=0.7))
+        parts.append(region_map_art.path_shape(
+            "M16,24.5 L16,20 Q16,17 19,17 L21,17 Q24,17 24,20 L24,24.5 Z",
+            fill=dark, stroke=BUILDING_OUTLINE, stroke_width=0.8))
+        parts.append(region_map_art.path_shape(
+            "M17.8,24.5 L17.8,20.6 Q17.8,18.6 19.6,18.6 L20.4,18.6 Q22.2,18.6 22.2,20.6 L22.2,24.5 Z",
+            fill=light))
+        parts.append(region_map_art.line(17.8, 22.6, 22.2, 22.6, stroke=dark, stroke_width=0.6))
+        parts.append(region_map_art.rect(9.8, 4.6, 4.6, 11.4, fill=dark,
+                                         stroke=BUILDING_OUTLINE, stroke_width=0.8))
+        parts.append(region_map_art.rect(8.8, 3.4, 6.6, 2.2, rx=0.4, fill=color,
+                                         stroke=BUILDING_OUTLINE, stroke_width=0.8))
+        parts.append(region_map_art.ellipse(12.1, 2.2, 2.6, 1.2, fill=light, opacity=0.35))
+    elif kind == "clocktower":
+        # Clock tower: a tapered case under a spire, a dial with hands, and the
+        # counterweight still hanging off the right face on its cord.
+        parts.append(region_map_art.path_shape("M12.8,24.5 L13.8,9.8 L22.2,9.8 L23.2,24.5 Z",
+                                               fill=dark, stroke=BUILDING_OUTLINE, stroke_width=0.8))
+        parts.append(region_map_art.polygon("18,3 24.2,9.8 11.8,9.8",
+                                            fill=color, stroke=BUILDING_OUTLINE, stroke_width=0.8))
+        parts.append(region_map_art.circle(18, 14.6, 4.6, fill=color,
+                                          stroke=BUILDING_OUTLINE, stroke_width=0.8))
+        parts.append(region_map_art.circle(18, 14.6, 3.2, fill=light))
+        parts.append(region_map_art.line(18, 14.6, 18, 12, stroke=BUILDING_OUTLINE, stroke_width=0.9))
+        parts.append(region_map_art.line(18, 14.6, 20.6, 15.4, stroke=BUILDING_OUTLINE, stroke_width=0.9))
+        parts.append(region_map_art.line(22.4, 10.8, 26.6, 10.8, stroke=dark, stroke_width=0.8))
+        parts.append(region_map_art.line(26.6, 10.8, 26.6, 20, stroke=dark, stroke_width=0.8))
+        parts.append(region_map_art.circle(26.6, 22.2, 2.2, fill=light,
+                                          stroke=BUILDING_OUTLINE, stroke_width=0.8))
+    elif kind == "aviary":
+        # Bird roost: a flight chevron over a ridge roof and a netted cage holding
+        # a perched bird. The lattice is the tell at 26px: the armory crosses two
+        # blades and the magazine stacks three solid rounds.
+        parts.append(region_map_art.path_shape("M13.6,4.2 L18,7.2 L22.4,4.2", "none",
+                                               stroke=color, stroke_width=1.5))
+        parts.append(region_map_art.polygon("18,8 26.4,12.8 9.6,12.8",
+                                            fill=color, stroke=BUILDING_OUTLINE, stroke_width=0.8))
+        parts.append(region_map_art.rect(11.4, 12.8, 13.2, 11.7, fill=light,
+                                         stroke=BUILDING_OUTLINE, stroke_width=0.9))
+        for net_x in (14.4, 18, 21.6):
+            parts.append(region_map_art.line(net_x, 13.8, net_x, 21.4, stroke=color,
+                                             stroke_width=0.6, opacity=0.75))
+        parts.append(region_map_art.line(12.4, 15.4, 23.6, 15.4, stroke=color,
+                                         stroke_width=0.6, opacity=0.75))
+        parts.append(region_map_art.rect(12.4, 19.4, 11.2, 1.8, fill=color,
+                                         stroke=BUILDING_OUTLINE, stroke_width=0.6))
+        parts.append(region_map_art.ellipse(16.2, 17.8, 2.4, 1.8, fill=dark))
+        parts.append(region_map_art.circle(18.4, 16.6, 1.2, fill=dark))
     return f'<svg viewBox="0 0 {TILE_SIZE} {TILE_SIZE}">{"".join(parts)}</svg>'
 
 

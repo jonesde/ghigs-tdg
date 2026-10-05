@@ -1661,7 +1661,7 @@ CACHE_LID_FILL_OPEN = "#6a5e52"
 CACHE_LID_FILL_BROKEN = "#3f362c"
 CACHE_MOUTH_FILL = "#1c1e22"
 
-BUILDING_KINDS = ["armory", "magazine", "ward", "beacon"]
+BUILDING_KINDS = ["armory", "magazine", "beacon", "foundry", "clocktower", "aviary"]
 CACHE_STATES = ["sealed", "unlocked", "broken"]
 
 
@@ -1706,22 +1706,61 @@ def magazine_building() -> str:
     return "".join(parts)
 
 
-def ward_building() -> str:
-    """Riveted scrap-plate shield with a hazard band and welded side plates."""
-    shield = "M18,5.6 L27.4,9.2 L27.4,18.8 Q27.4,25.6 18,28.4 Q8.6,25.6 8.6,18.8 L8.6,9.2 Z"
-    inner = "M18,9.6 L23.8,11.8 L23.8,18.4 Q23.8,22.8 18,24.4 Q12.2,22.8 12.2,18.4 L12.2,11.8 Z"
-    parts = [site_pad(), path_shape(shield, STEEL, INK, 1), path_shape(inner, STEEL_LIGHT, opacity=0.4)]
-    parts.append(rect(9.4, 16.2, 17.2, 3.4, None, HAZARD, opacity=0.85))
-    for stripe_offset in (10.6, 14.6, 18.6, 22.6):
-        parts.append(path_shape(f"M{num(stripe_offset)},19.6 L{num(stripe_offset + 2.6)},16.2",
-                                INK, opacity=0.4))
-    for rivet_index in range(6):
-        angle = math.radians(rivet_index * 60 + 30)
-        parts.append(circle(18 + math.cos(angle) * 10.4, 16.4 + math.sin(angle) * 9.4,
-                            0.9, BONE, INK, 0.4))
-    parts.append(rect(6.6, 12.6, 2.8, 11.6, 0.6, STEEL_DARK, INK, 0.9))
-    parts.append(rect(26.6, 12.6, 2.8, 11.6, 0.6, STEEL_DARK, INK, 0.9))
-    return "".join(parts)
+def foundry_building() -> str:
+    """Riveted salvage furnace: a drum on the pad with a hazard-lit firebox arch
+    and a stovepipe under a rain cap. The filled hot mouth is the tell at 26px,
+    where the magazine only marks its base with a hazard line."""
+    return site_pad() + (
+        rect(9.8, 3.6, 4.6, 11.2, 0.5, STEEL_DARK, INK, 0.9)
+        + rect(8.6, 2.4, 7, 2.2, 0.4, STEEL, INK, 0.9)
+        + rect(9.2, 12.6, 6.2, 2.2, 0.4, STEEL_DEEP, INK, 0.8)
+        + rect(9.4, 14.4, 17.2, 9.6, 1, STEEL, INK, 1)
+        + rect(9.4, 14.4, 17.2, 1.6, None, STEEL_LIGHT, opacity=0.5)
+        + path_shape("M14.4,24 L14.4,19.8 Q14.4,16.8 17.6,16.8 L21.4,16.8 Q24.6,16.8 24.6,19.8 L24.6,24 Z",
+                     HAZARD, INK, 0.9)
+        + line(17.2, 18.6, 17.2, 22.2, INK, 0.7, opacity=0.5)
+        + line(20.2, 18.6, 20.2, 22.2, INK, 0.7, opacity=0.5)
+        + line(14.4, 21.4, 24.6, 21.4, INK, 0.7, opacity=0.5)
+        + circle(11.8, 16.6, 0.9, BONE, INK, 0.4)
+        + circle(11.8, 22.2, 0.9, BONE, INK, 0.4)
+    )
+
+
+def clocktower_building() -> str:
+    """Salvaged clocktower: a braced leg under a flared cap, a bone dial with ink
+    hands, and the counterweight still hanging off the right face on its cord."""
+    return site_pad() + (
+        path_shape("M12.4,24.6 L13.4,10.4 L22.6,10.4 L23.6,24.6 Z", STEEL_DARK, INK, 1)
+        + path_shape("M10.8,10.4 L25.2,10.4 L22,5.6 L14,5.6 Z", STEEL, INK, 1)
+        + rect(13.2, 12.2, 9.6, 9.6, 1, STEEL, INK, 1)
+        + circle(18, 17, 3.8, BONE, INK, 0.9)
+        + line(18, 17, 18, 14.2, INK, 0.9)
+        + line(18, 17, 20.6, 17.8, INK, 0.9)
+        + circle(18, 17, 0.7, INK)
+        + line(13.8, 23.4, 22.2, 23.4, STEEL_LIGHT, 0.7, opacity=0.55)
+        + line(25.4, 11.4, 28.4, 11.4, INK, 0.8)
+        + line(28.4, 11.4, 28.4, 20.2, STEEL_LIGHT, 0.8)
+        + rect(26.6, 20.2, 3.6, 4.4, 0.6, STEEL, INK, 0.9)
+        + circle(28.4, 18.4, 1, BONE, INK, 0.5)
+    )
+
+
+def aviary_building() -> str:
+    """Salvaged roost: a steel frame under a ridge roof, bone netting over a perch
+    bar with a bone bird on it, and a flight chevron over the ridge. The netting
+    is the tell at 26px: the armory crosses two blades, the magazine stacks cans."""
+    return site_pad() + (
+        path_shape("M13.4,4.4 L18,7.2 L22.6,4.4", "none", STEEL_LIGHT, 1.5)
+        + path_shape("M18,8 L26.4,12.6 L9.6,12.6 Z", STEEL, INK, 1)
+        + rect(9.8, 12.6, 16.4, 12, 0.9, STEEL_DEEP, INK, 1)
+        + line(13, 13.6, 13, 23.6, BONE, 0.6, opacity=0.8)
+        + line(18, 13.6, 18, 23.6, BONE, 0.6, opacity=0.8)
+        + line(23, 13.6, 23, 23.6, BONE, 0.6, opacity=0.8)
+        + line(10.6, 17.2, 25.4, 17.2, BONE, 0.6, opacity=0.8)
+        + rect(11.4, 20.4, 13.2, 1.8, 0.4, STEEL, INK, 0.7)
+        + ellipse(15.6, 18.6, 2.4, 1.8, BONE, INK, 0.6)
+        + circle(17.8, 17.4, 1.2, BONE, INK, 0.6)
+    )
 
 
 def beacon_building() -> str:
@@ -1825,8 +1864,10 @@ def site_art() -> dict:
             kind: tile_svg(draw()) for kind, draw in (
                 ("armory", armory_building),
                 ("magazine", magazine_building),
-                ("ward", ward_building),
                 ("beacon", beacon_building),
+                ("foundry", foundry_building),
+                ("clocktower", clocktower_building),
+                ("aviary", aviary_building),
             )
         },
         "caches": {

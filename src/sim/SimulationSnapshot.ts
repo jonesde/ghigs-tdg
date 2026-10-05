@@ -4,7 +4,7 @@ import type { ParticleSpawnRequest } from "@/sim/ParticleSystem.js";
 import type { ProjectileManager } from "@/sim/ProjectileManager.js";
 import type { BossAbilityId } from "./bossAbilities.js";
 import type { GameRunState } from "./GameRunState.js";
-import type { BuildingKind } from "./mapSites.js";
+import type { ActiveBuildingBonus, BuildingKind } from "./mapSites.js";
 import type { BonusOffer, BonusPickerState, RunBonuses } from "./runBonuses.js";
 
 // Bump on incompatible schema changes. Builders stamp it; SnapshotStore.apply
@@ -13,7 +13,9 @@ import type { BonusOffer, BonusPickerState, RunBonuses } from "./runBonuses.js";
 // specialistType (boss abilities / run bonuses pass).
 // 3: MapCacheSnapshot gained unlocked, gating the bonus cards behind a gold or
 // damage unlock.
-export const SNAPSHOT_SCHEMA_VERSION = 3;
+// 4: MapBuildingSnapshot gained active and meta gained activeBuildingEffects, so a
+// render/HMR pairing can never show an unpowered building at full strength.
+export const SNAPSHOT_SCHEMA_VERSION = 4;
 
 export interface SimulationSnapshot {
   schemaVersion: number; // SNAPSHOT_SCHEMA_VERSION; consumers reject mismatches
@@ -203,6 +205,9 @@ export interface SnapshotMeta {
   // Run rewards and map sites. Optional so hand-built test metas compile.
   // The serializer always sets them.
   runBonuses?: RunBonuses;
+  // The whole-board product every powered building pays, and how many are paying.
+  // Optional so hand-built test metas compile; the serializer always sets it.
+  activeBuildingEffects?: ActiveBuildingBonus;
   bonusPicker?: BonusPickerState | null;
   supplyDrops?: SupplyDropSnapshot[];
   mapCaches?: MapCacheSnapshot[];
@@ -240,6 +245,9 @@ export interface MapBuildingSnapshot {
   tileY: number;
   worldX: number;
   worldY: number;
+  // True while a live tower stands on one of the 8 tiles around it, so the render
+  // layer can dim an unpowered building without re-deriving the tower set.
+  active: boolean;
 }
 
 export interface BombardShotSnapshot {

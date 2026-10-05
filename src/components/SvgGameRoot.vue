@@ -263,6 +263,7 @@ function previewNewSites(
     kind: building.kind,
     tileX: building.tileX + shiftX,
     tileY: building.tileY + shiftY,
+    active: building.active,
   }));
   const caches = gameStore.mapCaches.map((cache) => ({
     id: cache.id,

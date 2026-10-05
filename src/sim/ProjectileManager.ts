@@ -2,6 +2,7 @@ import { GRID_TILE_SIZE } from "@/render/svg/types.js";
 import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
 import type { ProjectileHitEvent } from "@/sim/physics/ContactProcessor.js";
 import type { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { damageAgainstFlying } from "@/sim/towers/towerFlyingDamage.js";
 import { MAX_PROJECTILE_AGE, PROJECTILE_HIT_SLOP, PROJECTILE_RETARGET_CORRIDOR_TILE_FRACTION } from "./Constants.js";
 import {
   ANTI_HEAL_DURATION,
@@ -77,6 +78,8 @@ export interface ProjectileGame {
   antiHeal: boolean;
   burnCircuit: boolean;
   pierceFalloff: number;
+  // An aviary beside the firing tower multiplies damage against flying targets.
+  flyingDamageMult: number;
   // Fixed-aim tracking
   hitEnemyIds?: Set<number>;
   fixedAimHits?: number;
@@ -379,6 +382,7 @@ export class ProjectileManager {
     pierceFalloff?: number;
     stunDur?: number;
     splash?: number;
+    flyingDamageMult?: number;
     cacheId?: number;
   }): void {
     const projectile: ProjectileGame = {
@@ -423,6 +427,7 @@ export class ProjectileManager {
       antiHeal: opts.antiHeal ?? false,
       burnCircuit: false,
       pierceFalloff: opts.pierceFalloff ?? 0,
+      flyingDamageMult: opts.flyingDamageMult ?? 1,
       fixedAim: opts.targetId === 0,
       ...(opts.cacheId !== undefined ? { cacheId: opts.cacheId } : {}),
       lastDirX: 0,
@@ -986,7 +991,8 @@ export class ProjectileManager {
     }
 
     // Damage first so a marking shot does not multiply its own hit; mark after.
-    const dealtDamage = enemy.takeDamage(scaledDamage, projectile.armorPiercing) ?? 0;
+    const flyingDamage = damageAgainstFlying(scaledDamage, projectile.flyingDamageMult, enemy.flyingHeight);
+    const dealtDamage = enemy.takeDamage(flyingDamage, projectile.armorPiercing) ?? 0;
     this.recordDamage(projectile.towerId, dealtDamage);
 
     if (projectile.markTarget > 0 && enemy.applyMarkTarget) {
@@ -1004,7 +1010,8 @@ export class ProjectileManager {
     }
 
     if (projectile.burnDps > 0 && enemy.applyBurn) {
-      enemy.applyBurn(projectile.burnDps, projectile.burnDuration, projectile.towerId);
+      const burnDps = damageAgainstFlying(projectile.burnDps, projectile.flyingDamageMult, enemy.flyingHeight);
+      enemy.applyBurn(burnDps, projectile.burnDuration, projectile.towerId);
     }
 
     if (projectile.slowFactor > 0 && enemy.applySlow) {
@@ -1064,14 +1071,23 @@ export class ProjectileManager {
       this.enemyManager.forEachEnemyInRange(enemy.x, enemy.y, splashRadiusPx, (splashEnemy) => {
         if (splashEnemy.id === enemy.id) return;
         if (projectile.groundOnly && (splashEnemy.flyingHeight ?? 0) > 0) return;
-        const dealtSplash = splashEnemy.takeDamage(splashDamage, projectile.armorPiercing) ?? 0;
+        const dealtSplash =
+          splashEnemy.takeDamage(
+            damageAgainstFlying(splashDamage, projectile.flyingDamageMult, splashEnemy.flyingHeight),
+            projectile.armorPiercing,
+          ) ?? 0;
         this.recordDamage(projectile.towerId, dealtSplash);
 
         if (projectile.markTarget > 0 && splashEnemy.applyMarkTarget) {
           splashEnemy.applyMarkTarget(projectile.markTarget, MARK_TARGET_DURATION);
         }
         if (projectile.burnDps > 0 && splashEnemy.applyBurn) {
-          splashEnemy.applyBurn(projectile.burnDps, projectile.burnDuration, projectile.towerId);
+          const burnDps = damageAgainstFlying(
+            projectile.burnDps,
+            projectile.flyingDamageMult,
+            splashEnemy.flyingHeight,
+          );
+          splashEnemy.applyBurn(burnDps, projectile.burnDuration, projectile.towerId);
         }
         if (projectile.slowFactor > 0 && splashEnemy.applySlow) {
           splashEnemy.applySlow(projectile.slowFactor, projectile.slowDuration);
@@ -1144,6 +1160,7 @@ export class ProjectileManager {
     chain?: number;
     stormcall?: boolean;
     color?: string;
+    flyingDamageMult?: number;
   }): void {
     let current: LightningTarget | null = this.enemyManager.getEnemyById(opts.targetId);
     if (!current || current.removed) return;
@@ -1153,13 +1170,15 @@ export class ProjectileManager {
     const critChance = opts.critChance ?? 0;
     const isCrit = critChance > 0 && this.rng() < critChance;
     const finalDamage = isCrit ? opts.damage * 2 : opts.damage;
+    const flyingDamageMult = opts.flyingDamageMult ?? 1;
 
     // Lightning strikes instantly: the initial target takes full damage, each
     // chained target takes reduced damage, and all enemies in the chain are
     // stunned. The tower->final-target flash fires once at the end.
     const chainTargets: LightningTarget[] = [];
 
-    const primaryDealt = current.takeDamage(finalDamage) ?? finalDamage;
+    const primaryDealt =
+      current.takeDamage(damageAgainstFlying(finalDamage, flyingDamageMult, current.flyingHeight)) ?? finalDamage;
     this.recordDamage(opts.towerId, primaryDealt);
     // Gold Rush: grant gold on critical hit
     if (isCrit && (opts.goldOnCrit ?? 0) > 0 && this.onGoldReward) {
@@ -1182,7 +1201,9 @@ export class ProjectileManager {
       if (!nextTarget) break;
 
       const chainDamage = finalDamage * CHAIN_DAMAGE_FALLOFF ** (chainsUsed + 1);
-      const chainDealt = nextTarget.takeDamage(chainDamage) ?? chainDamage;
+      const chainDealt =
+        nextTarget.takeDamage(damageAgainstFlying(chainDamage, flyingDamageMult, nextTarget.flyingHeight)) ??
+        chainDamage;
       this.recordDamage(opts.towerId, chainDealt);
       chainTargets.push(nextTarget);
       chainedIds.add(nextTarget.id);
@@ -1195,7 +1216,12 @@ export class ProjectileManager {
       }
       // Burn Circuit: chained enemies take burn damage over time
       if (opts.burnCircuit && nextTarget.applyBurn) {
-        nextTarget.applyBurn(chainDamage * BURN_CIRCUIT_DMG_MULT, BURN_CIRCUIT_DURATION, opts.towerId);
+        const burnDps = damageAgainstFlying(
+          chainDamage * BURN_CIRCUIT_DMG_MULT,
+          flyingDamageMult,
+          nextTarget.flyingHeight,
+        );
+        nextTarget.applyBurn(burnDps, BURN_CIRCUIT_DURATION, opts.towerId);
       }
       this.bufferLightningEffect({ x1: current.x, y1: current.y, x2: nextTarget.x, y2: nextTarget.y });
       chainsUsed++;
@@ -1217,7 +1243,9 @@ export class ProjectileManager {
         const pickIndex = Math.floor(this.rng() * wideEnemies.length);
         const stormTarget = wideEnemies.splice(pickIndex, 1)[0]!;
         const stormDamage = finalDamage * CHAIN_DAMAGE_FALLOFF;
-        const stormDealt = stormTarget.takeDamage(stormDamage) ?? stormDamage;
+        const stormDealt =
+          stormTarget.takeDamage(damageAgainstFlying(stormDamage, flyingDamageMult, stormTarget.flyingHeight)) ??
+          stormDamage;
         this.recordDamage(opts.towerId, stormDealt);
         chainTargets.push(stormTarget);
         if (this.particles) {
@@ -1250,7 +1278,9 @@ export class ProjectileManager {
       if (secondTarget) {
         const secondIsCrit = critChance > 0 && this.rng() < critChance;
         const secondDamage = finalDamage * 0.5 * (secondIsCrit ? 2 : 1);
-        const secondDealt = secondTarget.takeDamage(secondDamage) ?? secondDamage;
+        const secondDealt =
+          secondTarget.takeDamage(damageAgainstFlying(secondDamage, flyingDamageMult, secondTarget.flyingHeight)) ??
+          secondDamage;
         this.recordDamage(opts.towerId, secondDealt);
         // Gold Rush: grant gold on critical hit for second bolt
         if (secondIsCrit && (opts.goldOnCrit ?? 0) > 0 && this.onGoldReward) {

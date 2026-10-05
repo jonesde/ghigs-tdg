@@ -21,7 +21,9 @@ A map theme swaps the visual identity of towers, enemies, and map tiles on the `
   "regions": [ /* 3 region objects */ ],
   "spawns": { "closed": "", "open": "", "transition": "" },
   "sites": {
-    "buildings": { "armory": "", "magazine": "", "ward": "", "beacon": "" },
+    "buildings": {
+      "armory": "", "magazine": "", "beacon": "", "foundry": "", "clocktower": "", "aviary": ""
+    },
     "caches": { "sealed": "", "unlocked": "", "broken": "" },
     "supplyDrop": ""
   }
@@ -222,7 +224,7 @@ The optional `sites` block replaces the procedural building, cache, and boss-pac
 |---|---|
 | **viewBox** | `0 0 36 36` (same authoring space as tile art) |
 | **Element size** | 26 x 26 px, centred on the site |
-| **Symbol ids** | `site-building-{armory,magazine,ward,beacon}`, `site-cache-{sealed,unlocked,broken}`, `site-supply-drop` |
+| **Symbol ids** | `site-building-{armory,magazine,beacon,foundry,clocktower,aviary}`, `site-cache-{sealed,unlocked,broken}`, `site-supply-drop` |
 | **Selection** | `sealed` while intact, `unlocked` once paid for, `broken` at 0 hp |
 | **Draw order** | Site art paints under the pulsing ring a boss package keeps |
 
@@ -311,11 +313,11 @@ Per theme:
 | Region tile kinds | 15 (3 regions × 5 tile types) |
 | Region base sets | 3 |
 | Region map images | 3 (plus a `mapLayout` data structure each) |
-| Map site images | 8 (4 buildings, 3 cache states, supply drop) |
+| Map site images | 10 (6 buildings, 3 cache states, supply drop) |
 | Spawn images | 3 |
 | Main menu background | 1 |
-| **Total image sets per theme** | **76** |
-| **Total image sets, both shipped themes** | **152** |
+| **Total image sets per theme** | **78** |
+| **Total image sets, both shipped themes** | **156** |
 
 A set is not one image: each enemy set carries 8 walking, 3 hit, and 3 attack frames, each tower set 2 or 3 animation frames, and each tile kind ships 3 images, so one theme holds a little over 200 individual images.
 

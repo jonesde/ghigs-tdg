@@ -116,7 +116,7 @@ async function normalizeRegionVisual(raw: {
 }
 
 async function normalizeSiteArt(raw: {
-  buildings: Record<"armory" | "magazine" | "ward" | "beacon", string>;
+  buildings: Record<"armory" | "magazine" | "beacon" | "foundry" | "clocktower" | "aviary", string>;
   caches: Record<"sealed" | "unlocked" | "broken", string>;
   supplyDrop?: string;
 }): Promise<SiteArtMeta> {
@@ -179,7 +179,7 @@ export async function normalizeThemeImages(raw: {
   }>;
   spawns?: { closed: string; open: string; transition: string };
   sites?: {
-    buildings: Record<"armory" | "magazine" | "ward" | "beacon", string>;
+    buildings: Record<"armory" | "magazine" | "beacon" | "foundry" | "clocktower" | "aviary", string>;
     caches: Record<"sealed" | "unlocked" | "broken", string>;
     supplyDrop?: string;
   };

@@ -25,6 +25,8 @@ import {
   replayProgressiveBoard,
   sitesAtRotation,
 } from "@/sim/grid/ProgressiveMap.js";
+import type { ActiveBuildingBonus } from "@/sim/mapSites.js";
+import { freshActiveBuildingBonus } from "@/sim/mapSites.js";
 import type { BonusPickerState, RunBonuses } from "@/sim/runBonuses.js";
 import { freshRunBonuses } from "@/sim/runBonuses.js";
 import type {
@@ -258,6 +260,9 @@ interface GameStateShape {
   progressiveUndoAvailable: boolean;
   layoutGeneration: number;
   runBonuses: RunBonuses;
+  // The whole-board product every powered building pays this run, for the HUD
+  // effects list. A mirror of meta.activeBuildingEffects.
+  buildingEffects: ActiveBuildingBonus;
   bonusPicker: BonusPickerState | null;
   nextBossAbilityNames: string[];
   supplyDrops: SupplyDropSnapshot[];
@@ -314,6 +319,7 @@ export const useGameStore = defineStore("game", {
     progressiveUndoAvailable: false,
     layoutGeneration: 0,
     runBonuses: freshRunBonuses(),
+    buildingEffects: freshActiveBuildingBonus(),
     bonusPicker: null,
     nextBossAbilityNames: [],
     supplyDrops: [],
@@ -413,6 +419,7 @@ export const useGameStore = defineStore("game", {
       this.progressiveUndoAvailable = false;
       this.layoutGeneration = 0;
       this.runBonuses = freshRunBonuses();
+      this.buildingEffects = freshActiveBuildingBonus();
       this.bonusPicker = null;
       this.nextBossAbilityNames = [];
       this.supplyDrops = [];

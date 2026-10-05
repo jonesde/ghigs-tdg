@@ -53,6 +53,7 @@ import {
   type TowerBaseConfig,
 } from "@/sim/towers/towerCoreStats.js";
 import { getGeneralAddonValue, maxLevelFor } from "./SkillTree.js";
+import { damageAgainstFlying } from "./towerFlyingDamage.js";
 
 interface GridRef {
   tileSize: number;
@@ -192,6 +193,7 @@ interface ProjectileManagerRef {
     pierceFalloff?: number;
     stunDur?: number;
     splash?: number;
+    flyingDamageMult?: number;
     cacheId?: number;
   }): void;
   fireLightning(opts: {
@@ -210,6 +212,7 @@ interface ProjectileManagerRef {
     chain?: number;
     stormcall?: boolean;
     color?: string;
+    flyingDamageMult?: number;
   }): void;
 }
 
@@ -235,6 +238,9 @@ interface TowerStats {
   healthMult: number;
   armorPiercing: boolean;
   groundOnly: boolean;
+  // Damage taken by a flying target, read per shot rather than folded into
+  // `damage`: the same shot hits a ground enemy at the base value.
+  flyingDamageMult: number;
   // Addon-driven stat modifiers
   critChance: number;
   goldOnCrit: number;
@@ -353,8 +359,8 @@ export class Tower {
   runSlowMult = 1;
   siteDamageMult = 1;
   siteFireRateMult = 1;
-  siteHealthMult = 1;
   siteRangeMult = 1;
+  siteFlyingDamageMult = 1;
   incomingDamageMult = 1;
   // Tile nav-distance to base (−1 unreachable). Null → Euclidean fallback.
   navDistanceToBase: ((tileX: number, tileY: number, flyingHeight?: number) => number) | null = null;
@@ -372,7 +378,8 @@ export class Tower {
   private applyElectricFence?: (enemy: AuraTarget) => void = (enemy: AuraTarget): void => {
     const stats = this.frameStats ?? this.stats;
     if (stats.groundOnly && (enemy.flyingHeight ?? 0) > 0) return;
-    const dealtDamage = enemy.takeDamage(stats.fenceDamage) ?? stats.fenceDamage;
+    const fenceDamage = damageAgainstFlying(stats.fenceDamage, stats.flyingDamageMult, enemy.flyingHeight);
+    const dealtDamage = enemy.takeDamage(fenceDamage) ?? fenceDamage;
     this.creditDamage(dealtDamage);
     if (enemy.applyStun) enemy.applyStun(stats.fenceStun);
   };
@@ -474,7 +481,7 @@ export class Tower {
     const m = typeof milestoneTier === "number" ? milestoneTier : -1;
     // addons are fixed at construction today; joining them keeps the key correct
     // if addon membership ever becomes runtime-mutable, at negligible cost.
-    return `${h}|${r}|${m}|${milestoneLevels}|${this.level}|${this.variant ?? ""}|${this.addons.join(",")}|${this.runDamageMult}|${this.runFireRateMult}|${this.runHealthMult}|${this.runRangeMult}|${this.runSlowMult}|${this.siteDamageMult}|${this.siteFireRateMult}|${this.siteHealthMult}|${this.siteRangeMult}`;
+    return `${h}|${r}|${m}|${milestoneLevels}|${this.level}|${this.variant ?? ""}|${this.addons.join(",")}|${this.runDamageMult}|${this.runFireRateMult}|${this.runHealthMult}|${this.runRangeMult}|${this.runSlowMult}|${this.siteDamageMult}|${this.siteFireRateMult}|${this.siteRangeMult}|${this.siteFlyingDamageMult}`;
   }
 
   clearStatsCache(): void {
@@ -585,7 +592,7 @@ export class Tower {
     damage *= this.runDamageMult * this.siteDamageMult;
     fireRate *= this.runFireRateMult * this.siteFireRateMult;
     range *= this.runRangeMult * this.siteRangeMult;
-    healthMult *= this.runHealthMult * this.siteHealthMult;
+    healthMult *= this.runHealthMult;
     slowAmt *= this.runSlowMult;
     const slowedDuration = slowDur * this.runSlowMult;
 
@@ -611,6 +618,7 @@ export class Tower {
       healthMult,
       armorPiercing,
       groundOnly,
+      flyingDamageMult: this.siteFlyingDamageMult,
       critChance,
       goldOnCrit,
       bounceShot,
@@ -1070,6 +1078,7 @@ export class Tower {
         chain: stats.chain,
         stormcall: stats.stormcall,
         color: this.color,
+        flyingDamageMult: stats.flyingDamageMult,
       });
       return;
     }
@@ -1110,6 +1119,7 @@ export class Tower {
       pierceFalloff: stats.pierceFalloff,
       stunDur: stats.stun,
       splash: stats.splash,
+      flyingDamageMult: stats.flyingDamageMult,
     });
   }
 }
@@ -1124,7 +1134,11 @@ function applyIncomingDamage(tower: Tower, amount: number, attacker?: Enemy): vo
   const stats = tower.stats;
   const attackerFlying = (attacker?.flyingHeight ?? 0) > 0;
   if (stats.thornReflectPct > 0 && attacker && !tower.isGhost && (!stats.groundOnly || !attackerFlying)) {
-    const reflected = incoming * stats.thornReflectPct;
+    const reflected = damageAgainstFlying(
+      incoming * stats.thornReflectPct,
+      stats.flyingDamageMult,
+      attacker.flyingHeight,
+    );
     const dealtDamage = attacker.takeDamage(reflected) ?? reflected;
     tower.creditDamage(dealtDamage);
   }

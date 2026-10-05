@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { getMapDisplayName } from "@/sim/grid/Map.js";
-import { runBonusSummaryParts } from "@/sim/runBonuses.js";
+import { buildingEffectSummaryParts, runBonusSummaryParts } from "@/sim/runBonuses.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -19,7 +19,10 @@ const baseHealthRatio = computed(() =>
   gameStore.maxBaseHealth > 0 ? gameStore.baseHealth / gameStore.maxBaseHealth : 0,
 );
 
-const bonusParts = computed(() => runBonusSummaryParts(gameStore.runBonuses));
+const bonusParts = computed(() => [
+  ...runBonusSummaryParts(gameStore.runBonuses),
+  ...buildingEffectSummaryParts(gameStore.buildingEffects),
+]);
 
 // uiStore.showNotification stamps an absolute expiry, so one timer per
 // notification replaces polling the store: on arrival schedule the remaining

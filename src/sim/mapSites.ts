@@ -3,17 +3,47 @@ import { mulberry32 } from "@/sim/grid/Map.js";
 import { blockCoordinateForTile } from "@/sim/grid/ProgressiveMap.js";
 import type { BonusOffer } from "@/sim/runBonuses.js";
 
-export const BUILDING_KINDS = ["armory", "magazine", "ward", "beacon"] as const;
+export const BUILDING_KINDS = ["armory", "magazine", "beacon", "foundry", "clocktower", "aviary"] as const;
 export type BuildingKind = (typeof BUILDING_KINDS)[number];
 
-export const BUILDING_DAMAGE_MULT = 1.2;
-export const BUILDING_FIRE_RATE_MULT = 1.2;
-export const BUILDING_HEALTH_MULT = 1.25;
-export const BUILDING_RANGE_MULT = 1.15;
+// Which tower stat a kind multiplies. Adjacent towers take `adjacentMult` per
+// building they touch. A building that has a live tower beside it is powered, and
+// every powered building pays one of two whole-board halves to every tower:
+// `activeMult` per powered building of its own kind, or `boardRampMult` raised to
+// the count of every powered building on the board. A kind with no adjacent effect
+// (a foundry, a clocktower) is a tether: nothing at all until a tower is built
+// next to it.
+export type BuildingBonusField = "damageMult" | "fireRateMult" | "rangeMult" | "flyingDamageMult";
+
+export interface BuildingEffect {
+  field: BuildingBonusField;
+  // × per powered building, for the towers touching it.
+  adjacentMult: number;
+  // × per powered building of this kind, to every tower. Half the adjacent bonus, so
+  // powering a building is worth something to the whole board without matching the
+  // towers standing on it. 1 when the kind's whole-board half is a board ramp.
+  activeMult: number;
+  // × per powered building of ANY kind, to every tower, applied once while at least
+  // one building of this kind is powered. A foundry counts the whole board, not just
+  // the other foundries. 1 unless this kind is a ramp.
+  boardRampMult: number;
+}
+
+export const BUILDING_EFFECTS: Record<BuildingKind, BuildingEffect> = {
+  armory: { field: "damageMult", adjacentMult: 1.2, activeMult: 1.1, boardRampMult: 1 },
+  magazine: { field: "fireRateMult", adjacentMult: 1.2, activeMult: 1.1, boardRampMult: 1 },
+  beacon: { field: "rangeMult", adjacentMult: 1.15, activeMult: 1.075, boardRampMult: 1 },
+  foundry: { field: "damageMult", adjacentMult: 1, activeMult: 1, boardRampMult: 1.01 },
+  clocktower: { field: "fireRateMult", adjacentMult: 1, activeMult: 1, boardRampMult: 1.01 },
+  aviary: { field: "flyingDamageMult", adjacentMult: 1.2, activeMult: 1.1, boardRampMult: 1 },
+};
 
 // Chebyshev gap so two buildings' 8-neighborhoods do not share a tile.
 const BUILDING_CLEARANCE = 3;
 const BUILDING_NEIGHBOR_MINIMUM = 3;
+// One ring serves both rules on purpose: a tower is adjacent to a building exactly
+// when it is on one of the 8 tiles that can power it, so widening one widens both.
+export const BUILDING_NEIGHBOR_RING = 1;
 export const PACKAGE_CLICK_RADIUS_TILES = 0.75;
 
 // Spacing a board is asked for, best first, and how far it may give way when the
@@ -52,8 +82,8 @@ const GENERATED_CLEARANCES: SiteClearances = {
 // runs through it, so the rings a generated board can afford leave no legal tile
 // inside a block at all: a cache pool of zero on all 12 variants. Every ring that
 // pushes a site away from the corridor, the base, or a spawn drops to 0 here.
-// Building clearance and the neighbor minimum stay put, so neighborBonus keeps
-// its one-building-per-tower-tile rule on both kinds of board.
+// Building clearance and the building neighbor minimum stay put, so a building
+// still needs room for the tower that powers it.
 const PROGRESSIVE_CLEARANCES: SiteClearances = {
   cachePathGap: 0,
   cacheBase: 0,
@@ -77,32 +107,70 @@ const MAX_CACHES = 10;
 export const BUILDING_LABELS: Record<BuildingKind, string> = {
   armory: "Armory",
   magazine: "Magazine",
-  ward: "Ward",
   beacon: "Beacon",
+  foundry: "Foundry",
+  clocktower: "Clocktower",
+  aviary: "Aviary",
 };
 
 export const BUILDING_COLORS: Record<BuildingKind, string> = {
   armory: "#e07040",
   magazine: "#d0a040",
-  ward: "#40c0a0",
   beacon: "#70a0e0",
+  foundry: "#d05050",
+  clocktower: "#b070e0",
+  aviary: "#40c0a0",
 };
 
 // Text-presentation-default code points so an SVG <text> draws them monochrome
 // instead of as color emoji. Theme JSON stays untouched: these are procedural marks.
-export const BUILDING_ICONS: Record<BuildingKind, string> = { armory: "⚔", magazine: "✸", ward: "⛨", beacon: "✦" };
+export const BUILDING_ICONS: Record<BuildingKind, string> = {
+  armory: "⚔",
+  magazine: "✸",
+  beacon: "✦",
+  foundry: "⚒",
+  clocktower: "⧗",
+  aviary: "⟁",
+};
 
 export const CACHE_ICON = "▣";
 
-export const BUILDING_DETAILS: Record<BuildingKind, string> = {
-  armory: "adjacent towers deal ×1.20 damage",
-  magazine: "adjacent towers fire ×1.20 faster",
-  ward: "adjacent towers have ×1.25 health",
-  beacon: "adjacent towers have ×1.15 range",
+// What the kind does to the towers touching it, then what it does to the whole
+// board while powered. A tethered kind states only the powered half.
+export const BUILDING_DETAILS: Record<BuildingKind, { adjacent: string; active: string }> = {
+  armory: { adjacent: "adjacent towers deal ×1.20 damage", active: "×1.10 damage to every tower while active" },
+  magazine: { adjacent: "adjacent towers fire ×1.20 faster", active: "×1.10 fire rate to every tower while active" },
+  beacon: { adjacent: "adjacent towers have ×1.15 range", active: "×1.075 range to every tower while active" },
+  foundry: { adjacent: "", active: "every active building adds ×1.01 damage to all towers while a Foundry is active" },
+  clocktower: {
+    adjacent: "",
+    active: "every active building adds ×1.01 fire rate to all towers while a Clocktower is active",
+  },
+  aviary: {
+    adjacent: "adjacent towers deal ×1.20 damage to flyers",
+    active: "×1.10 to flyers from every tower while active",
+  },
 };
 
-export function buildingBlurb(kind: BuildingKind): string {
-  return `${BUILDING_LABELS[kind]}: ${BUILDING_DETAILS[kind]}`;
+export const BUILDING_INACTIVE_DETAIL = "inactive — no tower beside it";
+
+function capitalize(detail: string): string {
+  return `${detail.charAt(0).toUpperCase()}${detail.slice(1)}`;
+}
+
+// One line per half, then the powered state. This is the whole copy source for the
+// hover tooltip and the glyph aria-label, so they cannot drift apart.
+export function buildingDetailLines(kind: BuildingKind, active: boolean): string[] {
+  const details = BUILDING_DETAILS[kind];
+  const lines: string[] = [];
+  if (details.adjacent) lines.push(`${capitalize(details.adjacent)}.`);
+  if (details.active) lines.push(`${capitalize(details.active)}.`);
+  if (!active) lines.push(`${capitalize(BUILDING_INACTIVE_DETAIL)}.`);
+  return lines;
+}
+
+export function buildingBlurb(kind: BuildingKind, active: boolean): string {
+  return `${BUILDING_LABELS[kind]}: ${buildingDetailLines(kind, active).join(" ")}`;
 }
 
 export interface MapBuildingSite {
@@ -110,6 +178,10 @@ export interface MapBuildingSite {
   kind: BuildingKind;
   tileX: number;
   tileY: number;
+  // True while a live tower stands on one of the 8 tiles around it. Owned by the
+  // engine (it is the one that knows the tower set); a reconciled site starts
+  // inactive because nothing has recomputed it yet.
+  active: boolean;
 }
 
 export interface MapCacheSite {
@@ -152,15 +224,26 @@ export interface SiteGrid {
   worldToTile(worldX: number, worldY: number): { x: number; y: number };
 }
 
+// What a building does to the towers around it, plus the whole-board half that
+// every powered building pays. `healthMult` is gone: nothing grants tower health.
 export interface NeighborBonus {
   damageMult: number;
   fireRateMult: number;
-  healthMult: number;
   rangeMult: number;
+  flyingDamageMult: number;
 }
 
 export function freshNeighborBonus(): NeighborBonus {
-  return { damageMult: 1, fireRateMult: 1, healthMult: 1, rangeMult: 1 };
+  return { damageMult: 1, fireRateMult: 1, rangeMult: 1, flyingDamageMult: 1 };
+}
+
+// The whole-board half, plus how many buildings are paying it (for the HUD list).
+export interface ActiveBuildingBonus extends NeighborBonus {
+  activeCount: number;
+}
+
+export function freshActiveBuildingBonus(): ActiveBuildingBonus {
+  return { ...freshNeighborBonus(), activeCount: 0 };
 }
 
 export function buildingCountFor(regionId: number, level: number): number {
@@ -194,17 +277,65 @@ function regionLevelProgress(regionId: number, level: number): number {
   return index / (REGION_COUNT * MAPS_PER_REGION - 1);
 }
 
-// Multiplied per adjacent building. BUILDING_CLEARANCE keeps two buildings' rings
-// from overlapping, so a tower tile can sit next to at most one building and this
-// loop never stacks two factors for the same stat.
-export function neighborBonus(tileX: number, tileY: number, buildings: readonly MapBuildingSite[]): NeighborBonus {
-  const bonus = freshNeighborBonus();
+// A building is powered while a live tower stands within the 8-tile ring. A ghost
+// does not count: losing the tower that powered a building drops its whole-board
+// half, which is what makes the tether worth defending. Writes the answer back onto
+// the site, because the render layer reads it from there.
+export function refreshBuildingActivity(
+  buildings: readonly MapBuildingSite[],
+  hasLiveTowerAt: (tileX: number, tileY: number) => boolean,
+): void {
   for (const building of buildings) {
-    if (chebyshev(tileX, tileY, building.tileX, building.tileY) !== 1) continue;
-    if (building.kind === "armory") bonus.damageMult *= BUILDING_DAMAGE_MULT;
-    else if (building.kind === "magazine") bonus.fireRateMult *= BUILDING_FIRE_RATE_MULT;
-    else if (building.kind === "ward") bonus.healthMult *= BUILDING_HEALTH_MULT;
-    else bonus.rangeMult *= BUILDING_RANGE_MULT;
+    building.active = buildingIsActive(building, hasLiveTowerAt);
+  }
+}
+
+export function buildingIsActive(
+  building: MapBuildingSite,
+  hasLiveTowerAt: (tileX: number, tileY: number) => boolean,
+): boolean {
+  for (let deltaY = -BUILDING_NEIGHBOR_RING; deltaY <= BUILDING_NEIGHBOR_RING; deltaY++) {
+    for (let deltaX = -BUILDING_NEIGHBOR_RING; deltaX <= BUILDING_NEIGHBOR_RING; deltaX++) {
+      if (deltaX === 0 && deltaY === 0) continue;
+      if (hasLiveTowerAt(building.tileX + deltaX, building.tileY + deltaY)) return true;
+    }
+  }
+  return false;
+}
+
+// The whole-board half of every powered building, paid by every tower and by the
+// base sentries. Computed once per refresh, not per tower. A ramp field is collected
+// first and applied once at the end, raised to the count of every powered building.
+export function activeBuildingBonus(buildings: readonly MapBuildingSite[]): ActiveBuildingBonus {
+  const bonus = freshActiveBuildingBonus();
+  const rampMults = new Map<BuildingBonusField, number>();
+  for (const building of buildings) {
+    if (!building.active) continue;
+    bonus.activeCount++;
+    const effect = BUILDING_EFFECTS[building.kind];
+    if (effect.boardRampMult !== 1) rampMults.set(effect.field, effect.boardRampMult);
+    if (effect.activeMult !== 1) bonus[effect.field] *= effect.activeMult;
+  }
+  for (const [field, rampMult] of rampMults) {
+    bonus[field] *= rampMult ** bonus.activeCount;
+  }
+  return bonus;
+}
+
+// The adjacent half, on top of the whole-board half. BUILDING_CLEARANCE keeps two
+// buildings' rings from overlapping, so a tower tile can sit next to at most one
+// building and this loop never stacks two factors for the same stat.
+export function neighborBonus(
+  tileX: number,
+  tileY: number,
+  buildings: readonly MapBuildingSite[],
+  global: NeighborBonus = freshNeighborBonus(),
+): NeighborBonus {
+  const bonus: NeighborBonus = { ...global };
+  for (const building of buildings) {
+    if (chebyshev(tileX, tileY, building.tileX, building.tileY) !== BUILDING_NEIGHBOR_RING) continue;
+    const effect = BUILDING_EFFECTS[building.kind];
+    bonus[effect.field] *= effect.adjacentMult;
   }
   return bonus;
 }
@@ -479,7 +610,9 @@ function placeBuildings(input: ReconcileSitesInput, occupied: Set<string>, targe
     if (input.buildings.length >= target) break;
     if (!clearOf(candidate.tileX, candidate.tileY, input.buildings, BUILDING_CLEARANCE)) continue;
     const id = input.allocateId();
-    input.buildings.push({ id, kind: candidate.kind, tileX: candidate.tileX, tileY: candidate.tileY });
+    // Active is the engine's to compute: a site placed on a tile with a tower
+    // beside it is only discovered powered once the next bonus refresh runs.
+    input.buildings.push({ id, kind: candidate.kind, tileX: candidate.tileX, tileY: candidate.tileY, active: false });
     occupied.add(tileKey(candidate.tileX, candidate.tileY));
   }
 }

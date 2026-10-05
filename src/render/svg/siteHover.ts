@@ -1,4 +1,4 @@
-import { BUILDING_DETAILS, BUILDING_LABELS, PACKAGE_CLICK_RADIUS_TILES } from "@/sim/mapSites.js";
+import { BUILDING_LABELS, buildingDetailLines, PACKAGE_CLICK_RADIUS_TILES } from "@/sim/mapSites.js";
 import { cacheOpenGold } from "@/sim/runBonuses.js";
 import type { MapBuildingSnapshot, MapCacheSnapshot, SupplyDropSnapshot } from "@/sim/SimulationSnapshot.js";
 
@@ -79,6 +79,5 @@ export function siteHoverText(ref: SiteHoverRef, sites: SiteHoverSites, currentW
   }
   const building = sites.buildings.find((site) => site.id === ref.id);
   if (!building) return null;
-  const detail = BUILDING_DETAILS[building.kind];
-  return { title: BUILDING_LABELS[building.kind], lines: [`${detail.charAt(0).toUpperCase()}${detail.slice(1)}.`] };
+  return { title: BUILDING_LABELS[building.kind], lines: buildingDetailLines(building.kind, building.active) };
 }

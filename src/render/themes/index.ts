@@ -93,7 +93,7 @@ export interface SpawnPointVisualMeta {
 // 0 0 36 36 space as tile art and drawn at 26 world px. Absent when a theme
 // ships none, and MapSiteLayer then draws its procedural marks instead.
 export interface SiteArtMeta {
-  buildings: Record<"armory" | "magazine" | "ward" | "beacon", string>;
+  buildings: Record<"armory" | "magazine" | "beacon" | "foundry" | "clocktower" | "aviary", string>;
   caches: Record<"sealed" | "unlocked" | "broken", string>;
   supplyDrop?: string;
 }

@@ -20,8 +20,13 @@ function makeCache(
   return { id, tileX: 1, tileY: 1, worldX, worldY, hp: 60, maxHp: 60, offer: OFFER, unlocked: false, ...fields };
 }
 
-function makeBuilding(id: number, worldX: number, worldY: number): MapBuildingSnapshot {
-  return { id, kind: "armory", tileX: 2, tileY: 2, worldX, worldY };
+function makeBuilding(
+  id: number,
+  worldX: number,
+  worldY: number,
+  fields: Partial<MapBuildingSnapshot> = {},
+): MapBuildingSnapshot {
+  return { id, kind: "armory", tileX: 2, tileY: 2, worldX, worldY, active: true, ...fields };
 }
 
 function sitesOf(sites: Partial<SiteHoverSites>): SiteHoverSites {
@@ -81,11 +86,32 @@ describe("site hover copy", () => {
     expect(broken?.lines[0]).toContain("free");
   });
 
-  it("names the building and its buff", () => {
-    const sites = sitesOf({ buildings: [makeBuilding(4, 100, 100)] });
-    const text = siteHoverText({ kind: "building", id: 4 }, sites, 0);
+  it("names the building and both halves of its buff, plus the unpowered state", () => {
+    const powered = sitesOf({ buildings: [makeBuilding(4, 100, 100)] });
+    const text = siteHoverText({ kind: "building", id: 4 }, powered, 0);
     expect(text?.title).toBe("Armory");
-    expect(text?.lines[0]).toBe("Adjacent towers deal ×1.20 damage.");
+    expect(text?.lines).toEqual(["Adjacent towers deal ×1.20 damage.", "×1.10 damage to every tower while active."]);
+
+    const unpowered = sitesOf({ buildings: [makeBuilding(4, 100, 100, { active: false })] });
+    const dim = siteHoverText({ kind: "building", id: 4 }, unpowered, 0);
+    expect(dim?.lines).toEqual([
+      "Adjacent towers deal ×1.20 damage.",
+      "×1.10 damage to every tower while active.",
+      "Inactive — no tower beside it.",
+    ]);
+  });
+
+  it("states only the powered half for a tethered kind", () => {
+    const sites = sitesOf({ buildings: [makeBuilding(5, 100, 100, { kind: "foundry" })] });
+    const text = siteHoverText({ kind: "building", id: 5 }, sites, 0);
+    expect(text?.title).toBe("Foundry");
+    expect(text?.lines).toEqual(["Every active building adds ×1.01 damage to all towers while a Foundry is active."]);
+
+    const inactive = sitesOf({ buildings: [makeBuilding(5, 100, 100, { kind: "foundry", active: false })] });
+    expect(siteHoverText({ kind: "building", id: 5 }, inactive, 0)?.lines).toEqual([
+      "Every active building adds ×1.01 damage to all towers while a Foundry is active.",
+      "Inactive — no tower beside it.",
+    ]);
   });
 
   it("returns nothing for a site consumed since the pointer arrived", () => {

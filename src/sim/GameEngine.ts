@@ -54,8 +54,16 @@ import {
 } from "@/sim/grid/ProgressiveMap.js";
 import type { HostBindings, ThemeBundle } from "@/sim/HostBindings.js";
 import { MapSiteManager } from "@/sim/MapSiteManager.js";
-import type { MapBuildingSite, MapCacheSite, SupplyDropSite } from "@/sim/mapSites.js";
-import { collectWorldKeys, neighborBonus, playerPlacedBlockCount, stampWorldKeysForBlock } from "@/sim/mapSites.js";
+import type { ActiveBuildingBonus, MapBuildingSite, MapCacheSite, SupplyDropSite } from "@/sim/mapSites.js";
+import {
+  activeBuildingBonus,
+  collectWorldKeys,
+  freshActiveBuildingBonus,
+  neighborBonus,
+  playerPlacedBlockCount,
+  refreshBuildingActivity,
+  stampWorldKeysForBlock,
+} from "@/sim/mapSites.js";
 import { CrowdManager, restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdManager.js";
 import { toRecast } from "@/sim/navmesh/coords.js";
 import { FlightDistanceField } from "@/sim/navmesh/FlightDistanceField.js";
@@ -250,6 +258,10 @@ export class GameEngine {
   get mapBuildings(): MapBuildingSite[] {
     return this.sites.mapBuildings;
   }
+
+  // Whole-board half of the powered buildings, as of the last bonus refresh. Read
+  // by the snapshot so the HUD can list what the board is paying.
+  activeBuildings: ActiveBuildingBonus = freshActiveBuildingBonus();
   nextBossAbilityNames: string[] = [];
   // Broken caches waiting for the picker that is currently open to close. The
   // wasPlaying flag is inherited so the whole chain resumes exactly once.
@@ -709,6 +721,7 @@ export class GameEngine {
     // Known one-tick gap: a tower ghosted this frame drops its block now (visuals
     // resolve here) but enemies route through the tile only after next tick's
     // pathVersion rebuild — ghost-to-block is visible one tick later by design.
+    let ghostedTower = false;
     if (this.grid) {
       for (const tower of this.towerManager.towers) {
         if (tower.pendingGhostEffect) {
@@ -718,9 +731,13 @@ export class GameEngine {
           });
           tower.pendingGhostEffect = false;
           this.grid.setTowerGhost(tower.tileX, tower.tileY);
+          ghostedTower = true;
         }
       }
     }
+    // A ghosted tower stops powering the building it stood beside, which reaches
+    // every other tower. One refresh for the tick, however many towers fell.
+    if (ghostedTower) this.refreshAllTowerBonuses();
 
     this.waveGraphTracker?.update(dt);
 
@@ -1493,6 +1510,9 @@ export class GameEngine {
     this.host.syncGridTower(tower.tileX, tower.tileY, false);
     setGold(this.runState, this.runState.gold + expectedCredit);
     this.runState.selectedTowerId = null;
+    // The sold tower may have been the one powering a building, and a building's
+    // whole-board bonus reaches towers nothing else in this call touched.
+    this.refreshAllTowerBonuses();
     this.persistDirty = true;
     return true;
   }
@@ -1535,6 +1555,8 @@ export class GameEngine {
     this.host.syncGridTower(tower.tileX, tower.tileY, false);
     setGold(this.runState, this.runState.gold + refund);
     this.runState.selectedTowerId = null;
+    // Same as a sell: the cancelled tower could have been powering a building.
+    this.refreshAllTowerBonuses();
     this.persistDirty = true;
   }
 
@@ -2248,6 +2270,22 @@ export class GameEngine {
       defense.runHealthMult = bonuses.healthMult;
       defense.recomputeMaxHealth();
     }
+    // A building pays a whole-board bonus to every tower while a live tower stands
+    // beside it, so activity is re-read here rather than per tower: one pass over
+    // the buildings, one product, then every tower takes its adjacent half on top.
+    const buildings = this.mapBuildings;
+    refreshBuildingActivity(buildings, (tileX, tileY) => {
+      const neighbor = this.towerManager?.towerAt(tileX, tileY);
+      return neighbor !== undefined && neighbor !== null && !neighbor.isGhost;
+    });
+    const global = activeBuildingBonus(buildings);
+    this.activeBuildings = global;
+    if (defense) {
+      defense.buildingDamageMult = global.damageMult;
+      defense.buildingFireRateMult = global.fireRateMult;
+      defense.buildingRangeMult = global.rangeMult;
+      defense.buildingFlyingDamageMult = global.flyingDamageMult;
+    }
     const towers = this.towerManager?.towers;
     if (!towers) return;
     for (const tower of towers) {
@@ -2261,11 +2299,11 @@ export class GameEngine {
       tower.runRangeMult = bonuses.rangeMult * (bonuses.typeRangeMult[towerId] ?? 1);
       tower.runSlowMult = bonuses.slowMult;
       tower.incomingDamageMult = bonuses.armorMult;
-      const site = neighborBonus(tower.tileX, tower.tileY, this.mapBuildings);
+      const site = neighborBonus(tower.tileX, tower.tileY, buildings, global);
       tower.siteDamageMult = site.damageMult;
       tower.siteFireRateMult = site.fireRateMult;
-      tower.siteHealthMult = site.healthMult;
       tower.siteRangeMult = site.rangeMult;
+      tower.siteFlyingDamageMult = site.flyingDamageMult;
       const previousMax = tower.maxHealth;
       tower.clearStatsCache();
       if (tower.computeMaxHealth() !== previousMax) tower.recomputeMaxHealth();

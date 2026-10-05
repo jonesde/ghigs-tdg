@@ -1,5 +1,6 @@
 import { TOWER_TYPE_LABELS, type TowerId, TowerIds } from "@/sim/ConstantsTower.js";
 import { mulberry32 } from "@/sim/grid/Map.js";
+import type { ActiveBuildingBonus } from "@/sim/mapSites.js";
 
 // Run-scoped rewards from a supply drop or a map cache. Persistent factors stack
 // by multiplication and reset when the run is initialized. Nothing here is written
@@ -267,6 +268,19 @@ export function formatRunBonusSummary(bonuses: RunBonuses): string {
   return runBonusSummaryParts(bonuses).join("  ");
 }
 
+// The whole-board half of every powered building, as its own entries. Separate
+// from runBonusSummaryParts because these factors come from the board, not from a
+// card, and the HUD lists them together.
+export function buildingEffectSummaryParts(bonus: ActiveBuildingBonus): string[] {
+  if (bonus.activeCount === 0) return [];
+  const parts: string[] = [`Buildings ${bonus.activeCount} active`];
+  pushProduct(parts, "Bldg dmg", bonus.damageMult);
+  pushProduct(parts, "Bldg rate", bonus.fireRateMult);
+  pushProduct(parts, "Bldg range", bonus.rangeMult);
+  pushProduct(parts, "Bldg air", bonus.flyingDamageMult);
+  return parts;
+}
+
 export interface TowerBonusFactors {
   runDamageMult: number;
   runFireRateMult: number;
@@ -275,8 +289,8 @@ export interface TowerBonusFactors {
   runSlowMult: number;
   siteDamageMult: number;
   siteFireRateMult: number;
-  siteHealthMult: number;
   siteRangeMult: number;
+  siteFlyingDamageMult: number;
   incomingDamageMult: number;
 }
 
@@ -284,8 +298,11 @@ export function formatTowerBonusLine(factors: TowerBonusFactors): string {
   const parts: string[] = [];
   pushProduct(parts, "dmg", factors.runDamageMult * factors.siteDamageMult);
   pushProduct(parts, "rate", factors.runFireRateMult * factors.siteFireRateMult);
-  pushProduct(parts, "hp", factors.runHealthMult * factors.siteHealthMult);
+  // Health is run cards only now: no building grants it, so the typed health record
+  // folded into runHealthMult is the whole number and there is nothing to multiply.
+  pushProduct(parts, "hp", factors.runHealthMult);
   pushProduct(parts, "range", factors.runRangeMult * factors.siteRangeMult);
+  pushProduct(parts, "air", factors.siteFlyingDamageMult);
   pushProduct(parts, "slow", factors.runSlowMult);
   pushProduct(parts, "taken", factors.incomingDamageMult);
   return parts.join(" ");

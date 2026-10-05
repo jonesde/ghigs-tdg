@@ -61,6 +61,7 @@ export interface BaseDefenseProjectileSpawn {
     color: string;
     icon: string;
     towerId: string;
+    flyingDamageMult?: number;
   }): void;
 }
 
@@ -100,6 +101,12 @@ export class BaseDefense {
   levelOneHealth = 0;
   // Fortify multiplies the level curve. 1 until a persistent health card is picked.
   runHealthMult = 1;
+  // Whole-board half of the powered buildings. The sentries sit on the base, so they
+  // are never adjacent to a building and these are the only building bonuses they get.
+  buildingDamageMult = 1;
+  buildingFireRateMult = 1;
+  buildingRangeMult = 1;
+  buildingFlyingDamageMult = 1;
   readonly sentries: BaseSentryRuntime[] = [];
 
   private levelCosts: number[] = [];
@@ -191,7 +198,7 @@ export class BaseDefense {
     const tier = SHORT_RANGE_TIERS[Math.min(2, this.level - 1)];
     if (!tier) return null;
     const multiplier = this.level >= BASE_LEVEL_COUNT ? LEVEL_SEVEN_DAMAGE_MULTIPLIER : 1;
-    return scaledGun(tier, multiplier);
+    return this.applyBuildingBonus(scaledGun(tier, multiplier));
   }
 
   longGun(): BaseGunStats | null {
@@ -199,7 +206,16 @@ export class BaseDefense {
     const tier = LONG_RANGE_TIERS[Math.min(2, this.level - LONG_RANGE_UNLOCK_LEVEL)];
     if (!tier) return null;
     const multiplier = this.level >= BASE_LEVEL_COUNT ? LEVEL_SEVEN_DAMAGE_MULTIPLIER : 1;
-    return scaledGun(tier, multiplier);
+    return this.applyBuildingBonus(scaledGun(tier, multiplier));
+  }
+
+  private applyBuildingBonus(stats: BaseGunStats): BaseGunStats {
+    return {
+      range: stats.range * this.buildingRangeMult,
+      damage: stats.damage * this.buildingDamageMult,
+      fireRate: stats.fireRate * this.buildingFireRateMult,
+      projSpeed: stats.projSpeed,
+    };
   }
 
   update(
@@ -292,6 +308,7 @@ export class BaseDefense {
       targetY: target.y,
       color: presentation.color,
       icon: "•",
+      flyingDamageMult: this.buildingFlyingDamageMult,
     });
     sentry.fireAnimTime = simSeconds;
     sound.playSound(presentation.sound);

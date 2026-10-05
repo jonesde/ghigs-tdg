@@ -15,8 +15,10 @@ function siteArt(): SiteArtMeta {
     buildings: {
       armory: '<svg viewBox="0 0 36 36"><rect id="art-armory"/></svg>',
       magazine: '<svg viewBox="0 0 36 36"><rect id="art-magazine"/></svg>',
-      ward: '<svg viewBox="0 0 36 36"><rect id="art-ward"/></svg>',
       beacon: '<svg viewBox="0 0 36 36"><rect id="art-beacon"/></svg>',
+      foundry: '<svg viewBox="0 0 36 36"><rect id="art-foundry"/></svg>',
+      clocktower: '<svg viewBox="0 0 36 36"><rect id="art-clocktower"/></svg>',
+      aviary: '<svg viewBox="0 0 36 36"><rect id="art-aviary"/></svg>',
     },
     caches: {
       sealed: '<svg viewBox="0 0 36 36"><rect id="art-sealed"/></svg>',
@@ -175,7 +177,8 @@ describe("siteGlyphMarkup", () => {
     offer,
     unlocked: false,
   };
-  const building = { id: 7, tileX: 5, tileY: 6, worldX: 198, worldY: 234, kind: "beacon" as const };
+  const building = { id: 7, tileX: 5, tileY: 6, worldX: 198, worldY: 234, kind: "beacon" as const, active: true };
+  const unpoweredBuilding = { ...building, active: false };
 
   it("renders the same markup with or without theme site art", () => {
     const withArt = siteGlyphMarkup([drop], [cache], [building], 3, siteArt());
@@ -188,8 +191,27 @@ describe("siteGlyphMarkup", () => {
     expect(withoutArt).toContain(`>${BUILDING_ICONS.beacon}</text>`);
     for (const markup of [withArt, withoutArt]) {
       expect(markup).toContain('aria-label="Boss package');
-      expect(markup).toContain('aria-label="Beacon: adjacent towers have');
+      expect(markup).toContain('aria-label="Beacon: Adjacent towers have');
       expect(markup).toContain("Cache 40/40");
+      expect(markup).not.toContain('opacity="0.45"');
+    }
+  });
+
+  it("wraps an unpowered building at reduced opacity on both the art and procedural paths", () => {
+    const withArt = siteGlyphMarkup([], [], [unpoweredBuilding], 3, siteArt());
+    expect(withArt).toContain('<g opacity="0.45"><use href="#site-building-beacon" x="185" y="221"');
+    expect(withArt).toContain("</use></g>");
+
+    const withoutArt = siteGlyphMarkup([], [], [unpoweredBuilding], 3, null);
+    expect(withoutArt).toContain(
+      `<g opacity="0.45"><rect x="185" y="221" width="26" height="26" fill="${BUILDING_COLORS.beacon}"`,
+    );
+    expect(withoutArt).toContain(`>${BUILDING_ICONS.beacon}</text></g>`);
+
+    for (const markup of [withArt, withoutArt]) {
+      expect(markup).toContain("Inactive — no tower beside it.");
+      // Exactly one glyph, so the wrapper is not double-applied.
+      expect(markup.match(/opacity="0.45"/g)).toHaveLength(1);
     }
   });
 });

@@ -205,6 +205,16 @@ function buildMeta(engine: GameEngine, receipt: SnapshotCommandReceipt): Snapsho
     layoutGeneration: engine.layoutGeneration,
     ...(baseDefense !== undefined ? { baseDefense } : {}),
     runBonuses: rs.runBonuses,
+    // A fresh DTO per build: engine.activeBuildings is the worker's own object, and
+    // the next refresh replaces it in place on the engine, which must not be
+    // visible through an already-posted snapshot.
+    activeBuildingEffects: {
+      damageMult: engine.activeBuildings.damageMult,
+      fireRateMult: engine.activeBuildings.fireRateMult,
+      rangeMult: engine.activeBuildings.rangeMult,
+      flyingDamageMult: engine.activeBuildings.flyingDamageMult,
+      activeCount: engine.activeBuildings.activeCount,
+    },
     bonusPicker: rs.bonusPicker,
     supplyDrops: snapshotSupplyDrops(engine),
     mapCaches: snapshotCaches(engine),
@@ -254,6 +264,7 @@ function snapshotBuildings(engine: GameEngine): MapBuildingSnapshot[] {
       tileY: building.tileY,
       worldX: world.x,
       worldY: world.y,
+      active: building.active,
     };
   });
 }

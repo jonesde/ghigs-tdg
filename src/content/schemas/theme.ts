@@ -105,7 +105,14 @@ const RegionVisualSchema = z.object({
 // Authored in the same 0 0 36 36 space as tile art, drawn at 26 world px.
 // A theme that omits `sites` keeps the procedural marks in MapSiteLayer.
 const SiteArtSchema = z.object({
-  buildings: z.object({ armory: z.string(), magazine: z.string(), ward: z.string(), beacon: z.string() }),
+  buildings: z.object({
+    armory: z.string(),
+    magazine: z.string(),
+    beacon: z.string(),
+    foundry: z.string(),
+    clocktower: z.string(),
+    aviary: z.string(),
+  }),
   caches: z.object({ sealed: z.string(), unlocked: z.string(), broken: z.string() }),
   supplyDrop: z.string().optional(),
 });

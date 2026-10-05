@@ -91,7 +91,7 @@ function siteSignature(meta: SnapshotMeta, hasSiteArt: boolean): string {
   for (const cache of meta.mapCaches ?? [])
     signature += `c${cache.id}:${cache.tileX},${cache.tileY}:${cache.hp}:${cache.unlocked}`;
   for (const building of meta.mapBuildings ?? [])
-    signature += `b${building.id}:${building.tileX},${building.tileY}:${building.kind}`;
+    signature += `b${building.id}:${building.tileX},${building.tileY}:${building.kind}:${building.active ? 1 : 0}`;
   return signature;
 }
 
@@ -176,15 +176,21 @@ function cacheGlyph(cache: MapCacheSnapshot, currentWave: number, siteArt: SiteA
 }
 
 function buildingGlyph(building: MapBuildingSnapshot, siteArt: SiteArtMeta | null): string {
+  const label = buildingBlurb(building.kind, building.active);
+  const art = siteArt
+    ? siteArtUse(`site-building-${building.kind}`, building.worldX, building.worldY, label)
+    : proceduralBuildingGlyph(building, label);
+  // Dimmed rather than hidden: an unpowered building is still a tile the player has
+  // to build beside, and the tooltip names what it would pay.
+  if (building.active) return art;
+  return `<g opacity="0.45">${art}</g>`;
+}
+
+function proceduralBuildingGlyph(building: MapBuildingSnapshot, label: string): string {
   const half = GLYPH_SIZE / 2;
-  const label = buildingBlurb(building.kind);
-  if (siteArt) {
-    return siteArtUse(`site-building-${building.kind}`, building.worldX, building.worldY, label);
-  }
-  const color = BUILDING_COLORS[building.kind];
   return (
     `<rect x="${building.worldX - half}" y="${building.worldY - half}" width="${GLYPH_SIZE}" height="${GLYPH_SIZE}" ` +
-    `fill="${color}" stroke="#1a1a1a" stroke-width="1" aria-label="${label}"></rect>` +
+    `fill="${BUILDING_COLORS[building.kind]}" stroke="#1a1a1a" stroke-width="1" aria-label="${label}"></rect>` +
     iconText(building.worldX, building.worldY, BUILDING_ICONS[building.kind], "#141414")
   );
 }

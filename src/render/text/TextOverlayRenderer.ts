@@ -3,7 +3,14 @@ import { BUILDING_COLORS } from "@/sim/mapSites.js";
 import type { SimulationSnapshot } from "@/sim/SimulationSnapshot.js";
 import { type TextRenderScale, textPixelX, textPixelY } from "./types.js";
 
-const BUILDING_LETTERS: Record<BuildingKind, string> = { armory: "A", magazine: "M", ward: "W", beacon: "B" };
+const BUILDING_LETTERS: Record<BuildingKind, string> = {
+  armory: "A",
+  magazine: "M",
+  beacon: "B",
+  foundry: "F",
+  clocktower: "C",
+  aviary: "V",
+};
 
 function buildingLetter(kind: BuildingKind): string {
   return BUILDING_LETTERS[kind];
@@ -109,12 +116,16 @@ export class TextOverlayRenderer {
     }
     for (const building of meta.mapBuildings ?? []) {
       ctx.fillStyle = BUILDING_COLORS[building.kind];
+      // An unpowered building pays nothing, so the letter fades with it. The
+      // enclosing save()/restore() puts alpha back for the next frame.
+      ctx.globalAlpha = building.active ? 1 : 0.45;
       ctx.fillText(
         buildingLetter(building.kind),
         textPixelX(building.worldX, scale),
         textPixelY(building.worldY, scale),
       );
     }
+    ctx.globalAlpha = 1;
     ctx.restore();
   }
 

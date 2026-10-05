@@ -150,8 +150,10 @@ describe("Map Theme System", () => {
           buildings: {
             armory: siteTile("armory"),
             magazine: siteTile("magazine"),
-            ward: siteTile("ward"),
             beacon: siteTile("beacon"),
+            foundry: siteTile("foundry"),
+            clocktower: siteTile("clocktower"),
+            aviary: siteTile("aviary"),
           },
           caches: { sealed: siteTile("sealed"), unlocked: siteTile("unlocked"), broken: siteTile("broken") },
           supplyDrop: siteTile("drop"),
@@ -168,6 +170,8 @@ describe("Map Theme System", () => {
       expect(tiles.terrain1[1]).toContain("#333333");
       expect(tiles.terrain2).toHaveLength(1);
       expect(normalized.sites?.buildings.armory).toBe(siteTile("armory"));
+      expect(normalized.sites?.buildings.clocktower).toBe(siteTile("clocktower"));
+      expect(normalized.sites?.buildings.aviary).toBe(siteTile("aviary"));
       expect(normalized.sites?.caches.broken).toBe(siteTile("broken"));
       expect(normalized.sites?.supplyDrop).toBe(siteTile("drop"));
     });
@@ -916,13 +920,15 @@ describe("Theme tile art", () => {
     it(`${label} ships 36x36 art for every map site`, () => {
       const theme = RawMapThemeSchema.parse(raw);
       const sites = theme.sites;
-      expect(new Set(Object.keys(sites?.buildings ?? {}))).toEqual(new Set(["armory", "magazine", "ward", "beacon"]));
+      expect(new Set(Object.keys(sites?.buildings ?? {}))).toEqual(
+        new Set(["armory", "magazine", "beacon", "foundry", "clocktower", "aviary"]),
+      );
       expect(new Set(Object.keys(sites?.caches ?? {}))).toEqual(new Set(["sealed", "unlocked", "broken"]));
       // Drawn at 26 world px inside a 26px box, so the 36x36 viewBox is what
       // scales the glyph: art authored in any other box clips.
       const images = [...Object.values(sites?.buildings ?? {}), ...Object.values(sites?.caches ?? {})];
       if (sites?.supplyDrop) images.push(sites.supplyDrop);
-      expect(images).toHaveLength(8);
+      expect(images).toHaveLength(10);
       for (const image of images) {
         expect(image).toContain('<svg viewBox="0 0 36 36">');
       }
@@ -1139,8 +1145,10 @@ describe("Map site art symbols", () => {
       buildings: {
         armory: "<svg viewBox='0 0 36 36'><rect/></svg>",
         magazine: "<svg viewBox='0 0 36 36'><rect/></svg>",
-        ward: "<svg viewBox='0 0 36 36'><rect/></svg>",
         beacon: "<svg viewBox='0 0 36 36'><rect/></svg>",
+        foundry: "<svg viewBox='0 0 36 36'><rect/></svg>",
+        clocktower: "<svg viewBox='0 0 36 36'><rect/></svg>",
+        aviary: "<svg viewBox='0 0 36 36'><rect/></svg>",
       },
       caches: {
         sealed: "<svg viewBox='0 0 36 36'><rect/></svg>",
@@ -1150,7 +1158,7 @@ describe("Map site art symbols", () => {
       supplyDrop: "<svg viewBox='0 0 36 36'><rect/></svg>",
     };
     const defs = defsForTheme(theme);
-    for (const kind of ["armory", "magazine", "ward", "beacon"]) {
+    for (const kind of ["armory", "magazine", "beacon", "foundry", "clocktower", "aviary"]) {
       expect(defs).toContain(`<symbol id="site-building-${kind}" viewBox="0 0 36 36">`);
     }
     for (const state of ["sealed", "unlocked", "broken"]) {
