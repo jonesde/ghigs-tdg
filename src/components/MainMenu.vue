@@ -109,9 +109,12 @@ function openSkillTree() {
     <div class="menu-home">
       <header class="home-header">
         <h1 class="game-title">
-          <span class="game-title-t1">Ground Held</span>
-          <span class="game-title-t2">is</span>
-          <span class="game-title-t1">Ground Stood</span>
+          <span class="game-title-acronym" aria-hidden="true">GHiGS</span>
+          <span class="game-title-row">
+            <span class="game-title-t1">Ground Held</span>
+            <span class="game-title-t2">is</span>
+            <span class="game-title-t1">Ground Stood</span>
+          </span>
         </h1>
       </header>
 
@@ -250,16 +253,32 @@ function openSkillTree() {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 10px;
   text-align: center;
   line-height: 1;
   color: var(--color-text);
   text-shadow: var(--title-shadow);
 }
 
+.game-title-acronym {
+  font-size: 72px;
+  font-weight: 900;
+  letter-spacing: 6px;
+  color: var(--color-accent);
+  text-shadow: var(--title-shadow), 0 0 24px var(--color-accent);
+}
+
+.game-title-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
 .game-title-t1 {
   color: var(--title-color, var(--color-text));
   text-shadow: var(--title-shadow), 0 0 24px var(--title-color, var(--color-accent-border));
-  font-size: var(--font-display);
+  font-size: 40px;
   font-weight: 900;
   letter-spacing: 1px;
 }
@@ -268,17 +287,16 @@ function openSkillTree() {
   font-size: var(--font-title);
   font-weight: 700;
   letter-spacing: 4px;
-  margin: 6px 0;
 }
 
 .game-title-t1:first-of-type {
   --title-color: #5aa95a;
-  transform: translateX(-48px);
+  transform: translateX(-24px);
 }
 
 .game-title-t1:last-of-type {
   --title-color: #9c4e36;
-  transform: translateX(48px);
+  transform: translateX(24px);
 }
 
 .home-footer {
@@ -556,8 +574,12 @@ function openSkillTree() {
     margin-bottom: 58px;
   }
 
-  .game-title-t1 {
+  .game-title-acronym {
     font-size: 48px;
+  }
+
+  .game-title-t1 {
+    font-size: 30px;
   }
 
   .game-title-t2 {
@@ -565,11 +587,11 @@ function openSkillTree() {
   }
 
   .game-title-t1:first-of-type {
-    transform: translateX(-24px);
+    transform: translateX(-12px);
   }
 
   .game-title-t1:last-of-type {
-    transform: translateX(24px);
+    transform: translateX(12px);
   }
 
   .home-footer {
