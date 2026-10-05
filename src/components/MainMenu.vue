@@ -254,6 +254,9 @@ function openSkillTree() {
 
 .game-title {
   --title-shadow: 0 1px 10px rgba(0, 0, 0, 0.8);
+  /* Fills the header so the title row below has a definite width to share; without it the
+     row shrink-wraps and the two 1fr tracks get no slack, leaving "is" only near-centered. */
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -270,13 +273,18 @@ function openSkillTree() {
   letter-spacing: 6px;
   color: var(--color-accent);
   text-shadow: var(--title-shadow), 0 0 24px var(--color-accent);
+  /* Letter-spacing leaves a trailing gap after the last glyph, so the box center sits right
+     of the glyph center. Indenting by the letter-spacing widens the line by the same amount,
+     landing the glyph run on the box center, which is the title row's center axis. */
+  text-indent: 6px;
 }
 
 .game-title-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  column-gap: 24px;
   align-items: baseline;
-  flex-wrap: wrap;
-  justify-content: center;
+  align-self: stretch;
 }
 
 .game-title-t1 {
@@ -291,16 +299,22 @@ function openSkillTree() {
   font-size: var(--font-title);
   font-weight: 700;
   letter-spacing: 4px;
+  color: var(--color-accent);
+  text-shadow: var(--title-shadow), 0 0 24px var(--color-accent);
+  text-indent: 4px;
+  /* Optical nudge right of the geometric center. Transform rather than a margin so the
+     column-gap on both sides of the block is untouched. */
+  transform: translateX(4px);
 }
 
 .game-title-t1:first-of-type {
   --title-color: #5aa95a;
-  transform: translateX(-24px);
+  justify-self: end;
 }
 
 .game-title-t1:last-of-type {
   --title-color: #9c4e36;
-  transform: translateX(24px);
+  justify-self: start;
 }
 
 .home-footer {
@@ -588,14 +602,11 @@ function openSkillTree() {
 
   .game-title-t2 {
     font-size: 24px;
+    transform: translateX(2px);
   }
 
-  .game-title-t1:first-of-type {
-    transform: translateX(-12px);
-  }
-
-  .game-title-t1:last-of-type {
-    transform: translateX(12px);
+  .game-title-row {
+    column-gap: 12px;
   }
 
   .home-footer {
