@@ -16,13 +16,16 @@ from region_map_art import (
     angle_arc,
     barn_house,
     circle,
+    conifer_unit,
     crop_field,
     dead_tree_unit,
     ellipse,
     line,
     path_shape,
+    pitched_house,
     polygon,
     rect,
+    onion_dome_house,
     regular_polygon_points,
     right_angle_mark,
     sampled_wave_path,
@@ -63,6 +66,8 @@ def theme_menu_background(theme_id: str) -> str:
         return polymath_menu_background()
     if theme_id == "the-aftermath":
         return aftermath_menu_background()
+    if theme_id == "chrithmath":
+        return chrithmath_menu_background()
     raise SystemExit(f"unknown theme id: {theme_id}")
 
 
@@ -181,4 +186,48 @@ def aftermath_menu_background() -> str:
             f"{bird_x - 5},{bird_y} {bird_x},{bird_y - 4} {bird_x + 5},{bird_y}",
             "none", "#8a5a3a", 1.6, 0.5,
         ))
+    return menu_svg_root("".join(parts))
+
+
+def chrithmath_menu_background() -> str:
+    parts = [
+        rect(0, 0, MENU_WIDTH, MENU_HEIGHT, 0, "#161e2c"),
+        ellipse(420, 260, 420, 200, "#22304a", opacity=0.3),
+        ellipse(1240, 620, 450, 210, "#22304a", opacity=0.24),
+        ellipse(820, 380, 320, 150, "#28364e", opacity=0.16),
+    ]
+    parts.append(circle(1240, 200, 84, "#e8e2d8", opacity=0.16))
+    parts.append(circle(1240, 200, 66, "#e8e2d8", opacity=0.85))
+    parts.append(circle(1214, 184, 56, "#161e2c", opacity=0.85))
+    for star_x, star_y, star_r in (
+        (180, 140, 2.4), (360, 90, 1.8), (560, 170, 2.2), (760, 110, 1.8),
+        (940, 180, 2.4), (1080, 90, 1.6), (1420, 150, 2.2), (1500, 300, 1.8),
+        (240, 300, 1.6), (480, 260, 1.8), (1380, 420, 1.6), (90, 420, 1.6),
+    ):
+        parts.append(circle(star_x, star_y, star_r, "#d8e0ec", opacity=0.7))
+    for drift_x, drift_y, drift_rx, drift_ry in (
+        (300, 810, 420, 90), (820, 840, 460, 100), (1350, 800, 380, 80),
+    ):
+        parts.append(ellipse(drift_x, drift_y, drift_rx, drift_ry, "#2c3e50", opacity=0.5))
+    for fir_x, fir_y, fir_width, fir_height in (
+        (120, 780, 44, 90), (210, 800, 38, 78), (300, 770, 46, 96), (1440, 780, 44, 92),
+        (1520, 800, 38, 80), (1360, 790, 40, 84),
+    ):
+        parts.append(conifer_unit(fir_x, fir_y, fir_width, fir_height, "#1f322c", "#3a2a1c"))
+    parts.append(pitched_house(380, 690, 120, 150, "#243448", "#1a2530", INK))
+    parts.append(pitched_house(560, 720, 100, 120, "#2a3a4e", "#1a2530", INK))
+    parts.append(barn_house(700, 700, 130, 130, "#3a2e22", "#22180f", INK))
+    parts.append(onion_dome_house(980, 660, 180, 180, "#222c44", "#6a5a30", INK))
+    for window_x, window_y in (
+        (420, 760), (470, 780), (600, 780), (640, 800), (740, 760), (790, 790), (1040, 730),
+    ):
+        parts.append(rect(window_x, window_y, 20, 26, 2, "#e8b464", None, None, 0.75))
+    parts.append(line(380, 690, 560, 720, "#e0b040", 2, 0.4, dash="3 12"))
+    parts.append(line(560, 720, 700, 700, "#e0b040", 2, 0.4, dash="3 12"))
+    parts.append(line(830, 700, 980, 660, "#e0b040", 2, 0.4, dash="3 12"))
+    for bulb_x, bulb_y in (430, 700), (500, 712), (630, 714), (700, 708), (860, 690), (920, 678):
+        parts.append(circle(bulb_x, bulb_y, 3.4, "#e0b040", opacity=0.7))
+    for snow_x in range(40, MENU_WIDTH, 90):
+        parts.append(circle(snow_x + (snow_x % 37), 100 + (snow_x * 7) % 600, 2.4,
+                            "#dfe6f2", opacity=0.5))
     return menu_svg_root("".join(parts))

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { MapsContent } from "@/content/schemas/maps.js";
 import { RawMapThemeSchema } from "@/content/schemas/theme.js";
 import { useSvgStaticContent } from "@/render/svg/useSvgStaticContent.js";
+import chrithmathTheme from "@/render/themes/data/chrithmath.json";
 import defaultTheme from "@/render/themes/data/default-map-theme.json";
 import aftermathTheme from "@/render/themes/data/the-aftermath.json";
 import { hexChannels } from "@/render/themes/fieldFill.js";
@@ -516,15 +517,85 @@ describe("Aftermath theme", () => {
     }
   });
 
-  // The flat-paint rule (no url(# paint servers, no filters) is asserted for both
+  // The flat-paint rule (no url(# paint servers, no filters) is asserted for all
   // shipped themes by "Theme tile art" below, which supersedes the former
   // single-theme copy of that sweep.
+});
+
+describe("Chrithmath theme", () => {
+  const theme = RawMapThemeSchema.parse(chrithmathTheme);
+
+  const towerContract: Record<string, { name: string; color: string; icon: string; duration: number }> = {
+    basic: { name: "Gingerbread Barrage", color: "#c8804a", icon: "▪", duration: 0.3 },
+    ice: { name: "Candy Cane Coil", color: "#e87a7a", icon: "◆", duration: 0.4 },
+    sniper: { name: "The Nutcracker", color: "#b0a08c", icon: "◎", duration: 0.35 },
+    cannon: { name: "Marzipan Mortar", color: "#d8c8a8", icon: "◉", duration: 0.5 },
+    lightning: { name: "Cotton Candy Cloud", color: "#f0c0d0", icon: "⚡", duration: 0.25 },
+    railgun: { name: "Peppermint Railgun", color: "#e8e8f0", icon: "▲", duration: 0.45 },
+    sturdyWall: { name: "Stollen Bastion", color: "#a08050", icon: "◧", duration: 0.3 },
+    shotgunTank: { name: "Jimmie Blaster", color: "#e0a040", icon: "◳", duration: 0.3 },
+  };
+
+  const enemyContract: Record<string, { name: string; color: string; shape: string; walk: number; hit: number }> = {
+    minion: { name: "Tin Soldier", color: "#9fb4c4", shape: "■", walk: 0.8, hit: 0.3 },
+    runner: { name: "All Aboard", color: "#e8b04a", shape: "▸", walk: 0.6, hit: 0.3 },
+    tank: { name: "Grizzly Ted", color: "#b08050", shape: "⬢", walk: 1.0, hit: 0.3 },
+    shielded: { name: "Marble's the Man", color: "#8fd0e8", shape: "●", walk: 0.7, hit: 0.3 },
+    healer: { name: "Music Box Mender", color: "#e8a0c0", shape: "♪", walk: 0.9, hit: 0.3 },
+    boss: { name: "Jack in the Box", color: "#d05050", shape: "★", walk: 1.2, hit: 0.4 },
+    flyer: { name: "Paper Kite", color: "#e8e0c0", shape: "◈", walk: 0.7, hit: 0.3 },
+    jet: { name: "Yo-Yo", color: "#70c0a0", shape: "◆", walk: 0.45, hit: 0.3 },
+    aegis: { name: "Roly-Poly", color: "#c0c8d0", shape: "✚", walk: 0.9, hit: 0.3 },
+  };
+
+  it("keeps the Chrithmath identity and the frame contract", () => {
+    expect(theme.id).toBe("chrithmath");
+    expect(theme.label).toBe("Chrithmath");
+    expect(Object.keys(theme.towers)).toEqual(Object.keys(towerContract));
+    expect(Object.keys(theme.enemies)).toEqual(Object.keys(enemyContract));
+
+    for (const [towerId, expected] of Object.entries(towerContract)) {
+      const tower = theme.towers[towerId];
+      expect(tower).toBeDefined();
+      expect(tower?.name).toBe(expected.name);
+      expect(tower?.color).toBe(expected.color);
+      expect(tower?.icon).toBe(expected.icon);
+      expect(tower?.animation?.duration).toBe(expected.duration);
+      expect(tower?.animation?.frames).toHaveLength(3);
+      expect(tower?.walking?.frames).toHaveLength(1);
+      expect(tower?.walking?.frames[0]?.image).toBe(tower?.animation?.frames[0]?.image);
+    }
+
+    for (const [enemyId, expected] of Object.entries(enemyContract)) {
+      const enemy = theme.enemies[enemyId];
+      expect(enemy).toBeDefined();
+      expect(enemy?.name).toBe(expected.name);
+      expect(enemy?.color).toBe(expected.color);
+      expect(enemy?.shape).toBe(expected.shape);
+      expect(enemy?.walking.duration).toBe(expected.walk);
+      expect(enemy?.walking.frames).toHaveLength(8);
+      expect(enemy?.hitReaction?.duration).toBe(expected.hit);
+      expect(enemy?.hitReaction?.frames).toHaveLength(3);
+      expect(enemy?.attack?.duration).toBe(0.2);
+      expect(enemy?.attack?.frames).toHaveLength(3);
+    }
+
+    expect(theme.regions.map((region) => region.name)).toEqual([
+      "The Yule Vale",
+      "The Sunspice Coast",
+      "The Icon Snows",
+    ]);
+    expect(theme.spawns?.closed.startsWith("<svg")).toBe(true);
+    expect(theme.spawns?.open.startsWith("<svg")).toBe(true);
+    expect(theme.spawns?.transition.startsWith("<svg")).toBe(true);
+  });
 });
 
 describe("Menu background", () => {
   const shippedThemes = [
     { label: "Polymath", raw: defaultTheme },
     { label: "Aftermath", raw: aftermathTheme },
+    { label: "Chrithmath", raw: chrithmathTheme },
   ];
 
   for (const { label, raw } of shippedThemes) {
@@ -548,6 +619,7 @@ describe("Region map layouts", () => {
   const shippedThemes = [
     { label: "Polymath", raw: defaultTheme },
     { label: "Aftermath", raw: aftermathTheme },
+    { label: "Chrithmath", raw: chrithmathTheme },
   ];
 
   for (const { label, raw } of shippedThemes) {
@@ -868,6 +940,7 @@ describe("Theme tile art", () => {
   const shippedThemes = [
     { label: "Polymath", raw: defaultTheme },
     { label: "Aftermath", raw: aftermathTheme },
+    { label: "Chrithmath", raw: chrithmathTheme },
   ];
   const TERRAIN_KINDS = ["terrain1", "terrain2", "terrain3", "terrain4"] as const;
   const TILE_KINDS = ["path", ...TERRAIN_KINDS] as const;

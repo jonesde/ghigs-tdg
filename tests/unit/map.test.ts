@@ -2,6 +2,7 @@
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
 import { resolveThemeMaps } from "@/content/themeMaps.js";
+import chrithmathRaw from "@/render/themes/data/chrithmath.json";
 import aftermathRaw from "@/render/themes/data/the-aftermath.json";
 import { MAP_GEM_MULTIPLIERS, MAP_LEVELS, TOTAL_MAPS } from "@/sim/Constants.js";
 import { BOSS_CADENCE } from "@/sim/ConstantsEnemy.js";
@@ -824,6 +825,13 @@ describe("Map generation", () => {
       const aftermath = resolveThemeMaps(aftermathRaw.maps);
       for (let mapIndex = 0; mapIndex < aftermath.levels.length; mapIndex++) {
         assertCatalogInvariants("aftermath", mapIndex, aftermath.levels[mapIndex], getMap(mapIndex, aftermath));
+      }
+    });
+
+    it("chrithmath catalog maps keep one base door, a folded walk, and covered ground", () => {
+      const chrithmath = resolveThemeMaps(chrithmathRaw.maps);
+      for (let mapIndex = 0; mapIndex < chrithmath.levels.length; mapIndex++) {
+        assertCatalogInvariants("chrithmath", mapIndex, chrithmath.levels[mapIndex], getMap(mapIndex, chrithmath));
       }
     });
   });

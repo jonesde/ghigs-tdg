@@ -16,8 +16,8 @@ This application is primarily AI generated with lazy human auditing (no full hum
 Defend your base against 100 waves of enemies across 36 procedurally-generated maps spanning 3 regions. Place and upgrade 8 tower types with deep specialization trees, earn gems to unlock permanent upgrades in the skill tree, and adjust difficulty to scale both enemy power and gem rewards.
 
 ### Game Features
-- **36 maps** across 3 regions (Verdant Marches, Sunscorch Coast, Thornpeak Wilds), each with increasing difficulty and different gem multipliers
-- **Map themes** selectable on the map-select screen: swaps visual identity (SVG sprites, tile images, base art, display names) of towers, enemies, and maps without affecting gameplay stats
+- **36 maps** across 3 regions, each with increasing difficulty and different gem multipliers (region names are themed — Verdant Marches, Sunscorch Coast, Thornpeak Wilds in the default theme)
+- **Map themes** selectable on the map-select screen: swap the visual identity (SVG sprites, tile images, base art, region names) of towers, enemies, and maps without affecting gameplay stats; the Aftermath and Chrithmath themes also ship a full maps catalog override with their own level boards
 - **8 tower types** with 3 specialization variants each (unlock at level 4)
 - **6 enemy types** including minions, runners, tanks, shielded, healers, and bosses
 - **Gem economy** with milestone rewards, first-time bonuses, and difficulty scaling
