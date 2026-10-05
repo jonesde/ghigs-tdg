@@ -87,6 +87,17 @@ describe("MainMenu", () => {
     expect(wrapper.text()).toContain("Upgrades!");
   });
 
+  it("renders the CC0 license notice and GitHub repo link in the footer", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMainMenu();
+    const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
+    const footer = wrapper.find(".home-footer");
+    expect(footer.text()).toContain("CC0 1.0 Universal");
+    const repoLink = footer.find('a[href="https://github.com/jonesde/ghigs-tdg"]');
+    expect(repoLink.exists()).toBe(true);
+    expect(repoLink.text()).toBe("Source on GitHub");
+  });
+
   it("renders difficulty slider", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMainMenu();
