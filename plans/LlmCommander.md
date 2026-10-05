@@ -108,7 +108,7 @@ during implementation are recorded in §17 and reflected inline below.
   dispatches `action:commanderHold`, which zeroes the sim clock while
   `meta.state` stays `playing`. `GameState.PAUSED` would make the worker skip
   decide. `stopRelay` releases the hold because `terminate()` drops the worker's
-  matching release. Key remains `lol_ya_tdg_save_1`.
+   matching release. Key remains `ghigs_save_1`.
 - Built-in id constants: `BUILTIN_STUBBY = "stubby"`, `BUILTIN_STUBBS = "stubbs"`
   in `src/commanders/index.ts`.
 

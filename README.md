@@ -1,6 +1,6 @@
-# Lo! Yet Another TDG
+# Ground Held is Ground Stood
 
-A browser-based tower defense game with pure SVG rendering, gem-based meta-progression, and an upgrade unlock system. Built with Vue 3, Pinia, and Vite.
+GHiGS is a browser-based tower defense game with pure SVG rendering, gem-based meta-progression, and an upgrade unlock system. Built with Vue 3, Pinia, and Vite.
 
 **Human Goals**
 

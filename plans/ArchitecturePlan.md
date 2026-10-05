@@ -1,6 +1,6 @@
 # Architecture Plan
 
-Status: Living document. Captures the architectural and functional goals of *Lo! Yet Another TDG*, the recommended architecture to introduce now (a TypeScript Web Worker for game logic, no WASM), and the architecture to target as game complexity scales (physics, RPG combat, LLM-driven enemy command). Replaces and supersedes the per-phase Web Worker migration plan circulated earlier; that plan's phase breakdown is folded into the migration phasing section below with corrections.
+Status: Living document. Captures the architectural and functional goals of *Ground Held is Ground Stood* (GHiGS), the recommended architecture to introduce now (a TypeScript Web Worker for game logic, no WASM), and the architecture to target as game complexity scales (physics, RPG combat, LLM-driven enemy command). Replaces and supersedes the per-phase Web Worker migration plan circulated earlier; that plan's phase breakdown is folded into the migration phasing section below with corrections.
 
 This document is descriptive, not prescriptive code. It is meant to be readable in one sitting and to anchor future implementation decisions. Code references use `file:line` format so they can be navigated directly.
 

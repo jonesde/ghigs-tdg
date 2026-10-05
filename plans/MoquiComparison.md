@@ -1,6 +1,6 @@
 # Architecture Comparison: This Tower-Defense Game vs. Moqui Framework
 
-A summary-level comparison of the hobby game in this repository (`lol-ya-tdg`) against
+A summary-level comparison of the hobby game in this repository (`ghigs-tdg`) against
 the Moqui Framework, written from the architecture described in `TECHNICAL.md` and from
 corpus knowledge of Moqui and the design philosophy of its author, David E. Jones
 (also the creator of OFBiz / Open For Business).

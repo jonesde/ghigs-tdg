@@ -13,8 +13,8 @@ import { PersistStateSchema } from "@/content/schemas/persist.js";
 import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
 import { useUiStore } from "@/stores/ui.js";
 
-const OLD_STORAGE_KEY = "gempath_save_v1";
-export const STORAGE_KEY = "lol_ya_tdg_save_1";
+const LEGACY_STORAGE_KEYS = ["gempath_save_v1", "lol_ya_tdg_save_1"];
+export const STORAGE_KEY = "ghigs_save_1";
 const CURRENT_SAVE_VERSION = 6;
 
 export interface TowerUnlocks {
@@ -419,15 +419,19 @@ export const usePersistStore = defineStore("persist", {
 
     load() {
       try {
-        const oldRawData = localStorage.getItem(OLD_STORAGE_KEY);
-        if (oldRawData) {
-          try {
-            const parsed = JSON.parse(oldRawData);
-            const migrated = migrateToCurrent(parsed);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
-            localStorage.removeItem(OLD_STORAGE_KEY);
-          } catch {
-            // Corrupted old save - ignore, proceed with fresh load
+        // Both legacy keys migrate into STORAGE_KEY; if both are present the
+        // later entry (the more recent name) overwrites the earlier migration.
+        for (const legacyKey of LEGACY_STORAGE_KEYS) {
+          const legacyRawData = localStorage.getItem(legacyKey);
+          if (legacyRawData) {
+            try {
+              const parsed = JSON.parse(legacyRawData);
+              const migrated = migrateToCurrent(parsed);
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+              localStorage.removeItem(legacyKey);
+            } catch {
+              // Corrupted legacy save - ignore, proceed with fresh load
+            }
           }
         }
         const rawData = localStorage.getItem(STORAGE_KEY);

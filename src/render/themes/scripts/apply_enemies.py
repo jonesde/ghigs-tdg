@@ -10,7 +10,7 @@ with open('/tmp/enemies_output.json') as f:
     new_enemies = json.load(f)
 
 # Load the original theme file
-with open('/home/jonesde/agents/lol-ya-tdg/src/render/themes/data/the-aftermath.json') as f:
+with open('/home/jonesde/work/ghigs-2/src/render/themes/data/the-aftermath.json') as f:
     theme = json.load(f)
 
 # Verify original enemies exist
@@ -25,12 +25,12 @@ for tower_key, tower_def in new_towers.items():
     theme['towers'][tower_key] = tower_def
 
 # Write back with 2-space indent
-with open('/home/jonesde/agents/lol-ya-tdg/src/render/themes/data/the-aftermath.json', 'w') as f:
+with open('/home/jonesde/work/ghigs-2/src/render/themes/data/the-aftermath.json', 'w') as f:
     json.dump(theme, f, indent=2, ensure_ascii=False)
     f.write('\n')
 
 # Verify the written file
-with open('/home/jonesde/agents/lol-ya-tdg/src/render/themes/data/the-aftermath.json') as f:
+with open('/home/jonesde/work/ghigs-2/src/render/themes/data/the-aftermath.json') as f:
     verified = json.load(f)
 
 print("Verification passed. Enemy keys:", list(verified['enemies'].keys()))

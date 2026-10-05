@@ -83,7 +83,7 @@ describe("PauseMenu", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountPauseMenu();
     const wrapper = mount(PauseMenu, { global: { plugins: [router, pinia] } });
-    expect(wrapper.text()).not.toContain("Lo! Yet Another TDG");
+    expect(wrapper.text()).not.toContain("Ground Held is Ground Stood");
   });
 
   it("renders difficulty slider", () => {

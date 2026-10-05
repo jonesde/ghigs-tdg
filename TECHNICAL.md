@@ -743,7 +743,7 @@ A theme swaps the visual identity of towers, enemies, and map tiles on `/game`, 
 
 ## Persistence
 
-Game progress (gems, unlocks, difficulty, map progress) is saved to `localStorage` under the key `lol_ya_tdg_save_1` (legacy `gempath_save_v1` data is auto-migrated on load). The `persistStore.load()` call in `main.ts` restores saved state on app startup. The `mapThemeStore.preloadDefault()` call in `main.ts` preloads the default theme synchronously before `app.mount()`. Profile reset is available from the main menu.
+Game progress (gems, unlocks, difficulty, map progress) is saved to `localStorage` under the key `ghigs_save_1` (legacy `lol_ya_tdg_save_1` and `gempath_save_v1` data is auto-migrated on load). The `persistStore.load()` call in `main.ts` restores saved state on app startup. The `mapThemeStore.preloadDefault()` call in `main.ts` preloads the default theme synchronously before `app.mount()`. Profile reset is available from the main menu.
 
 ## Game Routes
 

@@ -113,8 +113,9 @@ function openSkillTree() {
     <div class="menu-home">
       <header class="home-header">
         <h1 class="game-title">
-          <span class="game-title-lo">Lo!</span>
-          <span class="game-title-sub">Yet Another TDG</span>
+          <span class="game-title-t1">Ground Held</span>
+          <span class="game-title-t2">is</span>
+          <span class="game-title-t1">Ground Stood</span>
         </h1>
       </header>
 
@@ -260,16 +261,25 @@ function openSkillTree() {
     0 0 24px var(--color-accent-border);
 }
 
-.game-title-lo {
+.game-title-t1 {
   font-size: var(--font-display);
   font-weight: 900;
   letter-spacing: 1px;
 }
 
-.game-title-sub {
+.game-title-t2 {
   font-size: var(--font-title);
   font-weight: 700;
   letter-spacing: 4px;
+  margin: 6px 0;
+}
+
+.game-title-t1:first-of-type {
+  transform: translateX(-48px);
+}
+
+.game-title-t1:last-of-type {
+  transform: translateX(48px);
 }
 
 .home-footer {
@@ -545,6 +555,22 @@ function openSkillTree() {
 
   .home-header {
     margin-bottom: 58px;
+  }
+
+  .game-title-t1 {
+    font-size: 48px;
+  }
+
+  .game-title-t2 {
+    font-size: 24px;
+  }
+
+  .game-title-t1:first-of-type {
+    transform: translateX(-24px);
+  }
+
+  .game-title-t1:last-of-type {
+    transform: translateX(24px);
   }
 
   .home-footer {
