@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import random
 import re
 import sys
 from typing import Callable
@@ -1117,6 +1118,145 @@ def stain(path_data: str, fill: str, opacity: float) -> str:
     return path_shape(path_data, fill, opacity=opacity)
 
 
+# ===== Tile variants =====
+
+TILE_KINDS = ["path", "terrain1", "terrain2", "terrain3", "terrain4"]
+TILE_VARIANT_COUNT = 3
+TILE_SIZE = 36
+# A shipped tile crosses its own cell edge with a low-opacity smear, so rotated
+# neighbours read as one continuous ground tone rather than a seam. Variants keep
+# that treatment, and keep the marks big enough that rotation never turns them
+# into readable scratches.
+EDGE_MOTIF_OPACITY_RANGE = (0.24, 0.28)
+EDGE_MOTIF_RADIUS_Y_RANGE = (3.0, 6.0)
+EDGE_MOTIF_REACH_RANGE = (4.5, 8.0)
+INTERIOR_MOTIF_OPACITY_RANGE = (0.4, 0.6)
+STAIN_OPACITY_RANGE = (0.4, 0.5)
+STAIN_RADIUS_X_RANGE = (5.5, 9.0)
+STAIN_RADIUS_Y_RANGE = (4.0, 7.0)
+STAIN_CENTER_MARGIN = 10.0
+PEBBLE_RADIUS_RANGE = (0.8, 1.1)
+PEBBLE_OPACITY_RANGE = (0.4, 0.45)
+# Interior drifts stay clear of the stain margin so a drift never collides with
+# an edge smear in the same tile.
+DRIFT_CENTER_MARGIN = 9.0
+# Three variants per kind is what both shipped themes ship; the byte budget keeps
+# 45 tile images inside a theme file the renderer still loads eagerly.
+TILE_BYTE_MAX = 1200
+
+
+def tile_seed(region_index: int, kind_index: int, variant_index: int) -> int:
+    """One deterministic seed per region, kind, and variant, so a rerun with the
+    same table reproduces the same art byte for byte."""
+    return 7000 + region_index * 100 + kind_index * 10 + variant_index
+
+
+def stain_blob_path(rng: random.Random, center_x: float, center_y: float,
+                    radius_x: float, radius_y: float) -> str:
+    """A closed four-cubic loop through four jittered cardinal points, smoothed
+    with the standard Catmull-Rom control points, so the blob matches the shape
+    family the shipped stains are drawn from."""
+    points = []
+    for corner_index in range(4):
+        angle = -math.pi / 2 + corner_index * math.pi / 2
+        jitter = rng.uniform(0.86, 1.14)
+        points.append((
+            center_x + math.cos(angle) * radius_x * jitter,
+            center_y + math.sin(angle) * radius_y * jitter,
+        ))
+    commands = [f"M{num(points[0][0])},{num(points[0][1])}"]
+    for corner_index in range(4):
+        previous = points[(corner_index - 1) % 4]
+        current = points[corner_index]
+        following = points[(corner_index + 1) % 4]
+        after_following = points[(corner_index + 2) % 4]
+        first_control = (
+            current[0] + (following[0] - previous[0]) / 6,
+            current[1] + (following[1] - previous[1]) / 6,
+        )
+        second_control = (
+            following[0] - (after_following[0] - current[0]) / 6,
+            following[1] - (after_following[1] - current[1]) / 6,
+        )
+        commands.append(f"C{num(first_control[0])},{num(first_control[1])} "
+                        f"{num(second_control[0])},{num(second_control[1])} "
+                        f"{num(following[0])},{num(following[1])}")
+    return " ".join(commands) + " Z"
+
+
+def tile_variant(region_palette: dict, kind: str, variant_index: int) -> str:
+    """One seeded variant in the same construction as the shipped tile: field
+    fill, three interior drifts, a stain, a pebble, and three edge smears."""
+    kind_index = TILE_KINDS.index(kind)
+    rng = random.Random(tile_seed(region_palette["index"], kind_index, variant_index))
+    field, motif_colors, (drift_radius_x_low, drift_radius_x_high,
+                          drift_radius_y_low, drift_radius_y_high) = region_palette["tiles"][kind]
+
+    center_range = DRIFT_CENTER_MARGIN, TILE_SIZE - DRIFT_CENTER_MARGIN
+    motifs = ""
+    for drift_index in range(3):
+        motifs += smear(
+            rng.uniform(*center_range), rng.uniform(*center_range),
+            rng.uniform(drift_radius_x_low, drift_radius_x_high),
+            rng.uniform(drift_radius_y_low, drift_radius_y_high),
+            rng.choice(motif_colors), rng.uniform(*INTERIOR_MOTIF_OPACITY_RANGE),
+        )
+
+    stain_x = rng.uniform(STAIN_CENTER_MARGIN, TILE_SIZE - STAIN_CENTER_MARGIN)
+    stain_y = rng.uniform(STAIN_CENTER_MARGIN, TILE_SIZE - STAIN_CENTER_MARGIN)
+    motifs += stain(
+        stain_blob_path(rng, stain_x, stain_y,
+                        rng.uniform(*STAIN_RADIUS_X_RANGE), rng.uniform(*STAIN_RADIUS_Y_RANGE)),
+        rng.choice(motif_colors), rng.uniform(*STAIN_OPACITY_RANGE),
+    )
+    motifs += pebble(rng.uniform(*center_range), rng.uniform(*center_range),
+                     rng.uniform(*PEBBLE_RADIUS_RANGE), rng.choice(motif_colors),
+                     rng.uniform(*PEBBLE_OPACITY_RANGE))
+
+    # Three of the four edges, so a rotated tile never stacks all three smears on
+    # one side and leaves a bare edge opposite them.
+    edge_sides = rng.sample(("top", "right", "bottom", "left"), 3)
+    for side in edge_sides:
+        edge_offset = rng.uniform(-3.5, 0.5)
+        if side == "top":
+            center_x, center_y = rng.uniform(*center_range), edge_offset
+        elif side == "right":
+            center_x, center_y = TILE_SIZE - edge_offset, rng.uniform(*center_range)
+        elif side == "bottom":
+            center_x, center_y = rng.uniform(*center_range), TILE_SIZE - edge_offset
+        else:
+            center_x, center_y = edge_offset, rng.uniform(*center_range)
+        motifs += smear(center_x, center_y, rng.uniform(*EDGE_MOTIF_REACH_RANGE),
+                        rng.uniform(*EDGE_MOTIF_RADIUS_Y_RANGE), rng.choice(motif_colors),
+                        rng.uniform(*EDGE_MOTIF_OPACITY_RANGE))
+    return ground_tile(field, motifs)
+
+
+def tile_variants(region_palette: dict, primary_tiles: dict[str, str]) -> dict[str, list[str]]:
+    """The shipped tile art first, then the seeded variants of the same kind."""
+    return {
+        kind: [primary_tiles[kind]] + [
+            tile_variant(region_palette, kind, variant_index)
+            for variant_index in range(1, TILE_VARIANT_COUNT)
+        ]
+        for kind in TILE_KINDS
+    }
+
+
+# One tile kind's variant inputs: field fill, the motif hexes its shipped art
+# draws from, and its interior drift radius band (radius x low, radius x high,
+# radius y low, radius y high).
+TileMotifPalette = dict[str, tuple[str, list[str], tuple[float, float, float, float]]]
+
+
+def region_tile_palette(index: int, tiles: TileMotifPalette) -> dict:
+    """Palette for one region's variants. Each tile kind carries its field fill,
+    the motif hexes its shipped art draws from, and its interior drift radius
+    band — the sand region's dunes are flat and narrow, the ash region's are
+    round, and a variant has to stay inside its kind's own proportions."""
+    return {"index": index, "tiles": tiles}
+
+
 def rustbloom_tiles() -> dict[str, str]:
     # Edge shapes run a few pixels past the viewBox so the symbol clips a small arc.
     path_motifs = (
@@ -1373,6 +1513,51 @@ def ash_tiles() -> dict[str, str]:
     }
 
 
+# Each region's variant palette, read off the shipped art above: the same field
+# fills, the same motif hexes per kind, and a drift radius band taken from the
+# range that kind's shipped drifts actually use.
+RUSTBLOOM_TILE_PALETTE = region_tile_palette(
+    0,
+    {
+        "path": ("#241c18", ["#302620", "#1a1410"], (6.0, 7.0, 5.0, 6.0)),
+        "terrain1": ("#d4b494", ["#e0c4a4", "#c4a888", "#b89878"], (5.0, 11.0, 4.0, 8.0)),
+        "terrain2": ("#b08a68", ["#c4a080", "#a07858", "#8f6c50"], (6.0, 8.0, 4.0, 6.0)),
+        "terrain3": ("#8c6244", ["#9a6848", "#7a5438", "#a07858"], (4.5, 8.0, 3.5, 7.0)),
+        "terrain4": ("#6a4630", ["#7a5438", "#5a3c28", "#806048"], (5.0, 8.0, 4.0, 7.0)),
+    },
+)
+
+SAND_TILE_PALETTE = region_tile_palette(
+    1,
+    {
+        "path": ("#2a241c", ["#3a3428", "#201c16"], (7.0, 11.0, 3.0, 3.4)),
+        "terrain1": ("#e6d4b0", ["#efe0c4", "#dcc8a4", "#c8b48a"], (3.0, 11.0, 2.8, 6.5)),
+        "terrain2": ("#c8b48a", ["#d4c49a", "#b8a47a", "#b09a72"], (2.8, 11.0, 2.6, 6.0)),
+        "terrain3": ("#8e9470", ["#9aa080", "#a8b090", "#7e8662"], (6.0, 9.0, 3.5, 4.5)),
+        "terrain4": ("#5c6848", ["#6a7854", "#7a8868", "#4e5a3e"], (4.0, 8.0, 4.0, 5.0)),
+    },
+)
+
+ASH_TILE_PALETTE = region_tile_palette(
+    2,
+    {
+        "path": ("#222222", ["#2a2a2a", "#1c1c1c"], (5.0, 8.0, 4.0, 6.0)),
+        "terrain1": ("#d2cdc6", ["#ddd8d2", "#c4bfb8", "#b8b3ac"], (5.0, 11.0, 4.0, 7.0)),
+        "terrain2": ("#a8a39c", ["#b4afa8", "#98948c", "#8e8a82"], (6.0, 8.0, 3.0, 8.0)),
+        "terrain3": ("#6e6a64", ["#5a5650", "#625e58", "#7c7872"], (5.0, 8.0, 5.0, 8.0)),
+        "terrain4": ("#3e3e3e", ["#343434", "#4a4a4a", "#52524e"], (5.0, 7.0, 4.5, 7.0)),
+    },
+)
+
+
+def aftermath_region_tiles() -> list[dict[str, list[str]]]:
+    return [
+        tile_variants(RUSTBLOOM_TILE_PALETTE, rustbloom_tiles()),
+        tile_variants(SAND_TILE_PALETTE, sand_tiles()),
+        tile_variants(ASH_TILE_PALETTE, ash_tiles()),
+    ]
+
+
 def rustbloom_base() -> str:
     pad = ellipse(54, 60, 42, 30, "#6a4a34", opacity=0.94)
     crate = rect(22, 62, 16, 12, 1.2, SCRAP_WOOD, INK, 1.0) + line(22, 68, 38, 68, SCRAP_WOOD_DARK, 0.8)
@@ -1459,7 +1644,293 @@ def spawn_art() -> dict[str, str]:
     return {"closed": closed, "open": opened, "transition": transition}
 
 
+# ===== Map site art (drawn at 26 world px from a 36x36 authoring box) =====
+
+SITE_PAD_SHADOW = "rgba(0,0,0,0.28)"
+# Site silhouettes need three steel values to separate a blade edge, a blade
+# face, and a shaded side at 26px, so the site palette carries two more steps
+# than the tower and base art use.
+STEEL_BRIGHT = "#c6ced6"
+STEEL_MID = "#8f979f"
+STEEL_DEEP = "#4f5760"
+LAMP_LENS = "#f6e6b4"
+CACHE_BODY_FILL = "#4a4038"
+CACHE_BODY_FILL_BROKEN = "#33291f"
+CACHE_LID_FILL = "#5c5248"
+CACHE_LID_FILL_OPEN = "#6a5e52"
+CACHE_LID_FILL_BROKEN = "#3f362c"
+CACHE_MOUTH_FILL = "#1c1e22"
+
+BUILDING_KINDS = ["armory", "magazine", "ward", "beacon"]
+CACHE_STATES = ["sealed", "unlocked", "broken"]
+
+
+def site_pad() -> str:
+    """Contact shadow plus a dark steel plate, the ground mark every Aftermath
+    site shares. The plate is dark enough to carry a silhouette on the lightest
+    sand tile and to stay off the darkest ash tile."""
+    return (
+        ellipse(18, 29.4, 10.5, 3.4, SITE_PAD_SHADOW)
+        + rect(7.5, 24.6, 21, 4.6, 1, STEEL_DARK, INK, 0.9)
+        + rect(7.5, 24.6, 21, 1.4, None, STEEL, opacity=0.5)
+    )
+
+
+def armory_building() -> str:
+    """Welded blade rack: two salvaged blades over a hazard-wrapped post. The
+    blades carry the brightest steel in the block, because at 26px the rack has
+    to read off a light sand tile as well as a dark ash one."""
+    return site_pad() + (
+        path_shape("M11.8,6.2 L15.8,8.6 L15.8,21.4 L11.8,23.8 Z", STEEL_BRIGHT, INK, 0.9)
+        + path_shape("M24.2,6.2 L20.2,8.6 L20.2,21.4 L24.2,23.8 Z", STEEL_MID, INK, 0.9)
+        + rect(16, 9.6, 4, 14.4, 0.8, STEEL_DARK, INK, 0.9)
+        + rect(16, 12.6, 4, 5.6, 0.6, HAZARD, INK, 0.8)
+        + rect(11, 22.4, 14, 2.6, 0.9, STEEL_DARK, INK, 0.9)
+        + line(12.8, 8.2, 12.8, 21.4, "#ffffff", 0.5, opacity=0.6)
+        + line(22.4, 9.2, 22.4, 21.4, BONE, 0.5, opacity=0.45)
+    )
+
+
+def magazine_building() -> str:
+    """Three stacked steel ammo cans, each with a bone inventory label."""
+    can_tiers = ((14.8, 4.6, 15.4), (12.0, 4.4, 10.8), (9.0, 4.2, 6.4))
+    parts = [site_pad(), rect(9.4, 20.2, 17.2, 4.8, 0.9, STEEL_DARK, INK, 0.9)]
+    for tier, (can_width, can_height, can_y) in enumerate(can_tiers):
+        can_left = 18 - can_width / 2
+        parts.append(rect(can_left, can_y, can_width, can_height, 0.8,
+                          STEEL if tier % 2 == 0 else STEEL_DEEP, INK, 0.9))
+        parts.append(rect(can_left + 1, can_y + 0.8, can_width - 2, 1.2, None, STEEL_LIGHT, opacity=0.5))
+        parts.append(rect(can_left + can_width / 2 - 2, can_y + 1.9, 4, 1.5, 0.4, BONE, opacity=0.8))
+    parts.append(line(11.4, 22.6, 24.6, 22.6, HAZARD, 1.1, opacity=0.85))
+    parts.append(rect(16.6, 6.4, 2.8, 1.8, 0.6, HAZARD, INK, 0.7))
+    return "".join(parts)
+
+
+def ward_building() -> str:
+    """Riveted scrap-plate shield with a hazard band and welded side plates."""
+    shield = "M18,5.6 L27.4,9.2 L27.4,18.8 Q27.4,25.6 18,28.4 Q8.6,25.6 8.6,18.8 L8.6,9.2 Z"
+    inner = "M18,9.6 L23.8,11.8 L23.8,18.4 Q23.8,22.8 18,24.4 Q12.2,22.8 12.2,18.4 L12.2,11.8 Z"
+    parts = [site_pad(), path_shape(shield, STEEL, INK, 1), path_shape(inner, STEEL_LIGHT, opacity=0.4)]
+    parts.append(rect(9.4, 16.2, 17.2, 3.4, None, HAZARD, opacity=0.85))
+    for stripe_offset in (10.6, 14.6, 18.6, 22.6):
+        parts.append(path_shape(f"M{num(stripe_offset)},19.6 L{num(stripe_offset + 2.6)},16.2",
+                                INK, opacity=0.4))
+    for rivet_index in range(6):
+        angle = math.radians(rivet_index * 60 + 30)
+        parts.append(circle(18 + math.cos(angle) * 10.4, 16.4 + math.sin(angle) * 9.4,
+                            0.9, BONE, INK, 0.4))
+    parts.append(rect(6.6, 12.6, 2.8, 11.6, 0.6, STEEL_DARK, INK, 0.9))
+    parts.append(rect(26.6, 12.6, 2.8, 11.6, 0.6, STEEL_DARK, INK, 0.9))
+    return "".join(parts)
+
+
+def beacon_building() -> str:
+    """Signal lamp on a braced pole: a warm halo, the brightest mark on any tile."""
+    return site_pad() + (
+        ellipse(18, 9.8, 8.4, 7.2, HAZARD, opacity=0.16)
+        + path_shape("M14.6,24.6 L16.4,12.6 L19.6,12.6 L21.4,24.6 Z", STEEL_DARK, INK, 0.9)
+        + line(13.4, 20.6, 22.6, 20.6, STEEL, 1.2)
+        + rect(13.4, 6.4, 9.2, 6.4, 0.9, STEEL, INK, 0.9)
+        + path_shape("M12.6,6.4 L23.4,6.4 L21.8,3.8 L14.2,3.8 Z", STEEL_DARK, INK, 0.9)
+        + rect(14.8, 7.8, 6.4, 3.4, 0.5, LAMP_LENS, INK, 0.7)
+        + rect(14.8, 7.8, 3.0, 3.4, None, "#ffffff", opacity=0.45)
+        + line(17.9, 12.8, 17.9, 24.4, STEEL_LIGHT, 0.6, opacity=0.5)
+    )
+
+
+def cache_body(body_fill: str, lid_fill: str) -> str:
+    return (
+        ellipse(18, 29.4, 10.5, 3.4, SITE_PAD_SHADOW)
+        + rect(7.6, 13.6, 20.8, 13, 1.2, body_fill, INK, 1)
+        + rect(7.6, 13.6, 20.8, 1.8, None, lid_fill)
+        + line(7.6, 18.4, 28.4, 18.4, INK, 0.8, opacity=0.4)
+    )
+
+
+def sealed_cache() -> str:
+    """Closed footlocker: hazard band on the lid, steel hasp, bone padlock."""
+    return cache_body(CACHE_BODY_FILL, CACHE_LID_FILL) + (
+        rect(6.8, 9.6, 22.4, 4.8, 1, CACHE_LID_FILL, INK, 1)
+        + rect(6.8, 10.6, 22.4, 2.6, None, HAZARD, opacity=0.8)
+        + line(6.8, 11.9, 29.2, 11.9, INK, 0.6, opacity=0.35)
+        + path_shape("M16.2,14.6 L16.2,13.2 Q16.2,11.9 17.4,11.9 Q18.6,11.9 18.6,13.2 L18.6,14.6",
+                     STEEL_LIGHT, INK, 0.8)
+        + rect(15.2, 14.2, 5.6, 5, 0.8, STEEL, INK, 0.9)
+        + circle(18, 16.2, 0.9, BONE, INK, 0.5)
+        + rect(9.6, 13.6, 1.4, 13, None, STEEL_DARK, opacity=0.7)
+        + rect(25, 13.6, 1.4, 13, None, STEEL_DARK, opacity=0.7)
+    )
+
+
+def unlocked_cache() -> str:
+    """Opened: the lid is tipped back off a dark mouth, a light shaft comes out,
+    and the card that came from it is still standing in the opening."""
+    return cache_body(CACHE_BODY_FILL, CACHE_LID_FILL) + (
+        path_shape("M9.2,13.6 L26.8,13.6 L28.6,4.4 L7.4,4.4 Z", BONE, opacity=0.15)
+        + rect(8.8, 14.2, 18.4, 2.8, 0.4, CACHE_MOUTH_FILL)
+        + svg_element("rect", {
+            "x": 6.8, "y": 5.6, "width": 22.4, "height": 4.8, "rx": 1,
+            "fill": CACHE_LID_FILL_OPEN, "stroke": INK, "stroke-width": 1, "transform": "rotate(-15 18 8)",
+        })
+        + svg_element("rect", {
+            "x": 14.6, "y": 8.4, "width": 6, "height": 7, "rx": 0.6,
+            "fill": BONE, "stroke": INK, "stroke-width": 0.8, "transform": "rotate(-6 18 11)",
+        })
+        + line(8.8, 17.4, 27.2, 17.4, HAZARD, 0.7, opacity=0.5)
+        + rect(23.6, 18.4, 3.2, 3.2, 0.6, STEEL_DARK, INK, 0.7)
+    )
+
+
+def broken_cache() -> str:
+    """Battered open: lid hanging off one hinge, splintered front, contents out."""
+    return cache_body(CACHE_BODY_FILL_BROKEN, CACHE_LID_FILL_BROKEN) + (
+        path_shape("M7.2,7.4 L28.4,4.6 L28.4,9.4 L7.2,12.2 Z", CACHE_LID_FILL_BROKEN, INK, 1)
+        + rect(8.8, 14.2, 18.4, 2.6, 0.4, CACHE_MOUTH_FILL, opacity=0.8)
+        + path_shape("M12.6,16.6 L15.8,21.4 L13.4,24.2 L17,29 M23.4,16.6 L21.6,22.6 L25.2,26.4",
+                     INK, stroke_width=1.1, opacity=0.7)
+        + svg_element("rect", {
+            "x": 19.4, "y": 15.6, "width": 5, "height": 5.4, "rx": 0.5,
+            "fill": BONE, "stroke": INK, "stroke-width": 0.7, "transform": "rotate(14 22 18)",
+        })
+        + circle(12.8, 27.4, 1.7, HAZARD, INK, 0.4)
+        + circle(18.4, 28.4, 1.3, BONE_DARK, INK, 0.4)
+        + circle(23.4, 26.6, 1.5, STEEL_LIGHT, INK, 0.4)
+    )
+
+
+def supply_drop_svg() -> str:
+    """The boss package: a strapped crate with hazard chevrons. The pulsing ring
+    that marks it stays MapSiteLayer markup, so only the crate is theme art."""
+    parts = [
+        ellipse(18, 29.4, 10.5, 3.4, SITE_PAD_SHADOW),
+        rect(8, 13.2, 20, 14.2, 1.2, SCRAP_WOOD, INK, 1),
+        rect(8, 13.2, 20, 2, None, SCRAP_WOOD_LIGHT, opacity=0.6),
+    ]
+    for stripe_offset in (9.0, 14.5, 20.0):
+        parts.append(path_shape(f"M{num(stripe_offset)},27.4 L{num(stripe_offset + 2.6)},27.4 "
+                                f"L{num(stripe_offset + 7.4)},13.2 L{num(stripe_offset + 4.8)},13.2 Z",
+                                HAZARD, opacity=0.85))
+    parts.append(rect(11.2, 13.2, 2, 14.2, None, STEEL_DARK, opacity=0.9))
+    parts.append(rect(22.8, 13.2, 2, 14.2, None, STEEL_DARK, opacity=0.9))
+    parts.append(rect(14.2, 10.2, 7.6, 3, 0.7, STEEL, INK, 0.9))
+    parts.append(rect(16.8, 9.8, 2.4, 3.8, 0.5, STEEL_LIGHT, INK, 0.8))
+    return "".join(parts)
+
+
+def site_art() -> dict:
+    """The theme's `sites` block: buildings, cache states, and the boss package
+    crate, each wrapped in the 36x36 box the renderer turns into a symbol."""
+    return {
+        "buildings": {
+            kind: tile_svg(draw()) for kind, draw in (
+                ("armory", armory_building),
+                ("magazine", magazine_building),
+                ("ward", ward_building),
+                ("beacon", beacon_building),
+            )
+        },
+        "caches": {
+            state: tile_svg(draw()) for state, draw in (
+                ("sealed", sealed_cache),
+                ("unlocked", unlocked_cache),
+                ("broken", broken_cache),
+            )
+        },
+        "supplyDrop": tile_svg(supply_drop_svg()),
+    }
+
+
 # --- assembly ---------------------------------------------------------------
+
+# The Aftermath world's own map catalog, overriding the default one through
+# ThemeMapsOverrideSchema (src/content/schemas/maps.ts): 36 level configs and
+# the 12 progressive variant seeds. Data rather than art, but it belongs to this
+# script because the script rewrites the whole theme file — without it here a
+# rerun would drop the override and hand the world the default catalog back.
+AFTERMATH_MAP_LEVELS = [
+    (15, 10, 0, 1, "serpentine", 16111),
+    (15, 10, 0, 2, "canyon", 16222),
+    (10, 15, 0, 3, "serpentine", 16333),
+    (15, 10, 0, 4, "split", 16444),
+    (18, 18, 0, 5, "bastion", 16555),
+    (18, 18, 0, 6, "battlefield", 16666),
+    (20, 12, 0, 7, "canyon", 16777),
+    (20, 12, 0, 8, "serpentine", 16888),
+    (12, 20, 0, 9, "split", 16999),
+    (25, 15, 0, 10, "bastion", 160000),
+    (25, 18, 0, 11, "battlefield", 160111),
+    (25, 18, 0, 12, "open", 160222),
+    (15, 10, 1, 1, "serpentine", 26111),
+    (20, 12, 1, 2, "split", 26222),
+    (20, 20, 1, 3, "bastion", 26333),
+    (20, 20, 1, 4, "battlefield", 26444),
+    (25, 15, 1, 5, "open", 26555),
+    (25, 15, 1, 6, "canyon", 26666),
+    (15, 20, 1, 7, "split", 26777),
+    (25, 20, 1, 8, "bastion", 26888),
+    (25, 25, 1, 9, "battlefield", 26999),
+    (25, 25, 1, 10, "open", 260000),
+    (30, 20, 1, 11, "canyon", 260111),
+    (30, 20, 1, 12, "serpentine", 260222),
+    (20, 20, 2, 1, "bastion", 36111),
+    (20, 20, 2, 2, "battlefield", 36222),
+    (25, 15, 2, 3, "open", 36333),
+    (25, 15, 2, 4, "canyon", 36444),
+    (15, 25, 2, 5, "serpentine", 36555),
+    (30, 20, 2, 6, "split", 36666),
+    (25, 25, 2, 7, "open", 36777),
+    (30, 20, 2, 8, "canyon", 36888),
+    (30, 20, 2, 9, "serpentine", 36999),
+    (18, 25, 2, 10, "split", 360000),
+    (30, 20, 2, 11, "battlefield", 360111),
+    (30, 20, 2, 12, "bastion", 360222),
+]
+
+# (regionId, branch level, entry count, seed) per progressive variant.
+AFTERMATH_PROGRESSIVE_VARIANTS = [
+    (0, 1, 1, 16161),
+    (0, 5, 2, 56565),
+    (0, 9, 3, 96969),
+    (0, 12, 4, 960004),
+    (1, 1, 1, 960005),
+    (1, 5, 2, 960006),
+    (1, 9, 3, 960007),
+    (1, 12, 4, 960008),
+    (2, 1, 1, 960009),
+    (2, 5, 2, 960010),
+    (2, 9, 3, 960011),
+    (2, 12, 4, 960012),
+]
+
+
+def maps_override() -> dict:
+    return {
+        "levels": [
+            {
+                "width": width,
+                "height": height,
+                "regionId": region_id,
+                "level": level,
+                "style": style,
+                "seed": seed,
+            }
+            for width, height, region_id, level, style, seed in AFTERMATH_MAP_LEVELS
+        ],
+        "progressive": {
+            "blockSize": 5,
+            "placementInterval": 3,
+            "rerollGoldPerWave": 3,
+            "variants": [
+                {
+                    "regionId": region_id,
+                    "level": level,
+                    "entryCount": entry_count,
+                    "seed": seed,
+                }
+                for region_id, level, entry_count, seed in AFTERMATH_PROGRESSIVE_VARIANTS
+            ],
+        },
+    }
 
 
 def animation_record(duration: float, images: list[str]) -> dict:
@@ -1491,11 +1962,12 @@ def build_theme() -> dict:
             "hitReaction": animation_record(hit_duration, animations["hit"]),
             "attack": animation_record(attack_duration, animations["attack"]),
         }
+    region_tiles = aftermath_region_tiles()
     regions = [
         {
             "id": 0,
             "name": "Rustbloom Wastes",
-            "tiles": rustbloom_tiles(),
+            "tiles": region_tiles[0],
             "base": rustbloom_base(),
             "mapImage": region_map_art.rustbloom_wastes_map(),
             "mapLayout": region_map_art.AFTERMATH_MAP_LAYOUTS[0],
@@ -1503,7 +1975,7 @@ def build_theme() -> dict:
         {
             "id": 1,
             "name": "Sand and Regret",
-            "tiles": sand_tiles(),
+            "tiles": region_tiles[1],
             "base": sand_base(),
             "mapImage": region_map_art.sand_and_regret_map(),
             "mapLayout": region_map_art.AFTERMATH_MAP_LAYOUTS[1],
@@ -1511,7 +1983,7 @@ def build_theme() -> dict:
         {
             "id": 2,
             "name": "Ashen Highs",
-            "tiles": ash_tiles(),
+            "tiles": region_tiles[2],
             "base": ash_base(),
             "mapImage": region_map_art.ashen_highs_map(),
             "mapLayout": region_map_art.AFTERMATH_MAP_LAYOUTS[2],
@@ -1520,10 +1992,12 @@ def build_theme() -> dict:
     return {
         "id": "the-aftermath",
         "label": "Aftermath",
+        "maps": maps_override(),
         "menuBackground": menu_background_art.aftermath_menu_background(),
         "towers": towers,
         "enemies": enemies,
         "regions": regions,
+        "sites": site_art(),
         "spawns": spawn_art(),
     }
 
@@ -1531,6 +2005,7 @@ def build_theme() -> dict:
 def validate_theme(theme: dict) -> None:
     if theme["id"] != "the-aftermath" or theme["label"] != "Aftermath":
         raise SystemExit("theme id/label drifted")
+    validate_maps_override(theme["maps"])
     menu_background_art.assert_menu_paint(theme["menuBackground"], "menu background")
     for tower_id, name, color, icon, fire_duration, walk_duration in TOWER_META:
         tower = theme["towers"][tower_id]
@@ -1561,19 +2036,93 @@ def validate_theme(theme: dict) -> None:
     if [region["name"] for region in theme["regions"]] != ["Rustbloom Wastes", "Sand and Regret", "Ashen Highs"]:
         raise SystemExit("region names drifted")
     for region_index, region in enumerate(theme["regions"]):
-        for tile_name, tile_image in region["tiles"].items():
-            assert_paint(tile_image, f"{region['name']} {tile_name}")
+        if sorted(region["tiles"]) != sorted(TILE_KINDS):
+            raise SystemExit(f"tile kinds drifted: {region['name']}")
+        for tile_name, tile_images in region["tiles"].items():
+            label = f"{region['name']} {tile_name}"
+            if len(tile_images) != TILE_VARIANT_COUNT:
+                raise SystemExit(f"{label}: expected {TILE_VARIANT_COUNT} variants, found {len(tile_images)}")
+            field_fills = set()
+            for variant_index, tile_image in enumerate(tile_images):
+                assert_paint(tile_image, f"{label} v{variant_index}")
+                assert_tile_paint(tile_image, f"{label} v{variant_index}")
+                field_fills.add(first_field_fill(tile_image, f"{label} v{variant_index}"))
+            if len(field_fills) != 1:
+                raise SystemExit(f"{label}: variants disagree on the field fill {sorted(field_fills)}")
         assert_paint(region["base"], region["name"])
         if region["mapLayout"] != region_map_art.AFTERMATH_MAP_LAYOUTS[region_index]:
             raise SystemExit(f"map layout drifted: {region['name']}")
         region_map_art.assert_map_paint(region["mapImage"], f"{region['name']} map image")
     for spawn_name, spawn_image in theme["spawns"].items():
         assert_paint(spawn_image, spawn_name)
+    validate_site_art(theme["sites"])
+
+
+def validate_maps_override(override: dict) -> None:
+    """The world catalog has to survive every rerun of this script, so it is
+    checked against the same shape ThemeMapsOverrideSchema enforces."""
+    if sorted(override) != ["levels", "progressive"]:
+        raise SystemExit("maps override carries fields the theme schema does not allow")
+    if len(override["levels"]) != 36:
+        raise SystemExit(f"maps override needs 36 levels, found {len(override['levels'])}")
+    for level_number, level_config in enumerate(override["levels"], start=1):
+        if (level_config["level"] != (level_number - 1) % 12 + 1
+                or level_config["regionId"] != (level_number - 1) // 12):
+            raise SystemExit(f"maps override level {level_number} is out of region order")
+    progressive = override["progressive"]
+    if progressive["blockSize"] != 5 or len(progressive["variants"]) != 12:
+        raise SystemExit("maps override progressive block drifted")
+
+
+def validate_site_art(sites: dict) -> None:
+    if sorted(sites) != ["buildings", "caches", "supplyDrop"]:
+        raise SystemExit("sites block must carry buildings, caches, and supplyDrop")
+    for group, ids in (("buildings", BUILDING_KINDS), ("caches", CACHE_STATES)):
+        if sorted(sites[group]) != sorted(ids):
+            raise SystemExit(f"sites.{group} must carry {ids}")
+        for site_id in ids:
+            assert_boxed_art(sites[group][site_id], f"site {group}.{site_id}")
+    assert_boxed_art(sites["supplyDrop"], "site supplyDrop")
 
 
 def assert_paint(image: str, label: str) -> None:
     if not image.startswith("<svg ") or "url(#" in image or "<filter" in image:
         raise SystemExit(f"paint constraint failed for {label}")
+
+
+def non_color_numbers(svg: str) -> list[float]:
+    """Every coordinate in the art, ignoring the numbers inside paint values."""
+    stripped = re.sub(r'(?:fill|stroke)="[^"]*"', "", svg)
+    return [float(value) for value in re.findall(r"\d+\.?\d*", stripped)]
+
+
+def assert_boxed_art(image: str, label: str, box_size: float = TILE_SIZE) -> None:
+    assert_paint(image, label)
+    expected_view_box = f'<svg viewBox="0 0 {num(box_size)} {num(box_size)}">'
+    if expected_view_box not in image:
+        raise SystemExit(f"{label}: art must open with the {num(box_size)}x{num(box_size)} viewBox wrapper")
+    for value in non_color_numbers(image):
+        if value > box_size + 0.5:
+            raise SystemExit(f"{label}: coordinate {value} runs past the {num(box_size)}px bounds")
+
+
+def first_field_fill(tile_image: str, label: str) -> str:
+    """The first fill has to be the full-bleed field rect: the region backdrop
+    tone and the progressive block preview both parse exactly that fill."""
+    first_fill = re.search(r'fill="(#[0-9a-fA-F]{3,8})"', tile_image)
+    if not first_fill:
+        raise SystemExit(f"{label}: tile has no hex field fill")
+    tag = tile_image[tile_image.rfind("<", 0, first_fill.start()):tile_image.find(">", first_fill.start())]
+    if not tag.startswith("<rect") or 'width="36"' not in tag or 'height="36"' not in tag:
+        raise SystemExit(f"{label}: first fill is not the full-bleed field rect")
+    return first_fill.group(1)
+
+
+def assert_tile_paint(tile_image: str, label: str) -> None:
+    first_field_fill(tile_image, label)
+    byte_length = len(tile_image.encode("utf-8"))
+    if byte_length > TILE_BYTE_MAX:
+        raise SystemExit(f"{label}: tile is {byte_length} bytes, over the {TILE_BYTE_MAX} byte budget")
 
 
 NODE_PATTERN = re.compile(r'\{\s*"kind": "(\w+)",\s*"level": (\d+),\s*"x": (\d+),\s*"y": (\d+)\s*\}')
@@ -1597,14 +2146,101 @@ def collapse_layout_lines(text: str) -> str:
     return CONNECTION_PATTERN.sub(collapse_connection, text)
 
 
+# Biome keeps a short JSON object on one line, so the maps catalog rows are
+# emitted that way too: a rerun then leaves the file byte identical instead of
+# dirtying it with a pure formatting diff.
+MAPS_LEVEL_PATTERN = re.compile(
+    r'\{\s*"width": (\d+),\s*"height": (\d+),\s*"regionId": (\d+),\s*"level": (\d+),\s*'
+    r'"style": "(\w+)",\s*"seed": (\d+)\s*\}'
+)
+MAPS_VARIANT_PATTERN = re.compile(
+    r'\{\s*"regionId": (\d+),\s*"level": (\d+),\s*"entryCount": (\d+),\s*"seed": (\d+)\s*\}'
+)
+
+
+def collapse_maps_lines(text: str) -> str:
+    def collapse_level(match: re.Match[str]) -> str:
+        width, height, region_id, level, style, seed = match.groups()
+        return (f'{{ "width": {width}, "height": {height}, "regionId": {region_id}, '
+                f'"level": {level}, "style": "{style}", "seed": {seed} }}')
+
+    def collapse_variant(match: re.Match[str]) -> str:
+        region_id, level, entry_count, seed = match.groups()
+        return (f'{{ "regionId": {region_id}, "level": {level}, '
+                f'"entryCount": {entry_count}, "seed": {seed} }}')
+
+    text = MAPS_LEVEL_PATTERN.sub(collapse_level, text)
+    return MAPS_VARIANT_PATTERN.sub(collapse_variant, text)
+
+
 def write_theme(theme: dict) -> None:
-    dumped = collapse_layout_lines(json.dumps(theme, indent=2, ensure_ascii=False))
+    dumped = collapse_layout_lines(collapse_maps_lines(json.dumps(theme, indent=2, ensure_ascii=False)))
     with open(THEME_PATH, "w", encoding="utf-8") as theme_file:
         theme_file.write(dumped + "\n")
 
 
 def sheet_svg(image: str, size: float) -> str:
     return image.replace("<svg ", f'<svg width="{num(size)}" height="{num(size)}" ', 1)
+
+
+def strip_svg_wrapper(svg_text: str) -> str:
+    open_tag = re.match(r"^<svg[^>]*>", svg_text)
+    return svg_text[len(open_tag[0]):-len("</svg>")] if open_tag else svg_text
+
+
+def tile_instance(tile_image: str, rotation: int, size: int, cell_x: int, cell_y: int) -> str:
+    """One tile at one rotation, inlined rather than referenced through a
+    <symbol> so the preview renders in headless browsers."""
+    rotation_group = f'<g transform="rotate({rotation} 18 18)">' if rotation else ""
+    return (f'<svg x="{cell_x}" y="{cell_y}" width="{size}" height="{size}" viewBox="0 0 36 36" '
+            f'overflow="hidden">{rotation_group}{strip_svg_wrapper(tile_image)}{"</g>" if rotation else ""}</svg>')
+
+
+def imul(left: int, right: int) -> int:
+    """32-bit integer multiply, matching Math.imul."""
+    return (left * right) & 0xFFFFFFFF
+
+
+def tile_variant_index(seed: int, tile_x: int, tile_y: int, variant_count: int) -> int:
+    """Mirrors tileVariantIndex in src/render/themes/tileArt.ts."""
+    if variant_count <= 1:
+        return 0
+    mixed = imul(seed ^ (tile_x + 0x85EB), 0x2545F491) ^ imul(tile_y + 0x1B873, 0x27D4EB2F)
+    return mixed % variant_count
+
+
+def tile_rotation(seed: int, tile_x: int, tile_y: int) -> int:
+    """Mirrors progressiveTileRotation in src/sim/grid/ProgressiveMap.ts."""
+    mixed = imul(seed ^ (tile_x + 0x9E37), 0x45D9F3B) ^ imul(tile_y + 0x27D4, 0x27D4EB2D)
+    return mixed % 4
+
+
+def mosaic_kind(column: int, row: int, columns: int, rows: int) -> str:
+    """A contiguous peak with a lane through it, so the mosaic shows the case
+    that matters: one height stamped across a blob of cells."""
+    center_x = (columns - 1) / 2
+    center_y = (rows - 1) / 2
+    distance = math.hypot(column - center_x, row - center_y) / math.hypot(center_x, center_y)
+    height = 1 + min(3, int(round((1 - distance) * 3.2)))
+    on_path_row = row in (rows // 2, rows // 2 + 1)
+    on_path_column = abs(column - columns // 2) <= 1 and (row + column) % 3 != 0
+    return "path" if on_path_row or on_path_column else f"terrain{height}"
+
+
+def mosaic_svg(tiles: dict[str, list[str]], columns: int, rows: int, cell_size: int) -> str:
+    """Stitches a synthetic map through the renderer's own variant and rotation
+    hashes, so the sheet shows what a board actually looks like."""
+    cells = []
+    for row in range(rows):
+        for column in range(columns):
+            variants = tiles[mosaic_kind(column, row, columns, rows)]
+            cells.append(tile_instance(
+                variants[tile_variant_index(9137, column, row, len(variants))],
+                tile_rotation(9137, column, row) * 90,
+                cell_size, column * TILE_SIZE, row * TILE_SIZE,
+            ))
+    return (f'<svg width="{cell_size * columns}" height="{cell_size * rows}" '
+            f'viewBox="0 0 {columns * TILE_SIZE} {rows * TILE_SIZE}" overflow="hidden">{"".join(cells)}</svg>')
 
 
 def contact_sheet(theme: dict) -> str:
@@ -1618,6 +2254,8 @@ def contact_sheet(theme: dict) -> str:
         ".cap{font-size:11px;color:#b8b0a4;}",
         ".seam{display:flex;background:#ff00ff;}",
         ".seam svg{display:block;}",
+        ".mosaic{padding:4px 12px;}",
+        ".mosaic svg{display:block;}",
         ".region-map{padding:4px 12px;}",
         ".region-map svg{display:block;width:1100px;height:700px;}",
         "</style></head><body>",
@@ -1652,28 +2290,48 @@ def contact_sheet(theme: dict) -> str:
                 )
                 parts.append(flipped)
             parts.append("</div>")
-    parts.append("<h2>Tiles. Magenta shows a seam. Rotated copies, then the height row.</h2>")
+    parts.append("<h2>Tiles. Magenta shows a seam. Rotated copies per variant, then the height row.</h2>")
     for region in theme["regions"]:
         parts.append(f'<h2>{region["name"]}</h2>')
-        for tile_name in ("path", "terrain1", "terrain2", "terrain3", "terrain4"):
-            parts.append('<div class="seam">')
-            for turn in (0, 90, 180, 270):
-                turned = region["tiles"][tile_name].replace(
-                    "<svg ", f'<svg width="36" height="36" style="transform:rotate({turn}deg)" ', 1
-                )
-                parts.append(turned)
-            parts.append("</div>")
+        for tile_name in TILE_KINDS:
+            for variant_index, tile_image in enumerate(region["tiles"][tile_name]):
+                parts.append(f'<div class="row"><div class="cap" style="width:140px">{tile_name} v{variant_index}</div>')
+                parts.append('<div class="seam">')
+                for turn in (0, 90, 180, 270):
+                    turned = tile_image.replace(
+                        "<svg ", f'<svg width="36" height="36" style="transform:rotate({turn}deg)" ', 1
+                    )
+                    parts.append(turned)
+                parts.append("</div>")
+                parts.append("</div>")
         parts.append('<div class="seam">')
         for tile_name in ("terrain1", "terrain2", "terrain3", "terrain4", "path"):
-            parts.append(sheet_svg(region["tiles"][tile_name], 48))
+            parts.append(sheet_svg(region["tiles"][tile_name][0], 48))
         parts.append("</div>")
         parts.append('<div class="row">')
         parts.append(sheet_svg(region["base"], 160))
+        parts.append("</div>")
+        parts.append('<div class="mosaic">')
+        parts.append(mosaic_svg(region["tiles"], 12, 8, 72))
         parts.append("</div>")
     parts.append("<h2>Spawns</h2><div class=\"row\">")
     for spawn_name in ("closed", "transition", "open"):
         cell = f'<div class="cell">{sheet_svg(theme["spawns"][spawn_name], 72)}<div class="cap">{spawn_name}</div></div>'
         parts.append(cell)
+    parts.append("</div>")
+    sites = theme["sites"]
+    parts.append("<h2>Map site art at 26, 52, and 104px</h2>")
+    for group, site_ids in (("buildings", BUILDING_KINDS), ("caches", CACHE_STATES)):
+        parts.append(f"<h3>{group}</h3>")
+        for site_id in site_ids:
+            parts.append('<div class="row">')
+            parts.append(f'<div class="cap" style="width:140px">{site_id}</div>')
+            for size in (26, 52, 104):
+                parts.append(sheet_svg(sites[group][site_id], size))
+            parts.append("</div>")
+    parts.append('<div class="row"><div class="cap" style="width:140px">supplyDrop</div>')
+    for size in (26, 52, 104):
+        parts.append(sheet_svg(sites["supplyDrop"], size))
     parts.append("</div>")
     parts.append("<h2>Region maps with node overlay</h2>")
     for region in theme["regions"]:
