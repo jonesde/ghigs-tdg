@@ -246,18 +246,19 @@ function openSkillTree() {
 }
 
 .game-title {
+  --title-shadow: 0 1px 10px rgba(0, 0, 0, 0.8);
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
   line-height: 1;
   color: var(--color-text);
-  text-shadow:
-    0 1px 10px rgba(0, 0, 0, 0.8),
-    0 0 24px var(--color-accent-border);
+  text-shadow: var(--title-shadow);
 }
 
 .game-title-t1 {
+  color: var(--title-color, var(--color-text));
+  text-shadow: var(--title-shadow), 0 0 24px var(--title-color, var(--color-accent-border));
   font-size: var(--font-display);
   font-weight: 900;
   letter-spacing: 1px;
@@ -271,10 +272,12 @@ function openSkillTree() {
 }
 
 .game-title-t1:first-of-type {
+  --title-color: #5aa95a;
   transform: translateX(-48px);
 }
 
 .game-title-t1:last-of-type {
+  --title-color: #9c4e36;
   transform: translateX(48px);
 }
 
