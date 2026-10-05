@@ -7,7 +7,8 @@ A map theme swaps the visual identity of towers, enemies, and map tiles on the `
 1. Create a JSON file under `src/render/themes/data/` (e.g., `fantasy-map-theme.json`).
 2. Register it in `src/render/themes/index.ts`:
    - Add an entry to `MAP_THEME_MANIFEST` with `{ id, label, file }`.
-   - Call `registerThemeLoader(id, () => import('./data/your-theme.json').then(m => m.default))`.
+   - Call `registerThemeLoader(id, () => loadRawTheme(() => import('./data/your-theme.json')))`, which parses the file through `RawMapThemeSchema` before the store sees it.
+   - If the theme carries a `menuBackground`, also add the sidecar file `your-theme-menu.json` (a one-field file duplicating just that `menuBackground`) and call `registerMenuBackgroundLoader(id, () => import('./data/your-theme-menu.json'))` directly below the theme loader. The main-menu card previews load the sidecar instead of the full theme, so the two copies must stay byte-equal; a theme generator writes the sidecar and verifies the equality, and `gen_theme_images.py` round-trips it for the shipped themes.
 
 ## JSON Structure
 
@@ -151,7 +152,7 @@ Spawn art is a 36×36 symbol drawn on top of the path tile. The symbol itself is
 | `menuBackground` | The `/` main menu screen, behind the menu card and theme buttons |
 | `menuBackground` | The theme selection buttons on the main menu, as a faded preview of each theme |
 
-`menuBackground` is the main menu background — an inline `<svg>...</svg>` string or an external SVG ref (same convention as every other image). Author it with a 16:9 `viewBox` (e.g. `0 0 1600 900`) and `preserveAspectRatio="xMidYMid slice"` so it covers the viewport at any aspect ratio. The same image is rendered as a slightly faded preview on each theme selection button, where it is scaled to the button's width and clipped to its shorter height. Keep it low-contrast so the menu card and theme button labels stay readable.
+`menuBackground` is the main menu background — an inline `<svg>...</svg>` string or an external SVG ref (same convention as every other image). Author it with a 16:9 `viewBox` (e.g. `0 0 1600 900`) and `preserveAspectRatio="xMidYMid slice"` so it covers the viewport at any aspect ratio. The same image is rendered as a slightly faded preview on each theme selection button, where it is scaled to the button's width and clipped to its shorter height. Keep it low-contrast so the menu card and theme button labels stay readable. The value is duplicated into the theme's `*-menu.json` sidecar, which is what the main-menu card previews actually load (see File Location & Registration).
 
 ---
 
@@ -199,12 +200,12 @@ Tiles fill each grid cell exactly. Each tile, including path and the tile under 
 
 Two consequences for the art:
 
-- **Nothing structural may reach inside 3px of a cell edge.** Rotated neighbours have to meet on identical pixels, so a stroke or a shape that crosses the band shows as a seam. The Polymath tiles hold this line by keeping every blob out of the band and repeating one rotationally symmetric inner ring instead. The Aftermath tiles take the opposite route on purpose: they cross the edge with low-opacity tonal smears (0.24-0.28), which read as one continuous ground tone under rotation because a smear has no direction to give away. Pick one convention per theme and hold it — mixed conventions seam.
-- **Fine line work does not survive rotation.** Concentric arcs with a per-tile random start angle, and marks under ~2px, read as scratches and speckle rather than ground, because neighbouring cells show unrelated fragments. Large soft shapes do survive: field fill plus a few low-opacity ellipses is what both shipped themes use.
+- **Nothing structural may reach inside 3px of a cell edge.** Rotated neighbours have to meet on identical pixels, so a stroke or a shape that crosses the band shows as a seam. The Polymath tiles hold this line by keeping every blob out of the band and repeating one rotationally symmetric inner ring instead. The Aftermath and Chrithmath tiles take the opposite route on purpose: they cross the edge with low-opacity tonal smears (0.24-0.28), which read as one continuous ground tone under rotation because a smear has no direction to give away. Pick one convention per theme and hold it — mixed conventions seam.
+- **Fine line work does not survive rotation.** Concentric arcs with a per-tile random start angle, and marks under ~2px, read as scratches and speckle rather than ground, because neighbouring cells show unrelated fragments. Large soft shapes do survive: field fill plus a few low-opacity ellipses is what all shipped themes use.
 
 The first `fill="#..."` in a tile string must be the full-bleed 36x36 field rect. The region backdrop tone and the progressive block preview both parse that first fill (`src/render/themes/fieldFill.ts`), so a tile that leads with anything else silently loses its field color.
 
-`terrain1` is the lowest ground and `terrain4` is the highest. Height is a gameplay input, so the four steps need a clear light-to-dark ramp.
+`terrain1` is the lowest ground and `terrain4` is the highest. Height is a gameplay input, so the four steps need a clear light-to-dark ramp: the four terrain fills must read as a monotonically non-increasing luminance ramp from `terrain1` to `terrain4`, and the `path` fill is the darkest value in the region, sitting below every terrain fill. The Chrithmath generator encodes the rule numerically — a 0.4 luminance span floor across the ramp, a 0.10 floor per step, and every terrain fill at least 0.02 above the path — which is a useful bar for a hand-authored theme too.
 
 **Variants.** A tile field is either one image string or an array of variant strings with the primary art first:
 
@@ -214,7 +215,7 @@ The first `fill="#..."` in a tile string must be the full-bleed 36x36 field rect
 
 One image per kind repeats a single stamp across a whole height blob, and the seeded rotation only supplies four looks. The renderer emits one `<symbol>` per variant (`tile-r{regionId}-{kind}` for variant 0, `tile-r{regionId}-{kind}-v{n}` beyond) and picks a variant per cell from a hash of the map seed and that cell's absolute tile position, so a cell keeps its variant across a progressive board rebuild (`src/render/themes/tileArt.ts`). Every variant of a kind must share the field fill — the preview reads variant 0's.
 
-Both shipped themes ship three variants per kind, generated from a per-region palette by a seeded scatter rather than hand-placed. Give every variant of a kind the same construction (the same element types in the same order, the same opacity ranges, the same drift radius band) or the extra looks read as patches of a different material. Variant 0 is the one the progressive block preview and the region backdrop tone parse, so keep it the strongest of the three.
+All shipped themes ship three variants per kind, generated from a per-region palette by a seeded scatter rather than hand-placed. Give every variant of a kind the same construction (the same element types in the same order, the same opacity ranges, the same drift radius band) or the extra looks read as patches of a different material. Variant 0 is the one the progressive block preview and the region backdrop tone parse, so keep it the strongest of the three.
 
 ### Map Site Art
 
@@ -234,11 +235,11 @@ Buildings and caches have to read as distinct silhouettes at 26px, in any case, 
 
 | Property | Value |
 |---|---|
-| **viewBox** | Freeform (use `0 0 W H` matching your art) |
-| **Base Size** | ~97 x 97 px (spans 3 x 3 tiles: `3 * 36 - tile gaps`) |
+| **viewBox** | Freeform (use `0 0 108 108`) |
+| **Base Size** | 108 x 108 px — the full 3 x 3 tile block (`3 * 36`) |
 | **Placement** | Translated to `(base.x - 1) * 36, (base.y - 1) * 36` |
 
-The base art replaces the default procedural base. If left as `""`, the default base renderer (rounded rectangle with gems and hexagonal emblem) is used instead. Your SVG is inserted directly into a `<g transform="translate(...)">` wrapper.
+The base art replaces the default procedural base. If left as `""`, the default base renderer (rounded rectangle with gems and hexagonal emblem) is used instead. Your SVG is inserted directly into a `<g transform="translate(...)">` wrapper at the block's top-left corner, so author on the full 108 x 108 block. The procedural default's visible body is the 97.2 px rounded rectangle (`2.7 * 36`) inset 5.4 px inside that block — a 97 px drawing anchored at the block corner leaves an ~11 px rim of the underlying tiles showing along the bottom and right.
 
 ### Region Map Art
 
@@ -280,7 +281,7 @@ Tower frame 0 is the resting picture. Later animation frames play across `animat
 - **Enemy hit reaction duration**: How long the hit flash/stutter plays. Default: 0.12 seconds (fast, snappy feedback).
 
 Frame count per cycle (what the shipped themes use; the renderer accepts any positive count):
-- Tower animation: frame 0 at rest, then one or more firing frames. Polymath uses 2. Aftermath uses 3 (rest, discharge, leftover smoke).
+- Tower animation: frame 0 at rest, then one or more firing frames. Polymath uses 2. Aftermath and Chrithmath use 3 (rest, discharge, leftover smoke).
 - Tower walking: 1 frame, unused by the renderer.
 - Enemy walking: 8 frames.
 - Enemy hit reaction: 3 frames.
@@ -317,7 +318,7 @@ Per theme:
 | Spawn images | 3 |
 | Main menu background | 1 |
 | **Total image sets per theme** | **78** |
-| **Total image sets, both shipped themes** | **156** |
+| **Total image sets, all three shipped themes** | **234** |
 
 A set is not one image: each enemy set carries 8 walking, 3 hit, and 3 attack frames, each tower set 2 or 3 animation frames, and each tile kind ships 3 images, so one theme holds a little over 200 individual images.
 
@@ -325,7 +326,7 @@ A set is not one image: each enemy set carries 8 walking, 3 hit, and 3 attack fr
 
 ## Testing Your Theme
 
-1. Register the theme in `MAP_THEME_MANIFEST`.
+1. Register the theme fully (manifest entry, `registerThemeLoader`, and — if it has a `menuBackground` — the `*-menu.json` sidecar plus `registerMenuBackgroundLoader`).
 2. Run `npm run dev` and navigate to `/map-select`.
 3. Select your theme from the dropdown.
 4. Start any map and verify:

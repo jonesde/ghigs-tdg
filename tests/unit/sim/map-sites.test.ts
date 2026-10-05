@@ -1,5 +1,9 @@
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
+import { ThemeMapsOverrideSchema } from "@/content/schemas/maps.js";
+import { resolveThemeMaps } from "@/content/themeMaps.js";
+import chrithmathRaw from "@/render/themes/data/chrithmath.json";
+import aftermathRaw from "@/render/themes/data/the-aftermath.json";
 import { MAPS_CONTENT } from "@/sim/Constants.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap, mulberry32 } from "@/sim/grid/Map.js";
@@ -132,6 +136,19 @@ describe("map sites", () => {
       const cacheTarget = cacheCountFor(map.regionId, map.level);
       expect(buildings.length).toBe(buildingTarget);
       expect(caches.length).toBe(cacheTarget);
+    }
+  });
+
+  it("fills every aftermath and chrithmath catalog map to its building and cache quota", () => {
+    for (const themeRaw of [aftermathRaw, chrithmathRaw]) {
+      const catalog = resolveThemeMaps(ThemeMapsOverrideSchema.parse(themeRaw.maps));
+      for (let index = 0; index < catalog.levels.length; index++) {
+        const { map, buildings, caches } = fillOpeningBoard(index, catalog);
+        const buildingTarget = buildingCountFor(map.regionId, map.level);
+        const cacheTarget = cacheCountFor(map.regionId, map.level);
+        expect(buildings.length).toBe(buildingTarget);
+        expect(caches.length).toBe(cacheTarget);
+      }
     }
   });
 
@@ -365,13 +382,20 @@ describe("map sites", () => {
   });
 
   it("fills every progressive variant to its quota over a run of stamped blocks", () => {
-    for (const config of MAPS_CONTENT.progressive.variants) {
-      const buildingTarget = buildingCountFor(config.regionId, config.level);
-      const cacheTarget = cacheCountFor(config.regionId, config.level);
-      for (const salt of [0, 7, 13]) {
-        const run = runProgressiveStamps(config, 20, salt);
-        expect(run.buildings.length).toBe(buildingTarget);
-        expect(run.caches.length).toBe(cacheTarget);
+    const catalogs = [
+      MAPS_CONTENT,
+      resolveThemeMaps(ThemeMapsOverrideSchema.parse(aftermathRaw.maps)),
+      resolveThemeMaps(ThemeMapsOverrideSchema.parse(chrithmathRaw.maps)),
+    ];
+    for (const catalog of catalogs) {
+      for (const config of catalog.progressive.variants) {
+        const buildingTarget = buildingCountFor(config.regionId, config.level);
+        const cacheTarget = cacheCountFor(config.regionId, config.level);
+        for (const salt of [0, 7, 13]) {
+          const run = runProgressiveStamps(config, 20, salt);
+          expect(run.buildings.length).toBe(buildingTarget);
+          expect(run.caches.length).toBe(cacheTarget);
+        }
       }
     }
   });

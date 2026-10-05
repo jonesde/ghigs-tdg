@@ -27,6 +27,7 @@ import region_map_art  # noqa: E402
 THEME_PATHS = {
     "default": os.path.normpath(os.path.join(SCRIPT_DIRECTORY, "..", "data", "default-map-theme.json")),
     "the-aftermath": os.path.normpath(os.path.join(SCRIPT_DIRECTORY, "..", "data", "the-aftermath.json")),
+    "chrithmath": os.path.normpath(os.path.join(SCRIPT_DIRECTORY, "..", "data", "chrithmath.json")),
 }
 # The main-menu world card paints from these sidecars instead of loading each theme
 # in full, so they duplicate the menuBackground each theme JSON already carries.
@@ -34,6 +35,7 @@ THEME_PATHS = {
 MENU_BACKGROUND_PATHS = {
     "default": os.path.normpath(os.path.join(SCRIPT_DIRECTORY, "..", "data", "default-menu.json")),
     "the-aftermath": os.path.normpath(os.path.join(SCRIPT_DIRECTORY, "..", "data", "the-aftermath-menu.json")),
+    "chrithmath": os.path.normpath(os.path.join(SCRIPT_DIRECTORY, "..", "data", "chrithmath-menu.json")),
 }
 PREVIEW_DIRECTORY = os.path.normpath(
     os.path.join(SCRIPT_DIRECTORY, "..", "..", "..", "..", "tmp", "region-map-preview")

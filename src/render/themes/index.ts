@@ -161,6 +161,7 @@ export function getMenuBackgroundLoader(id: string): MenuBackgroundLoader | unde
 export const MAP_THEME_MANIFEST: MapThemeManifestEntry[] = [
   { id: DEFAULT_THEME_ID, label: "Polymath", file: "./data/default-map-theme.json" },
   { id: "the-aftermath", label: "Aftermath", file: "./data/the-aftermath.json" },
+  { id: "chrithmath", label: "Chrithmath", file: "./data/chrithmath.json" },
 ];
 
 async function loadRawTheme(loader: () => Promise<{ default: unknown }>): Promise<MapThemeData> {
@@ -172,8 +173,10 @@ async function loadRawTheme(loader: () => Promise<{ default: unknown }>): Promis
 
 registerThemeLoader(DEFAULT_THEME_ID, () => loadRawTheme(() => import("./data/default-map-theme.json")));
 registerThemeLoader("the-aftermath", () => loadRawTheme(() => import("./data/the-aftermath.json")));
+registerThemeLoader("chrithmath", () => loadRawTheme(() => import("./data/chrithmath.json")));
 
 // Each menu background loader sits directly below its theme loader, so the per-theme
 // registration lists stay paired by eye.
 registerMenuBackgroundLoader(DEFAULT_THEME_ID, () => import("./data/default-menu.json"));
 registerMenuBackgroundLoader("the-aftermath", () => import("./data/the-aftermath-menu.json"));
+registerMenuBackgroundLoader("chrithmath", () => import("./data/chrithmath-menu.json"));

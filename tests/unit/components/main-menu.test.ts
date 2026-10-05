@@ -42,6 +42,7 @@ function mountMainMenu(): MountResult {
   const themeStore = useMapThemeStore();
   const themedMock = { ...mockDefaultTheme, menuBackground: THEME_BG_SVG };
   const aftermathMock = { ...themedMock, id: "the-aftermath", label: "Aftermath" };
+  const chrithmathMock = { ...themedMock, id: "chrithmath", label: "Chrithmath" };
   themeStore.defaultTheme = themedMock;
   themeStore.activeTheme = themedMock;
   // Preload every manifest theme so onMounted's ensureActiveTheme call resolves
@@ -49,10 +50,12 @@ function mountMainMenu(): MountResult {
   // unmounted wrappers from prior tests, crashing their body teleports.
   themeStore.loadedThemes[themedMock.id] = themedMock;
   themeStore.loadedThemes["the-aftermath"] = aftermathMock;
+  themeStore.loadedThemes.chrithmath = chrithmathMock;
   // The world card paints from menuBackgrounds, not loadedThemes, so that
   // prefill too — the same late-mutation hazard applies to the preview cache.
   themeStore.menuBackgrounds[themedMock.id] = THEME_BG_SVG;
   themeStore.menuBackgrounds["the-aftermath"] = THEME_BG_SVG;
+  themeStore.menuBackgrounds.chrithmath = THEME_BG_SVG;
   gameStore.resetToMenu();
   const router = createRouterWithRoutes();
   return { pinia, gameStore, persistStore, uiStore, themeStore, router };
@@ -158,7 +161,7 @@ describe("MainMenu", () => {
     const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
     const cards = wrapper.findAll(".world-card");
     expect(cards.length).toBe(themeStore.availableThemes.length);
-    expect(cards.length).toBe(2);
+    expect(cards.length).toBe(3);
   });
 
   it("paints every world card from the menu background preview cache", () => {

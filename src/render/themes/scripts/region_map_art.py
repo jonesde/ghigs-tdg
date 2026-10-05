@@ -79,6 +79,33 @@ ASHEN_NODES = [
     ("progressive", 9, 930, 160), ("progressive", 12, 870, 660),
 ]
 
+YULE_VALE_NODES = [
+    ("level", 1, 95, 600), ("level", 2, 225, 545), ("level", 3, 355, 585),
+    ("level", 4, 485, 525), ("level", 5, 615, 570), ("level", 6, 745, 510),
+    ("level", 7, 875, 560), ("level", 8, 975, 465), ("level", 9, 930, 350),
+    ("level", 10, 800, 300), ("level", 11, 665, 350), ("level", 12, 540, 250),
+    ("progressive", 1, 150, 450), ("progressive", 5, 640, 430),
+    ("progressive", 9, 1010, 300), ("progressive", 12, 400, 160),
+]
+
+SUNSPICE_NODES = [
+    ("level", 1, 100, 610), ("level", 2, 240, 590), ("level", 3, 380, 615),
+    ("level", 4, 520, 585), ("level", 5, 660, 610), ("level", 6, 800, 575),
+    ("level", 7, 930, 600), ("level", 8, 990, 480), ("level", 9, 880, 400),
+    ("level", 10, 950, 300), ("level", 11, 830, 230), ("level", 12, 920, 140),
+    ("progressive", 1, 180, 480), ("progressive", 5, 700, 470),
+    ("progressive", 9, 780, 330), ("progressive", 12, 1040, 220),
+]
+
+ICON_SNOWS_NODES = [
+    ("level", 1, 180, 560), ("level", 2, 120, 420), ("level", 3, 150, 280),
+    ("level", 4, 260, 180), ("level", 5, 400, 120), ("level", 6, 550, 100),
+    ("level", 7, 700, 120), ("level", 8, 840, 180), ("level", 9, 950, 280),
+    ("level", 10, 980, 420), ("level", 11, 920, 560), ("level", 12, 790, 620),
+    ("progressive", 1, 320, 480), ("progressive", 5, 300, 260),
+    ("progressive", 9, 760, 250), ("progressive", 12, 640, 470),
+]
+
 
 def standard_connections() -> list[dict]:
     connections = []
@@ -108,6 +135,9 @@ POLYMATH_MAP_LAYOUTS = [
 ]
 AFTERMATH_MAP_LAYOUTS = [
     build_map_layout(nodes) for nodes in (RUSTBLOOM_NODES, SAND_NODES, ASHEN_NODES)
+]
+CHRITHMATH_MAP_LAYOUTS = [
+    build_map_layout(nodes) for nodes in (YULE_VALE_NODES, SUNSPICE_NODES, ICON_SNOWS_NODES)
 ]
 
 
@@ -450,6 +480,60 @@ def church_unit(x: float, y: float, width: float, height: float, wall: str,
     window = rect(x + width * 0.18, y + height * 0.52, width * 0.14, height * 0.18, 0,
                   outline, None, None, opacity)
     return cross + spire + tower + nave_roof + nave + window
+
+
+def onion_dome_house(x: float, y: float, width: float, height: float, wall: str,
+                     dome_color: str, outline: str, opacity: float | None = None) -> str:
+    wall_top = y + height * 0.42
+    body = rect(x, wall_top, width, height * 0.58, 0, wall, outline, 1.1, opacity)
+    dome_cx = x + width * 0.5
+    dome_width = width * 0.56
+    dome_height = height * 0.46
+    dome = path_shape(
+        f"M {num(x + width * 0.22)},{num(wall_top + 1)} "
+        f"C {num(dome_cx - dome_width * 0.62)},{num(wall_top - dome_height * 0.42)} "
+        f"{num(dome_cx - dome_width * 0.3)},{num(wall_top - dome_height * 0.72)} "
+        f"{num(dome_cx)},{num(wall_top - dome_height)} "
+        f"C {num(dome_cx + dome_width * 0.3)},{num(wall_top - dome_height * 0.72)} "
+        f"{num(dome_cx + dome_width * 0.62)},{num(wall_top - dome_height * 0.42)} "
+        f"{num(x + width * 0.78)},{num(wall_top + 1)} Z",
+        dome_color, outline, 1.1, opacity,
+    )
+    cross = (line(dome_cx, wall_top - dome_height, dome_cx, wall_top - dome_height - 6, outline, 1.2, opacity)
+             + line(dome_cx - 3, wall_top - dome_height - 4, dome_cx + 3,
+                    wall_top - dome_height - 4, outline, 1.2, opacity))
+    door = rect(x + width * 0.4, y + height * 0.68, width * 0.2, height * 0.32, 0,
+                outline, None, None, opacity)
+    window = rect(x + width * 0.14, wall_top + height * 0.1, width * 0.16,
+                  height * 0.18, 0, BONE_DARK, None, None, opacity)
+    return body + dome + cross + door + window
+
+
+def lighthouse_unit(x: float, base_y: float, width: float, height: float, wall: str,
+                    stripe: str, outline: str, opacity: float | None = None) -> str:
+    tower = polygon(
+        f"{num(x)},{num(base_y)} {num(x + width * 0.18)},{num(base_y - height)} "
+        f"{num(x + width * 0.82)},{num(base_y - height)} {num(x + width)},{num(base_y)}",
+        wall, outline, 1.1, opacity,
+    )
+    band_top = base_y - height * 0.72
+    band_bottom = base_y - height * 0.52
+    band = polygon(
+        f"{num(x + width * 0.22)},{num(band_bottom)} {num(x + width * 0.25)},{num(band_top)} "
+        f"{num(x + width * 0.75)},{num(band_top)} {num(x + width * 0.78)},{num(band_bottom)}",
+        stripe, outline, 0.8, opacity,
+    )
+    lantern_top = base_y - height - width * 0.34
+    lantern = rect(x + width * 0.28, lantern_top, width * 0.44, width * 0.34, 0,
+                   BONE_DARK, outline, 1.0, opacity)
+    roof = polygon(
+        f"{num(x + width * 0.22)},{num(lantern_top)} {num(x + width * 0.5)},{num(lantern_top - width * 0.36)} "
+        f"{num(x + width * 0.78)},{num(lantern_top)}",
+        stripe, outline, 1.0, opacity,
+    )
+    light = circle(x + width * 0.5, lantern_top + width * 0.17, width * 0.3, "none", stripe, 1.2,
+                   (opacity if opacity is not None else 1.0) * 0.5)
+    return tower + band + lantern + roof + light
 
 
 def shop_front(x: float, y: float, width: float, height: float, wall: str,
@@ -1077,6 +1161,124 @@ def ashen_highs_map() -> str:
     return svg_root("".join(parts))
 
 
+def yule_vale_map() -> str:
+    accent = "#8fb8d8"
+    parts = [
+        rect(0, 0, MAP_WIDTH, MAP_HEIGHT, 0, "#1c2833"),
+        ellipse(260, 190, 280, 130, "#26384a", opacity=0.35),
+        ellipse(840, 520, 300, 140, "#26384a", opacity=0.3),
+        ellipse(560, 300, 220, 100, "#2c3e50", opacity=0.25),
+    ]
+    for drift_x, drift_y, drift_rx, drift_ry in (
+        (420, 662, 160, 26), (720, 646, 140, 22), (250, 140, 130, 24),
+        (950, 110, 110, 20), (110, 330, 90, 20), (560, 200, 100, 18),
+    ):
+        parts.append(ellipse(drift_x, drift_y, drift_rx, drift_ry, "#3a4c5e", opacity=0.45))
+    fir_positions = (
+        (60, 120, 26, 44), (110, 140, 22, 38), (160, 110, 24, 42), (230, 90, 22, 36),
+        (300, 120, 26, 44), (380, 80, 22, 36), (470, 110, 24, 40), (560, 80, 22, 36),
+        (660, 100, 26, 42), (760, 70, 22, 34), (860, 100, 24, 40), (960, 80, 22, 36),
+        (60, 420, 24, 40), (30, 520, 22, 36), (1050, 420, 24, 40), (1060, 560, 22, 36),
+    )
+    for fir_x, fir_y, fir_width, fir_height in fir_positions:
+        parts.append(conifer_unit(fir_x, fir_y, fir_width, fir_height, "#2e4a40", "#3a2a1c"))
+    parts.append(route_band(CHRITHMATH_MAP_LAYOUTS[0], "#141d26", "#3d4a56", accent, "#475665"))
+    village_houses = (
+        (150, 616, 30, 24, "#3a4c60", "#22344a"), (200, 634, 28, 22, "#31465e", "#22344a"),
+        (240, 610, 30, 24, "#3a4c60", "#22344a"), (420, 560, 28, 22, "#31465e", "#22344a"),
+        (470, 586, 30, 24, "#3a4c60", "#22344a"), (680, 540, 28, 22, "#31465e", "#22344a"),
+        (730, 566, 30, 24, "#3a4c60", "#22344a"), (830, 596, 28, 22, "#31465e", "#22344a"),
+    )
+    for house_x, house_y, house_width, house_height, house_wall, house_roof in village_houses:
+        parts.append(pitched_house(house_x, house_y, house_width, house_height, house_wall,
+                                   house_roof, INK))
+    parts.append(barn_house(300, 630, 40, 30, "#4a3a2c", "#22303f", INK))
+    parts.append(fence_run(140, 620, 290, 620, "#3a2a1c", 0.7))
+    parts.append(fence_run(660, 546, 800, 546, "#3a2a1c", 0.7))
+    parts.append(polyline("165,610 220,600 262,604 438,552 486,578", accent, 1.6, 0.4,
+                          dash="2 7"))
+    parts.append(church_unit(430, 170, 44, 76, "#31465e", "#22344a", INK))
+    parts.append(onion_dome_house(320, 200, 54, 64, "#2c3e50", "#8fb8d8", INK, 0.8))
+    parts.append(birds_unit(640, 150, accent, 3, 0.5))
+    parts.append(birds_unit(340, 250, accent, 2, 0.4))
+    parts.append(scatter_dots(550, 350, 330, 48, "#c8d6e2", 0.12))
+    parts.append(region_frame(accent))
+    return svg_root("".join(parts))
+
+
+def sunspice_coast_map() -> str:
+    accent = "#d2c09a"
+    parts = [
+        rect(0, 0, MAP_WIDTH, MAP_HEIGHT, 0, "#2e2718"),
+        ellipse(260, 190, 280, 130, "#4a4230", opacity=0.3),
+        ellipse(620, 420, 300, 140, "#4a4230", opacity=0.22),
+        dune_fill(0, MAP_WIDTH, 606, 14, 260, "#4a4230", 0.3),
+    ]
+    sea_crest = sampled_wave_path(0, MAP_WIDTH, 660, 12, 300)
+    parts.append(path_shape(f"{sea_crest} L {MAP_WIDTH} {MAP_HEIGHT} L 0 {MAP_HEIGHT} Z",
+                            "#1f3438", None, None, 0.9))
+    parts.append(path_shape(sampled_wave_path(40, 1060, 672, 8, 220), "none", accent, 1.6, 0.25))
+    parts.append(path_shape(sampled_wave_path(60, 1040, 686, 7, 240), "none", accent, 1.2, 0.18))
+    boat = (polygon("270,676 330,676 318,688 282,688", "#3a3428", INK, 1.0)
+            + line(300, 676, 300, 648, accent, 1.4, 0.8)
+            + polygon("300,650 300,674 322,674", "#c2b280", None, None, 0.7))
+    parts.append(boat)
+    parts.append(route_band(CHRITHMATH_MAP_LAYOUTS[1], "#17130c", "#3a2e20", accent, "#5a4d40"))
+    for shop_x, shop_wall, shop_front_color in (
+        (430, "#6a5a44", "#c45a48"), (484, "#5a4a3a", "#4a8a8a"), (538, "#6a5a44", "#4a6a9a"),
+    ):
+        parts.append(shop_front(shop_x, 622, 46, 30, shop_wall, shop_front_color, INK))
+    parts.append(pitched_house(620, 626, 34, 24, "#6a5a44", "#3a2a1c", INK))
+    parts.append(pitched_house(790, 624, 30, 22, "#5a4a3a", "#3a2a1c", INK))
+    parts.append(barn_house(940, 622, 44, 30, "#6a5a44", "#3a2a1c", INK))
+    for cactus_x, cactus_y, cactus_height in ((380, 640, 26), (700, 650, 24), (900, 648, 28)):
+        parts.append(cactus_unit(cactus_x, cactus_y, cactus_height, "#5a6a44", 0.8))
+    parts.append(dead_tree_unit(760, 660, 26, "#4a3a2c"))
+    parts.append(dead_tree_unit(330, 654, 22, "#4a3a2c"))
+    parts.append(fence_run(420, 618, 600, 618, "#3a2a1c", 0.7))
+    parts.append(lighthouse_unit(955, 158, 34, 118, "#5a5248", "#c45a48", INK))
+    parts.append(ellipse(972, 66, 30, 10, "#c45a48", opacity=0.18))
+    parts.append(birds_unit(500, 120, accent, 3, 0.5))
+    parts.append(birds_unit(820, 200, accent, 2, 0.4))
+    parts.append(scatter_dots(450, 300, 340, 36, "#c2b280", 0.1))
+    parts.append(region_frame(accent))
+    return svg_root("".join(parts))
+
+
+def icon_snows_map() -> str:
+    accent = "#8fa4c8"
+    parts = [
+        rect(0, 0, MAP_WIDTH, MAP_HEIGHT, 0, "#161c2b"),
+        ellipse(260, 190, 280, 130, "#222c44", opacity=0.4),
+        ellipse(840, 520, 300, 140, "#222c44", opacity=0.35),
+        ellipse(550, 360, 250, 170, "#283352", opacity=0.3),
+    ]
+    parts.append(circle(550, 360, 150, "none", accent, 1.5, 0.14))
+    parts.append(circle(550, 360, 210, "none", accent, 1.2, 0.1))
+    parts.append(route_band(CHRITHMATH_MAP_LAYOUTS[2], "#10141f", "#323a50", accent, "#3a4360"))
+    parts.append(onion_dome_house(495, 276, 110, 128, "#2c3650", "#e0b040", INK))
+    for chapel_x, chapel_y in ((268, 214), (716, 214), (288, 436), (608, 436)):
+        parts.append(onion_dome_house(chapel_x, chapel_y, 60, 68, "#26304a", "#e0b040", INK, 0.85))
+    for drift_x, drift_y, drift_rx, drift_ry in (
+        (550, 420, 90, 20), (300, 300, 70, 16), (800, 320, 70, 16), (560, 120, 90, 16),
+    ):
+        parts.append(ellipse(drift_x, drift_y, drift_rx, drift_ry, "#3a4360", opacity=0.4))
+    for fir_x, fir_y, fir_width, fir_height in (
+        (60, 120, 26, 44), (110, 150, 22, 38), (980, 100, 24, 42), (1040, 150, 22, 36),
+        (60, 620, 24, 40), (1040, 640, 24, 40), (300, 640, 22, 36), (760, 660, 22, 36),
+    ):
+        parts.append(conifer_unit(fir_x, fir_y, fir_width, fir_height, "#2e4a40", "#3a2a1c"))
+    parts.append(fence_run(470, 430, 630, 430, "#3a2a1c", 0.6))
+    parts.append(birds_unit(500, 80, accent, 3, 0.5))
+    parts.append(scatter_dots(550, 360, 300, 44, "#c8d6e2", 0.1))
+    parts.append(region_frame(accent))
+    return svg_root("".join(parts))
+
+
+def chrithmath_map_images() -> list[str]:
+    return [yule_vale_map(), sunspice_coast_map(), icon_snows_map()]
+
+
 def map_overlay_elements(layout: dict) -> str:
     positions = {(node["kind"], node["level"]): (node["x"], node["y"]) for node in layout["nodes"]}
     parts = []
@@ -1118,6 +1320,8 @@ def theme_map_images(theme_id: str) -> list[str]:
         return polymath_map_images()
     if theme_id == "the-aftermath":
         return aftermath_map_images()
+    if theme_id == "chrithmath":
+        return chrithmath_map_images()
     raise SystemExit(f"unknown theme id: {theme_id}")
 
 
@@ -1126,4 +1330,6 @@ def theme_map_layouts(theme_id: str) -> list[dict]:
         return POLYMATH_MAP_LAYOUTS
     if theme_id == "the-aftermath":
         return AFTERMATH_MAP_LAYOUTS
+    if theme_id == "chrithmath":
+        return CHRITHMATH_MAP_LAYOUTS
     raise SystemExit(f"unknown theme id: {theme_id}")
