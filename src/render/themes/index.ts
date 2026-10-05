@@ -117,6 +117,16 @@ export interface MapThemeLoader {
   load(): Promise<MapThemeData>;
 }
 
+// The menu card preview source: a theme's sidecar file carrying only its
+// menuBackground, so painting a card background does not pull the theme's ~480 KB
+// of sprites, tiles and maps. The theme JSON still carries its own
+// menuBackground; the sidecar is a duplicate the generators write together.
+export interface MenuBackgroundSource {
+  menuBackground: string;
+}
+
+export type MenuBackgroundLoader = () => Promise<{ default: MenuBackgroundSource }>;
+
 export type SpawnVisualState = "closed" | "transition" | "open";
 
 export interface SpawnState {
@@ -136,6 +146,16 @@ export function getThemeLoader(id: string): MapThemeLoader | undefined {
   return MAP_THEME_LOADERS[id];
 }
 
+const MENU_BACKGROUND_LOADERS: Record<string, MenuBackgroundLoader> = {};
+
+export function registerMenuBackgroundLoader(themeId: string, loaderFn: MenuBackgroundLoader): void {
+  MENU_BACKGROUND_LOADERS[themeId] = loaderFn;
+}
+
+export function getMenuBackgroundLoader(id: string): MenuBackgroundLoader | undefined {
+  return MENU_BACKGROUND_LOADERS[id];
+}
+
 /* ======= ADD MAP THEMES HERE ======= */
 
 export const MAP_THEME_MANIFEST: MapThemeManifestEntry[] = [
@@ -152,3 +172,8 @@ async function loadRawTheme(loader: () => Promise<{ default: unknown }>): Promis
 
 registerThemeLoader(DEFAULT_THEME_ID, () => loadRawTheme(() => import("./data/default-map-theme.json")));
 registerThemeLoader("the-aftermath", () => loadRawTheme(() => import("./data/the-aftermath.json")));
+
+// Each menu background loader sits directly below its theme loader, so the per-theme
+// registration lists stay paired by eye.
+registerMenuBackgroundLoader(DEFAULT_THEME_ID, () => import("./data/default-menu.json"));
+registerMenuBackgroundLoader("the-aftermath", () => import("./data/the-aftermath-menu.json"));

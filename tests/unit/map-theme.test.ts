@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { MapsContent } from "@/content/schemas/maps.js";
 import { RawMapThemeSchema } from "@/content/schemas/theme.js";
 import { useSvgStaticContent } from "@/render/svg/useSvgStaticContent.js";
@@ -7,6 +7,7 @@ import aftermathTheme from "@/render/themes/data/the-aftermath.json";
 import { hexChannels } from "@/render/themes/fieldFill.js";
 import { DEFAULT_THEME_ID, MAP_THEME_MANIFEST, type MapThemeData } from "@/render/themes/index.js";
 import { normalizeThemeImages } from "@/render/themes/normalize.js";
+import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { createTestMapThemeStore } from "../helpers/mock-stores";
 import { makeMockRegionMapLayout, mockRegionMapImage } from "../helpers/regionMap";
@@ -383,6 +384,56 @@ describe("Map Theme System", () => {
       await store.ensureActiveTheme();
       const activeThemeAfter = store.activeTheme as MapThemeData | null;
       expect(activeThemeAfter?.id).toBe("the-aftermath");
+    });
+
+    it("ensureMenuBackgroundLoaded reads the theme sidecar without loading the theme", async () => {
+      const store = createTestMapThemeStore();
+      const loadedBefore = store.loadedThemes["the-aftermath"];
+      const preview = await store.ensureMenuBackgroundLoaded("the-aftermath");
+      expect(preview?.startsWith("<svg")).toBe(true);
+      expect(store.menuBackgrounds["the-aftermath"]).toBe(preview);
+      // The point of the sidecar: the card preview never pulls the theme itself.
+      expect(store.loadedThemes["the-aftermath"]).toBe(loadedBefore);
+    });
+
+    it("ensureMenuBackgroundLoaded matches the theme's own menuBackground", async () => {
+      const store = createTestMapThemeStore();
+      const loaded = await store.ensureThemeLoaded("the-aftermath");
+      const preview = await store.ensureMenuBackgroundLoaded("the-aftermath");
+      expect(preview).toBe(loaded.menuBackground);
+    });
+
+    it("ensureMenuBackgroundLoaded caches so a card preview costs one fetch", async () => {
+      const store = createTestMapThemeStore();
+      const first = await store.ensureMenuBackgroundLoaded("the-aftermath");
+      const second = await store.ensureMenuBackgroundLoaded("the-aftermath");
+      expect(second).toBe(first);
+    });
+
+    it("ensureMenuBackgroundLoaded warns and returns undefined for an unregistered world", async () => {
+      const store = createTestMapThemeStore();
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const preview = await store.ensureMenuBackgroundLoaded("not-a-theme");
+      expect(preview).toBeUndefined();
+      expect(store.menuBackgrounds["not-a-theme"]).toBeUndefined();
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it("every manifest theme ships a menu background sidecar that paints", async () => {
+      const store = createTestMapThemeStore();
+      for (const theme of store.availableThemes) {
+        const preview = await store.ensureMenuBackgroundLoaded(theme.id);
+        expect(preview, `${theme.id} sidecar`).toBeDefined();
+        expect(preview!.startsWith("<svg")).toBe(true);
+        expect(preview!.includes("url(#")).toBe(false);
+      }
+    });
+
+    it("preloadDefault seeds the default world's card preview without a fetch", async () => {
+      const store = useMapThemeStore();
+      await store.preloadDefault();
+      expect(store.menuBackgrounds[DEFAULT_THEME_ID]).toBe(store.defaultTheme?.menuBackground);
     });
   });
 });

@@ -25,13 +25,11 @@ function chebyshev(left: { tileX: number; tileY: number }, right: { tileX: numbe
 // Fills an opening board through reconcileMapSites directly, so every catalog map
 // can be checked for its quota without standing up the engine (and the physics
 // WASM) once per map.
-function fillOpeningBoard(index: number): {
-  grid: Grid;
-  map: ReturnType<typeof getMap>;
-  buildings: MapBuildingSite[];
-  caches: MapCacheSite[];
-} {
-  const map = getMap(index);
+function fillOpeningBoard(
+  index: number,
+  catalog?: typeof MAPS_CONTENT,
+): { grid: Grid; map: ReturnType<typeof getMap>; buildings: MapBuildingSite[]; caches: MapCacheSite[] } {
+  const map = getMap(index, catalog);
   const grid = new Grid(map);
   const buildings: MapBuildingSite[] = [];
   const caches: MapCacheSite[] = [];

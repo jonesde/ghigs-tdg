@@ -20,8 +20,12 @@ const gemMult = computed(() => 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult.value - 
 const menuBackgroundSvg = computed(() => themeStore.activeTheme?.menuBackground);
 
 onMounted(() => {
+  // The selected world is loaded in full: the full-bleed background above and the
+  // run path (SvgGameRoot reads activeTheme) both need it. Every other world costs
+  // only its menu-background sidecar, so the card rail does not pull three themes.
+  themeStore.ensureActiveTheme().catch((err) => console.error("Failed to load world:", err));
   themeStore.availableThemes.forEach((theme) => {
-    themeStore.ensureThemeLoaded(theme.id).catch((err) => console.error("Failed to load theme:", err));
+    themeStore.ensureMenuBackgroundLoaded(theme.id).catch((err) => console.error("Failed to load theme preview:", err));
   });
 });
 
@@ -157,7 +161,7 @@ function openSkillTree() {
             @click="selectTheme(theme.id)"
             @keydown="selectThemeFromKeyboard($event, theme.id)"
           >
-            <span class="world-card-bg" v-html="themeStore.loadedThemes[theme.id]?.menuBackground" />
+            <span class="world-card-bg" v-html="themeStore.menuBackgrounds[theme.id]" />
             <span class="world-card-scrim" aria-hidden="true"></span>
             <span class="world-card-body">
               <span class="world-card-info">

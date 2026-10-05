@@ -144,6 +144,13 @@ async function normalizeSpawnVisuals(raw: {
   return { closed, open, transition };
 }
 
+// The menu card preview loads from a theme's sidecar rather than the theme itself,
+// so it resolves and strips through the same path normalizeThemeImages uses — the
+// card then paints markup identical to the full-bleed background.
+export async function normalizeMenuBackground(rawMenuBackground: string): Promise<string> {
+  return stripSvgWrapper(await resolveImage(rawMenuBackground));
+}
+
 export async function normalizeThemeImages(raw: {
   id: string;
   label: string;
@@ -201,7 +208,7 @@ export async function normalizeThemeImages(raw: {
 
   const normalizedSites = raw.sites ? await normalizeSiteArt(raw.sites) : undefined;
 
-  const menuBackground = raw.menuBackground ? stripSvgWrapper(await resolveImage(raw.menuBackground)) : undefined;
+  const menuBackground = raw.menuBackground ? await normalizeMenuBackground(raw.menuBackground) : undefined;
 
   const result: {
     id: string;

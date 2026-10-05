@@ -6,6 +6,10 @@ menuBackground) are rewritten; every other byte of each JSON file is
 preserved, including the compact mapLayout formatting. The layouts in the
 files are verified against region_map_art first so the art can never drift
 away from the node coordinates it was drawn around.
+
+The menuBackground is also written to the theme's sidecar file, which is what
+the main-menu world card paints from, and the sidecar is read back to confirm
+the two copies agree.
 """
 
 from __future__ import annotations
@@ -23,6 +27,13 @@ import region_map_art  # noqa: E402
 THEME_PATHS = {
     "default": os.path.normpath(os.path.join(SCRIPT_DIRECTORY, "..", "data", "default-map-theme.json")),
     "the-aftermath": os.path.normpath(os.path.join(SCRIPT_DIRECTORY, "..", "data", "the-aftermath.json")),
+}
+# The main-menu world card paints from these sidecars instead of loading each theme
+# in full, so they duplicate the menuBackground each theme JSON already carries.
+# Both files are written here in the same pass; nothing else regenerates them.
+MENU_BACKGROUND_PATHS = {
+    "default": os.path.normpath(os.path.join(SCRIPT_DIRECTORY, "..", "data", "default-menu.json")),
+    "the-aftermath": os.path.normpath(os.path.join(SCRIPT_DIRECTORY, "..", "data", "the-aftermath-menu.json")),
 }
 PREVIEW_DIRECTORY = os.path.normpath(
     os.path.join(SCRIPT_DIRECTORY, "..", "..", "..", "..", "tmp", "region-map-preview")
@@ -59,6 +70,22 @@ def patch_line_values(raw_text: str, pattern: re.Pattern[str], images: list[str]
     return patched_text
 
 
+def write_menu_background_sidecar(theme_id: str, menu_image: str) -> str:
+    sidecar_path = MENU_BACKGROUND_PATHS[theme_id]
+    sidecar_text = json.dumps({"menuBackground": menu_image}, indent=2, ensure_ascii=False) + "\n"
+    with open(sidecar_path, "w", encoding="utf-8") as sidecar_file:
+        sidecar_file.write(sidecar_text)
+    return sidecar_path
+
+
+def verify_sidecar_matches_theme(theme_id: str, menu_image: str) -> None:
+    sidecar_path = MENU_BACKGROUND_PATHS[theme_id]
+    with open(sidecar_path, encoding="utf-8") as sidecar_file:
+        sidecar = json.load(sidecar_file)
+    if sidecar.get("menuBackground") != menu_image:
+        raise SystemExit(f"{theme_id}: {os.path.basename(sidecar_path)} drifted from the theme menuBackground")
+
+
 def write_previews(theme_id: str, map_images: list[str], menu_image: str) -> None:
     layouts = region_map_art.theme_map_layouts(theme_id)
     os.makedirs(PREVIEW_DIRECTORY, exist_ok=True)
@@ -93,9 +120,12 @@ def main() -> None:
                                          [menu_image], "menuBackground")
         with open(theme_path, "w", encoding="utf-8") as theme_file:
             theme_file.write(patched_text)
+        sidecar_path = write_menu_background_sidecar(theme_id, menu_image)
+        verify_sidecar_matches_theme(theme_id, menu_image)
         write_previews(theme_id, map_images, menu_image)
         print(f"{theme_id}: patched {len(map_images)} mapImage + 1 menuBackground "
-              f"({len(raw_text)} -> {len(patched_text)} bytes)")
+              f"({len(raw_text)} -> {len(patched_text)} bytes), "
+              f"wrote {os.path.basename(sidecar_path)}")
     print(f"previews: {PREVIEW_DIRECTORY}")
 
 

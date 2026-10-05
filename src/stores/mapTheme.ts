@@ -9,8 +9,13 @@ import type {
   RegionVisualMeta,
   TowerVisualMeta,
 } from "../render/themes/index.js";
-import { DEFAULT_THEME_ID, MAP_THEME_LOADERS, MAP_THEME_MANIFEST } from "../render/themes/index.js";
-import { normalizeThemeImages } from "../render/themes/normalize.js";
+import {
+  DEFAULT_THEME_ID,
+  getMenuBackgroundLoader,
+  MAP_THEME_LOADERS,
+  MAP_THEME_MANIFEST,
+} from "../render/themes/index.js";
+import { normalizeMenuBackground, normalizeThemeImages } from "../render/themes/normalize.js";
 import { usePersistStore } from "./persist.js";
 
 export const useMapThemeStore = defineStore("mapTheme", () => {
@@ -18,6 +23,7 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
   const activeTheme = ref<MapThemeData | null>(null);
   const defaultTheme = ref<MapThemeData | null>(null);
   const loadedThemes = ref<Record<string, MapThemeData>>({});
+  const menuBackgrounds = ref<Record<string, string>>({});
   const loading = ref(false);
   const error = ref<string | null>(null);
 
@@ -30,6 +36,10 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
       defaultTheme.value = normalized;
       activeTheme.value = normalized;
       loadedThemes.value[DEFAULT_THEME_ID] = normalized;
+      // The default world is already in hand, so its card preview costs no fetch.
+      if (normalized.menuBackground) {
+        menuBackgrounds.value[DEFAULT_THEME_ID] = normalized.menuBackground;
+      }
 
       const persistStore = usePersistStore();
       const savedThemeId = persistStore.lastSelectedThemeId;
@@ -94,6 +104,25 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
     const data = await fetchThemeData(id);
     loadedThemes.value[id] = data;
     return loadedThemes.value[id] ?? data;
+  }
+
+  // The main-menu world card paints its background from here rather than from
+  // loadedThemes, so listing the worlds costs one ~14 KB fetch per world instead of
+  // loading each world's full theme (~480 KB of sprites, tiles and maps).
+  async function ensureMenuBackgroundLoaded(id: MapThemeId): Promise<string | undefined> {
+    const cached = menuBackgrounds.value[id];
+    if (cached) return cached;
+    const loader = getMenuBackgroundLoader(id);
+    if (!loader) {
+      // A missing sidecar leaves the card background empty; it is decoration, so
+      // this warns rather than failing the menu.
+      console.warn(`No menu background loader registered for theme: ${id}`);
+      return undefined;
+    }
+    const mod = await loader();
+    const normalized = await normalizeMenuBackground(mod.default.menuBackground);
+    menuBackgrounds.value[id] = normalized;
+    return normalized;
   }
 
   // The active world's effective maps catalog (theme override merged over the
@@ -192,11 +221,13 @@ export const useMapThemeStore = defineStore("mapTheme", () => {
     activeTheme,
     defaultTheme,
     loadedThemes,
+    menuBackgrounds,
     loading,
     error,
     preloadDefault,
     loadActive,
     ensureThemeLoaded,
+    ensureMenuBackgroundLoaded,
     ensureActiveTheme,
     resolvedMaps,
     regionNames,

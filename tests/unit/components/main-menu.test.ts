@@ -44,11 +44,15 @@ function mountMainMenu(): MountResult {
   const aftermathMock = { ...themedMock, id: "the-aftermath", label: "Aftermath" };
   themeStore.defaultTheme = themedMock;
   themeStore.activeTheme = themedMock;
-  // Preload every manifest theme so onMounted's ensureThemeLoaded calls resolve
+  // Preload every manifest theme so onMounted's ensureActiveTheme call resolves
   // from cache; a late async load would mutate loadedThemes and re-render stale
   // unmounted wrappers from prior tests, crashing their body teleports.
   themeStore.loadedThemes[themedMock.id] = themedMock;
   themeStore.loadedThemes["the-aftermath"] = aftermathMock;
+  // The world card paints from menuBackgrounds, not loadedThemes, so that
+  // prefill too — the same late-mutation hazard applies to the preview cache.
+  themeStore.menuBackgrounds[themedMock.id] = THEME_BG_SVG;
+  themeStore.menuBackgrounds["the-aftermath"] = THEME_BG_SVG;
   gameStore.resetToMenu();
   const router = createRouterWithRoutes();
   return { pinia, gameStore, persistStore, uiStore, themeStore, router };
@@ -155,6 +159,27 @@ describe("MainMenu", () => {
     const cards = wrapper.findAll(".world-card");
     expect(cards.length).toBe(themeStore.availableThemes.length);
     expect(cards.length).toBe(2);
+  });
+
+  it("paints every world card from the menu background preview cache", () => {
+    const { pinia, themeStore, router } = mountMainMenu();
+    const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
+    const backgrounds = wrapper.findAll(".world-card-bg");
+    expect(backgrounds.length).toBe(themeStore.availableThemes.length);
+    for (const background of backgrounds) expect(background.html()).toContain("themebgmarker");
+  });
+
+  it("mounting the menu previews every world without loading its theme", async () => {
+    const { pinia, themeStore, router } = mountMainMenu();
+    themeStore.loadedThemes = {};
+    themeStore.menuBackgrounds = {};
+    mount(MainMenu, { global: { plugins: [router, pinia] } });
+    await flushNavigation();
+    // Card previews resolve from the sidecars alone — here the real shipped
+    // Aftermath background — while the unselected world is never loaded in full.
+    // That is what keeps the rail off the theme-size catalog.
+    expect(Object.keys(themeStore.loadedThemes)).not.toContain("the-aftermath");
+    expect(themeStore.menuBackgrounds["the-aftermath"]).toContain("#2a1c16");
   });
 
   it("highlights the currently selected world card", () => {
