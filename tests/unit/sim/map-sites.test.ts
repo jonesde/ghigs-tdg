@@ -1,5 +1,9 @@
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
+import { MAPS_CONTENT } from "@/sim/Constants.js";
+import { Grid } from "@/sim/grid/Grid.js";
+import { getMap, mulberry32 } from "@/sim/grid/Map.js";
+import { generateProgressiveMap, legalSites, replayProgressiveBoard } from "@/sim/grid/ProgressiveMap.js";
 import {
   buildingCountFor,
   cacheCountFor,
@@ -8,6 +12,7 @@ import {
   type MapCacheSite,
   playerPlacedBlockCount,
   progressiveSiteChance,
+  stampWorldKeysForBlock,
   worldKey,
 } from "@/sim/mapSites.js";
 import type { BonusOffer } from "@/sim/runBonuses.js";
@@ -15,6 +20,81 @@ import { freshEngine, nearestPathDistance, reconcileSample } from "../../helpers
 
 function chebyshev(left: { tileX: number; tileY: number }, right: { tileX: number; tileY: number }): number {
   return Math.max(Math.abs(left.tileX - right.tileX), Math.abs(left.tileY - right.tileY));
+}
+
+// Fills an opening board through reconcileMapSites directly, so every catalog map
+// can be checked for its quota without standing up the engine (and the physics
+// WASM) once per map.
+function fillOpeningBoard(index: number): {
+  grid: Grid;
+  map: ReturnType<typeof getMap>;
+  buildings: MapBuildingSite[];
+  caches: MapCacheSite[];
+} {
+  const map = getMap(index);
+  const grid = new Grid(map);
+  const buildings: MapBuildingSite[] = [];
+  const caches: MapCacheSite[] = [];
+  let nextSiteId = 1;
+  reconcileSample(grid, map, buildings, caches, null, 0, null, () => nextSiteId++);
+  return { grid, map, buildings, caches };
+}
+
+// Replays a progressive run the way GameEngine.commitPlacement does: capture the
+// previous world keys, grow the rectangle, shift every site index by the returned
+// shift, then reconcile against the stamped block's world keys.
+function runProgressiveStamps(
+  config: { regionId: number; level: number; entryCount: number; seed: number },
+  stampCount: number,
+  salt = 0,
+): {
+  grid: Grid;
+  map: ReturnType<typeof generateProgressiveMap>;
+  buildings: MapBuildingSite[];
+  caches: MapCacheSite[];
+} {
+  const stamps: { templateIndex: number; rotation: number; blockX: number; blockY: number; fill: boolean }[] = [];
+  const buildings: MapBuildingSite[] = [];
+  const caches: MapCacheSite[] = [];
+  let nextSiteId = 1;
+  const map = generateProgressiveMap(config, stamps);
+  const grid = new Grid(map);
+  reconcileSample(grid, map, buildings, caches, null, 0, null, () => nextSiteId++);
+  for (let step = 1; step <= stampCount; step++) {
+    const replayed = replayProgressiveBoard(config, stamps);
+    const options: { templateIndex: number; blockX: number; blockY: number; rotation: number }[] = [];
+    for (let templateIndex = 0; templateIndex < replayed.catalog.length; templateIndex++) {
+      for (const site of legalSites(replayed.board, replayed.catalog, templateIndex)) {
+        options.push({ templateIndex, blockX: site.blockX, blockY: site.blockY, rotation: site.rotation });
+      }
+    }
+    if (options.length === 0) break;
+    const rng = mulberry32((config.seed ^ Math.imul(step, 0x9e3779b1) ^ salt) >>> 0);
+    const chosen = options[Math.floor(rng() * options.length)];
+    if (!chosen) break;
+    stamps.push({ ...chosen, fill: false });
+    const previousWorldKeys = collectWorldKeys(grid);
+    const shift = grid.replaceFromMap(generateProgressiveMap(config, stamps));
+    for (const building of buildings) {
+      building.tileX += shift.shiftX;
+      building.tileY += shift.shiftY;
+    }
+    for (const cache of caches) {
+      cache.tileX += shift.shiftX;
+      cache.tileY += shift.shiftY;
+    }
+    reconcileSample(
+      grid,
+      { seed: config.seed, regionId: config.regionId, level: config.level, style: "progressive" },
+      buildings,
+      caches,
+      previousWorldKeys,
+      step,
+      stampWorldKeysForBlock(grid, chosen.blockX, chosen.blockY),
+      () => nextSiteId++,
+    );
+  }
+  return { grid, map, buildings, caches };
 }
 
 describe("map sites", () => {
@@ -47,6 +127,48 @@ describe("map sites", () => {
     expect(playerPlacedBlockCount([{ fill: false }, { fill: true }, { fill: false }])).toBe(2);
   });
 
+  it("fills every catalog map to its building and cache quota", () => {
+    for (let index = 0; index < 36; index++) {
+      const { map, buildings, caches } = fillOpeningBoard(index);
+      const buildingTarget = buildingCountFor(map.regionId, map.level);
+      const cacheTarget = cacheCountFor(map.regionId, map.level);
+      expect(buildings.length).toBe(buildingTarget);
+      expect(caches.length).toBe(cacheTarget);
+    }
+  });
+
+  it("places 20 buildings and 10 caches on the 30x20 Region 3 Level 12 board", () => {
+    const index = 2 * 12 + 11;
+    const { map, buildings, caches } = fillOpeningBoard(index);
+    expect(map.regionId).toBe(2);
+    expect(map.level).toBe(12);
+    expect(map.width).toBe(30);
+    expect(map.height).toBe(20);
+    expect(buildings).toHaveLength(20);
+    expect(caches).toHaveLength(10);
+  });
+
+  it("holds the clearance ladder guarantees on the boards that have to compress", () => {
+    // Index 12 is Region 2 Level 1, a 15x10 board whose cache quota does not fit
+    // at the widest rung, so it walks down the cache and cache-to-building ladders.
+    const { grid, buildings, caches } = fillOpeningBoard(12);
+    expect(buildings.length).toBeGreaterThan(0);
+    expect(caches.length).toBeGreaterThan(1);
+    for (let index = 0; index < caches.length; index++) {
+      const cache = caches[index]!;
+      for (let other = index + 1; other < caches.length; other++) {
+        expect(chebyshev(cache, caches[other]!)).toBeGreaterThanOrEqual(2);
+      }
+      expect(nearestPathDistance(grid, cache.tileX, cache.tileY)).toBeGreaterThanOrEqual(2);
+      for (const building of buildings) expect(chebyshev(cache, building)).toBeGreaterThanOrEqual(1);
+    }
+    for (let index = 0; index < buildings.length; index++) {
+      for (let other = index + 1; other < buildings.length; other++) {
+        expect(chebyshev(buildings[index]!, buildings[other]!)).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
   it("keeps every building ring disjoint so one tower tile never stacks two site bonuses", () => {
     // Region 1, map 1 carries enough buildings for the clearance rules to bite.
     const engine = freshEngine(12);
@@ -71,9 +193,13 @@ describe("map sites", () => {
         expect(adjacent).toBeLessThanOrEqual(1);
       }
     }
+    // A cache may only sit directly beside a building when the board is too small
+    // to fit its cache quota any other way. Region 2 Level 1 is the 15x10 board
+    // that has to drop to the last rung of the clearance ladder; every larger board
+    // holds the cache two tiles clear so the building keeps all eight buffed slots.
     for (const cache of engine.mapCaches) {
       for (const building of buildings) {
-        expect(chebyshev(cache, building)).toBeGreaterThanOrEqual(2);
+        expect(chebyshev(cache, building)).toBeGreaterThanOrEqual(1);
       }
     }
   });
@@ -186,5 +312,69 @@ describe("map sites", () => {
     reconcileSample(grid, map, untouchedBuildings, untouchedCaches, collectWorldKeys(grid), 20, null, allocateId);
     expect(untouchedBuildings).toHaveLength(0);
     expect(untouchedCaches).toHaveLength(0);
+  });
+
+  it("leaves the progressive margin out of the world keys so a stamped block is new world", () => {
+    const config = MAPS_CONTENT.progressive.variants[11];
+    if (!config) throw new Error("no progressive variant");
+    const grid = new Grid(generateProgressiveMap(config, []));
+    const keys = collectWorldKeys(grid);
+    let voidTiles = 0;
+    for (let tileY = 0; tileY < grid.height; tileY++) {
+      for (let tileX = 0; tileX < grid.width; tileX++) {
+        const isVoid = !grid.isTerrain(tileX, tileY) && !grid.isPath(tileX, tileY);
+        if (isVoid) {
+          voidTiles++;
+          expect(keys.has(worldKey(grid, tileX, tileY))).toBe(false);
+        } else expect(keys.has(worldKey(grid, tileX, tileY))).toBe(true);
+      }
+    }
+    expect(voidTiles).toBeGreaterThan(0);
+  });
+
+  it("lets a progressive block host a cache beside the corridor and a building beside the base", () => {
+    const config = MAPS_CONTENT.progressive.variants[11];
+    if (!config) throw new Error("no progressive variant");
+    const stamped = runProgressiveStamps(config, 20);
+    expect(stamped.caches.length).toBeGreaterThan(0);
+    for (const cache of stamped.caches) {
+      expect(stamped.grid.isTerrain(cache.tileX, cache.tileY)).toBe(true);
+    }
+    // The generated profile holds a cache 2 tiles off the corridor and a building 3
+    // off a spawn. On a 5x5 block that leaves no legal tile at all, so the
+    // progressive profile drops both rings to a direct-collision check.
+    const cacheToPath = stamped.caches.map((cache) => nearestPathDistance(stamped.grid, cache.tileX, cache.tileY));
+    expect(Math.min(...cacheToPath)).toBe(1);
+    const buildingToSpawn = stamped.buildings.map((building) =>
+      Math.min(...stamped.grid.spawns.map((spawn) => chebyshev(building, { tileX: spawn.x, tileY: spawn.y }))),
+    );
+    expect(Math.min(...buildingToSpawn)).toBeLessThan(3);
+    for (const building of stamped.buildings) {
+      expect(stamped.grid.isTerrain(building.tileX, building.tileY)).toBe(true);
+    }
+  });
+
+  it("places caches on a progressive board through the engine", () => {
+    // The first progressive catalog index. Its opening board used to place zero
+    // caches on every variant, because the generated rings left no legal tile
+    // inside a 5x5 block.
+    const engine = freshEngine(36);
+    const map = engine.runState.map;
+    if (!map) throw new Error("no map");
+    expect(map.style).toBe("progressive");
+    expect(engine.mapCaches).toHaveLength(cacheCountFor(map.regionId, map.level));
+    expect(engine.mapBuildings).toHaveLength(buildingCountFor(map.regionId, map.level));
+  });
+
+  it("fills every progressive variant to its quota over a run of stamped blocks", () => {
+    for (const config of MAPS_CONTENT.progressive.variants) {
+      const buildingTarget = buildingCountFor(config.regionId, config.level);
+      const cacheTarget = cacheCountFor(config.regionId, config.level);
+      for (const salt of [0, 7, 13]) {
+        const run = runProgressiveStamps(config, 20, salt);
+        expect(run.buildings.length).toBe(buildingTarget);
+        expect(run.caches.length).toBe(cacheTarget);
+      }
+    }
   });
 });

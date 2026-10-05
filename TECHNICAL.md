@@ -87,7 +87,7 @@ src/
 │   ├── WaveGraphTracker.ts      # Per-wave graph data tracking: damage, gold, gems, peak enemy HP
 │   ├── MapSiteManager.ts        # Claimable site lists (buildings, caches, supply drops), tile reservations, package placement
 │   ├── bossAbilities.ts         # Boss ability pool, per-wave roll without replacement, ability ticks, Mend source suppression
-│   ├── mapSites.ts              # Site placement rules: clearances, rank hash, progressive stamp reconcile; site icons, building details, cache unlocked flag
+│   ├── mapSites.ts              # Site placement rules: per-board-kind clearance profiles, cache clearance ladders, rank hash, progressive stamp reconcile; site icons, building details, cache unlocked flag
 │   ├── runBonuses.ts            # Bonus cards: offer rolls, typed and specialist draws, 1.2x typed mults, wave-scaled purses and cache fee, summary parts
 │   ├── grid/
 │   │   ├── Grid.ts              # Grid data structure: path, base, spawn queries, build validation
@@ -588,9 +588,15 @@ reads it.
 
 ### Map Sites & Rewards
 
+**Clearances are per board kind.** `siteClearancesFor(mapStyle)` picks one of two profiles, and `reconcileMapSites` resolves it from `ReconcileSitesInput.mapStyle` (`MapSiteSource.style` forwards the live `GeneratedMap.style`, so a progressive run picks the progressive profile on its opening fill and on every stamp). A generated board holds a cache 2 tiles off the corridor and 4 off the base and the spawns, and a building 3 off the base and the spawns. A progressive board drops **every ring that pushes a site away from the corridor, the base, or a spawn to 0**, leaving only a direct-collision check: a block is 5×5 and its terrain hugs the corridor running through it, so the generated profile leaves a progressive opening board with **no legal cache tile at all** (a candidate pool of 0 on all 12 variants). Building clearance and the building neighbor minimum stay at 3 on both, so `neighborBonus` keeps its one-building-per-tower-tile rule. Measured effect on the progressive variants: the opening board places its cache quota (was 0) and 20 stamped blocks carry the board to its full building and cache quota.
+
+**The cache clearance ladders.** Cache-to-cache spacing steps `[6, 5, 4, 3, 2]` and cache-to-building steps `[2, 1]`, and `planCacheAdditions` walks them **re-planning the whole addition set from scratch at each rung**, keeping the first plan that reaches the quota (or the longest plan when no rung fits). It plans before it commits, so a discarded rung costs no site id and no offer roll. The smallest catalog boards have room for 2 caches at 6 tiles apart against a quota of 4, so without the ladder eight boards per world finish short — Region 2 Level 1 at 2 of 4, Region 3 Level 9 at 7 of 9. Re-planning rather than filling in place keeps one spacing per reconcile instead of leaving a wide-rung cache crowding a narrow-rung one. The building rung is the outer loop so cache-to-cache spacing gives up first: two caches close together only costs spread, while a cache beside a building takes one of the eight tower slots the building buffs. Region 2 Level 1 (15×10) is the only board that needs the last rung. What the ladder guarantees: quota met, caches ≥ 2 apart, caches ≥ 1 from a building, building rings pairwise ≥ 3.
+
+**`collectWorldKeys` counts materialized tiles only** (`isTerrain || isPath`), not every in-bounds tile. A progressive rectangle is padded with a ring of `void` margin (`MARGIN_BLOCKS`), and `GameEngine.commitPlacement` captures the previous world keys before `replaceFromMap` grows the rectangle. Counting the margin marked every tile of a freshly stamped block as pre-existing world, so `tileIsNew` rejected all of it and **the progressive stamp reconcile could place nothing** — progressive runs placed zero caches all run and never grew past their opening building count. Generated boards carry no `void` tiles, so for them the key set is unchanged.
+
 | File | Description |
 |---|---|
-| `src/sim/mapSites.ts` | Site placement rules for buildings, caches, and supply drops: clearance constants (building ring, cache-to-building, cache-to-path, spawn/base), rank hash of the world position, quota fill for the opening board, and the progressive stamp reconcile |
+| `src/sim/mapSites.ts` | Site placement rules for buildings, caches, and supply drops: a clearance profile per board kind, the cache clearance ladders, rank hash of the world position, quota fill for the opening board, and the progressive stamp reconcile |
 | `src/sim/MapSiteManager.ts` | Owns the board's claimable site lists and the reserved-tile set derived from them (sites block construction but stay out of the navmesh); nearest-package click test, free corridor tile for a drop, shift/snap when the layout moves |
 | `src/sim/runBonuses.ts` | Run rewards: bonus id pool, three-card offer rolls keyed by map seed + package id, Heavy Frost curation on first open, specialist type draw weighted by live towers, `TYPED_PERSISTENT_FACTOR` (1.2) for the four typed cards, themed card copy via `BonusContext.themeTowerName`, wave-scaled purse and cache-fee helpers, run bonus mult records, `runBonusSummaryParts` for the HUD effects list |
 
@@ -865,7 +871,7 @@ to be removed by hand: nothing will flag it.
 | Game Engine | `game-engine.test.ts` | Loop, buy/upgrade/sell, pause, timeScale, gem economy, difficulty scaling; WaveGraphTracker covered indirectly |
 | Grid & Navmesh | `grid.test.ts`, `tests/unit/sim/navmesh/*` | Tile queries, Recast corridor, DetourCrowd motion, tower obstacles |
 | Maps | `map.test.ts` | All 36 maps have valid spawn-to-base paths, region metadata, gem rewards, inset spawns, cache invalidation |
-| Map sites | `tests/unit/sim/map-sites.test.ts` | Site quota per region/level, ring-disjoint buildings, caches clear of buildings/path/navmesh, fill-then-stamp reconcile determinism and stamp caps |
+| Map sites | `tests/unit/sim/map-sites.test.ts` | Site quota per region/level, every catalog map and every progressive variant filled to quota, Region 3 Level 12 at 20 buildings / 10 caches, ladder guarantees, ring-disjoint buildings, caches clear of buildings/path/navmesh, progressive margin excluded from the world keys, fill-then-stamp reconcile determinism and stamp caps |
 | Towers | `towers.test.ts` | Stats with caching, level/variant/addon/terrain/milestone bonuses (with tier cap), sell value, float health precision, ghost restore clamp, thorn credit |
 | Enemies | `enemies.test.ts`, `enemy-manager.test.ts` | HP/speed formulas, wave scaling, status effects (slow/stun/burn/shield/heal), shield/burn damage returns and credit, knockResist, headless `postPhysics` |
 | Waves | `waves.test.ts` | Composition, boss placement, level calculation, inter-wave timing |
