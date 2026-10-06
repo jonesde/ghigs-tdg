@@ -445,6 +445,10 @@ export class SnapshotStore {
     if (pickerSignature !== this.pickerSignature) {
       this.pickerSignature = pickerSignature;
       gs.bonusPicker = picker;
+      // A different picker (or none) is a fresh choice list, so the keyboard
+      // cursor goes back to its first option the same way the placement hold
+      // resets the block cursor.
+      gs.bonusPickerSelectedOption = 0;
     }
     const names = meta.nextBossAbilityNames ?? [];
     const nameSignature = `${meta.runId ?? 0}|${names.join("|")}`;

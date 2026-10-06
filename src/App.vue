@@ -95,7 +95,7 @@ html, body {
 
 /* Site glyphs are written into the SVG with innerHTML, so their animation rules
    have to live in the global sheet: a scoped selector never reaches them. */
-@keyframes siteDropPulse {
+@keyframes sitePulse {
   0%,
   100% {
     stroke-opacity: 0.3;
@@ -107,8 +107,8 @@ html, body {
   }
 }
 
-.site-drop-pulse {
-  animation: siteDropPulse 1.1s ease-in-out infinite;
+.site-pulse {
+  animation: sitePulse 1.1s ease-in-out infinite;
 }
 
 @keyframes spawnPulse {
@@ -126,7 +126,7 @@ html, body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .site-drop-pulse {
+  .site-pulse {
     animation: none;
     stroke-opacity: 0.8;
   }

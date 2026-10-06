@@ -81,6 +81,21 @@ describe("useInput", () => {
     window.dispatchEvent(makeEvent(key, opts));
   }
 
+  // The composable binds keydown on window, so tests that need the handler itself
+  // (to assert store writes rather than dispatched commands) capture it at bind time.
+  function captureHandler(): (event: KeyboardEvent) => void {
+    let capturedHandler: ((event: KeyboardEvent) => void) | null = null;
+    const originalAddEventListener = window.addEventListener;
+    window.addEventListener = vi.fn((event: string, handler: (keyboardEvent: KeyboardEvent) => void) => {
+      if (event === "keydown") capturedHandler = handler;
+      originalAddEventListener.call(window, event, handler as unknown as EventListener);
+    }) as never;
+    useInput(gameStore, dispatcher, uiStore);
+    window.addEventListener = originalAddEventListener;
+    if (!capturedHandler) throw new Error("keydown handler missing");
+    return capturedHandler;
+  }
+
   function dispatched(type: Command["type"]): boolean {
     return dispatcher.commands.some((command) => command.type === type);
   }
@@ -1144,19 +1159,6 @@ describe("useInput", () => {
   });
 
   describe("progressive placement hold", () => {
-    function captureHandler(): (event: KeyboardEvent) => void {
-      let capturedHandler: ((event: KeyboardEvent) => void) | null = null;
-      const originalAddEventListener = window.addEventListener;
-      window.addEventListener = vi.fn((event: string, handler: (keyboardEvent: KeyboardEvent) => void) => {
-        if (event === "keydown") capturedHandler = handler;
-        originalAddEventListener.call(window, event, handler as unknown as EventListener);
-      }) as never;
-      useInput(gameStore, dispatcher, uiStore);
-      window.addEventListener = originalAddEventListener;
-      if (!capturedHandler) throw new Error("keydown handler missing");
-      return capturedHandler;
-    }
-
     function armHold(): number {
       const config = progressiveConfigForIndex(36);
       if (!config) throw new Error("progressive config 36 missing");
@@ -1241,6 +1243,85 @@ describe("useInput", () => {
       handler(makeEvent("4"));
       expect(dispatched("action:selectBuildType")).toBe(false);
       expect(gameStore.selectedTowerType).toBe(TowerIds.BASIC);
+    });
+  });
+
+  describe("bonus picker", () => {
+    const OFFER = ["sharpenedType", "smallPurse", "largePurse"] as const;
+
+    function openPicker(sealed: boolean): void {
+      gameStore.setState(GameState.PLAYING);
+      gameStore.bonusPicker = { source: "cache", id: 3, offer: [...OFFER], wasPlaying: true, specialistType: "basic" };
+      gameStore.mapCaches = [
+        { id: 3, tileX: 0, tileY: 0, worldX: 0, worldY: 0, hp: 60, maxHp: 60, offer: [...OFFER], unlocked: !sealed },
+      ];
+      gameStore.bonusPickerSelectedOption = 0;
+    }
+
+    it("cycles the three cards and Leave it with Tab, and wraps", () => {
+      openPicker(false);
+      const handler = captureHandler();
+      handler(makeEvent("Tab"));
+      expect(gameStore.bonusPickerSelectedOption).toBe(1);
+      handler(makeEvent("Tab"));
+      expect(gameStore.bonusPickerSelectedOption).toBe(2);
+      handler(makeEvent("Tab"));
+      expect(gameStore.bonusPickerSelectedOption).toBe(3);
+      handler(makeEvent("Tab"));
+      expect(gameStore.bonusPickerSelectedOption).toBe(0);
+      handler(makeEvent("Tab", { shiftKey: true }));
+      expect(gameStore.bonusPickerSelectedOption).toBe(3);
+      // The picker owns Tab: the time-scale cycle never sees it.
+      expect(dispatched("action:cycleSpeed")).toBe(false);
+    });
+
+    it("claims the highlighted card with Enter", () => {
+      openPicker(false);
+      const handler = captureHandler();
+      handler(makeEvent("Enter"));
+      expect(lastOfType("action:pickBonus")).toMatchObject({ index: 0 });
+      handler(makeEvent("Tab"));
+      handler(makeEvent("Enter"));
+      expect(lastOfType("action:pickBonus")).toMatchObject({ index: 1 });
+    });
+
+    it("closes the picker with Enter on Leave it", () => {
+      openPicker(false);
+      const handler = captureHandler();
+      for (let press = 0; press < 3; press++) handler(makeEvent("Tab"));
+      expect(gameStore.bonusPickerSelectedOption).toBe(3);
+      handler(makeEvent("Enter"));
+      expect(dispatched("action:pickBonus")).toBe(false);
+      expect(dispatched("action:dismissBonus")).toBe(true);
+    });
+
+    it("cycles Unlock and Leave it on a sealed cache, and Enter pays the fee", () => {
+      openPicker(true);
+      const handler = captureHandler();
+      expect(gameStore.bonusPickerLocked).toBe(true);
+      handler(makeEvent("Enter"));
+      expect(dispatched("action:unlockCache")).toBe(true);
+      expect(dispatched("action:pickBonus")).toBe(false);
+      handler(makeEvent("Tab"));
+      expect(gameStore.bonusPickerSelectedOption).toBe(1);
+      handler(makeEvent("Tab"));
+      expect(gameStore.bonusPickerSelectedOption).toBe(0);
+      handler(makeEvent("Tab", { shiftKey: true }));
+      expect(gameStore.bonusPickerSelectedOption).toBe(1);
+      handler(makeEvent("Enter"));
+      expect(dispatched("action:dismissBonus")).toBe(true);
+    });
+
+    it("still claims directly on a digit and ignores the card digits while sealed", () => {
+      openPicker(false);
+      const handler = captureHandler();
+      handler(makeEvent("2"));
+      expect(lastOfType("action:pickBonus")).toMatchObject({ index: 1 });
+
+      openPicker(true);
+      dispatcher.commands.length = 0;
+      handler(makeEvent("2"));
+      expect(dispatched("action:pickBonus")).toBe(false);
     });
   });
 

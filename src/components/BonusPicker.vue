@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { type BonusPickerOption, bonusPickerOptionCommand, bonusPickerOptions } from "@/composables/bonusPicker.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { bonusCard, cacheOpenGold } from "@/sim/runBonuses.js";
 import { useGameStore } from "@/stores/game.js";
@@ -11,6 +12,11 @@ const themeStore = useMapThemeStore();
 // An intact cache opens locked: only the unlock and leave buttons show until the
 // fee is paid or tower fire breaks it open.
 const locked = computed(() => gameStore.bonusPickerLocked);
+
+// One option list for the keyboard cursor, the highlight, and the buttons, so Tab
+// lands on something Enter can actually take.
+const options = computed(() => bonusPickerOptions(locked.value));
+const selectedOption = computed(() => options.value[gameStore.bonusPickerSelectedOption] ?? options.value[0]);
 
 const cards = computed(() => {
   const picker = gameStore.bonusPicker;
@@ -36,23 +42,32 @@ const cacheCost = computed<number | null>(() => {
   return cache.hp <= 0 ? 0 : null;
 });
 
-function pick(index: number): void {
-  dispatchCommand({ commandId: 0, type: "action:pickBonus", index });
+function choose(option: BonusPickerOption): void {
+  if (option.kind === "unlock") gameStore.selectBonusPickerOption(0);
+  dispatchCommand(bonusPickerOptionCommand(option, 0));
 }
 
-function unlock(): void {
-  dispatchCommand({ commandId: 0, type: "action:unlockCache" });
-}
-
-function dismiss(): void {
-  dispatchCommand({ commandId: 0, type: "action:dismissBonus" });
-}
+const hint = computed(() =>
+  locked.value
+    ? "Tab cycles Unlock and Leave it. Enter takes it, Esc leaves."
+    : "Tab cycles the cards and Leave it. Enter takes it, 1-3 claim a card, Esc leaves.",
+);
 </script>
 
 <template>
   <div v-if="gameStore.bonusPicker" class="bonus-picker">
     <div v-if="!locked" class="bonus-card-row">
-      <button v-for="card in cards" :key="card.index" class="bonus-card" type="button" @click="pick(card.index)">
+      <button
+        v-for="card in cards"
+        :key="card.index"
+        class="bonus-card"
+        :class="{ selected: selectedOption?.kind === 'card' && selectedOption.cardIndex === card.index }"
+        type="button"
+        @mousedown.prevent
+        @keydown.enter.prevent
+        @keydown.space.prevent
+        @click="choose({ kind: 'card', cardIndex: card.index })"
+      >
         <span class="bonus-key">{{ card.index + 1 }}</span>
         <span class="bonus-name">{{ card.name }}</span>
         <span class="bonus-detail">{{ card.detail }}</span>
@@ -60,10 +75,30 @@ function dismiss(): void {
       </button>
     </div>
     <span v-if="cacheCost !== null" class="bonus-cost">{{ cacheCost > 0 ? `${cacheCost} gold` : "Free" }}</span>
-    <button v-if="locked" class="bonus-unlock" type="button" @click="unlock">
+    <button
+      v-if="locked"
+      class="bonus-unlock"
+      :class="{ selected: selectedOption?.kind === 'unlock' }"
+      type="button"
+      @mousedown.prevent
+      @keydown.enter.prevent
+      @keydown.space.prevent
+      @click="choose({ kind: 'unlock', cardIndex: -1 })"
+    >
       Unlock for {{ unlockGold }} gold
     </button>
-    <button class="bonus-dismiss" type="button" @click="dismiss">Leave it</button>
+    <button
+      class="bonus-dismiss"
+      :class="{ selected: selectedOption?.kind === 'leave' }"
+      type="button"
+      @mousedown.prevent
+      @keydown.enter.prevent
+      @keydown.space.prevent
+      @click="choose({ kind: 'leave', cardIndex: -1 })"
+    >
+      Leave it
+    </button>
+    <div class="bonus-hint">{{ hint }}</div>
   </div>
 </template>
 
@@ -112,6 +147,12 @@ function dismiss(): void {
   border-color: var(--color-gold, #e0c040);
 }
 
+/* The keyboard cursor, the same border the block choices use for their selection. */
+.bonus-card.selected {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
 .bonus-key {
   font-size: var(--font-sm, 12px);
   color: var(--color-text-dim, #aaa);
@@ -146,6 +187,11 @@ function dismiss(): void {
   cursor: pointer;
 }
 
+.bonus-dismiss.selected {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
 .bonus-unlock {
   border: 1px solid var(--color-gold, #e0c040);
   border-radius: 6px;
@@ -159,6 +205,17 @@ function dismiss(): void {
 
 .bonus-unlock:hover {
   background: var(--color-surface-hover, #2a2a2a);
+}
+
+.bonus-unlock.selected {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.bonus-hint {
+  font-size: var(--font-sm, 12px);
+  color: var(--color-text-dim, #aaa);
+  text-align: center;
 }
 
 @media (max-width: 700px) {

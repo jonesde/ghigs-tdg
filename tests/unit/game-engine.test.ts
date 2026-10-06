@@ -2,6 +2,7 @@
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  BOSS_SPEED_LIMIT,
   BOUNTY_BLOCKED_RATIO,
   DIFFICULTY_MULT_GEM_BASE,
   FIRST_TIME_MILESTONE_MULT,
@@ -11,6 +12,7 @@ import {
   STARTING_BASE_HEALTH,
   STARTING_HEALTH_BONUS,
   StartingGold,
+  VICTORY_WAVE,
 } from "@/sim/Constants.js";
 import { CANCEL_BUILD_WINDOW_MS, SELL_VALUE_RATIO } from "@/sim/ConstantsTower.js";
 import { Enemy } from "@/sim/enemies/Enemy.js";
@@ -646,6 +648,33 @@ describe("GameEngine", () => {
       engine.togglePause();
       expect(engine.runState.state).toBe(GameState.PLAYING);
     });
+
+    it("clamps the speed to 2x when a boss emerges", () => {
+      const persistState = createTestPersistState();
+      initEngine(0, persistState);
+      engine.runState.timeScale = 8;
+      engine.enemyManager?.spawn("boss", 1, 0, 1);
+      expect(engine.runState.timeScale).toBe(BOSS_SPEED_LIMIT);
+    });
+
+    it("leaves the speed alone when a boss emerges at or below 2x", () => {
+      const persistState = createTestPersistState();
+      initEngine(0, persistState);
+      engine.runState.timeScale = 2;
+      engine.enemyManager?.spawn("boss", 1, 0, 1);
+      expect(engine.runState.timeScale).toBe(2);
+      engine.runState.timeScale = 1;
+      engine.enemyManager?.spawn("boss", 1, 0, 1);
+      expect(engine.runState.timeScale).toBe(1);
+    });
+
+    it("does not clamp the speed for a non-boss spawn", () => {
+      const persistState = createTestPersistState();
+      initEngine(0, persistState);
+      engine.runState.timeScale = 8;
+      engine.enemyManager?.spawn("runner", 1, 0, 1);
+      expect(engine.runState.timeScale).toBe(8);
+    });
   });
 
   describe("state management", () => {
@@ -763,6 +792,49 @@ describe("GameEngine", () => {
 
       expect(engine.runState.selectedTowerId).toBeNull();
       expect(engine.runState.hoverTile).toBeNull();
+    });
+  });
+
+  describe("wave top towers", () => {
+    function buildDamagedTower(damage: number): Tower {
+      const grid = engine.runState.grid;
+      for (let tileX = 0; tileX < grid.width; tileX++) {
+        for (let tileY = 0; tileY < grid.height; tileY++) {
+          if (!grid.canBuild(tileX, tileY)) continue;
+          const tower = engine.towerManager.build("basic", tileX, tileY, engine.persistState, grid);
+          if (!tower) continue;
+          tower.waveDamage = damage;
+          return tower;
+        }
+      }
+      throw new Error("no buildable tile found");
+    }
+
+    it("stamps the medals when a wave clears, while the wave damage is still live", () => {
+      initEngine(0, createTestPersistState());
+      const tower = buildDamagedTower(40);
+      expect(engine.waveTopTowers).toBeNull();
+
+      engine.onWaveCleared(1);
+      expect(engine.waveTopTowers).toEqual([{ towerId: tower.id, rank: 1, damage: 40, simSeconds: 0 }]);
+
+      // onWaveStart zeroes the wave damage and must not restamp over the window.
+      engine.onWaveStart(2);
+      expect(engine.waveTopTowers).toEqual([{ towerId: tower.id, rank: 1, damage: 40, simSeconds: 0 }]);
+    });
+
+    it("stamps the medals on timer expiry, which skips the countdown", () => {
+      initEngine(0, createTestPersistState());
+      const tower = buildDamagedTower(40);
+      engine.onWaveExpired(1);
+      expect(engine.waveTopTowers).toEqual([{ towerId: tower.id, rank: 1, damage: 40, simSeconds: 0 }]);
+    });
+
+    it("does not stamp the medals on the victory-wave clear", () => {
+      initEngine(0, createTestPersistState());
+      buildDamagedTower(40);
+      engine.onWaveCleared(VICTORY_WAVE);
+      expect(engine.waveTopTowers).toBeNull();
     });
   });
 

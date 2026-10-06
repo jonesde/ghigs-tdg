@@ -8,8 +8,6 @@ export interface SnapshotGateInput {
   stateMutatedThisTick: boolean;
   placementHoldActive: boolean;
   placementHoldPosted: boolean;
-  bonusPickerActive: boolean;
-  bonusPickerPosted: boolean;
 }
 
 export interface SnapshotGateDecision {
@@ -17,7 +15,6 @@ export interface SnapshotGateDecision {
   pausedMutation: boolean;
   awaitingAck: boolean;
   placementHoldPosted: boolean;
-  bonusPickerPosted: boolean;
 }
 
 export function decideSnapshotPost(input: SnapshotGateInput): SnapshotGateDecision {
@@ -25,40 +22,24 @@ export function decideSnapshotPost(input: SnapshotGateInput): SnapshotGateDecisi
   // pauses the run. Later ticks are idle and will not retry a snapshot the ack
   // gate dropped, so the block cards would stay hidden until some other command.
   const placementHoldNeedsPost = input.placementHoldActive && !input.placementHoldPosted;
-  // Same shape as the hold: a tower-fired cache break opens the picker inside
-  // engine.update, pauses the run, and would otherwise lose its announcement
-  // snapshot to the ack gate (the click-open path is a command and needs no help).
-  const bonusPickerNeedsPost = input.bonusPickerActive && !input.bonusPickerPosted;
-  const idle =
-    input.lastScaledDt === 0 && !input.stateMutatedThisTick && !placementHoldNeedsPost && !bonusPickerNeedsPost;
+  // The bonus picker needs no latch of its own: it only ever opens on an
+  // input:click, which is a command and therefore a stateMutatedThisTick post.
+  const idle = input.lastScaledDt === 0 && !input.stateMutatedThisTick && !placementHoldNeedsPost;
   if (idle && input.hasPostedSnapshot) {
     return {
       post: false,
       pausedMutation: false,
       awaitingAck: input.awaitingAck,
       placementHoldPosted: input.placementHoldPosted,
-      bonusPickerPosted: input.bonusPickerPosted,
     };
   }
 
   const pausedMutation = input.lastScaledDt === 0 && input.stateMutatedThisTick;
   const isBaseline = !input.hasPostedSnapshot;
-  const forced = isBaseline || input.stateMutatedThisTick || placementHoldNeedsPost || bonusPickerNeedsPost;
+  const forced = isBaseline || input.stateMutatedThisTick || placementHoldNeedsPost;
   if (input.awaitingAck && !forced) {
-    return {
-      post: false,
-      pausedMutation,
-      awaitingAck: true,
-      placementHoldPosted: input.placementHoldPosted,
-      bonusPickerPosted: input.bonusPickerPosted,
-    };
+    return { post: false, pausedMutation, awaitingAck: true, placementHoldPosted: input.placementHoldPosted };
   }
 
-  return {
-    post: true,
-    pausedMutation,
-    awaitingAck: !pausedMutation,
-    placementHoldPosted: input.placementHoldActive,
-    bonusPickerPosted: input.bonusPickerActive,
-  };
+  return { post: true, pausedMutation, awaitingAck: !pausedMutation, placementHoldPosted: input.placementHoldActive };
 }

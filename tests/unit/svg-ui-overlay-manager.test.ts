@@ -97,8 +97,7 @@ function enemyBarBg(layer: SVGGElement, groupIndex: number): SVGRectElement {
 
 function shieldBarFg(layer: SVGGElement, groupIndex: number): SVGRectElement {
   const rects = Array.from(layer.querySelectorAll("rect"));
-  const block = rects.slice(HP_BAR_POOL_SIZE * 3, (HP_BAR_POOL_SIZE + SHIELD_BAR_POOL_SIZE) * 3);
-  return block[groupIndex * 3 + 2]!;
+  return rects.slice(HP_BAR_POOL_SIZE * 3, HP_BAR_POOL_SIZE * 3 + SHIELD_BAR_POOL_SIZE)[groupIndex]!;
 }
 
 describe("UiOverlayManager tower health bars", () => {
@@ -218,10 +217,40 @@ describe("UiOverlayManager enemy health bars", () => {
     expect(enemyBarFg(layer, 0).style.visibility).toBe("hidden");
   });
 
-  it("keeps the shield bar visible when the hp bar is hidden", () => {
+  it("draws the health fill behind the shield in the same bar row", () => {
     manager.syncFromGameEngine([enemySnapshot({ hp: 100, maxHp: 100, shield: 25, maxShield: 50 })], null);
+    const healthFg = enemyBarFg(layer, 0);
+    const shieldFg = shieldBarFg(layer, 0);
+    // Full health is normally barless, but the shield bar needs something to drain onto.
+    expect(healthFg.style.visibility).toBe("visible");
+    expect(healthFg.getAttribute("width")).toBe("24");
+    expect(healthFg.getAttribute("fill")).toBe("#00ff00");
+    expect(shieldFg.style.visibility).toBe("visible");
+    expect(shieldFg.getAttribute("width")).toBe("12");
+    // One row: both rects share the health bar's transform.
+    expect(healthFg.getAttribute("transform")).toBe("translate(88, 88)");
+    expect(shieldFg.getAttribute("transform")).toBe("translate(88, 88)");
+  });
+
+  it("leaves the health fill standing when the shield breaks", () => {
+    manager.syncFromGameEngine([enemySnapshot({ hp: 40, maxHp: 100, shield: 25, maxShield: 50 })], null);
+    expect(shieldBarFg(layer, 0).getAttribute("width")).toBe("12");
+    manager.syncFromGameEngine([enemySnapshot({ hp: 40, maxHp: 100, shield: 0, maxShield: 50 })], null);
+    expect(shieldBarFg(layer, 0).style.visibility).toBe("hidden");
+    const healthFg = enemyBarFg(layer, 0);
+    expect(healthFg.style.visibility).toBe("visible");
+    expect(Number(healthFg.getAttribute("width"))).toBeCloseTo(9.6);
+    expect(healthFg.getAttribute("fill")).toBe("#ffff00");
+    expect(healthFg.getAttribute("transform")).toBe("translate(88, 88)");
+  });
+
+  it("hides the health fill again at full hp once the shield is gone", () => {
+    manager.syncFromGameEngine([enemySnapshot({ hp: 100, maxHp: 100, shield: 25, maxShield: 50 })], null);
+    expect(enemyBarFg(layer, 0).style.visibility).toBe("visible");
+    manager.syncFromGameEngine([enemySnapshot({ hp: 100, maxHp: 100, shield: 0, maxShield: 50 })], null);
     expect(enemyBarFg(layer, 0).style.visibility).toBe("hidden");
-    expect(shieldBarFg(layer, 0).style.visibility).toBe("visible");
+    expect(enemyBarBg(layer, 0).style.visibility).toBe("hidden");
+    expect(shieldBarFg(layer, 0).style.visibility).toBe("hidden");
   });
 
   it("shows a boss hp bar only while the boss is damaged", () => {
@@ -262,7 +291,7 @@ describe("UiOverlayManager base health bar", () => {
   function baseBarRects(): SVGRectElement[] {
     const rects = Array.from(layer.querySelectorAll("rect"));
     const enemyBlock = HP_BAR_POOL_SIZE * 3;
-    const shieldBlock = SHIELD_BAR_POOL_SIZE * 3;
+    const shieldBlock = SHIELD_BAR_POOL_SIZE;
     const baseBlock = rects.slice(enemyBlock + shieldBlock, enemyBlock + shieldBlock + 3);
     expect(baseBlock.length).toBe(3);
     return baseBlock as SVGRectElement[];

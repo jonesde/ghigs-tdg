@@ -219,4 +219,36 @@ describe("SnapshotStore selectedTower mirroring", () => {
     expect(gameStore.mapCaches.find((site) => site.id === cache.id)?.unlocked).toBe(true);
     expect(gameStore.bonusPickerLocked).toBe(false);
   });
+
+  it("resets the picker's keyboard cursor whenever a different picker is mirrored in", () => {
+    const gameStore = createTestGameStore();
+    const store = new SnapshotStore(gameStore as never);
+    const engine = createTestEngine();
+    const grid = engine.grid;
+    const cache = engine.mapCaches[0];
+    if (!grid || !cache) throw new Error("no cache");
+
+    const world = grid.tileToWorld(cache.tileX, cache.tileY);
+    engine.runState.state = GameState.PLAYING;
+    engine.handleClick(world.x, world.y);
+    store.apply(buildSnapshot(engine, nextCommandId++));
+    expect(gameStore.bonusPicker?.id).toBe(cache.id);
+
+    // The cursor is where the player left it inside the open picker.
+    gameStore.selectBonusPickerOption(2);
+    expect(gameStore.bonusPickerSelectedOption).toBe(2);
+    store.apply(buildSnapshot(engine, nextCommandId++));
+    expect(gameStore.bonusPickerSelectedOption).toBe(2);
+
+    // Reopening the same site is a new choice list: the cursor goes back to the
+    // first card, the same way the placement hold resets the block cursor.
+    engine.dismissBonus();
+    store.apply(buildSnapshot(engine, nextCommandId++));
+    expect(gameStore.bonusPicker).toBeNull();
+    expect(gameStore.bonusPickerSelectedOption).toBe(0);
+
+    engine.handleClick(world.x, world.y);
+    store.apply(buildSnapshot(engine, nextCommandId++));
+    expect(gameStore.bonusPickerSelectedOption).toBe(0);
+  });
 });

@@ -10,8 +10,6 @@ function gate(overrides: Partial<SnapshotGateInput>): SnapshotGateInput {
     stateMutatedThisTick: false,
     placementHoldActive: false,
     placementHoldPosted: false,
-    bonusPickerActive: false,
-    bonusPickerPosted: false,
     ...overrides,
   };
 }
@@ -81,42 +79,10 @@ describe("decideSnapshotPost", () => {
     expect(decision.placementHoldPosted).toBe(false);
   });
 
-  it("forces the playing tick that opens a bonus picker through the ack gate", () => {
-    const decision = decideSnapshotPost(gate({ awaitingAck: true, lastScaledDt: 1 / 60, bonusPickerActive: true }));
-    expect(decision.post).toBe(true);
-    expect(decision.pausedMutation).toBe(false);
-    expect(decision.awaitingAck).toBe(true);
-    expect(decision.bonusPickerPosted).toBe(true);
-  });
-
-  it("does not post a later paused tick once that picker snapshot was posted", () => {
-    const decision = decideSnapshotPost(gate({ awaitingAck: true, bonusPickerActive: true, bonusPickerPosted: true }));
-    expect(decision.post).toBe(false);
-    expect(decision.bonusPickerPosted).toBe(true);
-    expect(decision.awaitingAck).toBe(true);
-  });
-
-  it("retries a paused tick when the picker snapshot has not been posted yet", () => {
-    const decision = decideSnapshotPost(gate({ awaitingAck: true, bonusPickerActive: true }));
-    expect(decision.post).toBe(true);
-    expect(decision.pausedMutation).toBe(false);
-    expect(decision.awaitingAck).toBe(true);
-    expect(decision.bonusPickerPosted).toBe(true);
-  });
-
-  it("clears the picker latch on a snapshot posted after the picker closes", () => {
-    const decision = decideSnapshotPost(
-      gate({ lastScaledDt: 1 / 60, stateMutatedThisTick: true, bonusPickerPosted: true }),
-    );
-    expect(decision.post).toBe(true);
-    expect(decision.bonusPickerPosted).toBe(false);
-  });
-
   it("drops a running tick that is waiting for an ack and has no hold to announce", () => {
     const decision = decideSnapshotPost(gate({ awaitingAck: true, lastScaledDt: 1 / 60 }));
     expect(decision.post).toBe(false);
     expect(decision.placementHoldPosted).toBe(false);
-    expect(decision.bonusPickerPosted).toBe(false);
     expect(decision.awaitingAck).toBe(true);
   });
 });

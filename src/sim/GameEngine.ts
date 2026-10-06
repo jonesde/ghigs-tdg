@@ -108,6 +108,7 @@ import { type WaveEntry, WaveManager } from "@/sim/waves/WaveManager.js";
 import {
   BETWEEN_WAVES_TIMER,
   BONUS_GEM_BASE,
+  BOSS_SPEED_LIMIT,
   CUSTOM_PROGRESSIVE_MAP_INDEX,
   CUSTOM_RANDOM_MAP_INDEX,
   DIFFICULTY_MULT_GEM_BASE,
@@ -263,9 +264,6 @@ export class GameEngine {
   // by the snapshot so the HUD can list what the board is paying.
   activeBuildings: ActiveBuildingBonus = freshActiveBuildingBonus();
   nextBossAbilityNames: string[] = [];
-  // Broken caches waiting for the picker that is currently open to close. The
-  // wasPlaying flag is inherited so the whole chain resumes exactly once.
-  pendingBrokenCaches: { id: number; wasPlaying: boolean }[] = [];
   private progressiveBoard: ProgressiveBoard | null = null;
   private progressiveCatalog: BlockTemplate[] | null = null;
   private progressiveRng: (() => number) | null = null;
@@ -367,7 +365,6 @@ export class GameEngine {
     this.lastPostedLayoutGeneration = -1;
     this.sites.reset();
     this.nextBossAbilityNames = [];
-    this.pendingBrokenCaches = [];
     this.progressiveBoard = null;
     this.progressiveCatalog = null;
     this.progressiveRng = null;
@@ -827,6 +824,10 @@ export class GameEngine {
   onWaveCleared(wave: number): void {
     setWave(this.runState, wave);
     this.applyWaveProgressRewards(wave);
+    // Stamped at the end of the wave, not onWaveStart, so the medals are already
+    // up when the between-waves countdown overlay appears. The VICTORY_WAVE clear
+    // ends the run in this same tick and never opens a countdown.
+    if (wave < VICTORY_WAVE) this.stampWaveTopTowers();
     if (this.isProgressiveHoldWave(wave)) this.armPlacementHold("countdown");
   }
 
@@ -837,6 +838,9 @@ export class GameEngine {
   onWaveExpired(wave: number): void {
     setWave(this.runState, wave);
     this.applyWaveProgressRewards(wave);
+    // Expiry goes straight into the next wave with no countdown, so this is the
+    // same "the wave just ended" moment the medals are stamped on.
+    if (wave < VICTORY_WAVE) this.stampWaveTopTowers();
     if (this.isProgressiveHoldWave(wave)) this.armPlacementHold("expire-advance");
   }
 
@@ -893,31 +897,6 @@ export class GameEngine {
   onWaveStart(wave: number): void {
     setWave(this.runState, wave);
     this.waveGraphTracker?.onWaveStart(wave);
-
-    const ranked: { towerId: string; damage: number; totalDamage: number }[] = [];
-    for (const tower of this.towerManager!.towers) {
-      if (tower.waveDamage > 0) {
-        ranked.push({ towerId: tower.id, damage: tower.waveDamage, totalDamage: tower.totalDamageDealt });
-      }
-    }
-    if (this.baseDefense && this.baseDefense.waveDamage > 0) {
-      ranked.push({
-        towerId: BASE_SELECTION_ID,
-        damage: this.baseDefense.waveDamage,
-        totalDamage: this.baseDefense.totalDamageDealt,
-      });
-    }
-    ranked.sort((entryA, entryB) => entryB.damage - entryA.damage || entryB.totalDamage - entryA.totalDamage);
-    const topRanked = ranked.slice(0, 3);
-    this.waveTopTowers =
-      topRanked.length > 0
-        ? topRanked.map((entry, index) => ({
-            towerId: entry.towerId,
-            rank: index + 1,
-            damage: entry.damage,
-            simSeconds: this.simSeconds,
-          }))
-        : null;
 
     this.towerManager!.towers.forEach((tower) => {
       tower.waveDamage = 0;
@@ -1827,9 +1806,6 @@ export class GameEngine {
     this.progressiveOffer = [];
     this.progressivePlacementUndo = null;
     if (this.waveManager) this.waveManager.advanceHeld = false;
-    // The hold refused the open that queued a broken cache; retry now that the
-    // hold no longer owns the UI.
-    this.drainPendingBrokenCaches();
   }
 
   // Placement succeeded: close the offer UI and stash the undo record. The run
@@ -1983,9 +1959,43 @@ export class GameEngine {
   private onEnemySpawned(enemy: Enemy): void {
     if (enemy.type !== "boss" || !this.grid) return;
     this.runState.bossesSpawned += 1;
+    // A boss is unreadable above BOSS_SPEED_LIMIT. The worker owns timeScale, so
+    // the HUD label follows on the next snapshot; a multi-boss wave re-checks per
+    // boss and is a no-op once already at the limit.
+    if (this.runState.timeScale > BOSS_SPEED_LIMIT) this.runState.timeScale = BOSS_SPEED_LIMIT;
     configureBossAbility(enemy, enemy.bossAbility, this.grid.tileSize);
     if (enemy.bossAbility !== "healAura") return;
     enemy.mendSuppresses = (source, ally) => nearerMendBlocksIn(this.mendSources, source, ally);
+  }
+
+  // Ranks the wave that just ended by its damage and stamps the display window.
+  // Called from the two wave-end seams, while tower.waveDamage is still live —
+  // onWaveStart zeroes it once the next wave is under way.
+  private stampWaveTopTowers(): void {
+    const ranked: { towerId: string; damage: number; totalDamage: number }[] = [];
+    for (const tower of this.towerManager!.towers) {
+      if (tower.waveDamage > 0) {
+        ranked.push({ towerId: tower.id, damage: tower.waveDamage, totalDamage: tower.totalDamageDealt });
+      }
+    }
+    if (this.baseDefense && this.baseDefense.waveDamage > 0) {
+      ranked.push({
+        towerId: BASE_SELECTION_ID,
+        damage: this.baseDefense.waveDamage,
+        totalDamage: this.baseDefense.totalDamageDealt,
+      });
+    }
+    ranked.sort((entryA, entryB) => entryB.damage - entryA.damage || entryB.totalDamage - entryA.totalDamage);
+    const topRanked = ranked.slice(0, 3);
+    this.waveTopTowers =
+      topRanked.length > 0
+        ? topRanked.map((entry, index) => ({
+            towerId: entry.towerId,
+            rank: index + 1,
+            damage: entry.damage,
+            simSeconds: this.simSeconds,
+          }))
+        : null;
   }
 
   private stampBossAbilities(entries: readonly WaveEntry[], waveNumber: number): void {
@@ -2093,8 +2103,10 @@ export class GameEngine {
     cache.hp -= amount;
     if (cache.hp > 0) return;
     // A broken cache keeps its tile, its offer, and its reservation. Shot targets
-    // skip hp<=0 so towers stop firing it, and the free card claim below is what
-    // finally removes it.
+    // skip hp<=0 so towers stop firing it, and the free card claim on click is
+    // what finally removes it. Tower fire does not pause the run and does not
+    // open the picker: the glyph pulses like a boss package and the player
+    // claims it when they are ready.
     cache.hp = 0;
     // Breaking it open is the damage unlock path: the cards become free to claim.
     cache.unlocked = true;
@@ -2102,29 +2114,6 @@ export class GameEngine {
       type: "showNotification",
       message: "A cache was broken open. Click it to claim a card for free.",
     });
-    this.pendingBrokenCaches.push({
-      id: cacheId,
-      wasPlaying: this.runState.bonusPicker?.wasPlaying ?? this.runState.state === GameState.PLAYING,
-    });
-    this.drainPendingBrokenCaches();
-  }
-
-  // Opens the next broken cache whose site still exists. Entries stay queued until
-  // one actually opens, so a placement hold that refuses the open cannot lose it.
-  private drainPendingBrokenCaches(): boolean {
-    if (this.runState.bonusPicker) return false;
-    while (this.pendingBrokenCaches.length > 0) {
-      const next = this.pendingBrokenCaches[0]!;
-      const cache = this.mapCaches.find((site) => site.id === next.id);
-      if (!cache) {
-        this.pendingBrokenCaches.shift();
-        continue;
-      }
-      if (!this.openBonusPicker("cache", cache.id, next.wasPlaying)) return false;
-      this.pendingBrokenCaches.shift();
-      return true;
-    }
-    return false;
   }
 
   private playerStampKeys(blockX: number, blockY: number): Set<string> {
@@ -2134,11 +2123,7 @@ export class GameEngine {
   // Resolves everything the picker needs from the site itself: the curated offer,
   // the specialist type the typed cards promise, and the pause ownership. Resolving
   // here (not at click time) is what keeps a dismiss and reopen on the same roll.
-  private openBonusPicker(
-    source: "drop" | "cache",
-    id: number,
-    wasPlaying = this.runState.state === GameState.PLAYING,
-  ): boolean {
+  private openBonusPicker(source: "drop" | "cache", id: number): boolean {
     if (this.runState.bonusPicker || this.progressivePlacementHold) return false;
     const map = this.runState.map;
     if (!map) return false;
@@ -2152,6 +2137,7 @@ export class GameEngine {
     }
     const curated = curateBonusOffer(site.offer, { canApplySlow: this.canApplySlow() }, map.seed, id);
     if (curated !== site.offer) site.offer = curated;
+    const wasPlaying = this.runState.state === GameState.PLAYING;
     this.runState.bonusPicker = { source, id, offer: site.offer, wasPlaying, specialistType: site.specialistType };
     if (wasPlaying) setGameState(this.runState, GameState.PAUSED);
     return true;
@@ -2236,9 +2222,6 @@ export class GameEngine {
     const picker = this.runState.bonusPicker;
     if (!picker) return;
     this.runState.bonusPicker = null;
-    // The next broken cache inherits the pause this one held, so the chain of
-    // simultaneous breaks resumes exactly once at the end.
-    if (this.drainPendingBrokenCaches()) return;
     if (resume && picker.wasPlaying && this.runState.state === GameState.PAUSED) {
       setGameState(this.runState, GameState.PLAYING);
     }
