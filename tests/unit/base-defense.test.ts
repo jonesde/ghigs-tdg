@@ -178,15 +178,32 @@ describe("GameEngine base selection", () => {
     return engine;
   }
 
-  it("selects the base instead of building on a base tile", () => {
+  it("selects the base instead of building on a base tile and keeps build mode on", () => {
     const engine = startEngine();
     const base = engine.grid!.getBase();
     const world = engine.grid!.tileToWorld(base.x, base.y);
     engine.runState.selectedTowerType = "basic";
     engine.handleClick(world.x, world.y);
     expect(engine.runState.selectedTowerId).toBe(BASE_SELECTION_ID);
-    expect(engine.runState.selectedTowerType).toBeNull();
+    expect(engine.runState.selectedTowerType).toBe("basic");
     expect(engine.towerManager!.towers).toHaveLength(0);
+  });
+
+  it("selects the base without a build type when not in build mode", () => {
+    const engine = startEngine();
+    const base = engine.grid!.getBase();
+    const world = engine.grid!.tileToWorld(base.x, base.y);
+    engine.handleClick(world.x, world.y);
+    expect(engine.runState.selectedTowerId).toBe(BASE_SELECTION_ID);
+    expect(engine.runState.selectedTowerType).toBeNull();
+  });
+
+  it("selectTowerById keeps build mode on when selecting the base", () => {
+    const engine = startEngine();
+    engine.runState.selectedTowerType = "basic";
+    engine.selectTowerById(BASE_SELECTION_ID);
+    expect(engine.runState.selectedTowerId).toBe(BASE_SELECTION_ID);
+    expect(engine.runState.selectedTowerType).toBe("basic");
   });
 
   it("does not sell the base", () => {

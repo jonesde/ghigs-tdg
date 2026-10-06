@@ -676,6 +676,9 @@ export class EffectManager {
   // Shows the shared upgrade button and the 3×3 highlight after tower sync has
   // hidden them (the base is not a Tower). Hides only the sentry range circles
   // when a real tower is selected, so it does not clear that tower's button.
+  // showUpgradeButton is false in build mode: the base can now be selected
+  // while a build type is active, but both upgrade-button hit tests refuse to
+  // act then, so the button would render inert.
   syncBaseSelection(
     defense:
       | {
@@ -686,6 +689,7 @@ export class EffectManager {
       | undefined,
     selected: boolean,
     anchor: { x: number; y: number; tileX: number; tileY: number; originX: number; originY: number } | null,
+    showUpgradeButton: boolean,
   ): void {
     const show = selected && defense != null && anchor != null;
     if (!show) {
@@ -694,10 +698,14 @@ export class EffectManager {
     }
     if (this.rangeCircleEl) this.rangeCircleEl.style.visibility = "hidden";
     if (this.upgradeButtonEl) {
-      this.upgradeButtonEl.style.visibility = "visible";
-      const buttonX = anchor.x + TILE_SIZE / 2 - 12;
-      const buttonY = anchor.y - TILE_SIZE / 2 + 2;
-      this.upgradeButtonEl.setAttribute("transform", `translate(${buttonX}, ${buttonY})`);
+      if (showUpgradeButton) {
+        this.upgradeButtonEl.style.visibility = "visible";
+        const buttonX = anchor.x + TILE_SIZE / 2 - 12;
+        const buttonY = anchor.y - TILE_SIZE / 2 + 2;
+        this.upgradeButtonEl.setAttribute("transform", `translate(${buttonX}, ${buttonY})`);
+      } else {
+        this.upgradeButtonEl.style.visibility = "hidden";
+      }
     }
     if (this.selectedTileRectEl) {
       this.selectedTileRectEl.style.visibility = "visible";

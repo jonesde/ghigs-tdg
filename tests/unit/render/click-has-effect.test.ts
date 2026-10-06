@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  baseSelectionStale,
   type ClickEffectInput,
   clickHasEffect,
   decideRightClickAction,
   RIGHT_CLICK_MAX_DRAG_PX,
   rightPressIsClick,
 } from "@/render/svg/clickHasEffect.js";
+import { BASE_SELECTION_ID } from "@/sim/towers/BaseDefense.js";
 
 function input(overrides: Partial<ClickEffectInput> = {}): ClickEffectInput {
   return {
@@ -77,6 +79,37 @@ describe("decideRightClickAction", () => {
 
   it("does nothing with nothing to exit", () => {
     expect(decideRightClickAction(false, false)).toBeNull();
+  });
+});
+
+describe("baseSelectionStale", () => {
+  const baseTile = { x: 5, y: 5 };
+
+  it("is false when the base is not the selected tower", () => {
+    expect(baseSelectionStale(null, "basic", null, baseTile)).toBe(false);
+    expect(baseSelectionStale("tower-1", "basic", null, baseTile)).toBe(false);
+  });
+
+  it("is false for a base selection outside build mode", () => {
+    expect(baseSelectionStale(BASE_SELECTION_ID, null, null, baseTile)).toBe(false);
+    expect(baseSelectionStale(BASE_SELECTION_ID, null, { tileX: 9, tileY: 9 }, baseTile)).toBe(false);
+  });
+
+  it("is false while the hover tile is the base tile", () => {
+    expect(baseSelectionStale(BASE_SELECTION_ID, "basic", { tileX: 5, tileY: 5 }, baseTile)).toBe(false);
+  });
+
+  it("is true when the hover tile has moved off the base tile", () => {
+    expect(baseSelectionStale(BASE_SELECTION_ID, "basic", { tileX: 6, tileY: 5 }, baseTile)).toBe(true);
+    expect(baseSelectionStale(BASE_SELECTION_ID, "basic", { tileX: 5, tileY: 6 }, baseTile)).toBe(true);
+  });
+
+  it("is true when the hover tile is null (pointer off the grid)", () => {
+    expect(baseSelectionStale(BASE_SELECTION_ID, "basic", null, baseTile)).toBe(true);
+  });
+
+  it("is false when the base tile is unknown", () => {
+    expect(baseSelectionStale(BASE_SELECTION_ID, "basic", null, null)).toBe(false);
   });
 });
 

@@ -31,6 +31,7 @@ import { useInput } from "@/composables/Input.js";
 import { progressivePlacementCommand, rotateProgressiveBlockAt } from "@/composables/progressivePlacement.js";
 import { fitFrame, frameFromCenter, TILE_SIZE, wheelZoomFactor } from "@/render/svg/cameraFrame.js";
 import {
+  baseSelectionStale,
   type ClickEffectInput,
   clickHasEffect,
   decideRightClickAction,
@@ -316,6 +317,12 @@ let renderFrameHandle: number | null = null;
 let nextClickCommandId = 1;
 // Separate id source for sell-confirm-initiated executeSell commands (fix #7).
 let nextConfirmCommandId = 1;
+// One-shot latch for the build-mode base deselect: while the worker-confirmed
+// snapshot still holds the base selection with the hover off the base tile, the
+// render loop dispatches action:selectTower(null) exactly once. It clears when
+// the worker's ack lands or the hover returns to the base, so a single deselect
+// is ever in flight.
+let baseDeselectQueued = false;
 
 // Cached inverse CTM. Recomputed when the viewBox string or the element size changes.
 let cachedInverseCtm: DOMMatrix | null = null;
@@ -1028,6 +1035,20 @@ function renderLoop(): void {
   const grid = gameStore.grid;
   const baseTile = grid?.getBase() ?? null;
   const baseCenter = grid && baseTile ? grid.tileToWorld(baseTile.x, baseTile.y) : null;
+  // Build mode binds the base selection to the hover tile. The pointer (or the
+  // arrow keys) moving off the base tile leaves the worker-confirmed selection
+  // stale, so one deselect is queued. Deciding on snapshot.meta rather than the
+  // local mirror keeps an in-flight selection command from being clobbered.
+  if (
+    baseSelectionStale(snapshot.meta.selectedTowerId, snapshot.meta.selectedTowerType, gameStore.hoverTile, baseTile)
+  ) {
+    if (!baseDeselectQueued && dispatcher) {
+      baseDeselectQueued = true;
+      dispatcher.dispatch({ commandId: nextClickCommandId++, type: "action:selectTower", towerId: null });
+    }
+  } else {
+    baseDeselectQueued = false;
+  }
   const baseDefense = snapshot.meta.baseDefense;
   const basicVisual = themeStore.getTowerVisual("basic");
   const sniperVisual = themeStore.getTowerVisual("sniper");
@@ -1081,6 +1102,7 @@ function renderLoop(): void {
           originY: grid?.worldOriginY ?? 0,
         }
       : null,
+    snapshot.meta.selectedTowerType === null,
   );
   uiOverlayManager.syncFromGameEngine(snapshot.enemies, selectedTower, snapshot.towers);
   uiOverlayManager.syncWaveTopTowers(

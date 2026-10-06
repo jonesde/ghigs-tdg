@@ -1,4 +1,5 @@
 import type { TowerId } from "@/sim/ConstantsTower.js";
+import { BASE_SELECTION_ID } from "@/sim/towers/BaseDefense.js";
 
 export interface ClickEffectInput {
   progressivePlacementHold: boolean;
@@ -52,4 +53,21 @@ export function rightPressIsClick(
   const deltaX = endClientX - startClientX;
   const deltaY = endClientY - startClientY;
   return deltaX * deltaX + deltaY * deltaY <= maxDragPixels * maxDragPixels;
+}
+
+// While build mode is active the base selection is bound to the hover tile: the
+// hover has left the base tile (or is off the grid) and the worker-confirmed
+// base selection is stale. Inputs are the snapshot's meta values, not the local
+// mirror, so a selection command in flight can never be clobbered by a late
+// hover write.
+export function baseSelectionStale(
+  selectedTowerId: string | null,
+  selectedTowerType: string | null,
+  hoverTile: { tileX: number; tileY: number } | null,
+  baseTile: { x: number; y: number } | null,
+): boolean {
+  if (selectedTowerId !== BASE_SELECTION_ID) return false;
+  if (selectedTowerType === null) return false;
+  if (!baseTile) return false;
+  return hoverTile === null || hoverTile.tileX !== baseTile.x || hoverTile.tileY !== baseTile.y;
 }

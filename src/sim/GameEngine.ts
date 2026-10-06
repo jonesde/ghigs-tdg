@@ -1149,7 +1149,8 @@ export class GameEngine {
     }
 
     if (this.grid.isBase(tx, ty)) {
-      this.runState.selectedTowerType = null;
+      // The base is a selection target, not a build site: selecting it keeps
+      // build mode on so the player can inspect or upgrade it mid-placement.
       this.runState.selectedTowerId = BASE_SELECTION_ID;
       return;
     }
@@ -1534,7 +1535,8 @@ export class GameEngine {
       return;
     }
     if (towerId === BASE_SELECTION_ID) {
-      this.runState.selectedTowerType = null;
+      // Same contract as handleClick: selecting the base keeps any active
+      // build type (arrow-key build-tile navigation lands here in build mode).
       this.runState.selectedTowerId = BASE_SELECTION_ID;
       return;
     }
