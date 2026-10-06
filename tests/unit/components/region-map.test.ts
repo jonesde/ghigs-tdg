@@ -20,6 +20,8 @@ const nodeViews: RegionMapNodeView[] = layout.nodes.map((node) => {
     tooltip: `Map ${node.level}`,
     locked: !progressive && node.level === 2,
     mapIndex: progressive ? 36 + node.level : node.level - 1,
+    bestWave: 0,
+    cleared: false,
   };
 });
 
@@ -33,6 +35,27 @@ function mountRegionMap(selectedIndex: number | null = null) {
       selectedIndex,
     },
   });
+}
+
+function mountRegionMapWithNodes(views: RegionMapNodeView[]) {
+  return mount(RegionMap, {
+    props: {
+      mapImage: mockRegionMapImage,
+      viewBox: layout.viewBox,
+      connections: layout.connections,
+      nodeViews: views,
+      selectedIndex: null,
+    },
+  });
+}
+
+function nodeWithBestWave(label: string, bestWave: number) {
+  const views = nodeViews.map((view) =>
+    view.label === label ? { ...view, bestWave, cleared: bestWave >= 100 } : view,
+  );
+  return mountRegionMapWithNodes(views)
+    .findAll(".map-node")
+    .find((marker) => marker.find(".map-node-label").text().trim() === label)!;
 }
 
 function markerByLabel(wrapper: ReturnType<typeof mountRegionMap>, label: string) {
@@ -104,5 +127,41 @@ describe("RegionMap", () => {
     const wrapper = mountRegionMap();
     await wrapper.setProps({ selectedIndex: 1 });
     expect(wrapper.find(".map-play-button").exists()).toBe(false);
+  });
+
+  it("shows a placeholder wave readout above no medals for an unplayed map", () => {
+    const wrapper = mountRegionMap();
+    const marker = markerByLabel(wrapper, "3")!;
+    expect(marker.find(".map-node-wave").text()).toBe("☠ —");
+    expect(marker.find(".map-node-medals").exists()).toBe(false);
+  });
+
+  it("reads the best wave inside the level circle", () => {
+    const marker = nodeWithBestWave("3", 42);
+    expect(marker.find(".map-node-wave").text()).toBe("☠ 42");
+  });
+
+  it("shows only the medals the best wave earned", () => {
+    expect(nodeWithBestWave("3", 14).find(".map-node-medals").exists()).toBe(false);
+    expect(nodeWithBestWave("3", 15).find(".map-node-medals").text()).toBe("🥉");
+    expect(nodeWithBestWave("3", 30).find(".map-node-medals").text()).toBe("🥉 🥈");
+    expect(nodeWithBestWave("3", 50).find(".map-node-medals").text()).toBe("🥉 🥈 🥇");
+  });
+
+  it("rings the level circle and crowns the medal row on a cleared map", () => {
+    const marker = nodeWithBestWave("3", 100);
+    expect(marker.classes()).toContain("cleared");
+    expect(marker.find(".map-node-medals").text()).toBe("🥉 🥈 🥇 👑");
+    const rings = marker.findAll(".map-node-clear-ring");
+    expect(rings.length).toBe(2);
+    expect(rings.map((ring) => ring.attributes("r"))).toEqual(["41", "46.5"]);
+  });
+
+  it("renders the clear rings outside the level circle so they do not clip it", () => {
+    const marker = nodeWithBestWave("3", 100);
+    const circleRadius = Number(marker.find(".map-node-circle").attributes("r"));
+    for (const ring of marker.findAll(".map-node-clear-ring")) {
+      expect(Number(ring.attributes("r"))).toBeGreaterThan(circleRadius);
+    }
   });
 });

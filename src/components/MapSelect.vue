@@ -5,6 +5,7 @@ import GeneratedMapDialog from "@/components/GeneratedMapDialog.vue";
 import ProgressiveMapDialog from "@/components/ProgressiveMapDialog.vue";
 import RegionMap from "@/components/RegionMap.vue";
 import type { RegionMapNodeView } from "@/components/RegionMapNodeView.js";
+import { CLEARED_CROWN_GLYPH, isClearedBestWave } from "@/components/regionMapProgress.js";
 import {
   MAP_GEM_MULTIPLIERS,
   MAPS_PER_REGION,
@@ -194,15 +195,21 @@ const activeRegionNodes = computed<RegionMapNodeView[]>(() => {
       const config = progressiveConfigForIndex(mapIndex, themeStore.resolvedMaps);
       label = config ? `P${config.entryCount}` : "P";
     }
+    // firstClears is the authoritative clear record (GameEngine.endGame writes it on
+    // any victory). The best-wave test only covers a debug setWave(VICTORY_WAVE)
+    // jump, which records a best wave but no first clear.
+    const cleared = !!selectedThemeProgress.value.firstClears[String(mapIndex)] || isClearedBestWave(entry.bestWave);
     nodeViews.push({
       kind: node.kind,
       level: node.level,
       x: node.x,
       y: node.y,
       label,
-      tooltip: `${entry.name} • ${entry.style} • 💎 x${entry.gemReward} • Best Wave: ${entry.bestWave} • ${entry.width}×${entry.height}`,
+      tooltip: `${entry.name} • ${entry.style} • 💎 x${entry.gemReward} • Best Wave: ${entry.bestWave} • ${entry.width}×${entry.height}${cleared ? ` • ${CLEARED_CROWN_GLYPH} Cleared` : ""}`,
       locked: entry.locked,
       mapIndex,
+      bestWave: entry.bestWave,
+      cleared,
     });
   }
   return nodeViews;

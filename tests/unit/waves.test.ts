@@ -430,6 +430,40 @@ describe("WaveManager", () => {
       expect(startedWave).toBe(2);
       expect(waveManager.currentWave).toBe(2);
     });
+
+    it("pre-emptive expiry at VICTORY_WAVE reports the wave end without starting another", () => {
+      const waveManager = makeWaveManager(makeBastionMap());
+      waveManager.startNextWave();
+      waveManager.currentWave = VICTORY_WAVE;
+      waveManager.queue = [];
+      let clearedWave: number | null = null;
+      let startedWave: number | null = null;
+      waveManager.update(
+        PRE_EMPTIVE_WAVE_TIMER + 1,
+        (wave) => {
+          clearedWave = wave;
+        },
+        (wave) => {
+          startedWave = wave;
+        },
+      );
+      expect(clearedWave).toBe(VICTORY_WAVE);
+      expect(startedWave).toBeNull();
+      expect(waveManager.currentWave).toBe(VICTORY_WAVE);
+      expect(waveManager.betweenWaves).toBe(true);
+    });
+
+    it("pre-emptive expiry at VICTORY_WAVE reports the wave end exactly once", () => {
+      const waveManager = makeWaveManager(makeBastionMap());
+      waveManager.startNextWave();
+      waveManager.currentWave = VICTORY_WAVE;
+      waveManager.queue = [];
+      const clearedWaves: number[] = [];
+      const onWaveCleared = (wave: number) => clearedWaves.push(wave);
+      waveManager.update(PRE_EMPTIVE_WAVE_TIMER + 1, onWaveCleared, null);
+      waveManager.update(PRE_EMPTIVE_WAVE_TIMER + 1, onWaveCleared, null);
+      expect(clearedWaves).toEqual([VICTORY_WAVE]);
+    });
   });
 
   describe("waveComposition", () => {
