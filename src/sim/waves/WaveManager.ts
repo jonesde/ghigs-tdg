@@ -6,6 +6,7 @@ import {
   ENEMY_TYPES,
   enemyLevelForWave,
   HEALER_MIN_GAP,
+  tierThresholdForWave,
   waveBossCount,
   waveUnitCount,
 } from "@/sim/ConstantsEnemy.js";
@@ -36,6 +37,15 @@ export interface WaveEntry {
   level: number;
   delay: number;
   bossAbility?: BossAbilityId;
+}
+
+// Enemy types whose heal auras share the HEALER_MIN_GAP stagger discipline:
+// every type here heals allies additively, so two of them in the same pack
+// double the sustain the gap exists to bound.
+export const HEALER_TYPES: readonly string[] = ["healer", "mender"];
+
+export function isHealerType(type: string): boolean {
+  return HEALER_TYPES.includes(type);
 }
 
 export class WaveManager {
@@ -239,30 +249,30 @@ export class WaveManager {
     const nonBossCount = baseCount;
     const out: WaveEntry[] = [];
 
-    // Healers are rate-limited so their additive heal auras cannot stack into an
-    // unkillable pack: a healer drawn with fewer than HEALER_MIN_GAP enemies since
-    // the last one goes to healerBacklog, this slot is refilled by a re-roll that
-    // excludes healers, and the backlog is emitted once the gap is satisfied again.
-    // sinceLastHealer starts at the full gap so the wave's first healer is not
-    // delayed. Leftover backlog at the end of the wave is intentionally discarded:
-    // those slots were already filled by other enemies and the wave reached maximum
-    // healer density.
-    let healerBacklog = 0;
+    // Healers and menders share one rate limit so their additive heal auras
+    // cannot stack into an unkillable pack: a healer-type drawn with fewer
+    // than HEALER_MIN_GAP enemies since the last one goes to healerBacklog,
+    // this slot is refilled by a re-roll that excludes both healer types, and
+    // the backlog is emitted (oldest first) once the gap is satisfied again.
+    // sinceLastHealer starts at the full gap so the wave's first healer-type
+    // is not delayed. Leftover backlog at the end of the wave is intentionally
+    // discarded: those slots were already filled by other enemies and the wave
+    // reached maximum healer density.
+    const healerBacklog: string[] = [];
     let sinceLastHealer = HEALER_MIN_GAP;
     for (let i = 0; i < nonBossCount; i++) {
       let type: string;
-      if (healerBacklog > 0 && sinceLastHealer >= HEALER_MIN_GAP) {
-        type = "healer";
-        healerBacklog--;
+      if (healerBacklog.length > 0 && sinceLastHealer >= HEALER_MIN_GAP) {
+        type = healerBacklog.shift()!;
       } else {
         type = this.rollType(n);
-        if (type === "healer" && sinceLastHealer < HEALER_MIN_GAP) {
-          healerBacklog++;
-          type = this.rollType(n, "healer");
+        if (isHealerType(type) && sinceLastHealer < HEALER_MIN_GAP) {
+          healerBacklog.push(type);
+          type = this.rollType(n, HEALER_TYPES);
         }
       }
       out.push({ type, level: enemyLevel, delay: 0.5 + this.rng() * 0.5 });
-      sinceLastHealer = type === "healer" ? 0 : sinceLastHealer + 1;
+      sinceLastHealer = isHealerType(type) ? 0 : sinceLastHealer + 1;
     }
 
     for (let i = 0; i < bossCount; i++) {
@@ -271,18 +281,32 @@ export class WaveManager {
     return out;
   }
 
-  private rollType(wave: number, excludeType: string | null = null): string {
-    // excludeType drops the tier from the cumulative bands so a healer re-roll
-    // always yields another type instead of re-looping on healers.
+  private rollType(wave: number, excludeTypes: readonly string[] = []): string {
+    // excludeTypes drops tiers from the cumulative bands so a healer re-roll
+    // always yields another type instead of re-looping on healer-types.
+    const excluded = new Set(excludeTypes);
     const rand = this.rng();
     let cumulative = 0;
     for (const tier of ENEMY_TIER_THRESHOLDS) {
-      if (tier.type === excludeType) continue;
-      cumulative += tier.threshold;
-      if (wave >= tier.minWave && rand < cumulative) {
+      if (excluded.has(tier.type)) continue;
+      if (wave < tier.minWave) {
+        // Flat bands keep their dead mass while locked, which is what preserves
+        // the historical distribution: a roll that lands in that mass falls
+        // through to a later unlocked band, so the mass steers draws toward the
+        // last band the wave has unlocked rather than the first. Ramped bands
+        // contribute nothing until their debut instead, so an intro cannot
+        // reshape the waves before it.
+        if (tier.rampPerWave) continue;
+        cumulative += tier.threshold;
+        continue;
+      }
+      cumulative += tierThresholdForWave(tier, wave);
+      if (rand < cumulative) {
         return tier.type;
       }
     }
+    // Past wave 85 the bands' total mass exceeds 1 (see tierThresholdForWave),
+    // so the minion is unreachable from here on.
     return "minion";
   }
 

@@ -9,7 +9,7 @@ import {
 } from "@/commanders/llm/types.js";
 import type { CommanderObservation } from "@/commanders/observation.js";
 import enemiesContent from "@/content/data/enemies.json";
-import { EnemyMetaSchema } from "@/content/schemas/enemies.js";
+import { EnemiesContentSchema, EnemyMetaSchema } from "@/content/schemas/enemies.js";
 import { ENEMY_TYPES, FIXED_DT } from "@/sim/Constants.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import { Enemy as EnemyEntity, resetEnemyId } from "@/sim/enemies/Enemy.js";
@@ -25,6 +25,7 @@ import { writeFlightVelocities } from "@/sim/enemies/flyingSteer.js";
 import { selectTargetingTower } from "@/sim/enemies/targeting.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { generateProgressiveMap, progressiveConfigForIndex } from "@/sim/grid/ProgressiveMap.js";
+import { getCrowdAgentProfile } from "@/sim/navmesh/CrowdManager.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import type { Tower } from "@/sim/towers/Tower.js";
@@ -78,7 +79,7 @@ function bindTower(enemy: Enemy, tower: Tower): void {
 }
 
 describe("flying enemy content", () => {
-  it("loads nine rows and the three flying heights", () => {
+  it("loads twelve rows and the five flying heights", () => {
     const types = enemiesContent.types;
     expect(Object.keys(types)).toEqual([
       "minion",
@@ -86,20 +87,27 @@ describe("flying enemy content", () => {
       "tank",
       "shielded",
       "healer",
+      "mender",
+      "skyhold",
+      "broodwing",
       "boss",
       "flyer",
       "jet",
       "aegis",
     ]);
-    for (const typeName of ["minion", "runner", "tank", "shielded", "healer", "boss"]) {
+    for (const typeName of ["minion", "runner", "tank", "shielded", "healer", "mender", "boss"]) {
       expect(types[typeName as keyof typeof types].flyingHeight).toBe(0);
       expect(ENEMY_TYPES[typeName]?.flyingHeight).toBe(0);
     }
+    expect(types.broodwing.flyingHeight).toBe(1);
     expect(types.flyer.flyingHeight).toBe(2);
     expect(types.aegis.flyingHeight).toBe(3);
+    expect(types.skyhold.flyingHeight).toBe(4);
     expect(types.jet.flyingHeight).toBe(5);
+    expect(ENEMY_TYPES.broodwing?.flyingHeight).toBe(1);
     expect(ENEMY_TYPES.flyer?.flyingHeight).toBe(2);
     expect(ENEMY_TYPES.aegis?.flyingHeight).toBe(3);
+    expect(ENEMY_TYPES.skyhold?.flyingHeight).toBe(4);
     expect(ENEMY_TYPES.jet?.flyingHeight).toBe(5);
     expect(readFlyingHeight({})).toBe(0);
     expect(readFlyingHeight(undefined)).toBe(0);
@@ -112,6 +120,34 @@ describe("flying enemy content", () => {
     expect(EnemyMetaSchema.safeParse({ ...enemiesContent.types.jet, flyingHeight: -1 }).success).toBe(false);
     expect(EnemyMetaSchema.safeParse({ ...enemiesContent.types.jet, flyingHeight: 1.5 }).success).toBe(false);
     expect(EnemyMetaSchema.safeParse({ ...enemiesContent.types.jet, flyingHeight: 5 }).success).toBe(true);
+  });
+
+  it("rejects spawner and tier-threshold content mistakes at load time", () => {
+    const pack = structuredClone(enemiesContent);
+    expect(EnemiesContentSchema.safeParse(pack).success).toBe(true);
+
+    const intervalWithoutCap = structuredClone(pack);
+    delete (intervalWithoutCap.types.broodwing as { spawnCap?: number }).spawnCap;
+    expect(EnemiesContentSchema.safeParse(intervalWithoutCap).success).toBe(false);
+
+    const unknownSpawnType = structuredClone(pack);
+    unknownSpawnType.types.broodwing.spawnType = "not-a-type";
+    expect(EnemiesContentSchema.safeParse(unknownSpawnType).success).toBe(false);
+
+    const rampWithoutMax = structuredClone(pack);
+    delete (rampWithoutMax.tierThresholds[0] as { maxThreshold?: number }).maxThreshold;
+    expect(EnemiesContentSchema.safeParse(rampWithoutMax).success).toBe(false);
+
+    const unknownTierType = structuredClone(pack);
+    unknownTierType.tierThresholds.push({ minWave: 99, threshold: 0.01, type: "not-a-type" });
+    expect(EnemiesContentSchema.safeParse(unknownTierType).success).toBe(false);
+  });
+
+  it("leaves airborne types on the default crowd profile (they own no agent)", () => {
+    for (const typeName of ["flyer", "jet", "aegis", "skyhold", "broodwing"]) {
+      expect(getCrowdAgentProfile(typeName)).toBe(getCrowdAgentProfile("no-such-type"));
+    }
+    expect(getCrowdAgentProfile("mender")).not.toBe(getCrowdAgentProfile("no-such-type"));
   });
 });
 

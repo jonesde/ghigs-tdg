@@ -10,9 +10,9 @@ export type BossAbilityId = (typeof BOSS_ABILITY_IDS)[number];
 const ABILITY_POOL: BossAbilityId[] = ["spawnMinions", "healAura", "speedAura", "shieldPulse", "towerShot"];
 const ABILITY_ROLL_TAG = 0xb055;
 
-export const MINION_INTERVAL_SECONDS = 30;
-export const MINION_FIRST_DELAY_SECONDS = 10;
-export const MINION_CAP = 8;
+export const MINION_INTERVAL_SECONDS = 3;
+export const MINION_FIRST_DELAY_SECONDS = 3;
+export const MINION_CAP = 10;
 export const HEAL_AURA_FRACTION_PER_SECOND = 0.02;
 export const HEAL_AURA_RANGE_TILES = 2.5;
 export const HASTE_BOSS_FACTOR = 1.2;
@@ -76,10 +76,13 @@ export function rollBossAbilities(
   return abilities;
 }
 
-export function minionPulseCount(waveNumber: number, liveCount: number, enemyCap: number): number {
-  const wanted = Math.min(MINION_CAP, Math.max(1, Math.round(waveNumber * 0.5)));
-  const slack = Math.max(0, enemyCap - liveCount);
-  return Math.min(wanted, slack);
+// Trickle spawner accounting: one child per pulse while the spawner is under
+// its own live-child cap and the run is under the gameplay enemy cap.
+// Otherwise the pulse is skipped (never queued).
+export function trickleSpawnCount(spawnCap: number, liveChildren: number, liveTotal: number, enemyCap: number): number {
+  if (spawnCap <= 0 || liveChildren >= spawnCap) return 0;
+  if (liveTotal >= enemyCap) return 0;
+  return 1;
 }
 
 export interface MendSource {
@@ -180,14 +183,15 @@ export interface BossTickContext {
   // Resolved only when a towerShot boss arms a bombard. A wave without one never
   // asks, so the sim does not pay for a tower list on ticks that cannot use it.
   towers: () => readonly BossShotTarget[];
-  // Spawns only the slack under the live cap. Overflow is discarded, not queued.
-  spawnMinions: (boss: Enemy) => void;
+  // Emits one summoned child for a spawner pulse. The engine drops the pulse
+  // when the spawner is at its live-child cap or the run is at the enemy cap.
+  spawnMinions: (host: Enemy) => void;
   damageTower: (towerId: string, amount: number, attacker: Enemy) => void;
 }
 
 export interface BossAbilityServices {
   readonly towers: () => readonly BossShotTarget[];
-  readonly spawnMinions: (boss: Enemy) => void;
+  readonly spawnMinions: (host: Enemy) => void;
   readonly damageTower: (towerId: string, amount: number, attacker: Enemy) => void;
 }
 
@@ -216,12 +220,16 @@ export function tickBossAbilities(enemies: readonly Enemy[], dt: number, context
   resetHaste(enemies);
   applyHasteAuras(enemies, context.tileSize);
   for (const enemy of enemies) {
+    if (enemy.removed || enemy.stunTimer > 0) continue;
     // Stun is a full action freeze: minion pulses, shield pulses, and the
-    // bombard (armed and in flight) all hold while the boss is stunned.
-    if (enemy.removed || enemy.type !== "boss" || enemy.stunTimer > 0) continue;
-    if (enemy.bossAbility === "spawnMinions") tickMinions(enemy, dt, context);
-    if (enemy.bossAbility === "shieldPulse") tickShield(enemy, dt, enemies, context.tileSize);
-    if (enemy.bossAbility === "towerShot") tickBombard(enemy, dt, context);
+    // bombard (armed and in flight) all hold while the source is stunned.
+    if (enemy.type === "boss") {
+      if (enemy.bossAbility === "spawnMinions") tickMinions(enemy, dt, context);
+      if (enemy.bossAbility === "shieldPulse") tickShield(enemy, dt, enemies, context.tileSize);
+      if (enemy.bossAbility === "towerShot") tickBombard(enemy, dt, context);
+    } else if (enemy.spawnsMinions) {
+      tickMinions(enemy, dt, context);
+    }
   }
 }
 
@@ -248,13 +256,15 @@ function applyHasteAuras(enemies: readonly Enemy[], tileSize: number): void {
   }
 }
 
-function tickMinions(boss: Enemy, dt: number, context: BossTickContext): void {
-  boss.minionTimer -= dt;
-  if (boss.minionTimer > 0) return;
-  boss.minionTimer = MINION_INTERVAL_SECONDS;
-  // attackAnimTime is a timestamp. The render plays the boss attack frames from it.
-  boss.attackAnimTime = boss.gameSeconds;
-  context.spawnMinions(boss);
+function tickMinions(host: Enemy, dt: number, context: BossTickContext): void {
+  host.minionTimer -= dt;
+  if (host.minionTimer > 0) return;
+  // Broodwings carry their own interval from the enemy meta; bosses use the
+  // shared ability cadence. First delay is armed at construction/stamp time.
+  host.minionTimer = host.spawnIntervalSeconds > 0 ? host.spawnIntervalSeconds : MINION_INTERVAL_SECONDS;
+  // attackAnimTime is a timestamp. The render plays the attack frames from it.
+  host.attackAnimTime = host.gameSeconds;
+  context.spawnMinions(host);
 }
 
 function tickShield(boss: Enemy, dt: number, enemies: readonly Enemy[], tileSize: number): void {

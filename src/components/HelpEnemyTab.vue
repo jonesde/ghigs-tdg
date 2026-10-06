@@ -5,6 +5,7 @@ import { getGameContent } from "@/content/gameContent.js";
 import { DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
 import {
   BOSS_CADENCE,
+  ENEMY_ORDER,
   ENEMY_TIER_THRESHOLDS,
   ENEMY_TYPES,
   type EnemyMeta,
@@ -23,7 +24,6 @@ const themeStore = useMapThemeStore();
 const persistStore = usePersistStore();
 
 const WAVE_STOPS = [1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
-const ENEMY_ORDER = ["minion", "runner", "tank", "shielded", "healer", "flyer", "jet", "aegis", "boss"];
 
 function nearestStopIndex(wave: number): number {
   let bestIndex = 0;

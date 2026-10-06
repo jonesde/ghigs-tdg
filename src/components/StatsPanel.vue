@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
+import { ENEMY_ORDER, ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
@@ -23,10 +23,7 @@ const waveComposition = computed(() => {
   const comp = snapshot.value?.meta.waveComposition || {};
   const entries = Object.entries(comp)
     .filter(([, count]) => count > 0)
-    .sort((entryA, entryB) => {
-      const order = ["minion", "runner", "tank", "shielded", "healer", "flyer", "jet", "aegis", "boss"];
-      return order.indexOf(entryA[0]) - order.indexOf(entryB[0]);
-    });
+    .sort((entryA, entryB) => ENEMY_ORDER.indexOf(entryA[0]) - ENEMY_ORDER.indexOf(entryB[0]));
   return entries;
 });
 

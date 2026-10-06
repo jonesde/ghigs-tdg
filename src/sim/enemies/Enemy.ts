@@ -11,6 +11,8 @@ import {
   MAX_BURN_STACKS,
   MIN_SLOW_FACTOR,
   STUCK_RECOVERY_SECONDS,
+  STUN_CAP_PER_SECOND,
+  STUN_WINDOW_SECONDS,
 } from "@/sim/ConstantsEnemy.js";
 import { decideBreach } from "@/sim/navmesh/BreachDecision.js";
 import { restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdManager.js";
@@ -107,6 +109,9 @@ interface EnemyMetaRef {
   attackDamage: number;
   attackSpeed: number;
   flyingHeight?: number;
+  spawnIntervalSeconds?: number;
+  spawnCap?: number;
+  spawnType?: string;
 }
 
 interface GridRef {
@@ -301,6 +306,11 @@ export class Enemy {
   slowFactor!: number;
   slowStack!: SlowEntry[];
   stunTimer!: number;
+  // Stun diminishing-returns budget: fresh stun credited inside the trailing
+  // STUN_WINDOW_SECONDS window, capped at STUN_CAP_PER_SECOND. Excess stun is
+  // discarded, so chain-stuns cannot hold an enemy past the cap per second.
+  stunWindowStart!: number;
+  stunWindowApplied!: number;
   removed!: boolean;
   burnStack!: BurnEntry[];
   hitAnimTime!: number;
@@ -381,7 +391,16 @@ export class Enemy {
   healSelf = false;
   // True for minions emitted by a boss. Their bounty stays 0 and they drop nothing.
   summoned = false;
+  // Id of the spawner that emitted this summoned enemy (boss or broodwing).
+  // Used to count live children against that spawner's cap. Null when wave-spawned.
+  summonedBy: number | null = null;
   minionTimer = 0;
+  // Trickle-spawner config from the enemy meta (broodwing). Bosses get the same
+  // shape from their stamped ability instead (see configureBossAbility).
+  spawnsMinions = false;
+  spawnIntervalSeconds = 0;
+  spawnCap = 0;
+  spawnTypeName = "minion";
   shieldTimer = 0;
   bombardTimer = 0;
   bombardTelegraphRemaining = 0;
@@ -434,6 +453,11 @@ export class Enemy {
     this.maxShield = this.shield;
     this.heal = meta.heal || 0;
     this.healRange = (meta.healRange || 0) * grid.tileSize;
+    this.spawnsMinions = !!meta.spawnIntervalSeconds && (meta.spawnCap ?? 0) > 0;
+    this.spawnIntervalSeconds = meta.spawnIntervalSeconds || 0;
+    this.spawnCap = meta.spawnCap || 0;
+    this.spawnTypeName = meta.spawnType || "minion";
+    if (this.spawnsMinions) this.minionTimer = this.spawnIntervalSeconds;
 
     this.maxHp = waveStats.maxHp;
     this.hp = this.maxHp;
@@ -462,6 +486,8 @@ export class Enemy {
     this.slowFactor = 1;
     this.slowStack = [];
     this.stunTimer = 0;
+    this.stunWindowStart = 0;
+    this.stunWindowApplied = 0;
     this.burnStack = [];
     this.hitAnimTime = 0;
     this._gameSeconds = 0;
@@ -505,7 +531,15 @@ export class Enemy {
 
   applyStun(duration: number) {
     if (this.type === "boss") duration *= BOSS_STUN_REDUCTION;
-    this.stunTimer = Math.max(this.stunTimer, duration);
+    if (duration <= 0) return;
+    if (this._gameSeconds - this.stunWindowStart >= STUN_WINDOW_SECONDS) {
+      this.stunWindowStart = this._gameSeconds;
+      this.stunWindowApplied = 0;
+    }
+    const credited = Math.min(duration, Math.max(0, STUN_CAP_PER_SECOND - this.stunWindowApplied));
+    if (credited <= 0) return;
+    this.stunWindowApplied += credited;
+    this.stunTimer = Math.max(this.stunTimer, credited);
   }
 
   applyBurn(dps: number, duration: number, sourceTowerId?: string) {

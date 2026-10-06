@@ -15,6 +15,8 @@ import {
   enemyLevelBounty,
   MIN_SLOW_FACTOR,
   STUCK_RECOVERY_SECONDS,
+  STUN_CAP_PER_SECOND,
+  STUN_WINDOW_SECONDS,
 } from "@/sim/ConstantsEnemy.js";
 import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
@@ -163,10 +165,20 @@ describe("Enemy", () => {
       expect(late.bounty).toBeLessThan(early.bounty);
     });
 
-    it("sets shield for shielded enemies", () => {
+    it("sets shield for shielded enemies, scaling with the full HP multiplier", () => {
       const enemy = new Enemy("shielded", 2, 0, grid, 1, 0);
-      expect((enemy as { shield: number }).shield).toBe(ENEMY_TYPES.shielded.shield! * 2);
+      // Level 2 HP mult is 1 + 0.8 = 1.8; wave 1 and pre-steepening contribute 1x.
+      expect((enemy as { shield: number }).shield).toBeCloseTo(ENEMY_TYPES.shielded.shield! * 1.8, 8);
       expect((enemy as { maxShield: number }).maxShield).toBe((enemy as { shield: number }).shield);
+    });
+
+    it("keeps the shield:HP ratio constant across waves", () => {
+      const early = new Enemy("shielded", 2, 0, grid, 1, 0);
+      const late = new Enemy("shielded", 20, 0, grid, 80, 0);
+      expect((late as { shield: number }).shield / late.maxHp).toBeCloseTo(
+        (early as { shield: number }).shield / early.maxHp,
+        8,
+      );
     });
 
     it("has zero shield for non-shielded types", () => {
@@ -360,15 +372,37 @@ describe("Enemy", () => {
 
     it("does not reduce existing stun timer", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
-      enemy.applyStun(1.0);
-      enemy.applyStun(0.5);
-      expect(enemy.stunTimer).toBe(1.0);
+      enemy.applyStun(0.4);
+      enemy.applyStun(0.2);
+      expect(enemy.stunTimer).toBe(0.4);
     });
 
     it("reduces duration for boss by BOSS_STUN_REDUCTION", () => {
       const enemy = new Enemy("boss", 1, 0, grid, 1, 0);
       enemy.applyStun(1.0);
       expect(enemy.stunTimer).toBeCloseTo(1.0 * BOSS_STUN_REDUCTION, 4);
+    });
+
+    it("truncates a single over-cap stun to STUN_CAP_PER_SECOND", () => {
+      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+      enemy.applyStun(2.0);
+      expect(enemy.stunTimer).toBeCloseTo(STUN_CAP_PER_SECOND, 8);
+    });
+
+    it("discards stun past the cap inside one window", () => {
+      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+      enemy.applyStun(0.5);
+      enemy.applyStun(0.5);
+      expect(enemy.stunTimer).toBe(0.5);
+    });
+
+    it("opens a fresh budget once the window elapses", () => {
+      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+      enemy.applyStun(0.2);
+      expect(enemy.stunTimer).toBe(0.2);
+      enemy._gameSeconds += STUN_WINDOW_SECONDS + 0.1;
+      enemy.applyStun(0.6);
+      expect(enemy.stunTimer).toBe(0.6);
     });
   });
 
@@ -461,8 +495,9 @@ describe("Enemy", () => {
     it("reduces stunTimer each tick", () => {
       const enemy = spawn("minion", 1, 0, 1);
       enemy.applyStun(1.0);
+      expect(enemy.stunTimer).toBeCloseTo(STUN_CAP_PER_SECOND, 4);
       tickEnemy(enemy, 0.5);
-      expect(enemy.stunTimer).toBeCloseTo(0.5, 4);
+      expect(enemy.stunTimer).toBeCloseTo(STUN_CAP_PER_SECOND - 0.5, 4);
     });
 
     it("does not move while stunned", () => {
@@ -756,9 +791,14 @@ describe("Enemy", () => {
       const grid = new Grid(makeBastionMap());
       const physicsWorld = new PhysicsWorld(grid);
       try {
+        // Stun credit caps at STUN_CAP_PER_SECOND per window, so the stun
+        // holds for the cap, not the full recovery window. Step inside the
+        // cap: no nudge may fire while the park is stun-held.
         const { enemy, manager } = makePinnedWalker(grid, physicsWorld, 10);
-        const steps = Math.ceil(STUCK_RECOVERY_SECONDS / fixedDt);
+        expect(enemy.stunTimer).toBeCloseTo(STUN_CAP_PER_SECOND, 8);
+        const steps = Math.ceil(0.6 / fixedDt);
         for (let step = 0; step < steps; step++) enemy.computeIntent(fixedDt, manager);
+        expect(enemy.stunTimer).toBeGreaterThan(0);
         expect(enemy.ballisticTimer).toBe(0);
         expect(enemy.motionLock).toBe("park");
       } finally {

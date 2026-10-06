@@ -6,10 +6,12 @@ import {
   bossAbilityLabel,
   collectMendSources,
   configureBossAbility,
+  MINION_CAP,
   MINION_FIRST_DELAY_SECONDS,
-  minionPulseCount,
+  MINION_INTERVAL_SECONDS,
   nearerMendBlocksIn,
   rollBossAbilities,
+  trickleSpawnCount,
 } from "@/sim/bossAbilities.js";
 import { FIXED_DT } from "@/sim/Constants.js";
 import { enemyLevelForWave, waveBossCount } from "@/sim/ConstantsEnemy.js";
@@ -97,11 +99,16 @@ describe("boss abilities", () => {
     for (const share of shares) expect(share).toBeGreaterThanOrEqual(0.1);
   });
 
-  it("emits capped minions at the boss with no bounty", () => {
-    expect(minionPulseCount(10, 0, 100)).toBe(5);
-    expect(minionPulseCount(16, 0, 100)).toBe(8);
-    expect(minionPulseCount(10, 97, 100)).toBe(3);
-    expect(minionPulseCount(10, 100, 100)).toBe(0);
+  it("emits one capped minion per pulse at the host with no bounty", () => {
+    expect(MINION_INTERVAL_SECONDS).toBe(3);
+    expect(MINION_FIRST_DELAY_SECONDS).toBe(3);
+    expect(MINION_CAP).toBe(10);
+    expect(trickleSpawnCount(10, 0, 0, 100)).toBe(1);
+    expect(trickleSpawnCount(10, 9, 50, 100)).toBe(1);
+    expect(trickleSpawnCount(10, 10, 50, 100)).toBe(0);
+    expect(trickleSpawnCount(10, 0, 100, 100)).toBe(0);
+    expect(trickleSpawnCount(4, 3, 50, 100)).toBe(1);
+    expect(trickleSpawnCount(4, 4, 50, 100)).toBe(0);
 
     const engine = freshEngine();
     const grid = engine.grid;
@@ -127,13 +134,75 @@ describe("boss abilities", () => {
     const pendingBefore = engine.enemyManager?.getTotalPendingCount() ?? 0;
     engine.update(FIXED_DT);
     const minions = (engine.enemyManager?.enemies ?? []).filter((enemy) => enemy !== boss && enemy.type === "minion");
-    expect(minions).toHaveLength(5);
+    expect(minions).toHaveLength(1);
     for (const minion of minions) {
       expect(minion.bounty).toBe(0);
       expect(minion.summoned).toBe(true);
+      expect(minion.summonedBy).toBe(boss.id);
       expect(Math.hypot(minion.x - destination.x, minion.y - destination.y)).toBeLessThan(grid.tileSize);
     }
     expect(engine.enemyManager?.getTotalPendingCount()).toBe(pendingBefore);
+  });
+
+  it("holds broodwing pulses at the broodwing live-child cap", () => {
+    const engine = freshEngine();
+    const grid = engine.grid;
+    if (!grid || !engine.enemyManager) throw new Error("no engine");
+    const broodwing = engine.enemyManager.spawn("broodwing", 20, 0, 70);
+    if (!broodwing) throw new Error("no broodwing");
+    expect(broodwing.spawnsMinions).toBe(true);
+    expect(broodwing.spawnCap).toBe(4);
+    expect(broodwing.minionTimer).toBe(3);
+    broodwing.minionTimer = 0;
+    for (let pulse = 0; pulse < 6; pulse++) {
+      broodwing.minionTimer = 0;
+      engine.update(FIXED_DT);
+    }
+    const children = (engine.enemyManager.enemies ?? []).filter(
+      (enemy) => enemy !== broodwing && enemy.summonedBy === broodwing.id,
+    );
+    expect(children.length).toBeLessThanOrEqual(4);
+    expect(children.length).toBeGreaterThan(0);
+    for (const child of children) {
+      expect(child.type).toBe("minion");
+      expect(child.bounty).toBe(0);
+    }
+  });
+
+  it("drops an airborne host's ground child on walkable ground", () => {
+    const engine = freshEngine();
+    const grid = engine.grid;
+    if (!grid || !engine.enemyManager) throw new Error("no engine");
+    const broodwing = engine.enemyManager.spawn("broodwing", 20, 0, 70);
+    if (!broodwing) throw new Error("no broodwing");
+    const hoverTile = firstTile(grid, (tileX, tileY) => {
+      if (grid.isPath(tileX, tileY)) return false;
+      const neighbors: Array<[number, number]> = [
+        [tileX + 1, tileY],
+        [tileX - 1, tileY],
+        [tileX, tileY + 1],
+        [tileX, tileY - 1],
+      ];
+      return neighbors.some(
+        ([neighborX, neighborY]) =>
+          neighborX >= 0 &&
+          neighborY >= 0 &&
+          neighborX < grid.width &&
+          neighborY < grid.height &&
+          grid.isPath(neighborX, neighborY),
+      );
+    });
+    if (!hoverTile) throw new Error("no off-path tile beside the path");
+    const hover = grid.tileToWorld(hoverTile.x, hoverTile.y);
+    pinEnemy(broodwing, hover.x, hover.y);
+    broodwing.minionTimer = 0;
+    engine.update(FIXED_DT);
+    const children = (engine.enemyManager.enemies ?? []).filter(
+      (enemy) => enemy !== broodwing && enemy.summonedBy === broodwing.id,
+    );
+    expect(children).toHaveLength(1);
+    const childTile = grid.worldToTile(children[0]!.x, children[0]!.y);
+    expect(grid.isPath(childTile.x, childTile.y)).toBe(true);
   });
 
   it("lets the nearer Mend source heal and suppresses a farther one", () => {

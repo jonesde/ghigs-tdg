@@ -278,9 +278,96 @@ describe("WaveManager", () => {
       expect(waveA).toEqual(waveB);
     });
 
+    it("keeps mender/skyhold/broodwing behind waves 42/52/62", () => {
+      const debuts: Array<[string, number]> = [
+        ["mender", 42],
+        ["skyhold", 52],
+        ["broodwing", 62],
+      ];
+      for (const [type, debut] of debuts) {
+        for (let seed = 0; seed < 4; seed++) {
+          const map = makeMapData({ ...makeBastionMap(), seed: 8000 + seed });
+          for (let waveNumber = 1; waveNumber < debut; waveNumber++) {
+            for (const entry of makeWaveManager(map).generateWave(waveNumber)) {
+              expect(entry.type, `wave ${waveNumber}`).not.toBe(type);
+            }
+          }
+        }
+      }
+    });
+
+    it("rolls the new types from their debut waves on", () => {
+      const debuts: Array<[string, number, number]> = [
+        ["mender", 42, 9000],
+        ["skyhold", 52, 9100],
+        ["broodwing", 62, 9200],
+      ];
+      for (const [type, debut, seedBase] of debuts) {
+        let sawType = false;
+        for (let seed = 0; seed < 30; seed++) {
+          const map = makeMapData({ ...makeBastionMap(), seed: seedBase + seed });
+          if (
+            makeWaveManager(map)
+              .generateWave(debut)
+              .some((entry) => entry.type === type)
+          )
+            sawType = true;
+        }
+        expect(sawType, type).toBe(true);
+      }
+    });
+
+    it("ramps the trio from a minority at debut to a majority by wave 100", () => {
+      const trio = new Set(["mender", "skyhold", "broodwing"]);
+      let debutShare = 0;
+      let debutWaves = 0;
+      let lateShare = 0;
+      let lateWaves = 0;
+      for (let seed = 0; seed < 20; seed++) {
+        const map = makeMapData({ ...makeBastionMap(), seed: 9300 + seed });
+        for (const waveNumber of [42, 52, 62]) {
+          const wave = makeWaveManager(map).generateWave(waveNumber);
+          const nonBoss = wave.filter((entry) => entry.type !== "boss");
+          debutShare += nonBoss.filter((entry) => trio.has(entry.type)).length / nonBoss.length;
+          debutWaves++;
+        }
+        const late = makeWaveManager(map).generateWave(100);
+        const lateNonBoss = late.filter((entry) => entry.type !== "boss");
+        lateShare += lateNonBoss.filter((entry) => trio.has(entry.type)).length / lateNonBoss.length;
+        lateWaves++;
+      }
+      expect(debutShare / debutWaves).toBeLessThan(0.3);
+      expect(lateShare / lateWaves).toBeGreaterThan(0.5);
+    });
+
+    it("staggers menders under the same gap as healers", () => {
+      let sawMender = false;
+      for (let seed = 0; seed < 20; seed++) {
+        const map = makeMapData({ ...makeBastionMap(), seed: 9400 + seed });
+        for (let waveNumber = 42; waveNumber <= 55; waveNumber++) {
+          const wave = makeWaveManager(map).generateWave(waveNumber);
+          let seenHealerType = false;
+          let sinceLastHealerType = 0;
+          for (const entry of wave) {
+            if (entry.type === "healer" || entry.type === "mender") {
+              if (seenHealerType) {
+                expect(sinceLastHealerType).toBeGreaterThanOrEqual(HEALER_MIN_GAP);
+              }
+              seenHealerType = true;
+              sinceLastHealerType = 0;
+              if (entry.type === "mender") sawMender = true;
+            } else {
+              sinceLastHealerType++;
+            }
+          }
+        }
+      }
+      expect(sawMender).toBe(true);
+    });
+
     it("all enemies have valid types", () => {
       const waveManager = makeWaveManager(makeBastionMap());
-      for (let waveNumber = 1; waveNumber <= 20; waveNumber++) {
+      for (let waveNumber = 1; waveNumber <= 100; waveNumber++) {
         const wave = waveManager.generateWave(waveNumber);
         for (const entry of wave) {
           expect(ENEMY_TYPES[entry.type]).toBeDefined();

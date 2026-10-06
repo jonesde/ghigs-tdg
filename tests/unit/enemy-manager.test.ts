@@ -74,6 +74,12 @@ describe("EnemyManager", () => {
       expect(enemy.x).toBeCloseTo(firstTile.x, 0);
       expect(enemy.y).toBeCloseTo(firstTile.y, 0);
     });
+
+    it("drops an unknown type instead of throwing", () => {
+      const enemy = manager.spawn("not-a-type", 1, 0, 1);
+      expect(enemy).toBeNull();
+      expect(manager.enemies).toHaveLength(0);
+    });
   });
 
   describe("damage credit sink", () => {

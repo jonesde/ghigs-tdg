@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { getGameContent } from "@/content/gameContent.js";
 import { DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
 import {
+  ENEMY_ORDER,
   ENEMY_TYPES,
   enemyLevelBounty,
   enemyLevelForWave,
@@ -14,7 +15,7 @@ import {
 } from "@/sim/ConstantsEnemy.js";
 import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
-import { computeEnemyWaveStats } from "@/sim/enemies/enemyWaveStats.js";
+import { computeEnemyWaveStats, lateDamageMult, lateHpMult } from "@/sim/enemies/enemyWaveStats.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { WaveManager } from "@/sim/waves/WaveManager.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
@@ -22,7 +23,6 @@ import { makeBastionMap } from "../helpers/mock-grid";
 import { makeParticleSystem } from "../helpers/mock-managers";
 import { mockDefaultTheme } from "../helpers/mock-stores";
 
-const ENEMY_ORDER = ["minion", "runner", "tank", "shielded", "healer", "flyer", "jet", "aegis", "boss"];
 const SAMPLE_COMBOS = [
   { level: 1, wave: 1, difficultyTick: 0 },
   { level: 3, wave: 10, difficultyTick: 0 },
@@ -65,14 +65,16 @@ describe("computeEnemyWaveStats", () => {
           const damageLevelMult = levelMultFromContent(combo.level, enemyContent.levelDamageMult);
           const waveHpMult = 1 + enemyContent.waveHpMult * (combo.wave - 1);
           const waveDamageMult = 1 + enemyContent.waveDamageMult * (combo.wave - 1);
-          const expectedDamage = meta.attackDamage * damageLevelMult * waveDamageMult * diffMult;
+          const expectedHpMult = hpLevelMult * waveHpMult * lateHpMult(combo.wave) * diffMult;
+          const expectedDamage =
+            meta.attackDamage * damageLevelMult * waveDamageMult * lateDamageMult(combo.wave) * diffMult;
 
           const stats = computeEnemyWaveStats(meta, combo.level, combo.wave, combo.difficultyTick);
-          expect(stats.maxHp, `${label} hp`).toBeCloseTo(meta.baseHp * hpLevelMult * waveHpMult * diffMult, 8);
+          expect(stats.maxHp, `${label} hp`).toBeCloseTo(meta.baseHp * expectedHpMult, 8);
           expect(stats.attackDamage, `${label} damage`).toBeCloseTo(expectedDamage, 8);
           expect(stats.attackDps, `${label} dps`).toBeCloseTo(expectedDamage * meta.attackSpeed, 8);
           expect(stats.bounty, `${label} bounty`).toBe(enemyLevelBounty(meta.bounty, combo.level, combo.wave));
-          expect(stats.shield, `${label} shield`).toBe(meta.shield ? meta.shield * combo.level : 0);
+          expect(stats.shield, `${label} shield`).toBeCloseTo(meta.shield ? meta.shield * expectedHpMult : 0, 8);
         }
       }
     });
@@ -84,6 +86,28 @@ describe("computeEnemyWaveStats", () => {
       expect(harder.maxHp).toBeCloseTo(base.maxHp * (1 + 2 * DIFFICULTY_MULT_TICK), 8);
       expect(harder.attackDamage).toBeCloseTo(base.attackDamage * (1 + 2 * DIFFICULTY_MULT_TICK), 8);
       expect(harder.bounty).toBe(base.bounty);
+    });
+  });
+
+  describe("late steepening", () => {
+    it("leaves waves at or before the start wave bit-identical", () => {
+      const meta = ENEMY_TYPES.minion;
+      expect(lateHpMult(1)).toBe(1);
+      expect(lateHpMult(30)).toBe(1);
+      expect(lateDamageMult(30)).toBe(1);
+      const before = computeEnemyWaveStats(meta, 12, 30, 0);
+      const hpLevelMult = 1 + 0.8 * 11;
+      expect(before.maxHp).toBeCloseTo(meta.baseHp * hpLevelMult * (1 + 0.7 * 29), 8);
+    });
+
+    it("compounds to roughly two orders of magnitude by wave 100", () => {
+      const mult100 = lateHpMult(100);
+      expect(mult100).toBeGreaterThan(50);
+      expect(mult100).toBeLessThan(150);
+      const meta = ENEMY_TYPES.minion;
+      const early = computeEnemyWaveStats(meta, 12, 30, 0);
+      const late = computeEnemyWaveStats(meta, 45, 100, 0);
+      expect(late.maxHp / early.maxHp).toBeGreaterThan(50);
     });
   });
 

@@ -1,6 +1,7 @@
 import type { EnemyVisualMeta, MapThemeData } from "@/render/themes/index.js";
 import type { BossAbilityId } from "@/sim/bossAbilities.js";
 import { GAMEPLAY_ENEMY_CAP, MAX_PENDING_PER_SPAWN } from "@/sim/Constants.js";
+import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
 import type { BlockedApproach } from "@/sim/navmesh/NavDistanceField.js";
@@ -360,6 +361,10 @@ export class EnemyManager {
   }
 
   spawn(type: string, level: number, spawnIndex: number, wave: number, bossAbility?: BossAbilityId): Enemy | null {
+    if (!(type in ENEMY_TYPES)) {
+      console.warn(`EnemyManager.spawn dropped unknown enemy type "${type}"`);
+      return null;
+    }
     const enemy = new Enemy(
       type,
       level,

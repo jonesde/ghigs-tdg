@@ -45,7 +45,13 @@ export {
   type EnemyTierThreshold,
   type EnemyType,
   HEALER_MIN_GAP,
+  LATE_WAVE_DAMAGE_GROWTH,
+  LATE_WAVE_HP_GROWTH,
+  LATE_WAVE_START_WAVE,
   MIN_SLOW_FACTOR,
+  STUN_CAP_PER_SECOND,
+  STUN_WINDOW_SECONDS,
+  tierThresholdForWave,
   WAVE_COUNT_BASE,
   WAVE_COUNT_SCALE,
 } from "./ConstantsEnemy.js";

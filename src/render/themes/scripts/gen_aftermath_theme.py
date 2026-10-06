@@ -1047,6 +1047,72 @@ def tin_canopy(pose: Pose) -> str:
     return ring_dark + ring + rivets + "".join(wings) + body + nose
 
 
+def cairn_mender(pose: Pose) -> str:
+    """The mole mender grown into a healer-tank: the same mole at a larger scale with
+    ember lamps studding its tail. The lamps carry the declared color, which the mole
+    palette otherwise never paints, and they sit symmetric about the facing axis so the
+    plan view keeps no top to lose."""
+    grown = svg_group(mole_mender(pose), "scale(1.18)")
+    lamps = circle(-0.52, -0.14, 0.045, "#e08a5a", INK, 0.025)
+    lamps += circle(-0.52, 0.14, 0.045, "#e08a5a", INK, 0.025)
+    lamps += circle(-0.6, 0.0, 0.05, "#e08a5a", INK, 0.025)
+    return svg_group(grown + lamps, None)
+
+
+def sky_hold(pose: Pose) -> str:
+    """A flying tank out of the tin canopy ring and the bottle rocket nose: the canopy
+    ring shrunk around a smaller body, rocket fins on the flanks, and a notch with an
+    exhaust flicker at the rear. The airborne scale in enemy_frame draws it small, so
+    the ring is drawn tighter than the aegis one to stay inside the clip box."""
+    span = wing_span(pose, 0.24, 0.1)
+    reach = max(pose.reach, 0)
+    ring_dark = path_shape("M0.26 -0.18 A0.38 0.38 0 1 0 0.26 0.18", "none", "#3a545c", 0.08)
+    ring = path_shape("M0.26 -0.18 A0.38 0.38 0 1 0 0.26 0.18", "none", "#9ec8d8", 0.045)
+    rivets = (
+        circle(-0.28, -0.16, 0.025, "#d8eef2", "#3a545c", 0.015)
+        + circle(-0.34, 0.02, 0.025, "#d8eef2", "#3a545c", 0.015)
+        + circle(-0.2, 0.24, 0.025, "#d8eef2", "#3a545c", 0.015)
+    )
+    fins = []
+    for side in (-1, 1):
+        fins.append(
+            polygon(
+                [(0.0, side * 0.035), (0.12, side * 0.02), (-0.02, side * span)],
+                "#7eb4c4",
+                "#3a545c",
+                0.025,
+            )
+        )
+    body = volume_ellipse(0.0, 0.02, 0.15, 0.095, "#9ec8d8", "#4a6870", "#e4f6f8",
+                            INK, 0.03, "enemy")
+    nose = polygon(
+        [(0.11, -0.045), (0.26 + reach * 0.06, 0), (0.11, 0.045)],
+        "#b8e0e8",
+        "#3a545c",
+        0.025,
+    )
+    flicker = 0.0 if pose.action != "walk" else (0.07 if pose.phase % 2 == 0 else 0.02)
+    exhaust = polygon(
+        [(-0.24, -0.025), (-0.36 - flicker, 0), (-0.24, 0.025)],
+        "#e2c044",
+    )
+    notch = polygon([(-0.2, -0.04), (-0.28, 0), (-0.2, 0.04)], "#3a140c")
+    return ring_dark + ring + rivets + "".join(fins) + exhaust + body + notch + nose
+
+
+def brood_wing(pose: Pose) -> str:
+    """The ash moth grown near full size, trailing brood dots off its rear. The dots double
+    as the spawn read: the attack frames pulse them outward with the wing flare, so no extra
+    art is needed for the spawn pulse. They carry the declared color, which the moth
+    palette otherwise never paints."""
+    grown = svg_group(ash_moth(pose), "scale(1.3)")
+    pulse = 1.0 + max(pose.reach, 0) * 0.25
+    dots = circle(-0.42 * pulse, 0, 0.05, "#d8b45a", "#6a5828", 0.02)
+    dots += circle(-0.5 * pulse, -0.09 * pulse, 0.04, "#d8b45a", "#6a5828", 0.02)
+    dots += circle(-0.5 * pulse, 0.09 * pulse, 0.04, "#d8b45a", "#6a5828", 0.02)
+    return svg_group(grown + dots, None)
+
+
 ENEMY_DRAW: dict[str, Callable[[Pose], str]] = {
     "minion": bad_bug,
     "runner": mantis,
@@ -1057,6 +1123,9 @@ ENEMY_DRAW: dict[str, Callable[[Pose], str]] = {
     "flyer": ash_moth,
     "jet": bottle_rocket,
     "aegis": tin_canopy,
+    "mender": cairn_mender,
+    "skyhold": sky_hold,
+    "broodwing": brood_wing,
 }
 
 ENEMY_META = [
@@ -1069,11 +1138,14 @@ ENEMY_META = [
     ("flyer", "Ash Moth", "#c4b45a", "◆", 0.7, 0.3, 0.2),
     ("jet", "Bottle Rocket", "#e07040", "▸", 0.45, 0.3, 0.2),
     ("aegis", "Tin Canopy", "#8ec8d8", "◈", 0.9, 0.3, 0.2),
+    ("mender", "Cairn Mender", "#e08a5a", "⬢", 1.0, 0.3, 0.2),
+    ("skyhold", "Sky Hold", "#9ec8d8", "▾", 0.8, 0.3, 0.2),
+    ("broodwing", "Cinder Brood", "#d8b45a", "⬣", 0.9, 0.3, 0.2),
 ]
 
-AIRBORNE_ENEMY_IDS = {"flyer", "jet", "aegis"}
+AIRBORNE_ENEMY_IDS = {"flyer", "jet", "aegis", "skyhold", "broodwing"}
 
-AIRBORNE_FLYING_HEIGHT = {"flyer": 2, "aegis": 3, "jet": 5}
+AIRBORNE_FLYING_HEIGHT = {"flyer": 2, "aegis": 3, "jet": 5, "skyhold": 4, "broodwing": 1}
 
 AIRBORNE_SPRITE_SCALE = {
     # The renderer rotates the whole <use> and never offsets a unit by its sim-side

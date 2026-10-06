@@ -463,6 +463,9 @@ describe("Aftermath theme", () => {
     flyer: { name: "Ash Moth", color: "#c4b45a", shape: "◆", walk: 0.7, hit: 0.3 },
     jet: { name: "Bottle Rocket", color: "#e07040", shape: "▸", walk: 0.45, hit: 0.3 },
     aegis: { name: "Tin Canopy", color: "#8ec8d8", shape: "◈", walk: 0.9, hit: 0.3 },
+    mender: { name: "Cairn Mender", color: "#e08a5a", shape: "⬢", walk: 1.0, hit: 0.3 },
+    skyhold: { name: "Sky Hold", color: "#9ec8d8", shape: "▾", walk: 0.8, hit: 0.3 },
+    broodwing: { name: "Cinder Brood", color: "#d8b45a", shape: "⬣", walk: 0.9, hit: 0.3 },
   };
 
   it("keeps the Aftermath identity and the frame contract", () => {
@@ -503,13 +506,32 @@ describe("Aftermath theme", () => {
     expect(theme.spawns?.transition.startsWith("<svg")).toBe(true);
   });
 
-  it("exposes flyer, jet, and aegis on the Polymath theme", () => {
+  it("exposes the airborne types plus mender, skyhold, and broodwing on the Polymath theme", () => {
     const polymath = RawMapThemeSchema.parse(defaultTheme);
+    expect(Object.keys(polymath.enemies)).toEqual([
+      "minion",
+      "runner",
+      "tank",
+      "shielded",
+      "healer",
+      "boss",
+      "flyer",
+      "jet",
+      "aegis",
+      "mender",
+      "skyhold",
+      "broodwing",
+    ]);
     expect(polymath.enemies.flyer).toMatchObject({ name: "Flyer", color: "#5ec8e8", shape: "diamond" });
     expect(polymath.enemies.jet).toMatchObject({ name: "Jet", color: "#ff7a3c", shape: "chevron" });
     expect(polymath.enemies.aegis).toMatchObject({ name: "Aegis", color: "#8ea2ff", shape: "kite" });
-    for (const enemyId of ["flyer", "jet", "aegis"] as const) {
+    expect(polymath.enemies.mender).toMatchObject({ name: "Mender", color: "#66d9a5", shape: "hexagon" });
+    expect(polymath.enemies.skyhold).toMatchObject({ name: "Skyhold", color: "#7fb2ff", shape: "diamond" });
+    expect(polymath.enemies.broodwing).toMatchObject({ name: "Broodwing", color: "#e8a13c", shape: "triangle" });
+    const walkDurations = { flyer: 0.7, jet: 0.45, aegis: 0.9, mender: 1.1, skyhold: 0.8, broodwing: 0.9 } as const;
+    for (const enemyId of ["flyer", "jet", "aegis", "mender", "skyhold", "broodwing"] as const) {
       const enemy = polymath.enemies[enemyId];
+      expect(enemy?.walking.duration).toBe(walkDurations[enemyId]);
       expect(enemy?.walking.frames).toHaveLength(8);
       expect(enemy?.hitReaction?.frames).toHaveLength(3);
       expect(enemy?.attack?.frames).toHaveLength(3);
@@ -546,6 +568,9 @@ describe("Chrithmath theme", () => {
     flyer: { name: "Paper Kite", color: "#e8e0c0", shape: "◈", walk: 0.7, hit: 0.3 },
     jet: { name: "Yo-Yo", color: "#70c0a0", shape: "◆", walk: 0.45, hit: 0.3 },
     aegis: { name: "Roly-Poly", color: "#c0c8d0", shape: "✚", walk: 0.9, hit: 0.3 },
+    mender: { name: "Mince Pie Medic", color: "#7ec8a8", shape: "✛", walk: 1.0, hit: 0.3 },
+    skyhold: { name: "Frost Star", color: "#90b4e0", shape: "▾", walk: 0.8, hit: 0.3 },
+    broodwing: { name: "Ginger Brood", color: "#d8a050", shape: "❖", walk: 0.9, hit: 0.3 },
   };
 
   it("keeps the Chrithmath identity and the frame contract", () => {

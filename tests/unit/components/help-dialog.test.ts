@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { nextTick } from "vue";
 import HelpDialog from "@/components/HelpDialog.vue";
 import { getGameContent } from "@/content/gameContent.js";
+import { ENEMY_ORDER } from "@/sim/ConstantsEnemy.js";
 import { TOWER_BASE } from "@/sim/ConstantsTower.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -204,7 +205,7 @@ describe("HelpDialog", () => {
       clickTab(2);
       await nextTick();
       expect(document.querySelector("#help-enemy-wave")).not.toBeNull();
-      expect(statRows().length).toBe(9);
+      expect(statRows().length).toBe(ENEMY_ORDER.length);
       const context = document.querySelector(".wave-context").textContent;
       expect(context).toContain("Enemy level 1");
       expect(context).toContain("No boss");

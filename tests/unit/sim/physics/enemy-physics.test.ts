@@ -3,6 +3,7 @@
 // We construct a PhysicsWorld + CrowdManager, addAgent so enemy.agent is non-null,
 // then drive the enemy via computeIntent / crowd.update / step / postPhysics.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { STUN_CAP_PER_SECOND } from "@/sim/ConstantsEnemy.js";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
@@ -164,9 +165,10 @@ describe("Enemy ON branches (body set) driven manually", () => {
 
     enemy.applyStun(1.0);
     drive(enemy, 30);
-    // 30 frames * (1/60)s = 0.5s elapsed, so ~0.5s of stun remaining.
-    expect(enemy.stunTimer).toBeCloseTo(1.0 - 30 * FIXED_DT, 6);
-    expect(enemy.stunTimer).toBeGreaterThan(0.4);
+    // Stun credit caps at STUN_CAP_PER_SECOND per window, so 1.0s credits the
+    // cap; 30 frames * (1/60)s = 0.5s elapsed, so cap minus 0.5s remains.
+    expect(enemy.stunTimer).toBeCloseTo(STUN_CAP_PER_SECOND - 30 * FIXED_DT, 6);
+    expect(enemy.stunTimer).toBeGreaterThan(0.1);
   });
 
   it("stun zeroes velocity and barely moves the body", () => {

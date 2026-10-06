@@ -25,10 +25,12 @@ const DEFAULT_PROFILE: CrowdAgentProfile = {
   pathOptimizationRangeFactor: 0,
 };
 
-// Per-type crowd steering profiles (data-driven; new types add a row). The boss
-// row is deliberately the mildest separation/query pressure: at 2.0/4.0 the
-// avoidance field from queueing escorts shoved bosses into wall-block corners
-// and pinned them there.
+// Per-type crowd steering profiles (data-driven; new ground types add a row).
+// The boss row is deliberately the mildest separation/query pressure: at 2.0/4.0
+// the avoidance field from queueing escorts shoved bosses into wall-block corners
+// and pinned them there. Airborne types (flyer, jet, aegis, skyhold, broodwing)
+// intentionally have no row: EnemyManager skips the crowd agent for
+// flyingHeight > 0, so they resolve to DEFAULT_PROFILE below.
 export const CROWD_AGENT_PROFILES: Record<string, CrowdAgentProfile> = {
   runner: { maxAccelFactor: 12, separationWeight: 0.4, collisionQueryRangeFactor: 1.5, pathOptimizationRangeFactor: 2 },
   tank: { maxAccelFactor: 5, separationWeight: 1.8, collisionQueryRangeFactor: 3.5, pathOptimizationRangeFactor: 0 },
@@ -41,6 +43,7 @@ export const CROWD_AGENT_PROFILES: Record<string, CrowdAgentProfile> = {
     pathOptimizationRangeFactor: 0,
   },
   healer: { maxAccelFactor: 7, separationWeight: 1.1, collisionQueryRangeFactor: 2.5, pathOptimizationRangeFactor: 2 },
+  mender: { maxAccelFactor: 5, separationWeight: 1.8, collisionQueryRangeFactor: 3.5, pathOptimizationRangeFactor: 0 },
 };
 
 export function getCrowdAgentProfile(enemyType: string): CrowdAgentProfile {

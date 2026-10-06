@@ -99,6 +99,18 @@ PEWTER = "#c0c8d0"
 PEWTER_DARK = "#7e8894"
 PEWTER_LIGHT = "#e2e8ee"
 
+# The three late enemies declare their own colours and paint their own bodies in
+# them, so the minimap glyph and the HP bar name the same creature as the board.
+MENDER_MINT = "#7ec8a8"
+MENDER_MINT_DARK = "#4e9c78"
+MENDER_MINT_LIGHT = "#b8e8cc"
+FROST = "#90b4e0"
+FROST_DARK = "#5c7cae"
+FROST_LIGHT = "#c2d6f2"
+GINGER = "#d8a050"
+GINGER_DARK = "#9c6f2c"
+GINGER_LIGHT = "#f2d49c"
+
 
 def num(value: float) -> str:
     rounded = round(float(value), 2)
@@ -1141,6 +1153,123 @@ def roly_poly(pose: Pose) -> str:
 
 
 
+def mince_pie_medic(pose: Pose) -> str:
+    """A mince pie from directly above: a broad mint disc with a pale lattice laid
+    across it, a crumb orbiting the face, marching feet down both sides, and a pierced
+    tab on +X. The lattice is symmetric about both axes and the crumb is a plain disc,
+    so nothing here nominates a top; the orbit plus the stride is the walk."""
+    radius_x, radius_y = squashed(0.55, 0.5, pose.squash)
+    feet = stride_feet(pose, 0.12, -0.14, 0.5, 0.15, 0.1, MENDER_MINT_DARK)
+    pie = ellipse(0, 0, radius_x, radius_y, MENDER_MINT, INK, 0.1)
+    rim = ellipse(0, 0, radius_x, radius_y, "none", MENDER_MINT_DARK, 0.06)
+    lattice = line(-0.34, -0.34, 0.34, 0.34, MENDER_MINT_LIGHT, 0.07)
+    lattice += line(-0.34, 0.34, 0.34, -0.34, MENDER_MINT_LIGHT, 0.07)
+    lattice += circle(0, 0, 0.09, MENDER_MINT_LIGHT, INK, 0.05)
+    orbit = math.radians(25.0 + 45.0 * pose.phase)
+    pulse = 1.0 + 0.12 * math.sin(math.radians(45.0 * pose.phase + 20.0))
+    crumb_x = math.cos(orbit) * 0.36 * pulse
+    crumb_y = math.sin(orbit) * 0.3 * pulse
+    crumb = circle(crumb_x, crumb_y, 0.07 * pulse, MENDER_MINT_DARK, INK, 0.045)
+    nose = svg_group(
+        polygon([(0.5, -0.09), (0.64, -0.09), (0.64, 0.09), (0.5, 0.09)],
+                MENDER_MINT_DARK, INK, 0.04),
+        f"translate({num(mark_offset(pose, 0.08))} 0)",
+    )
+    burst = ""
+    if pose.action == "attack":
+        burst_x = 0.7 + mark_offset(pose, 0.08)
+        burst = ellipse(burst_x, -0.12, 0.07, 0.055, ICING, INK, 0.04)
+        burst += ellipse(burst_x, 0.12, 0.07, 0.055, ICING, INK, 0.04)
+    return feet + pie + rim + lattice + crumb + nose + burst
+
+
+def frost_star(pose: Pose) -> str:
+    """A tree-top star dragged through the air, seen from directly above: a small
+    five-point star turning about its own centre, a hub pip, and a fixed spike on +X
+    that stays put while the star turns behind it. Turning about the origin cannot
+    leave the clip box, and the spike is the only facing mark the drawing is allowed."""
+    spin = 45.0 * pose.phase + pose.reach * 30.0
+    star = svg_group(
+        polygon(star_points(0, 0, 0.42, 0.18), FROST, INK, 0.07)
+        + circle(0, 0, 0.12, FROST_LIGHT, INK, 0.05)
+        + circle(0, 0, 0.05, FROST_DARK),
+        f"rotate({num(spin)} 0 0)",
+    )
+    nose = polygon([(0.38, -0.06), (0.54, 0.0), (0.38, 0.06)], FROST_DARK, INK, 0.04)
+    streak = ""
+    if pose.action == "attack":
+        streak_x = 0.6 + mark_offset(pose, 0.1)
+        streak = ellipse(streak_x, 0.0, 0.1, 0.04, FROST_LIGHT, INK, 0.03)
+    return star + nose + streak
+
+
+def ginger_brood(pose: Pose) -> str:
+    """A ginger cracker cut as a broad triangle, seen from directly above: a bellied
+    sail with one spar, a cord of three bows streaming out to -X, and three pale
+    brood dots trailing off the cord tip. The dots spread on the attack, which is the
+    spawn pulse the broodwing carries, so no extra art is needed for it. The tail
+    trails behind the sail in the air, which is the one rear cue a plan view carries
+    honestly, and every joint swings on its own quarter cycle so the tip lags the root
+    the way a real tail does."""
+    half_span = 0.45
+    half_length = 0.55
+    edge_bow = 0.1
+    reach_gain = 1.0 + 0.6 * pose.reach
+    joint_x = (-0.35, -0.45, -0.55, -0.62)
+    joint_lag = (0.0, 25.0, 75.0, 125.0)
+    joint_amplitude = (0.0, 0.1, 0.14, 0.17)
+    joints = []
+    for joint_index, root_x in enumerate(joint_x):
+        swing = joint_amplitude[joint_index] * reach_gain * math.sin(
+            math.radians(45.0 * pose.phase + joint_lag[joint_index])
+        )
+        joints.append((root_x, swing))
+    corners = [(half_length, 0.0), (-0.35, half_span), (-0.35, -half_span)]
+    center_x = sum(corner[0] for corner in corners) / 3
+    center_y = sum(corner[1] for corner in corners) / 3
+    edge_path = ""
+    for corner_index in range(3):
+        start_x, start_y = corners[corner_index]
+        end_x, end_y = corners[(corner_index + 1) % 3]
+        mid_x, mid_y = (start_x + end_x) / 2, (start_y + end_y) / 2
+        push_x, push_y = mid_x - center_x, mid_y - center_y
+        push_length = math.hypot(push_x, push_y) or 1.0
+        control_x = mid_x + push_x / push_length * edge_bow
+        control_y = mid_y + push_y / push_length * edge_bow
+        edge_path += f"Q{num(control_x)} {num(control_y)} {num(end_x)} {num(end_y)} "
+    sail = path_shape(f"M{num(corners[0][0])} {num(corners[0][1])} {edge_path}Z", GINGER, INK, 0.09)
+    spar = line(0.5, 0.0, -0.3, 0.0, GINGER_DARK, 0.07)
+    spar += line(-0.05, 0.28, -0.05, -0.28, GINGER_DARK, 0.06)
+    patch = polygon(
+        [(half_length, 0.0), (half_length - 0.13, 0.085), (half_length - 0.13, -0.085)],
+        GINGER_DARK,
+        INK,
+        0.04,
+    )
+    cord = ""
+    for near_joint, far_joint in zip(joints, joints[1:]):
+        cord += line(near_joint[0], near_joint[1], far_joint[0], far_joint[1], INK, 0.12)
+        cord += line(near_joint[0], near_joint[1], far_joint[0], far_joint[1], GINGER_DARK, 0.07)
+    bows = ""
+    for bow_index in (1, 2, 3):
+        bow_x, bow_y = joints[bow_index]
+        bows += ellipse(bow_x, bow_y, 0.08, 0.05, GINGER_DARK, INK, 0.04)
+    spread = pose.reach * 0.08
+    dots = circle(-0.68 - spread, 0.0, 0.055, GINGER_LIGHT, INK, 0.035)
+    dots += circle(-0.73 - spread, -0.06 - spread * 0.6, 0.045, GINGER_LIGHT, INK, 0.035)
+    dots += circle(-0.73 - spread, 0.06 + spread * 0.6, 0.045, GINGER_LIGHT, INK, 0.035)
+    dash = ""
+    if pose.action == "attack":
+        dash_tip_x = half_length + 0.1 + mark_offset(pose, 0.1)
+        dash = polygon(
+            [(dash_tip_x, 0.0), (dash_tip_x - 0.1, 0.075), (dash_tip_x - 0.1, -0.075)],
+            GINGER_DARK,
+            INK,
+            0.04,
+        )
+    return sail + spar + patch + cord + bows + dots + dash
+
+
 ENEMY_DRAW: dict[str, Callable[[Pose], str]] = {
     "minion": tin_soldier,
     "runner": all_aboard,
@@ -1151,6 +1280,9 @@ ENEMY_DRAW: dict[str, Callable[[Pose], str]] = {
     "flyer": paper_kite,
     "jet": yo_yo,
     "aegis": roly_poly,
+    "mender": mince_pie_medic,
+    "skyhold": frost_star,
+    "broodwing": ginger_brood,
 }
 
 ENEMY_META = [
@@ -1163,11 +1295,14 @@ ENEMY_META = [
     ("flyer", "Paper Kite", "#e8e0c0", "◈", 0.7, 0.3, 0.2),
     ("jet", "Yo-Yo", "#70c0a0", "◆", 0.45, 0.3, 0.2),
     ("aegis", "Roly-Poly", "#c0c8d0", "✚", 0.9, 0.3, 0.2),
+    ("mender", "Mince Pie Medic", "#7ec8a8", "✛", 1.0, 0.3, 0.2),
+    ("skyhold", "Frost Star", "#90b4e0", "▾", 0.8, 0.3, 0.2),
+    ("broodwing", "Ginger Brood", "#d8a050", "❖", 0.9, 0.3, 0.2),
 ]
 
-AIRBORNE_ENEMY_IDS = {"flyer", "jet", "aegis"}
+AIRBORNE_ENEMY_IDS = {"flyer", "jet", "aegis", "skyhold", "broodwing"}
 
-AIRBORNE_FLYING_HEIGHT = {"flyer": 2, "aegis": 3, "jet": 5}
+AIRBORNE_FLYING_HEIGHT = {"flyer": 2, "aegis": 3, "jet": 5, "skyhold": 4, "broodwing": 1}
 
 AIRBORNE_SPRITE_SCALE = {
     # The renderer rotates the whole <use> and never offsets a unit by its sim-side

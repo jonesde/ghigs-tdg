@@ -7,9 +7,10 @@ import {
   bossAbilityLabel,
   collectMendSourcesInto,
   configureBossAbility,
-  minionPulseCount,
+  MINION_CAP,
   nearerMendBlocksIn,
   rollBossAbilities,
+  trickleSpawnCount,
 } from "@/sim/bossAbilities.js";
 import type { DebugKind } from "@/sim/Command.js";
 import { enemyLevelForWave, waveBossCount } from "@/sim/ConstantsEnemy.js";
@@ -237,7 +238,7 @@ export class GameEngine {
     // The tower list resolves only when a towerShot boss arms a bombard, so a wave
     // without one pays nothing for it.
     towers: () => this.bossShotTargets(),
-    spawnMinions: (boss) => this.spawnBossMinions(boss),
+    spawnMinions: (host) => this.spawnSummonedMinion(host),
     damageTower: (towerId, amount, attacker) => {
       const tower = this.towerManager?.getTowerById(towerId);
       if (!tower || tower.isGhost) return;
@@ -2046,27 +2047,47 @@ export class GameEngine {
     }));
   }
 
-  private spawnBossMinions(boss: Enemy): void {
+  // One summoned child per spawner pulse: a plain minion at the current wave
+  // level, zero bounty, spawned at the host position. Skipped when the host is
+  // at its live-child cap (MINION_CAP for bosses, meta spawnCap otherwise) or
+  // the run is at the gameplay enemy cap. Overflow is discarded, not queued.
+  private spawnSummonedMinion(host: Enemy): void {
     const enemyManager = this.enemyManager;
     const grid = this.grid;
     const map = this.runState.map;
     if (!enemyManager || !grid || !map) return;
-    const waveNumber = this.waveManager?.currentWave ?? boss.wave;
-    const count = minionPulseCount(waveNumber, enemyManager.enemies.length, GAMEPLAY_ENEMY_CAP);
-    const level = enemyLevelForWave(waveNumber, map.level);
-    for (let index = 0; index < count; index++) {
-      if (enemyManager.enemies.length >= GAMEPLAY_ENEMY_CAP) break;
-      const minion = enemyManager.spawn("minion", level, boss.spawnIndex, waveNumber);
-      if (!minion) continue;
-      minion.bounty = 0;
-      minion.summoned = true;
-      minion.body?.setTranslation({ x: boss.x, y: boss.y }, true);
-      minion.x = boss.x;
-      minion.y = boss.y;
-      minion.centerX = boss.x;
-      minion.centerY = boss.y;
-      this.crowdManager?.teleportAgent(minion, { x: boss.x, y: boss.y });
+    if (enemyManager.enemies.length >= GAMEPLAY_ENEMY_CAP) return;
+    const spawnCap = host.type === "boss" ? MINION_CAP : host.spawnCap;
+    let liveChildren = 0;
+    for (const other of enemyManager.enemies) {
+      if (!other.removed && other.summonedBy === host.id) liveChildren++;
     }
+    if (trickleSpawnCount(spawnCap, liveChildren, enemyManager.enemies.length, GAMEPLAY_ENEMY_CAP) <= 0) return;
+    const waveNumber = this.waveManager?.currentWave ?? host.wave;
+    const level = enemyLevelForWave(waveNumber, map.level);
+    const spawnType = host.type === "boss" ? "minion" : host.spawnTypeName;
+    const minion = enemyManager.spawn(spawnType, level, host.spawnIndex, waveNumber);
+    if (!minion) return;
+    minion.bounty = 0;
+    minion.summoned = true;
+    minion.summonedBy = host.id;
+    // Airborne hosts can hover over unwalkable tiles; ground children drop at
+    // the nearest walkable point so Detour and Rapier stay aligned.
+    let dropX = host.x;
+    let dropY = host.y;
+    if (host.flyingHeight > 0) {
+      const nearest = this.navMeshBuilder?.nearestWalkableWorld({ x: host.x, y: host.y });
+      if (nearest) {
+        dropX = nearest.x;
+        dropY = nearest.y;
+      }
+    }
+    minion.body?.setTranslation({ x: dropX, y: dropY }, true);
+    minion.x = dropX;
+    minion.y = dropY;
+    minion.centerX = dropX;
+    minion.centerY = dropY;
+    this.crowdManager?.teleportAgent(minion, { x: dropX, y: dropY });
   }
 
   // Rebuilt into one reused buffer each tick: TowerManager reads the list only
