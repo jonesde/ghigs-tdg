@@ -264,9 +264,6 @@ export class GameEngine {
   // by the snapshot so the HUD can list what the board is paying.
   activeBuildings: ActiveBuildingBonus = freshActiveBuildingBonus();
   nextBossAbilityNames: string[] = [];
-  // Broken caches waiting for the picker that is currently open to close. The
-  // wasPlaying flag is inherited so the whole chain resumes exactly once.
-  pendingBrokenCaches: { id: number; wasPlaying: boolean }[] = [];
   private progressiveBoard: ProgressiveBoard | null = null;
   private progressiveCatalog: BlockTemplate[] | null = null;
   private progressiveRng: (() => number) | null = null;
@@ -368,7 +365,6 @@ export class GameEngine {
     this.lastPostedLayoutGeneration = -1;
     this.sites.reset();
     this.nextBossAbilityNames = [];
-    this.pendingBrokenCaches = [];
     this.progressiveBoard = null;
     this.progressiveCatalog = null;
     this.progressiveRng = null;
@@ -1808,9 +1804,6 @@ export class GameEngine {
     this.progressiveOffer = [];
     this.progressivePlacementUndo = null;
     if (this.waveManager) this.waveManager.advanceHeld = false;
-    // The hold refused the open that queued a broken cache; retry now that the
-    // hold no longer owns the UI.
-    this.drainPendingBrokenCaches();
   }
 
   // Placement succeeded: close the offer UI and stash the undo record. The run
@@ -2108,8 +2101,10 @@ export class GameEngine {
     cache.hp -= amount;
     if (cache.hp > 0) return;
     // A broken cache keeps its tile, its offer, and its reservation. Shot targets
-    // skip hp<=0 so towers stop firing it, and the free card claim below is what
-    // finally removes it.
+    // skip hp<=0 so towers stop firing it, and the free card claim on click is
+    // what finally removes it. Tower fire does not pause the run and does not
+    // open the picker: the glyph pulses like a boss package and the player
+    // claims it when they are ready.
     cache.hp = 0;
     // Breaking it open is the damage unlock path: the cards become free to claim.
     cache.unlocked = true;
@@ -2117,29 +2112,6 @@ export class GameEngine {
       type: "showNotification",
       message: "A cache was broken open. Click it to claim a card for free.",
     });
-    this.pendingBrokenCaches.push({
-      id: cacheId,
-      wasPlaying: this.runState.bonusPicker?.wasPlaying ?? this.runState.state === GameState.PLAYING,
-    });
-    this.drainPendingBrokenCaches();
-  }
-
-  // Opens the next broken cache whose site still exists. Entries stay queued until
-  // one actually opens, so a placement hold that refuses the open cannot lose it.
-  private drainPendingBrokenCaches(): boolean {
-    if (this.runState.bonusPicker) return false;
-    while (this.pendingBrokenCaches.length > 0) {
-      const next = this.pendingBrokenCaches[0]!;
-      const cache = this.mapCaches.find((site) => site.id === next.id);
-      if (!cache) {
-        this.pendingBrokenCaches.shift();
-        continue;
-      }
-      if (!this.openBonusPicker("cache", cache.id, next.wasPlaying)) return false;
-      this.pendingBrokenCaches.shift();
-      return true;
-    }
-    return false;
   }
 
   private playerStampKeys(blockX: number, blockY: number): Set<string> {
@@ -2149,11 +2121,7 @@ export class GameEngine {
   // Resolves everything the picker needs from the site itself: the curated offer,
   // the specialist type the typed cards promise, and the pause ownership. Resolving
   // here (not at click time) is what keeps a dismiss and reopen on the same roll.
-  private openBonusPicker(
-    source: "drop" | "cache",
-    id: number,
-    wasPlaying = this.runState.state === GameState.PLAYING,
-  ): boolean {
+  private openBonusPicker(source: "drop" | "cache", id: number): boolean {
     if (this.runState.bonusPicker || this.progressivePlacementHold) return false;
     const map = this.runState.map;
     if (!map) return false;
@@ -2167,6 +2135,7 @@ export class GameEngine {
     }
     const curated = curateBonusOffer(site.offer, { canApplySlow: this.canApplySlow() }, map.seed, id);
     if (curated !== site.offer) site.offer = curated;
+    const wasPlaying = this.runState.state === GameState.PLAYING;
     this.runState.bonusPicker = { source, id, offer: site.offer, wasPlaying, specialistType: site.specialistType };
     if (wasPlaying) setGameState(this.runState, GameState.PAUSED);
     return true;
@@ -2251,9 +2220,6 @@ export class GameEngine {
     const picker = this.runState.bonusPicker;
     if (!picker) return;
     this.runState.bonusPicker = null;
-    // The next broken cache inherits the pause this one held, so the chain of
-    // simultaneous breaks resumes exactly once at the end.
-    if (this.drainPendingBrokenCaches()) return;
     if (resume && picker.wasPlaying && this.runState.state === GameState.PAUSED) {
       setGameState(this.runState, GameState.PLAYING);
     }

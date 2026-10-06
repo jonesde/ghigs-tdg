@@ -1,4 +1,9 @@
 import { onUnmounted } from "vue";
+import {
+  bonusPickerOptionCommand,
+  bonusPickerOptions,
+  cycleBonusPickerOptionIndex,
+} from "@/composables/bonusPicker.js";
 import { currentBuildTile } from "@/composables/buildTile.js";
 import { clearBuildAndTowerForProgressive } from "@/composables/progressivePlacement.js";
 import { ARROW_PAN_FRACTION, ZOOM_STEP } from "@/render/svg/cameraFrame.js";
@@ -142,8 +147,9 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
     // Space is cancelled for pause and would never be inserted into the field.
     if (isTextEntryTarget(event)) return;
 
-    // The picker owns 1/2/3, swallows the other build digits, and keeps Space from
-    // unpausing. Escape dismisses it. An open dialog still handles Escape first.
+    // The picker owns 1/2/3, Tab and Enter, swallows the other build digits, and
+    // keeps Space from unpausing. Escape dismisses it. An open dialog still handles
+    // Escape first.
     if (gs.bonusPicker && !overlayBlocksGameInput(uiStore)) {
       if (event.key === "Escape" || event.key === "x") {
         event.preventDefault();
@@ -152,6 +158,24 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
       }
       if (event.key === " ") {
         event.preventDefault();
+        return;
+      }
+      // Tab belongs to the picker while it is up, not to the time-scale cycle, and
+      // Enter takes the option the cursor is on rather than pressing the build tile.
+      const options = bonusPickerOptions(gs.bonusPickerLocked === true);
+      if (event.key === "Tab") {
+        event.preventDefault();
+        if (options.length > 0) {
+          const offset = event.shiftKey ? -1 : 1;
+          const nextIndex = cycleBonusPickerOptionIndex(gs.bonusPickerSelectedOption ?? 0, options.length, offset);
+          gs.selectBonusPickerOption?.(nextIndex);
+        }
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        const option = options[gs.bonusPickerSelectedOption ?? 0];
+        if (option) dispatch(bonusPickerOptionCommand(option, nextInputCommandId++));
         return;
       }
       const bonusDigit = parseInt(event.key, 10);

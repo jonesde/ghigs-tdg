@@ -75,11 +75,11 @@ describe("map site layer", () => {
     expect(writeCount()).toBe(1);
     const first = readMarkup();
     expect(first).toContain('aria-label="Boss package');
-    expect(first).toContain('class="site-drop-pulse"');
+    expect(first).toContain('class="site-pulse"');
     expect(first).toContain('aria-label="Cache ');
     expect(first).toContain(`unlock for ${cacheOpenGold(snapshot.meta.currentWave)} gold`);
     expect(first).toContain('stroke="#c98aff"');
-    expect(first.indexOf('class="site-drop-pulse"')).toBeLessThan(first.indexOf('stroke="#c98aff"'));
+    expect(first.indexOf('class="site-pulse"')).toBeLessThan(first.indexOf('stroke="#c98aff"'));
     // Icon characters, so a cache and each building kind read without color.
     expect(first).toContain(`>${CACHE_ICON}</text>`);
     for (const building of snapshot.meta.mapBuildings ?? []) {
@@ -137,7 +137,7 @@ describe("map site layer", () => {
     // The pulse ring stays a stroked element of its own: its CSS animation
     // targets stroke paint, and it must survive the art swap.
     expect(markup).toContain('<polygon points="');
-    expect(markup).toContain('class="site-drop-pulse"');
+    expect(markup).toContain('class="site-pulse"');
     expect(markup).not.toContain("</text>");
     for (const building of snapshot.meta.mapBuildings ?? []) {
       expect(markup).not.toContain(`fill="${BUILDING_COLORS[building.kind]}"`);
@@ -160,6 +160,29 @@ describe("map site layer", () => {
     cache.hp = 0;
     layer.sync(snapshot);
     expect(readMarkup()).toContain("#site-cache-broken");
+  });
+
+  it("pulses a cache that tower fire has broken open, and only that cache", () => {
+    const engine = engineWithSites();
+    const { layer, readMarkup } = makeLayer();
+    const snapshot = buildSnapshot(engine, 0);
+    const cache = snapshot.meta.mapCaches?.[0];
+    if (!cache) throw new Error("no cache");
+    const pulseCount = () => readMarkup().split('class="site-pulse"').length - 1;
+
+    layer.sync(snapshot);
+    // One halo: the boss package. A sealed cache is not claimable yet.
+    expect(pulseCount()).toBe(1);
+
+    cache.hp = 0;
+    layer.sync(snapshot);
+    expect(pulseCount()).toBe(2);
+    const broken = cache.worldX;
+    const brokenY = cache.worldY;
+    expect(readMarkup()).toContain(
+      `<rect x="${broken - 18}" y="${brokenY - 18}" width="36" height="36" fill="none" class="site-pulse"`,
+    );
+    expect(readMarkup()).toContain("Broken cache — click to claim a card for free");
   });
 });
 

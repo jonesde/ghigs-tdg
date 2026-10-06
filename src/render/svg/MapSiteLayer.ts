@@ -119,11 +119,7 @@ function dropGlyph(worldX: number, worldY: number, siteArt: SiteArtMeta | null):
   const pulse =
     `${worldX},${worldY - pulseHalf} ${worldX + pulseHalf},${worldY} ` +
     `${worldX},${worldY + pulseHalf} ${worldX - pulseHalf},${worldY}`;
-  // The pulse ring is what makes a fresh boss package findable across a busy
-  // corridor; the class animates stroke paint from the global stylesheet, so the
-  // ring stays its own stroked element (theme art replaces only the crate) and
-  // the signature cache never has to rewrite this markup to keep it moving.
-  const ring = `<polygon points="${pulse}" class="site-drop-pulse" fill="none" stroke="#ffd84d" stroke-width="2"/>`;
+  const ring = pulseRingMarkup(`<polygon points="${pulse}" fill="none"`);
   const label = "Boss package — click to claim one of three bonus cards";
   if (siteArt?.supplyDrop) {
     return ring + siteArtUse("site-supply-drop", worldX, worldY, label);
@@ -132,6 +128,23 @@ function dropGlyph(worldX: number, worldY: number, siteArt: SiteArtMeta | null):
     ring +
     `<polygon points="${points}" fill="#e0c040" stroke="#8a7020" stroke-width="1" ` +
     `aria-label="${label}"></polygon>`
+  );
+}
+
+// A claimable site's halo. The class animates stroke paint from the global
+// stylesheet, so the ring stays its own stroked element (theme art replaces only
+// the site itself) and the signature cache never has to rewrite this markup to
+// keep it moving.
+function pulseRingMarkup(shapeAttributes: string): string {
+  return `${shapeAttributes} class="site-pulse" stroke="#ffd84d" stroke-width="2"/>`;
+}
+
+// The box version, for a cache glyph that is already a box.
+function boxPulseRingMarkup(worldX: number, worldY: number): string {
+  const size = GLYPH_SIZE + PULSE_GROWTH * 2;
+  const half = size / 2;
+  return pulseRingMarkup(
+    `<rect x="${worldX - half}" y="${worldY - half}" width="${size}" height="${size}" fill="none"`,
   );
 }
 
@@ -162,12 +175,16 @@ function cacheGlyph(cache: MapCacheSnapshot, currentWave: number, siteArt: SiteA
       : `Cache ${Math.ceil(cache.hp)}/${Math.ceil(cache.maxHp)} — unlock for ` +
         `${cacheOpenGold(currentWave)} gold or break it open`;
   const state = broken ? "broken" : unlocked ? "unlocked" : "sealed";
+  // A cache broken open by tower fire waits to be claimed, and nothing pauses the
+  // run for it: the halo is what says so, the same one a boss package carries.
+  const ring = broken ? boxPulseRingMarkup(cache.worldX, cache.worldY) : "";
   if (siteArt) {
-    return siteArtUse(`site-cache-${state}`, cache.worldX, cache.worldY, label) + bar;
+    return ring + siteArtUse(`site-cache-${state}`, cache.worldX, cache.worldY, label) + bar;
   }
   const fill = broken ? "#5a4a30" : "#8a6230";
   const ink = broken ? "#c8b898" : "#f4e6cc";
   return (
+    ring +
     `<rect x="${left}" y="${top}" width="${GLYPH_SIZE}" height="${GLYPH_SIZE}" fill="${fill}" stroke="#4a3018" ` +
     `stroke-width="1" aria-label="${label}"></rect>` +
     iconText(cache.worldX, cache.worldY, CACHE_ICON, ink) +

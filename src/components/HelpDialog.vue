@@ -367,6 +367,15 @@ const keyboardKeys = [...row0, ...row1, ...row2, ...row3, ...row3Arrows, ...row4
                   </td>
                 </tr>
                 <tr>
+                  <td><kbd>Tab</kbd> / <kbd>Enter</kbd> / <kbd>1</kbd>-<kbd>3</kbd> / <kbd>Esc</kbd></td>
+                  <td>
+                    In a bonus picker: <kbd>Tab</kbd> cycles the three cards and Leave it, <kbd>Enter</kbd> takes the
+                    highlighted one (Leave it closes the picker without a card), <kbd>1</kbd>-<kbd>3</kbd> claim a
+                    card directly, and <kbd>Esc</kbd> leaves. A sealed cache cycles Unlock for N gold and Leave it
+                    instead. Tower fire never pauses the run: a broken cache pulses until it is clicked.
+                  </td>
+                </tr>
+                <tr>
                   <td><kbd>W</kbd> / <kbd>U</kbd></td>
                   <td>Upgrade the selected tower. If the tower needs specialization and only one specialization is available, selects it directly</td>
                 </tr>

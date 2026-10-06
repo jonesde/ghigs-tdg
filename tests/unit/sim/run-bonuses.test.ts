@@ -492,28 +492,39 @@ describe("cache claims", () => {
 
     cache.hp = shotDamage;
     tower.cooldown = 0;
+    const stateBeforeBreak = engine.runState.state;
     for (let frame = 0; frame < 120 && cache.hp > 0; frame++) {
       pinEnemy(minion, farWorld.x, farWorld.y);
       engine.update(FIXED_DT);
     }
     // A broken cache keeps its tile and offer: towers stop targeting hp<=0, the
-    // tile stays reserved, and the break opens the free claim immediately.
+    // tile stays reserved, and the break itself neither pauses the run nor opens
+    // the picker — the free claim is a click.
     expect(cache.hp).toBe(0);
+    expect(cache.unlocked).toBe(true);
     expect(engine.mapCaches.some((site) => site.id === cache.id)).toBe(true);
     expect(engine.runState.gold).toBe(goldAtStart);
     expect(grid.canBuild(cache.tileX, cache.tileY)).toBe(false);
-    expect(engine.runState.bonusPicker).toMatchObject({ source: "cache", id: cache.id });
+    expect(engine.runState.bonusPicker).toBeNull();
+    expect(engine.runState.state).toBe(stateBeforeBreak);
+
+    const cacheWorld = grid.tileToWorld(cache.tileX, cache.tileY);
+    engine.runState.state = GameState.PLAYING;
+    engine.handleClick(cacheWorld.x, cacheWorld.y);
+    expect(engine.runState.bonusPicker).toMatchObject({ source: "cache", id: cache.id, wasPlaying: true });
+    expect(engine.runState.state).toBe(GameState.PAUSED);
     const goldBeforeClaim = engine.runState.gold;
     expect(engine.pickBonus(0)).toBe(true);
     expect(engine.runState.gold).toBeGreaterThanOrEqual(goldBeforeClaim);
     expect(engine.mapCaches.some((site) => site.id === cache.id)).toBe(false);
     expect(engine.runState.bonusPicker).toBeNull();
+    expect(engine.runState.state).toBe(GameState.PLAYING);
     expect(grid.canBuild(cache.tileX, cache.tileY)).toBe(true);
     const rebuilt = towers.build("basic", cache.tileX, cache.tileY, engine.persistState, grid, 0);
     expect(rebuilt).toBeTruthy();
   });
 
-  it("queues a second broken cache and opens it as soon as the first claim closes", () => {
+  it("leaves two broken caches claimable one click at a time", () => {
     const engine = freshEngine(12);
     const grid = engine.grid;
     const towers = engine.towerManager;
@@ -554,28 +565,33 @@ describe("cache claims", () => {
     expect(firstCache.hp).toBe(0);
     expect(secondCache.hp).toBe(0);
 
+    // Neither break took the run's pause, and neither opened a picker: both sites
+    // wait, pulsing, for the player to come back for them.
+    expect(engine.runState.state).toBe(GameState.PLAYING);
+    expect(engine.runState.bonusPicker).toBeNull();
     expect(engine.mapCaches).toHaveLength(cachesBefore);
     expect(engine.mapCaches.filter((site) => site.hp <= 0)).toHaveLength(2);
     expect(grid.canBuild(firstCache.tileX, firstCache.tileY)).toBe(false);
     expect(grid.canBuild(secondCache.tileX, secondCache.tileY)).toBe(false);
-    const openPicker = engine.runState.bonusPicker;
-    if (!openPicker) throw new Error("no picker opened for the first break");
-    expect(openPicker.wasPlaying).toBe(true);
-    expect(engine.runState.state).toBe(GameState.PAUSED);
-    expect(engine.pendingBrokenCaches).toHaveLength(1);
-    const queuedId = engine.pendingBrokenCaches[0]!.id;
-    expect(queuedId).not.toBe(openPicker.id);
 
-    expect(engine.pickBonus(0)).toBe(true);
-    expect(engine.mapCaches.some((site) => site.id === openPicker.id)).toBe(false);
-    expect(engine.pendingBrokenCaches).toHaveLength(0);
-    expect(engine.runState.bonusPicker).toMatchObject({ source: "cache", id: queuedId });
+    const firstWorld = grid.tileToWorld(firstCache.tileX, firstCache.tileY);
+    engine.handleClick(firstWorld.x, firstWorld.y);
+    expect(engine.runState.bonusPicker).toMatchObject({ source: "cache", id: firstCache.id, wasPlaying: true });
     expect(engine.runState.state).toBe(GameState.PAUSED);
-
     expect(engine.pickBonus(0)).toBe(true);
+    expect(engine.mapCaches.some((site) => site.id === firstCache.id)).toBe(false);
     expect(engine.runState.bonusPicker).toBeNull();
-    expect(engine.pendingBrokenCaches).toHaveLength(0);
+    expect(engine.runState.state).toBe(GameState.PLAYING);
+
+    // The second break was never lost by the first claim: its tile is still
+    // reserved and its own click opens its own picker.
+    const secondWorld = grid.tileToWorld(secondCache.tileX, secondCache.tileY);
+    engine.handleClick(secondWorld.x, secondWorld.y);
+    expect(engine.runState.bonusPicker).toMatchObject({ source: "cache", id: secondCache.id, wasPlaying: true });
+    expect(engine.runState.state).toBe(GameState.PAUSED);
+    expect(engine.pickBonus(0)).toBe(true);
     expect(engine.mapCaches).toHaveLength(cachesBefore - 2);
+    expect(engine.runState.bonusPicker).toBeNull();
     expect(engine.runState.state).toBe(GameState.PLAYING);
     expect(grid.canBuild(firstCache.tileX, firstCache.tileY)).toBe(true);
     expect(grid.canBuild(secondCache.tileX, secondCache.tileY)).toBe(true);

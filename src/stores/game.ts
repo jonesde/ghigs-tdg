@@ -215,6 +215,10 @@ export interface GameStoreLike {
   bonusPicker?: BonusPickerState | null;
   // Store getter: the open picker is a cache whose cards are still locked.
   bonusPickerLocked?: boolean;
+  // Index into the picker's option list (bonusPickerOptions): the three cards
+  // plus Leave it, or Unlock and Leave it while a cache is still sealed.
+  bonusPickerSelectedOption?: number;
+  selectBonusPickerOption?: (index: number) => void;
 }
 
 interface GameStateShape {
@@ -264,6 +268,7 @@ interface GameStateShape {
   // effects list. A mirror of meta.activeBuildingEffects.
   buildingEffects: ActiveBuildingBonus;
   bonusPicker: BonusPickerState | null;
+  bonusPickerSelectedOption: number;
   nextBossAbilityNames: string[];
   supplyDrops: SupplyDropSnapshot[];
   mapCaches: MapCacheSnapshot[];
@@ -321,6 +326,7 @@ export const useGameStore = defineStore("game", {
     runBonuses: freshRunBonuses(),
     buildingEffects: freshActiveBuildingBonus(),
     bonusPicker: null,
+    bonusPickerSelectedOption: 0,
     nextBossAbilityNames: [],
     supplyDrops: [],
     mapCaches: [],
@@ -421,6 +427,7 @@ export const useGameStore = defineStore("game", {
       this.runBonuses = freshRunBonuses();
       this.buildingEffects = freshActiveBuildingBonus();
       this.bonusPicker = null;
+      this.bonusPickerSelectedOption = 0;
       this.nextBossAbilityNames = [];
       this.supplyDrops = [];
       this.mapCaches = [];
@@ -471,6 +478,12 @@ export const useGameStore = defineStore("game", {
       if (index < 0 || index >= this.progressiveOffer.length) return;
       this.progressiveSelectedOffer = index;
       this.syncProgressiveCursor();
+    },
+
+    // The picker's cursor, reset by the snapshot when the picker identity
+    // changes. Callers pass an index they already resolved from the option list.
+    selectBonusPickerOption(index: number) {
+      this.bonusPickerSelectedOption = Math.max(0, Math.trunc(index));
     },
 
     moveProgressiveSite(direction: ProgressiveSiteDirection) {

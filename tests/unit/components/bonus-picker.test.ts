@@ -45,6 +45,11 @@ describe("BonusPicker", () => {
     expect(unlock.exists()).toBe(true);
     expect(unlock.text()).toBe(`Unlock for ${cacheOpenGold(0)} gold`);
     expect(wrapper.find(".bonus-dismiss").exists()).toBe(true);
+    // A sealed cache has no cards to highlight, so the unlock button starts selected.
+    expect(unlock.classes()).toContain("selected");
+    expect(wrapper.find(".bonus-dismiss").classes()).not.toContain("selected");
+    // The hint has to name the options actually on screen.
+    expect(wrapper.find(".bonus-hint").text()).toContain("Unlock and Leave it");
 
     unlock.trigger("click");
     expect(commands).toEqual([expect.objectContaining({ type: "action:unlockCache" })]);
@@ -63,6 +68,26 @@ describe("BonusPicker", () => {
 
     await cards[0].trigger("click");
     expect(commands).toEqual([expect.objectContaining({ type: "action:pickBonus", index: 0 })]);
+  });
+
+  it("highlights the first card and follows the keyboard cursor", async () => {
+    // biome-ignore lint/correctness/noUnusedVariables: stores set up for the mount
+    const { pinia, gameStore, wrapper } = mountPicker();
+    gameStore.mapCaches[0].unlocked = true;
+    await wrapper.vm.$nextTick();
+    const selectedIndexes = () => wrapper.findAll(".bonus-card").map((card) => card.classes().includes("selected"));
+    expect(selectedIndexes()).toEqual([true, false, false]);
+
+    gameStore.selectBonusPickerOption(2);
+    await wrapper.vm.$nextTick();
+    expect(selectedIndexes()).toEqual([false, false, true]);
+    expect(wrapper.find(".bonus-dismiss").classes()).not.toContain("selected");
+
+    gameStore.selectBonusPickerOption(3);
+    await wrapper.vm.$nextTick();
+    expect(selectedIndexes()).toEqual([false, false, false]);
+    expect(wrapper.find(".bonus-dismiss").classes()).toContain("selected");
+    expect(wrapper.find(".bonus-hint").text()).toContain("the cards and Leave it");
   });
 
   it("reads a broken cache as free while still showing the cards", async () => {
