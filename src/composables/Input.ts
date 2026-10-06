@@ -1,4 +1,5 @@
 import { onUnmounted } from "vue";
+import { currentBuildTile } from "@/composables/buildTile.js";
 import { clearBuildAndTowerForProgressive } from "@/composables/progressivePlacement.js";
 import { ARROW_PAN_FRACTION, ZOOM_STEP } from "@/render/svg/cameraFrame.js";
 import type { Command } from "@/sim/Command.js";
@@ -385,12 +386,13 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
       case "Enter":
         if (uiStore.confirmDialog) {
           uiStore.executeConfirm();
-        } else if (gs.selectedTowerType && gs.hoverTile) {
-          const grid = (
-            gs as unknown as { grid: { tileToWorld: (tx: number, ty: number) => { x: number; y: number } } | null }
-          ).grid;
-          if (grid) {
-            const worldPos = grid.tileToWorld(gs.hoverTile.tileX, gs.hoverTile.tileY);
+        } else if (gs.selectedTowerType) {
+          // The tile-center click mirrors a left click, so a cache or drop on
+          // the current tile opens its picker instead of building.
+          const grid = inputGrid(gs);
+          const tile = currentBuildTile(grid, gs.hoverTile);
+          if (tile && grid?.tileToWorld) {
+            const worldPos = grid.tileToWorld(tile.tileX, tile.tileY);
             dispatch({ commandId: nextInputCommandId++, type: "input:click", worldX: worldPos.x, worldY: worldPos.y });
           }
         }
@@ -487,19 +489,13 @@ function moveBuildPosition(gameStore: GameStoreLike, dx: number, dy: number): Ca
   if (!grid) return null;
 
   const currentHover = gameStore.hoverTile;
-  let tileX: number;
-  let tileY: number;
-
-  if (currentHover === null) {
-    tileX = Math.floor(grid.width / 2);
-    tileY = Math.floor(grid.height / 2);
-  } else {
-    tileX = currentHover.tileX + dx;
-    tileY = currentHover.tileY + dy;
-  }
-
-  tileX = Math.max(0, Math.min(tileX, grid.width - 1));
-  tileY = Math.max(0, Math.min(tileY, grid.height - 1));
+  const nextTile =
+    currentHover === null
+      ? currentBuildTile(grid, null)
+      : { tileX: currentHover.tileX + dx, tileY: currentHover.tileY + dy };
+  if (!nextTile) return null;
+  const tileX = Math.max(0, Math.min(nextTile.tileX, grid.width - 1));
+  const tileY = Math.max(0, Math.min(nextTile.tileY, grid.height - 1));
 
   const towerAtNewPos = getNavigableTowers(gameStore).find((tower) => tower.tileX === tileX && tower.tileY === tileY);
   if (towerAtNewPos) {
