@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BOMBARD_DAMAGE_FRACTION,
+  BOMBARD_TELEGRAPH_SECONDS,
   bossAbilityLabel,
   collectMendSources,
   configureBossAbility,
@@ -190,5 +191,89 @@ describe("boss abilities", () => {
     expect(boss.hasteFactor).toBeCloseTo(1.2, 5);
     expect(near.hasteFactor).toBeCloseTo(1.5, 5);
     expect(far.hasteFactor).toBe(1);
+  });
+
+  it("holds the minion pulse while the boss is stunned", () => {
+    const engine = freshEngine();
+    const grid = engine.grid;
+    const boss = engine.enemyManager?.spawn("boss", 1, 0, 10);
+    if (!grid || !boss || !engine.waveManager) throw new Error("no boss");
+    engine.waveManager.currentWave = 10;
+    configureBossAbility(boss, "spawnMinions", grid.tileSize);
+    boss.minionTimer = FIXED_DT; // would pulse on the next tick if the boss were free
+    boss.stunTimer = 10;
+    engine.update(FIXED_DT);
+    const minions = (engine.enemyManager?.enemies ?? []).filter((enemy) => enemy !== boss && enemy.type === "minion");
+    expect(minions).toHaveLength(0);
+    expect(boss.minionTimer).toBeCloseTo(FIXED_DT, 5);
+  });
+
+  it("holds the shield pulse while the boss is stunned", () => {
+    const engine = freshEngine();
+    const grid = engine.grid;
+    const boss = engine.enemyManager?.spawn("boss", 1, 0, 10);
+    const ally = engine.enemyManager?.spawn("minion", 1, 0, 10);
+    if (!grid || !boss || !ally) throw new Error("no enemies");
+    configureBossAbility(boss, "shieldPulse", grid.tileSize);
+    ally.x = boss.x;
+    ally.y = boss.y;
+    boss.shieldTimer = FIXED_DT; // would pulse on the next tick if the boss were free
+    boss.stunTimer = 10;
+    engine.update(FIXED_DT);
+    expect(boss.shield).toBe(0);
+    expect(ally.shield).toBe(0);
+    expect(boss.shieldTimer).toBeCloseTo(FIXED_DT, 5);
+  });
+
+  it("drops the haste aura, its own included, while the boss is stunned", () => {
+    const engine = freshEngine();
+    const grid = engine.grid;
+    const boss = engine.enemyManager?.spawn("boss", 1, 0, 10);
+    const near = engine.enemyManager?.spawn("minion", 1, 0, 10);
+    if (!grid || !boss || !near) throw new Error("no enemies");
+    configureBossAbility(boss, "speedAura", grid.tileSize);
+    near.x = boss.x;
+    near.y = boss.y;
+    engine.update(FIXED_DT);
+    expect(boss.hasteFactor).toBeCloseTo(1.2, 5);
+    expect(near.hasteFactor).toBeCloseTo(1.5, 5);
+    boss.stunTimer = 10;
+    engine.update(FIXED_DT);
+    expect(boss.hasteFactor).toBe(1);
+    expect(near.hasteFactor).toBe(1);
+  });
+
+  it("stops the Mend aura from healing while the boss is stunned", () => {
+    const engine = freshEngine();
+    const grid = engine.grid;
+    const boss = engine.enemyManager?.spawn("boss", 1, 0, 10);
+    if (!grid || !boss) throw new Error("no boss");
+    configureBossAbility(boss, "healAura", grid.tileSize);
+    boss.hp = boss.maxHp * 0.5;
+    boss.stunTimer = 10;
+    engine.update(FIXED_DT);
+    engine.update(FIXED_DT);
+    expect(boss.hp).toBeCloseTo(boss.maxHp * 0.5, 5);
+  });
+
+  it("holds an armed bombard telegraph until the stun drops", () => {
+    const engine = freshEngine();
+    const grid = engine.grid;
+    const map = engine.runState.map;
+    if (!grid || !map) throw new Error("no grid");
+    const tower = buildBasic(engine);
+    const boss = engine.enemyManager?.spawn("boss", enemyLevelForWave(10, map.level), 0, 10);
+    if (!boss) throw new Error("no boss");
+    configureBossAbility(boss, "towerShot", grid.tileSize);
+    const beside = grid.tileToWorld(tower.tileX, tower.tileY);
+    pinEnemy(boss, beside.x + grid.tileSize, beside.y);
+    // Arm the telegraph on the tower, then stun it before the countdown runs out.
+    boss.bombardTargetId = String(tower.id);
+    boss.bombardTelegraphRemaining = BOMBARD_TELEGRAPH_SECONDS;
+    boss.stunTimer = 10;
+    const healthBefore = tower.health;
+    engine.update(FIXED_DT);
+    expect(tower.health).toBe(healthBefore);
+    expect(boss.bombardTelegraphRemaining).toBeCloseTo(BOMBARD_TELEGRAPH_SECONDS, 5);
   });
 });

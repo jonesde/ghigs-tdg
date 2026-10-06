@@ -741,7 +741,9 @@ export class Enemy {
       }
     }
 
-    if (this.heal > 0 && this.antiHealTimer <= 0 && enemyManager) {
+    // Stun is a full action freeze: the aura stops while stunned, matching the
+    // movement and attack gates, so a stunned healer or Mend boss heals no one.
+    if (this.heal > 0 && this.antiHealTimer <= 0 && this.stunTimer <= 0 && enemyManager) {
       this.healTickDt = dt;
       const usedSensor = enemyManager.forEachSensorHits?.(`heal-${this.id}`, this.applyHealAura);
       if (!usedSensor) {

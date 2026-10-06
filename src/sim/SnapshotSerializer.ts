@@ -324,7 +324,9 @@ function snapshotEnemy(e: Enemy, engine?: GameEngine): EnemySnapshot {
     flyingHeight: e.flyingHeight,
     nextCorner: e.nextCornerWorld(),
     targetingMode: e.targetingMode,
-    ...(e.type === "boss" ? { bossAbility: e.bossAbility, mendSuppressed: e.antiHealTimer > 0 } : {}),
+    ...(e.type === "boss"
+      ? { bossAbility: e.bossAbility, mendSuppressed: e.antiHealTimer > 0 || e.stunTimer > 0 }
+      : {}),
   };
 }
 

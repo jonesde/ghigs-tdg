@@ -722,6 +722,7 @@ export class GameEngine {
     // resolve here) but enemies route through the tile only after next tick's
     // pathVersion rebuild — ghost-to-block is visible one tick later by design.
     let ghostedTower = false;
+    let restoredTower = false;
     if (this.grid) {
       for (const tower of this.towerManager.towers) {
         if (tower.pendingGhostEffect) {
@@ -733,11 +734,17 @@ export class GameEngine {
           this.grid.setTowerGhost(tower.tileX, tower.tileY);
           ghostedTower = true;
         }
+        // Latched by Tower.restore(); the grid ghost is already cleared there.
+        if (tower.pendingRestoreEffect) {
+          tower.pendingRestoreEffect = false;
+          restoredTower = true;
+        }
       }
     }
-    // A ghosted tower stops powering the building it stood beside, which reaches
-    // every other tower. One refresh for the tick, however many towers fell.
-    if (ghostedTower) this.refreshAllTowerBonuses();
+    // A ghosted tower stops powering the building it stood beside, and a restored
+    // one starts again; the building's whole-board bonus reaches every other
+    // tower. One refresh for the tick, however many towers fell or rose.
+    if (ghostedTower || restoredTower) this.refreshAllTowerBonuses();
 
     this.waveGraphTracker?.update(dt);
 
@@ -931,6 +938,9 @@ export class GameEngine {
     }
     if (towersToClear.length > 0 && this.grid) {
       this.grid.batchClearGhosts();
+      // Restored towers power their buildings again; skip the board-wide recompute
+      // when nothing was ghosted, because no building activity can have changed.
+      this.refreshAllTowerBonuses();
     }
 
     const generalAddons = this.persistState.generalAddons;

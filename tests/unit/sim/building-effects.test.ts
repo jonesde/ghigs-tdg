@@ -271,6 +271,40 @@ describe("engine building wiring", () => {
     expect(engine.baseDefense?.buildingFireRateMult).toBe(1);
   });
 
+  it("restores the whole-board half when the ghosted tower beside the building recovers", () => {
+    const { building, towerTile } = buildingWithRoom();
+    const effect = BUILDING_EFFECTS[building.kind];
+    const bystanderTile = clearOfEveryBuilding();
+    const bystander = buildAt(bystanderTile.x, bystanderTile.y);
+    const bystanderField = SITE_FIELD_ON_TOWER[effect.field];
+    expect(bystanderField(bystander)).toBe(1);
+
+    const adjacent = buildAt(towerTile.x, towerTile.y);
+    const wholeBoard = wholeBoardMult(building.kind, 1);
+    expect(building.active).toBe(true);
+    expect(bystanderField(bystander)).toBeCloseTo(wholeBoard, 10);
+    expect(SITE_FIELD_ON_TOWER[effect.field](adjacent)).toBeCloseTo(effect.adjacentMult * wholeBoard, 10);
+
+    adjacent.takeAbilityDamage(adjacent.health + 1);
+    engine.update(FIXED_DT);
+    expect(building.active).toBe(false);
+    expect(bystanderField(bystander)).toBe(1);
+
+    // Fast-forward the restore timer so Tower.update calls restore() on this tick.
+    adjacent.ghostTimer = 1000;
+    engine.update(FIXED_DT);
+
+    expect(adjacent.isGhost).toBe(false);
+    expect(building.active).toBe(true);
+    expect(engine.activeBuildings.activeCount).toBe(1);
+    expect(engine.activeBuildings[effect.field]).toBeCloseTo(wholeBoard, 10);
+    // The refresh reaches the tower that powered the building again...
+    expect(SITE_FIELD_ON_TOWER[effect.field](adjacent)).toBeCloseTo(effect.adjacentMult * wholeBoard, 10);
+    // ...and every other tower that only ever sees the whole-board half.
+    expect(bystanderField(bystander)).toBeCloseTo(wholeBoard, 10);
+    expect(engine.baseDefense?.buildingDamageMult).toBe(engine.activeBuildings.damageMult);
+  });
+
   it("drops the whole-board half when the tower beside the building is sold", async () => {
     const { building, towerTile } = buildingWithRoom();
     const adjacent = buildAt(towerTile.x, towerTile.y);
