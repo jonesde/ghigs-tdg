@@ -11,6 +11,7 @@ const ABILITY_POOL: BossAbilityId[] = ["spawnMinions", "healAura", "speedAura", 
 const ABILITY_ROLL_TAG = 0xb055;
 
 export const MINION_INTERVAL_SECONDS = 30;
+export const MINION_FIRST_DELAY_SECONDS = 10;
 export const MINION_CAP = 8;
 export const HEAL_AURA_FRACTION_PER_SECOND = 0.02;
 export const HEAL_AURA_RANGE_TILES = 2.5;
@@ -162,7 +163,7 @@ export function configureBossAbility(enemy: Enemy, ability: BossAbilityId, tileS
     enemy.healSelf = true;
   }
   if (ability === "speedAura") enemy.hasteFactor = HASTE_BOSS_FACTOR;
-  if (ability === "spawnMinions") enemy.minionTimer = MINION_INTERVAL_SECONDS;
+  if (ability === "spawnMinions") enemy.minionTimer = MINION_FIRST_DELAY_SECONDS;
   if (ability === "shieldPulse") enemy.shieldTimer = SHIELD_FIRST_DELAY_SECONDS;
   if (ability === "towerShot") enemy.bombardTimer = BOMBARD_FIRST_DELAY_SECONDS;
 }

@@ -143,14 +143,15 @@ const hint = computed(() =>
   cursor: pointer;
 }
 
-.bonus-card:hover {
+.bonus-card:hover:not(.selected) {
   border-color: var(--color-gold, #e0c040);
 }
 
-/* The keyboard cursor, the same border the block choices use for their selection. */
+/* The keyboard cursor. Border weight only: an accent tint over the semi-opaque
+   panel lightened the card enough to cost the dim text its contrast, and the
+   picker sits over the map, so a light map behind made it worse. */
 .bonus-card.selected {
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
+  border: 3px solid var(--color-accent);
 }
 
 .bonus-key {
@@ -208,11 +209,14 @@ const hint = computed(() =>
 }
 
 .bonus-unlock.selected {
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
+  border: 3px solid var(--color-accent);
 }
 
 .bonus-hint {
+  padding: 6px 12px;
+  border: 1px solid var(--color-border, #6a6a6a);
+  border-radius: 6px;
+  background: var(--color-panel, #1c1c1c);
   font-size: var(--font-sm, 12px);
   color: var(--color-text-dim, #aaa);
   text-align: center;
