@@ -17,7 +17,7 @@ Defend your base against 100 waves of enemies across 36 procedurally-generated m
 
 ### Game Features
 - **36 maps** across 3 regions, each with increasing difficulty and different gem multipliers (region names are themed — Verdant Marches, Sunscorch Coast, Thornpeak Wilds in the default theme)
-- **Map themes** selectable on the map-select screen: swap the visual identity (SVG sprites, tile images, base art, region names) of towers, enemies, and maps without affecting gameplay stats; the Aftermath and Chrithmath themes also ship a full maps catalog override with their own level boards
+- **Map themes** selectable from the main menu or the map-select screen: swap the visual identity of towers, enemies and maps (tower and enemy sprites, tile images, base art, spawn and site art, region map images, region names, menu background) without affecting gameplay stats; the Aftermath and Chrithmath themes also ship a full maps catalog override with their own level boards
 - **8 tower types** with 3 specialization variants each (unlock at level 4)
 - **6 enemy types** including minions, runners, tanks, shielded, healers, and bosses
 - **Gem economy** with milestone rewards, first-time bonuses, and difficulty scaling

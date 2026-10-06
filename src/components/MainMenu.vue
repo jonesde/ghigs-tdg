@@ -203,7 +203,9 @@ function openSkillTree() {
   position: absolute;
   inset: 0;
   display: flex;
-  justify-content: center;
+  /* "safe" keeps the top of an overflowing column reachable: plain center puts the
+     overflow past the scroll origin, where a short viewport cannot scroll back to it. */
+  justify-content: safe center;
   z-index: 100;
   overflow-y: auto;
   background: var(--color-bg);

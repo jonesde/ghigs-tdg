@@ -21,6 +21,7 @@ from region_map_art import (
     dead_tree_unit,
     ellipse,
     line,
+    num,
     path_shape,
     pitched_house,
     polygon,
@@ -40,6 +41,17 @@ from region_map_art import (
 MENU_VIEW_BOX = "0 0 1600 900"
 MENU_WIDTH = 1600
 MENU_HEIGHT = 900
+
+# The crescent's bite is opaque and painted in this colour, so it has to be the exact
+# colour of the sky directly behind the moon: nothing else may be drawn between the base
+# rect and the bite at the moon's position, or the bite shows as a second disc.
+CHRITHMATH_SKY = "#161e2c"
+
+LIGHT_STRING_SPAN_SAMPLES = 12
+LIGHT_STRING_BULB_SPACING = 56.0
+LIGHT_STRING_ANCHOR_CLEARANCE = 20.0
+LIGHT_STRING_BULB_RADIUS = 4.2
+LIGHT_STRING_BULB_GLOW_RADIUS = 11.0
 
 
 def assert_menu_paint(image: str, label: str) -> None:
@@ -189,45 +201,118 @@ def aftermath_menu_background() -> str:
     return menu_svg_root("".join(parts))
 
 
+def light_string(anchors: list[tuple[float, float]], sag_per_hundred: float, wire_color: str,
+                 wire_opacity: float, bulb_color: str, bulb_opacity: float,
+                 glow_opacity: float) -> str:
+    """One continuous wire strung through every anchor, with the bulbs hanging on it.
+
+    Each span dips below its own chord by a share of sag_per_hundred scaled to that span's
+    width, so a wide gap between two houses sags further than a narrow one. Bulbs are
+    stepped along the sampled wire by arc length rather than placed by hand: hand-placed
+    coordinates drift off the curve the moment a span's sag is retuned, and a bulb that
+    misses the wire is what made the line read as a dotted trail. A bulb that would land on
+    an anchor is dropped, because a light drawn on a ridge tip reads as a chimney spark.
+    """
+    path_parts = [f"M {num(anchors[0][0])} {num(anchors[0][1])}"]
+    wire_points = []
+    for span_index in range(len(anchors) - 1):
+        span_start = anchors[span_index]
+        span_end = anchors[span_index + 1]
+        span_sag = sag_per_hundred * abs(span_end[0] - span_start[0]) / 100.0
+        span_control = ((span_start[0] + span_end[0]) / 2,
+                        (span_start[1] + span_end[1]) / 2 + span_sag * 2)
+        path_parts.append(f"Q {num(span_control[0])} {num(span_control[1])} "
+                          f"{num(span_end[0])} {num(span_end[1])}")
+        for sample_index in range(LIGHT_STRING_SPAN_SAMPLES + 1):
+            wire_points.append(quadratic_point(span_start, span_control, span_end,
+                                              sample_index / LIGHT_STRING_SPAN_SAMPLES))
+    bulb_parts = []
+    next_bulb_distance = LIGHT_STRING_BULB_SPACING / 2
+    walked_distance = 0.0
+    for point_index in range(1, len(wire_points)):
+        previous_point = wire_points[point_index - 1]
+        current_point = wire_points[point_index]
+        segment_length = math.dist(previous_point, current_point)
+        while walked_distance + segment_length >= next_bulb_distance:
+            reached_fraction = (next_bulb_distance - walked_distance) / segment_length
+            bulb_point = (previous_point[0]
+                          + (current_point[0] - previous_point[0]) * reached_fraction,
+                          previous_point[1]
+                          + (current_point[1] - previous_point[1]) * reached_fraction)
+            next_bulb_distance += LIGHT_STRING_BULB_SPACING
+            if any(math.dist(bulb_point, anchor) < LIGHT_STRING_ANCHOR_CLEARANCE
+                   for anchor in anchors):
+                continue
+            bulb_parts.append(circle(bulb_point[0], bulb_point[1], LIGHT_STRING_BULB_GLOW_RADIUS,
+                                     bulb_color, opacity=glow_opacity))
+            bulb_parts.append(circle(bulb_point[0], bulb_point[1], LIGHT_STRING_BULB_RADIUS,
+                                     bulb_color, opacity=bulb_opacity))
+        walked_distance += segment_length
+    return path_shape(" ".join(path_parts), "none", wire_color, 1.3,
+                      wire_opacity) + "".join(bulb_parts)
+
+
 def chrithmath_menu_background() -> str:
+    """Night village, weighted to the left edge with the moon high on the right, so the
+    centred menu card and the world rail land on open sky and the open snow bank instead of
+    on the buildings. Every fill here is either darker than the card's scrim or small enough
+    to read as a point of light; the dome is the only warm mass and it is kept desaturated
+    so the bulbs stay the brightest thing in the village."""
+    moon_x = 1332.0
+    moon_y = 196.0
+    moon_radius = 64.0
+    bite_x = moon_x - 30.0
+    bite_y = moon_y - 20.0
+    bite_radius = 74.0
     parts = [
-        rect(0, 0, MENU_WIDTH, MENU_HEIGHT, 0, "#161e2c"),
+        rect(0, 0, MENU_WIDTH, MENU_HEIGHT, 0, CHRITHMATH_SKY),
         ellipse(420, 260, 420, 200, "#22304a", opacity=0.3),
         ellipse(1240, 620, 450, 210, "#22304a", opacity=0.24),
         ellipse(820, 380, 320, 150, "#28364e", opacity=0.16),
     ]
-    parts.append(circle(1240, 200, 84, "#e8e2d8", opacity=0.16))
-    parts.append(circle(1240, 200, 66, "#e8e2d8", opacity=0.85))
-    parts.append(circle(1214, 184, 56, "#161e2c", opacity=0.85))
     for star_x, star_y, star_r in (
         (180, 140, 2.4), (360, 90, 1.8), (560, 170, 2.2), (760, 110, 1.8),
         (940, 180, 2.4), (1080, 90, 1.6), (1420, 150, 2.2), (1500, 300, 1.8),
         (240, 300, 1.6), (480, 260, 1.8), (1380, 420, 1.6), (90, 420, 1.6),
     ):
         parts.append(circle(star_x, star_y, star_r, "#d8e0ec", opacity=0.7))
+    parts.append(circle(moon_x, moon_y, moon_radius, "#e8e2d8", opacity=0.85))
+    parts.append(circle(bite_x, bite_y, bite_radius, CHRITHMATH_SKY))
+    for glow_radius, glow_opacity in ((74.0, 0.018), (102.0, 0.017), (130.0, 0.016),
+                                      (158.0, 0.015), (186.0, 0.014)):
+        parts.append(circle(moon_x, moon_y, glow_radius, "#e8e2d8", opacity=glow_opacity))
     for drift_x, drift_y, drift_rx, drift_ry in (
         (300, 810, 420, 90), (820, 840, 460, 100), (1350, 800, 380, 80),
     ):
         parts.append(ellipse(drift_x, drift_y, drift_rx, drift_ry, "#2c3e50", opacity=0.5))
     for fir_x, fir_y, fir_width, fir_height in (
-        (120, 780, 44, 90), (210, 800, 38, 78), (300, 770, 46, 96), (1440, 780, 44, 92),
-        (1520, 800, 38, 80), (1360, 790, 40, 84),
+        (1440, 780, 44, 92), (1520, 800, 38, 80), (1360, 790, 40, 84),
     ):
         parts.append(conifer_unit(fir_x, fir_y, fir_width, fir_height, "#1f322c", "#3a2a1c"))
-    parts.append(pitched_house(380, 690, 120, 150, "#243448", "#1a2530", INK))
-    parts.append(pitched_house(560, 720, 100, 120, "#2a3a4e", "#1a2530", INK))
-    parts.append(barn_house(700, 700, 130, 130, "#3a2e22", "#22180f", INK))
-    parts.append(onion_dome_house(980, 660, 180, 180, "#222c44", "#6a5a30", INK))
+    parts.append(onion_dome_house(96, 630, 152, 162, "#222c44", "#4a4436", INK))
+    parts.append(pitched_house(272, 664, 104, 126, "#243448", "#1a2530", INK))
+    parts.append(barn_house(392, 682, 116, 114, "#3a2e22", "#22180f", INK))
+    parts.append(pitched_house(524, 700, 94, 108, "#2a3a4e", "#1a2530", INK))
     for window_x, window_y in (
-        (420, 760), (470, 780), (600, 780), (640, 800), (740, 760), (790, 790), (1040, 730),
+        (170, 702), (212, 726), (338, 720), (338, 752), (398, 740), (478, 740), (582, 758),
     ):
         parts.append(rect(window_x, window_y, 20, 26, 2, "#e8b464", None, None, 0.75))
-    parts.append(line(380, 690, 560, 720, "#e0b040", 2, 0.4, dash="3 12"))
-    parts.append(line(560, 720, 700, 700, "#e0b040", 2, 0.4, dash="3 12"))
-    parts.append(line(830, 700, 980, 660, "#e0b040", 2, 0.4, dash="3 12"))
-    for bulb_x, bulb_y in (430, 700), (500, 712), (630, 714), (700, 708), (860, 690), (920, 678):
-        parts.append(circle(bulb_x, bulb_y, 3.4, "#e0b040", opacity=0.7))
+    parts.append(telegraph_pole(58, 826, 148, "#3a2a1c"))
+    parts.append(telegraph_pole(666, 826, 108, "#3a2a1c"))
+    parts.append(light_string(
+        [(58, 678), (172, 610), (324, 662), (450, 680), (571, 698), (666, 718)], 16.0,
+        "#9a8a66", 0.5, "#f4d08c", 0.85, 0.12,
+    ))
+    # The near fir row is drawn after the buildings on purpose: at these x positions the
+    # row sits in the gaps and in front of the walls, which is the only place a fir this
+    # size is not swallowed whole by the house behind it.
+    for fir_x, fir_y, fir_width, fir_height in (
+        (52, 866, 40, 84), (262, 858, 40, 88), (520, 862, 38, 84), (648, 872, 40, 78),
+    ):
+        parts.append(conifer_unit(fir_x, fir_y, fir_width, fir_height, "#1f322c", "#3a2a1c"))
     for snow_x in range(40, MENU_WIDTH, 90):
-        parts.append(circle(snow_x + (snow_x % 37), 100 + (snow_x * 7) % 600, 2.4,
-                            "#dfe6f2", opacity=0.5))
+        snow_point = (snow_x + (snow_x % 37), 100 + (snow_x * 7) % 600)
+        if math.dist(snow_point, (bite_x, bite_y)) < bite_radius:
+            continue
+        parts.append(circle(snow_point[0], snow_point[1], 2.4, "#dfe6f2", opacity=0.5))
     return menu_svg_root("".join(parts))

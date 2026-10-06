@@ -8,7 +8,7 @@ A map theme swaps the visual identity of towers, enemies, and map tiles on the `
 2. Register it in `src/render/themes/index.ts`:
    - Add an entry to `MAP_THEME_MANIFEST` with `{ id, label, file }`.
    - Call `registerThemeLoader(id, () => loadRawTheme(() => import('./data/your-theme.json')))`, which parses the file through `RawMapThemeSchema` before the store sees it.
-   - If the theme carries a `menuBackground`, also add the sidecar file `your-theme-menu.json` (a one-field file duplicating just that `menuBackground`) and call `registerMenuBackgroundLoader(id, () => import('./data/your-theme-menu.json'))` directly below the theme loader. The main-menu card previews load the sidecar instead of the full theme, so the two copies must stay byte-equal; a theme generator writes the sidecar and verifies the equality, and `gen_theme_images.py` round-trips it for the shipped themes.
+   - If the theme carries a `menuBackground`, also add the sidecar file `your-theme-menu.json` (a one-field file duplicating just that `menuBackground`) and call `registerMenuBackgroundLoader(id, () => import('./data/your-theme-menu.json'))` directly below the theme loader. The main-menu card previews load the sidecar instead of the full theme, so the two copies must stay byte-equal; both writers write it — `gen_theme_images.py` for every shipped theme, and `gen_chrithmath_theme.py` for its own, each reading the sidecar back after writing to confirm it round-trips — and they must produce byte-identical text, so a menu-art edit goes out in one run with no required ordering between the two scripts.
 
 ## JSON Structure
 
@@ -145,6 +145,8 @@ Connections describe the current level progression: 11 chain links (`level` 1→
 
 Spawn art is a 36×36 symbol drawn on top of the path tile. The symbol itself is not rotated. The path tile under it is.
 
+Spawn art is also exempt from the rotated-sprite rules below, and so is every other image the renderer never rotates: map site art, region base art, region map images and the menu background. `MapSiteLayer.ts` and `SpawnManager.ts` contain no transform at all, so none of those is ever turned, and they may use elevation, a horizon and a light direction freely. The exact scope and the reasoning are under "Rotated Sprites" in Image Sizing Guidelines.
+
 ### Main Menu Background (optional)
 
 | Field | Used on |
@@ -162,6 +164,28 @@ The map tile size is **36px**. Camera zoom scales every sprite. Draw for the bas
 
 `url(#...)` gradients and filters inside a sprite are unreliable once the drawing is cloned with `<use>`, and duplicate ids collide. Paint with flat fills.
 
+### Rotated Sprites
+
+Two rules govern the sprites the renderer turns. They cover tower frames and enemy frames only; the exemption list is at the end of this section.
+
+**A rotated sprite must read as a plan view.** `TowerManager.ts:262-264` writes `rotate(tower.angle × 180/π, halfSize, halfSize)` into the `<use>` transform, and `EnemyManager.ts:104-116` writes `rotate(enemy.angle × 180/π, …)` for every enemy, mirroring with `scale(-1, 1)` when `cos(angle) < 0`. Both turn the whole element, so every pixel of the drawing travels with the body. Three conditions follow:
+
+- **The body is radially coherent about the sprite centre.** Parts are arranged around the centre, not stacked along a vertical.
+- **The facing axis is the only meaningful axis.** Facing is +X at 0°, expressed by one mark on +X — a barrel, a muzzle, a snout, a nose plate. Nothing on ±Y may mean anything.
+- **Nothing may imply gravity.** No standing figure, no legs below a body, no ears or a hat on top, no vertical stack with a distinguishable top and bottom, no horizon line, no light direction. A top-lit rim and a cast-shadow ellipse are the same defect drawn differently.
+
+This is a renderer constraint, not a style preference. A tracking tower sweeps its sprite through a full 360° and an enemy turns through 360° with its movement direction, so a drawing that reads correctly at one heading reads wrongly at all the others: a gingerbread man with its head at −y and its legs at +y does not re-aim when the sprite turns 40°, it tips over. `default-map-theme.json` is the reference — its `basic` tower is a `<circle r="8">`, an arc and a `<line x1="8" y1="0" x2="16" y2="0">` barrel, and its `minion` is a single `<circle r="0.37">`. Aftermath takes the same convention in a richer form: legs arranged radially with a forward head shape on +X.
+
+Two of the renderer's angles are standing review checkpoints. A new tower starts at `-π/4`, and `sturdyWall` has `range: 0`, never fires, and therefore **stays at −45° for the entire run** — any top/bottom asymmetry in its drawing is visible for every second of every game. A square footprint hides that asymmetry by luck; nothing else does.
+
+**No frame may bake a ground shadow.** The renderer injects none: `tests/unit/map-theme.test.ts` has a describe block named *"Entity symbol frames carry no injected ground shadow"*, whose cases assert both that a `<symbol>` starts from the theme's own frame content and that no shipped theme paints a shadow into a rotated sprite. Because the rotation carries a painted ellipse around with the body, an artist's shadow turns edge-on as the unit turns and reads as a dark smear hanging off the wrong edge. `default-map-theme.json` has zero shadow ellipses in its sprite frames and reads correctly; both theme generators refuse to write the ground-shadow color into a tower or enemy frame.
+
+**Altitude is expressed by scale, because there is nothing else to express it with.** `flyingHeight` is sim-side state and rides the snapshot, but nothing under `src/render/` reads it and no render manager offsets an element's position by it, so the renderer cannot lift an airborne unit. Draw an airborne type smaller than a ground unit; in a plan view a smaller sprite reads as further from the camera. `gen_chrithmath_theme.py` and `gen_aftermath_theme.py` both compute `AIRBORNE_SPRITE_SCALE` as `1 - flyingHeight / 12`, which turns the heights in `src/content/data/enemies.json` (`flyer: 2`, `aegis: 3`, `jet: 5`) into 0.83 / 0.75 / 0.58 of a ground unit.
+
+**The perspective rule cannot be machine-enforced.** Whether a drawing contains a cue that only makes sense with gravity is a review-time judgement, and two geometric metrics were built and defeated trying to replace it (`plans/ChrithmathV2.md` §9.2 has the numbers): intersection-over-union of a sprite against itself rotated 90° (median 0.41 for both generated themes, because a coherent plan-view body with a nose on +X is also asymmetric in pixels) and against itself flipped top-to-bottom (the default theme's `ice` hexagon scores 1.00, identical to a nutcracker with a hat). So the check is the generator's contact sheet **rotation strip**: `gen_chrithmath_theme.py`'s `rotation_strip()` renders one row per sprite at 0/45/90/135/180/225/270/315, each angle drawn at a 72px detail size beside the 27px game size, towers contributing their rest frame and enemies their first walking frame. `gen_aftermath_theme.py`'s contact sheet does not carry the strip yet; a new generator should build one. The generators do check the neighbouring machine-checkable property — a frame whose ink leaves its clip box is refused, because a `<symbol>` viewBox scales to fit rather than clipping, so an overshooting frame silently rescales the sprite — but frame bounds say nothing about perspective.
+
+**Exempt: everything the renderer never rotates.** Tower and enemy frames are the whole scope of the two rules above. Spawn symbols, map site art, region base art, region map images and the menu background are never rotated: `MapSiteLayer.ts` and `SpawnManager.ts` contain no transform at all, `useSvgStaticContent.ts` rotates only tile cells, and neither `RegionMap.vue`, `MainMenu.vue` nor `SvgGameRoot.vue` applies a rotation to theme art (base art gets a `translate` to reach its block corner, which changes position and nothing else). So all of them may use elevation, a horizon and a light direction freely. Tiles do rotate, but only in 90° steps from the map seed, and they answer to the edge-band and fine-line rules under Tile Images instead.
+
 ### Tower Sprites
 
 | Property | Value |
@@ -170,7 +194,7 @@ The map tile size is **36px**. Camera zoom scales every sprite. Draw for the bas
 | **Symbol viewBox** | `-16 -16 32 32` (hardcoded in `useSvgStaticContent.ts`) |
 | **Element size** | 27 × 27 px (`36 * 0.75`, `TOWER_SCALED_SIZE`) |
 
-Towers are centered on their tile and the whole sprite rotates to `tower.angle`. Put the barrel on +X (to the right at 0°). A new tower starts at `-π/4`. `sturdyWall` has no range, so it stays at that angle; a square footprint still reads after that rotation. Projectile origin is `tileSize * 0.45` (16.2px) from the tower center, past the 13.5px sprite edge, so the muzzle should sit on +X at the right edge of the clip.
+Towers are centered on their tile and the whole sprite rotates to `tower.angle`. Put the barrel on +X (to the right at 0°), and read "Rotated Sprites" above before drawing — the +X mark is the only mark the drawing is allowed, since the renderer sweeps the sprite through a full 360°. A new tower starts at `-π/4`. `sturdyWall` has no range, so it never fires and stays at that angle for the whole run, which is exactly why any top/bottom asymmetry is a defect and not a style choice: a square footprint happens to survive the −45°, but nothing else does. Projectile origin is `tileSize * 0.45` (16.2px) from the tower center, past the 13.5px sprite edge, so the muzzle should sit on +X at the right edge of the clip. No tower frame may carry a baked ground shadow.
 
 `TowerManager` sets `style.color` from the theme color. `currentColor` in the sprite picks that up. Hard-coded fills do not. Ghost towers are drawn by lowering the element's opacity.
 
@@ -186,7 +210,7 @@ Every enemy `<use>` is the same 27 × 27 px (`ENEMY_SCALED_SIZE`). The boss is n
 | **Symbol viewBox** | `-1 -1 2 2` (hardcoded) |
 | **Element size** | 27 × 27 px |
 
-Enemies face +X. When `cos(angle) < 0`, `EnemyManager` mirrors the sprite with `scale(-1, 1)` so it does not turn upside down. Do not put text in the drawing. Hit reaction does not scale the element; a flinch has to be in the frames. Slow is a saturate filter on the `<use>`.
+Enemies face +X. When `cos(angle) < 0`, `EnemyManager` mirrors the sprite with `scale(-1, 1)` so it does not turn upside down. That mirror is not a substitute for the plan-view rule in "Rotated Sprites" above: every enemy turns through a full 360° with its movement direction, so a body with a head at −y and feet at +y tips over at every heading. Do not put text in the drawing. Hit reaction does not scale the element; a flinch has to be in the frames. Slow is a saturate filter on the `<use>`. No enemy frame may carry a baked ground shadow, and an airborne type is drawn smaller than a ground unit to carry its height.
 
 ### Tile Images
 
@@ -321,6 +345,8 @@ Per theme:
 | **Total image sets, all three shipped themes** | **234** |
 
 A set is not one image: each enemy set carries 8 walking, 3 hit, and 3 attack frames, each tower set 2 or 3 animation frames, and each tile kind ships 3 images, so one theme holds a little over 200 individual images.
+
+Both totals are unchanged by the rules under "Rotated Sprites", and neither is waived by them: all three shipped themes draw tower and enemy frames as plan views and bake no ground shadow into any of them. A fourth theme inherits both rules.
 
 ---
 

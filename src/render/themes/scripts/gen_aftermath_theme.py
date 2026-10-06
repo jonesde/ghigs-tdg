@@ -15,7 +15,7 @@ import os
 import random
 import re
 import sys
-from typing import Callable
+from typing import Callable, NamedTuple
 
 SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIRECTORY)
@@ -267,20 +267,15 @@ def volume_rect(
     return shadow_shape + body_shape + chip
 
 
-def contact_shadow(radius_x: float, radius_y: float, center_y: float, space: str) -> str:
-    opacity = 0.38 if space == "tower" else 0.4
-    return ellipse(0, center_y, radius_x, radius_y, "#120e0c", opacity=opacity)
-
-
 def muzzle_flash(origin_x: float, origin_y: float) -> str:
     outer = polygon(
         [
             (origin_x, origin_y - 2.4),
-            (origin_x + 3.6, origin_y - 3.3),
-            (origin_x + 2.1, origin_y - 0.7),
-            (origin_x + 4.2, origin_y),
-            (origin_x + 2.1, origin_y + 0.7),
-            (origin_x + 3.6, origin_y + 3.3),
+            (origin_x + 3.3, origin_y - 3.3),
+            (origin_x + 1.9, origin_y - 0.7),
+            (origin_x + 3.9, origin_y),
+            (origin_x + 1.9, origin_y + 0.7),
+            (origin_x + 3.3, origin_y + 3.3),
             (origin_x, origin_y + 2.4),
             (origin_x + 1.1, origin_y),
         ],
@@ -289,9 +284,9 @@ def muzzle_flash(origin_x: float, origin_y: float) -> str:
     inner = polygon(
         [
             (origin_x + 0.4, origin_y - 1.2),
-            (origin_x + 2.4, origin_y - 1.5),
-            (origin_x + 2.8, origin_y),
-            (origin_x + 2.4, origin_y + 1.5),
+            (origin_x + 2.2, origin_y - 1.5),
+            (origin_x + 2.6, origin_y),
+            (origin_x + 2.2, origin_y + 1.5),
             (origin_x + 0.4, origin_y + 1.2),
         ],
         "#fff1c2",
@@ -369,7 +364,7 @@ def ten_miss(pose: str) -> str:
         effect = muzzle_flash(11.6, 0.3)
     elif pose == "smoke":
         effect = smoke_puff(12.4, -0.4)
-    return tower_svg(contact_shadow(10.5, 3.4, 7.2, "tower") + body + effect)
+    return tower_svg(body + effect)
 
 
 def cryo_body(coil_color: str, coil_width: float) -> str:
@@ -398,7 +393,7 @@ def cryo(pose: str) -> str:
         body_art = cryo_body("#55ccff", 1.85)
         vapor = ""
     body = svg_group(body_art, f"translate({num(shift)} 0)")
-    return tower_svg(contact_shadow(10.2, 3.3, 7.4, "tower") + body + vapor)
+    return tower_svg(body + vapor)
 
 
 def longshot_body(barrel_origin: float) -> str:
@@ -421,14 +416,14 @@ def longshot_body(barrel_origin: float) -> str:
 def longshot(pose: str) -> str:
     if pose == "discharge":
         body = longshot_body(-1.6)
-        effect = rect(12.2, -0.55, 2.4, 1.1, 0.3, "#fff6e4") + muzzle_flash(12.4, 0)
+        effect = rect(11.9, -0.55, 2.2, 1.1, 0.3, "#fff6e4") + muzzle_flash(12.0, 0)
     elif pose == "smoke":
         body = longshot_body(-0.4)
         effect = circle(13.4, 0, 1.15, "none", "#c8c8c8", 0.55, 0.7)
     else:
         body = longshot_body(0.4)
         effect = ""
-    return tower_svg(contact_shadow(9.5, 3.1, 8.2, "tower") + body + effect)
+    return tower_svg(body + effect)
 
 
 def junk_cannon_body() -> str:
@@ -466,7 +461,7 @@ def junk_cannon(pose: str) -> str:
         )
     else:
         scrap = ""
-    return tower_svg(contact_shadow(11, 3.6, 8.0, "tower") + body + scrap)
+    return tower_svg(body + scrap)
 
 
 def foil_hat(spark: str) -> str:
@@ -501,7 +496,7 @@ def lightning_arcs(strength: str) -> str:
 
 def lightning(pose: str) -> str:
     strength = {"rest": "idle", "discharge": "burst", "smoke": "fade"}[pose]
-    return tower_svg(contact_shadow(8.4, 3.0, 7.6, "tower") + foil_hat(lightning_arcs(strength)))
+    return tower_svg(foil_hat(lightning_arcs(strength)))
 
 
 def rail_body(gap_color: str, lance: str) -> str:
@@ -526,7 +521,7 @@ def railroad(pose: str) -> str:
         art = rail_body("#44ddaa", "") + rect(-7.2, -1.15, 18.5, 2.3, 0.3, "#ffffff", opacity=0.18)
     else:
         art = rail_body("#14584a", "") + rect(-2, -0.45, 8.5, 0.9, 0.3, "#44ddaa", opacity=0.95)
-    return tower_svg(contact_shadow(12, 3.2, 7.8, "tower") + art)
+    return tower_svg(art)
 
 
 def sandbag(center_x: float, center_y: float, angle_degrees: float, nudge_x: float, nudge_y: float) -> str:
@@ -556,7 +551,7 @@ def bastion(pose: str) -> str:
         dust = ellipse(6.5, 6.2, 2.2, 1.0, "#c4b09a", opacity=0.45) + ellipse(-7.2, 4.4, 1.8, 0.8, "#c4b09a", opacity=0.35)
     elif pose == "smoke":
         dust = ellipse(5.2, 7.4, 1.6, 0.7, "#c4b09a", opacity=0.25)
-    return tower_svg(contact_shadow(10.5, 3.6, 9.2, "tower") + "".join(bags) + sign + sign_face + tire + dust)
+    return tower_svg("".join(bags) + sign + sign_face + tire + dust)
 
 
 def regular_points(
@@ -594,7 +589,7 @@ def shotgun(pose: str) -> str:
         effect = smoke_puff(12.2, -1.4) + circle(12.6, 1.6, 1.3, "#b7b1a8", opacity=0.35)
     else:
         effect = ""
-    return tower_svg(contact_shadow(11.2, 3.5, 8.6, "tower") + body + effect)
+    return tower_svg(body + effect)
 
 
 TOWER_DRAW: dict[str, Callable[[str], str]] = {
@@ -664,18 +659,17 @@ class Pose:
         return amount
 
 
-def enemy_frame(pose: Pose, body: str, airborne: bool = False) -> str:
-    # A flyer sits above a small shadow so the same frame reads as off the ground.
+def enemy_frame(pose: Pose, body: str, enemy_id: str) -> str:
+    airborne = enemy_id in AIRBORNE_ENEMY_IDS
     lift = -0.12 if airborne else 0.0
-    moved = svg_group(body, f"translate({num(pose.shift_x)} {num(pose.bob + lift)})")
+    transform = f"translate({num(pose.shift_x)} {num(pose.bob + lift)})"
+    if airborne:
+        transform += f" scale({num(AIRBORNE_SPRITE_SCALE[enemy_id])})"
+    moved = svg_group(body, transform)
     flash = ""
     if pose.action == "hit" and pose.action_phase == 0:
         flash = circle(pose.shift_x + 0.08, pose.bob + lift, 0.09, "#fff", opacity=0.7)
-    if airborne:
-        shadow = ellipse(0, 0.55, 0.22, 0.05, "#120e0c", opacity=0.28)
-    else:
-        shadow = ellipse(0, 0.18, 0.46, 0.12, "#120e0c", opacity=0.4)
-    return enemy_svg(shadow + moved + flash)
+    return enemy_svg(moved + flash)
 
 
 def squashed(radius_x: float, radius_y: float, squash: float) -> tuple[float, float]:
@@ -842,7 +836,9 @@ def shell_shocked(pose: Pose) -> str:
 
 
 def pincer(root_x: float, root_y: float, reach: float, side: int, opening: float) -> str:
-    tip_x = root_x + 0.36 + reach * 0.16
+    # The claw reaches root_x + 0.48 at full reach, and the frame carries a 0.07 attack
+    # lunge on top, which put the tip 0.01 past the 1 unit edge the symbol clips at.
+    tip_x = root_x + 0.35 + reach * 0.16
     tip_y = root_y + side * (0.1 + opening)
     arm = path_shape(
         f"M{num(root_x)} {num(root_y)} L{num(tip_x - 0.12)} {num(root_y + side * 0.02)}",
@@ -920,7 +916,9 @@ def death_draw(pose: Pose) -> str:
         "#111",
         0.025,
     )
-    head_shift = max(reach, 0) * 0.08
+    # The jaw already carries its own reach, so this extra push was what walked the snout
+    # 0.01 past the edge the symbol clips at.
+    head_shift = max(reach, 0) * 0.06
     head = svg_group(rex_head(reach), f"translate({num(head_shift)} 0)")
     return tail + tail_light + duster + thigh_upper + thigh_lower + foot_upper + foot_lower + body + arm + gun + head
 
@@ -929,13 +927,13 @@ def rex_head(reach: float) -> str:
     jaw = max(reach, 0) * 0.06
     skull = volume_ellipse(0.34, -0.02, 0.28, 0.2, "#d07020", "#8a3c0c", "#f2b070", INK, 0.045, "enemy")
     upper = polygon(
-        [(0.46, -0.1), (0.74 + jaw, -0.22), (0.82 + jaw, -0.06), (0.5, 0.0)],
+        [(0.46, -0.1), (0.70 + jaw, -0.22), (0.78 + jaw, -0.06), (0.5, 0.0)],
         "#e07828",
         "#6a3010",
         0.035,
     )
     lower = polygon(
-        [(0.46, 0.06), (0.7 + jaw, 0.2), (0.66 + jaw, 0.28), (0.44, 0.12)],
+        [(0.46, 0.06), (0.66 + jaw, 0.2), (0.62 + jaw, 0.28), (0.44, 0.12)],
         "#c86420",
         "#6a3010",
         0.035,
@@ -1075,20 +1073,31 @@ ENEMY_META = [
 
 AIRBORNE_ENEMY_IDS = {"flyer", "jet", "aegis"}
 
+AIRBORNE_FLYING_HEIGHT = {"flyer": 2, "aegis": 3, "jet": 5}
 
-def build_enemy_animations(draw: Callable[[Pose], str], airborne: bool = False) -> dict[str, dict]:
+AIRBORNE_SPRITE_SCALE = {
+    # The renderer rotates the whole <use> and never offsets a unit by its sim-side
+    # flyingHeight, so the sprite is the only channel that can carry altitude, and the baked
+    # ground shadow these frames drew is gone. Scale took over that job: in a plan view a
+    # smaller sprite reads as further from the camera, so 1 - flyingHeight / 12 turns the
+    # heights in src/content/data/enemies.json into 0.83 / 0.75 / 0.58 of a ground unit.
+    enemy_id: 1 - flying_height / 12 for enemy_id, flying_height in AIRBORNE_FLYING_HEIGHT.items()
+}
+
+
+def build_enemy_animations(draw: Callable[[Pose], str], enemy_id: str) -> dict[str, dict]:
     walking = []
     for phase in range(8):
         pose = Pose(phase, WALK_BOB[phase], "walk", 0)
-        walking.append(enemy_frame(pose, draw(pose), airborne))
+        walking.append(enemy_frame(pose, draw(pose), enemy_id))
     hit = []
     for action_phase in range(3):
         pose = Pose(0, 0.0, "hit", action_phase)
-        hit.append(enemy_frame(pose, draw(pose), airborne))
+        hit.append(enemy_frame(pose, draw(pose), enemy_id))
     attack = []
     for action_phase in range(3):
         pose = Pose(0, 0.0, "attack", action_phase)
-        attack.append(enemy_frame(pose, draw(pose), airborne))
+        attack.append(enemy_frame(pose, draw(pose), enemy_id))
     return {"walking": walking, "hit": hit, "attack": attack}
 
 
@@ -1994,7 +2003,7 @@ def build_theme() -> dict:
         }
     enemies = {}
     for enemy_id, name, color, shape, walk_duration, hit_duration, attack_duration in ENEMY_META:
-        animations = build_enemy_animations(ENEMY_DRAW[enemy_id], enemy_id in AIRBORNE_ENEMY_IDS)
+        animations = build_enemy_animations(ENEMY_DRAW[enemy_id], enemy_id)
         enemies[enemy_id] = {
             "name": name,
             "color": color,
@@ -2059,8 +2068,10 @@ def validate_theme(theme: dict) -> None:
             raise SystemExit(f"tower walking contract failed: {tower_id}")
         if tower["walking"]["frames"][0]["image"] != frames[0]["image"]:
             raise SystemExit(f"walking frame is not the resting tower: {tower_id}")
-        for frame in frames:
-            assert_paint(frame["image"], tower_id)
+        tower_images = [frame["image"] for frame in frames]
+        for frame_index, image in enumerate(tower_images):
+            assert_frame_inside_clip_box(image, f"tower {tower_id} animation#{frame_index}", TOWER_CLIP_HALF)
+        assert_no_ground_shadow(tower_id, tower_images)
     for enemy_id, name, color, shape, walk_duration, hit_duration, attack_duration in ENEMY_META:
         enemy = theme["enemies"][enemy_id]
         if enemy["name"] != name or enemy["color"] != color or enemy["shape"] != shape:
@@ -2071,9 +2082,14 @@ def validate_theme(theme: dict) -> None:
             raise SystemExit(f"hit contract failed: {enemy_id}")
         if len(enemy["attack"]["frames"]) != 3 or enemy["attack"]["duration"] != attack_duration:
             raise SystemExit(f"attack contract failed: {enemy_id}")
-        for record in (enemy["walking"], enemy["hitReaction"], enemy["attack"]):
-            for frame in record["frames"]:
-                assert_paint(frame["image"], enemy_id)
+        enemy_images = []
+        for record_name in ("walking", "hitReaction", "attack"):
+            record_images = [frame["image"] for frame in enemy[record_name]["frames"]]
+            for frame_index, image in enumerate(record_images):
+                assert_frame_inside_clip_box(
+                    image, f"enemy {enemy_id} {record_name}#{frame_index}", ENEMY_CLIP_HALF)
+            enemy_images.extend(record_images)
+        assert_no_ground_shadow(enemy_id, enemy_images)
     if [region["name"] for region in theme["regions"]] != ["Rustbloom Wastes", "Sand and Regret", "Ashen Highs"]:
         raise SystemExit("region names drifted")
     for region_index, region in enumerate(theme["regions"]):
@@ -2145,6 +2161,508 @@ def assert_boxed_art(image: str, label: str, box_size: float = TILE_SIZE) -> Non
     for value in non_color_numbers(image):
         if value > box_size + 0.5:
             raise SystemExit(f"{label}: coordinate {value} runs past the {num(box_size)}px bounds")
+
+
+# --- sprite ink bounds -------------------------------------------------------
+#
+# A rotating sprite is clipped to its own viewBox by the <use> element that draws it, so
+# ink outside that box is not a smaller sprite, it is a missing sprite. These helpers
+# answer one question: where does a frame's ink actually land. Group transforms are
+# applied, curve bulges are resolved rather than read off the endpoints, a circle or
+# ellipse is measured through the matrix instead of through the corners of its own box,
+# and a stroked shape's box grows by half its stroke width.
+
+TOWER_CLIP_HALF = 16.0
+ENEMY_CLIP_HALF = 1.0
+
+# Two num() roundings on one coordinate can move it 0.01, and a frame's box carries four
+# of them, so this is the slack a legitimately flush frame is allowed.
+CLIP_SLACK = 0.02
+
+GROUND_SHADOW_COLOR = "#120e0c"
+
+NUMBER = r"-?\d*\.?\d+(?:[eE]-?\d+)?"
+SHAPE_NAMES = ("ellipse", "circle", "rect", "polygon", "polyline", "line", "path")
+ANY_TAG = re.compile(r"<(/?[A-Za-z][\w:-]*)((?:\"[^\"]*\"|[^>\"])*?)(/?)>")
+ATTRIBUTE = re.compile(r'([a-zA-Z][a-zA-Z0-9-]*)="([^"]*)"')
+COORDINATE_PAIR = re.compile(rf"({NUMBER})[ ,]+({NUMBER})")
+PATH_STREAM = re.compile(r"([A-Za-z])([^A-Za-z]*)")
+TRANSFORM_OPERATION = re.compile(r"(\w+)\s*\(([^)]*)\)")
+IDENTITY = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+CURVE_EPSILON = 1e-9
+CURVE_ARGUMENT_COUNT = {"C": 6, "S": 4, "Q": 4, "T": 2}
+
+# How finely an arc is walked. The bound on what the walk can miss scales as one over
+# this, so it buys accuracy with time and nothing else.
+ARC_SAMPLES = 2048
+
+# Every frame is drawn inside a group that declares round joins and round caps, which is
+# what makes half a stroke width the exact growth rather than an estimate: a round pen
+# means the ink is the geometry swept by a disc. A frame that stops declaring it would be
+# measured short at every corner, so the declaration is required rather than assumed.
+ROUND_PEN_DECLARATION = 'stroke-linejoin="round" stroke-linecap="round"'
+
+# A stroke narrower than this fraction of a device pixel, at the width a sprite is drawn
+# on the board, cannot put ink a player could see outside its own geometry.
+FAINT_STROKE_PIXELS = 0.1
+BOARD_PIXELS = 27.0
+
+
+class Ellipse(NamedTuple):
+    """A circle or ellipse, which has no finite bounding point set and so cannot be
+    measured corner by corner: it has to be carried through the matrix analytically."""
+
+    center_x: float
+    center_y: float
+    radius_x: float
+    radius_y: float
+
+
+def tag_attributes(body: str) -> dict[str, str]:
+    return dict(ATTRIBUTE.findall(body))
+
+
+def multiply_matrices(left: tuple[float, ...], right: tuple[float, ...]) -> tuple[float, ...]:
+    left_a, left_b, left_c, left_d, left_e, left_f = left
+    right_a, right_b, right_c, right_d, right_e, right_f = right
+    return (
+        left_a * right_a + left_c * right_b,
+        left_b * right_a + left_d * right_b,
+        left_a * right_c + left_c * right_d,
+        left_b * right_c + left_d * right_d,
+        left_a * right_e + left_c * right_f + left_e,
+        left_b * right_e + left_d * right_f + left_f,
+    )
+
+
+def transform_point(
+    matrix: tuple[float, ...], point_x: float, point_y: float
+) -> tuple[float, float]:
+    matrix_a, matrix_b, matrix_c, matrix_d, matrix_e, matrix_f = matrix
+    return (
+        matrix_a * point_x + matrix_c * point_y + matrix_e,
+        matrix_b * point_x + matrix_d * point_y + matrix_f,
+    )
+
+
+def matrix_from_transform(transform: str) -> tuple[float, ...]:
+    """A transform list applies left to right, so each operation is appended on the right
+    of the product built so far, and a rotate's pivot is composed around the point it
+    names."""
+    values = IDENTITY
+    for name, argument_text in TRANSFORM_OPERATION.findall(transform):
+        numbers = [float(value) for value in re.findall(NUMBER, argument_text)]
+        if name == "translate":
+            offset_x = numbers[0]
+            offset_y = numbers[1] if len(numbers) > 1 else 0.0
+            values = multiply_matrices(values, (1.0, 0.0, 0.0, 1.0, offset_x, offset_y))
+        elif name == "scale":
+            scale_x = numbers[0]
+            scale_y = numbers[1] if len(numbers) > 1 else scale_x
+            values = multiply_matrices(values, (scale_x, 0.0, 0.0, scale_y, 0.0, 0.0))
+        elif name == "rotate":
+            degrees = numbers[0]
+            pivot_x = numbers[1] if len(numbers) > 2 else 0.0
+            pivot_y = numbers[2] if len(numbers) > 2 else 0.0
+            radians = math.radians(degrees)
+            cosine, sine = math.cos(radians), math.sin(radians)
+            about_pivot = multiply_matrices(
+                multiply_matrices((1.0, 0.0, 0.0, 1.0, pivot_x, pivot_y),
+                                  (cosine, sine, -sine, cosine, 0.0, 0.0)),
+                (1.0, 0.0, 0.0, 1.0, -pivot_x, -pivot_y),
+            )
+            values = multiply_matrices(values, about_pivot)
+    return values
+
+
+def matrix_scale(matrix: tuple[float, ...]) -> float:
+    """The largest factor the matrix multiplies any length by, which is what turns a
+    stroke width written in a shape's own units into one in frame units."""
+    return max(math.hypot(matrix[0], matrix[1]), math.hypot(matrix[2], matrix[3]))
+
+
+def quadratic_roots(low: float, middle: float, high: float) -> list[float]:
+    """Roots of a*t^2 + b*t + c, the shared shape of a quadratic Bezier's coordinate
+    function and of a cubic's derivative."""
+    leading = low - 2.0 * middle + high
+    linear = 2.0 * (middle - low)
+    constant = low
+    if abs(leading) < CURVE_EPSILON:
+        return [] if abs(linear) < CURVE_EPSILON else [-constant / linear]
+    discriminant = linear * linear - 4.0 * leading * constant
+    if discriminant < 0.0:
+        return []
+    root = math.sqrt(discriminant)
+    return [(-linear + root) / (2.0 * leading), (-linear - root) / (2.0 * leading)]
+
+
+def cubic_point(
+    start: tuple[float, float],
+    control_one: tuple[float, float],
+    control_two: tuple[float, float],
+    end: tuple[float, float],
+    ratio: float,
+) -> tuple[float, float]:
+    inverse = 1.0 - ratio
+    return (
+        inverse ** 3 * start[0] + 3 * inverse * inverse * ratio * control_one[0]
+        + 3 * inverse * ratio * ratio * control_two[0] + ratio ** 3 * end[0],
+        inverse ** 3 * start[1] + 3 * inverse * inverse * ratio * control_one[1]
+        + 3 * inverse * ratio * ratio * control_two[1] + ratio ** 3 * end[1],
+    )
+
+
+def cubic_extremes(
+    start: tuple[float, float],
+    control_one: tuple[float, float],
+    control_two: tuple[float, float],
+    end: tuple[float, float],
+) -> list[tuple[float, float]]:
+    """Endpoints plus the real stationary points. Endpoints alone miss whatever bulge the
+    control points pull out, and a dense walk only approximates it, so the derivative is
+    solved instead."""
+    extremes = [start, end]
+    for axis in (0, 1):
+        for ratio in quadratic_roots(control_one[axis] - start[axis],
+                                     control_two[axis] - control_one[axis],
+                                     end[axis] - control_two[axis]):
+            if CURVE_EPSILON < ratio < 1.0 - CURVE_EPSILON:
+                extremes.append(cubic_point(start, control_one, control_two, end, ratio))
+    return extremes
+
+
+def quadratic_point(
+    start: tuple[float, float], control: tuple[float, float], end: tuple[float, float], ratio: float
+) -> tuple[float, float]:
+    inverse = 1.0 - ratio
+    squared_inverse, squared_ratio = inverse * inverse, ratio * ratio
+    weight = 2.0 * inverse * ratio
+    return (
+        squared_inverse * start[0] + weight * control[0] + squared_ratio * end[0],
+        squared_inverse * start[1] + weight * control[1] + squared_ratio * end[1],
+    )
+
+
+def quadratic_extremes(
+    start: tuple[float, float], control: tuple[float, float], end: tuple[float, float]
+) -> list[tuple[float, float]]:
+    """Endpoints plus the real stationary points. A quadratic's coordinate function is
+    itself a quadratic in the curve parameter, so its extremes are at t = 0, t = 1 and one
+    interior root per axis."""
+    extremes = [start, end]
+    for axis in (0, 1):
+        for ratio in quadratic_roots(start[axis], control[axis], end[axis]):
+            if CURVE_EPSILON < ratio < 1.0 - CURVE_EPSILON:
+                extremes.append(quadratic_point(start, control, end, ratio))
+    return extremes
+
+
+def absolute_or_relative(
+    position: tuple[float, float], offset_x: float, offset_y: float, relative: bool
+) -> tuple[float, float]:
+    if not relative:
+        return (offset_x, offset_y)
+    return (position[0] + offset_x, position[1] + offset_y)
+
+
+def segment_extremes(
+    position: tuple[float, float], upper: str, segment: list[float], relative: bool
+) -> list[tuple[float, float]]:
+    """The bounding points of one curve segment. S and T mirror the previous control point
+    about the current one, which changes curvature only, so the pen's destination and the
+    first control point are read straight off the arguments."""
+    end = absolute_or_relative(position, segment[-2], segment[-1], relative)
+    control_one = absolute_or_relative(position, segment[0], segment[1], relative)
+    if upper in ("Q", "T"):
+        return quadratic_extremes(position, control_one, end)
+    control_two = absolute_or_relative(position, segment[2], segment[3], relative)
+    return cubic_extremes(position, control_one, control_two, end)
+
+
+def ellipse_frame_angle(
+    point: tuple[float, float],
+    center_x: float,
+    center_y: float,
+    cosine: float,
+    sine: float,
+    radius_x: float,
+    radius_y: float,
+) -> float:
+    """The parameter angle of a point on a tilted ellipse, which needs the offset from the
+    centre turned into the ellipse's own frame first. Read off the unrotated offset, the
+    walk follows a different curve than the renderer draws."""
+    delta_x, delta_y = point[0] - center_x, point[1] - center_y
+    local_x = cosine * delta_x + sine * delta_y
+    local_y = -sine * delta_x + cosine * delta_y
+    return math.atan2(local_y / radius_y, local_x / radius_x)
+
+
+def arc_extremes(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    radius_x: float,
+    radius_y: float,
+    rotation_degrees: float,
+    large_arc: float,
+    sweep: float,
+) -> tuple[list[tuple[float, float]], float]:
+    """Endpoint-to-centre conversion per the SVG implementation notes, a dense walk of the
+    sweep, and the bound on what the walk can miss.
+
+    A loaf outline is mostly arcs, and measuring only their endpoints measures it flat. An
+    ellipse moves at most max(radius_x, radius_y) per radian and no two samples are more
+    than the sweep divided by the sample count apart, so growing the walked box by that
+    product makes the result an upper bound, which is the direction that cannot ship a
+    clipped sprite believing it fits.
+    """
+    tilt = math.radians(rotation_degrees)
+    cosine, sine = math.cos(tilt), math.sin(tilt)
+    mid_x, mid_y = (start[0] - end[0]) / 2.0, (start[1] - end[1]) / 2.0
+    offset_x = cosine * mid_x + sine * mid_y
+    offset_y = -sine * mid_x + cosine * mid_y
+    scaled_x = offset_x / radius_x if radius_x else 0.0
+    scaled_y = offset_y / radius_y if radius_y else 0.0
+    distance = scaled_x * scaled_x + scaled_y * scaled_y
+    if distance > 1.0:
+        radius_x *= math.sqrt(distance)
+        radius_y *= math.sqrt(distance)
+    numerator = max(radius_x * radius_x * radius_y * radius_y
+                    - radius_x * radius_x * offset_y * offset_y
+                    - radius_y * radius_y * offset_x * offset_x, 0.0)
+    denominator = (radius_x * radius_x * offset_y * offset_y
+                   + radius_y * radius_y * offset_x * offset_x)
+    factor = math.sqrt(numerator / denominator) if denominator else 0.0
+    if bool(large_arc) == bool(sweep):
+        factor = -factor
+    prime_x = factor * radius_x * offset_y / radius_y if radius_y else 0.0
+    prime_y = -factor * radius_y * offset_x / radius_x if radius_x else 0.0
+    center_x = cosine * prime_x - sine * prime_y + (start[0] + end[0]) / 2.0
+    center_y = sine * prime_x + cosine * prime_y + (start[1] + end[1]) / 2.0
+    start_angle = ellipse_frame_angle(start, center_x, center_y, cosine, sine, radius_x, radius_y)
+    span = (ellipse_frame_angle(end, center_x, center_y, cosine, sine, radius_x, radius_y)
+            - start_angle)
+    if sweep and span < 0.0:
+        span += 2.0 * math.pi
+    if not sweep and span > 0.0:
+        span -= 2.0 * math.pi
+    samples = []
+    for step in range(ARC_SAMPLES + 1):
+        theta = start_angle + span * step / ARC_SAMPLES
+        samples.append((
+            center_x + radius_x * math.cos(theta) * cosine - radius_y * math.sin(theta) * sine,
+            center_y + radius_x * math.cos(theta) * sine + radius_y * math.sin(theta) * cosine,
+        ))
+    return samples, max(radius_x, radius_y) * abs(span) / ARC_SAMPLES
+
+
+def path_points(path_data: str) -> list[tuple[float, float]]:
+    """Every point that can bound a path: each command's own endpoints plus the interior
+    stationary points of its curves. An unrecognised command raises instead of truncating
+    the walk, because a truncated walk under-measures and would pass a sprite whose ink
+    really does escape its clip box."""
+    collected: list[tuple[float, float]] = []
+    position = (0.0, 0.0)
+    subpath_start = (0.0, 0.0)
+    for letter, argument_text in PATH_STREAM.findall(path_data):
+        numbers = [float(value) for value in re.findall(NUMBER, argument_text)]
+        upper = letter.upper()
+        relative = letter.islower()
+        cursor = 0
+        if upper == "Z":
+            position = subpath_start
+            collected.append(position)
+            continue
+        while cursor < len(numbers):
+            if upper in ("M", "L"):
+                position = absolute_or_relative(position, numbers[cursor], numbers[cursor + 1], relative)
+                if upper == "M":
+                    subpath_start = position
+                    upper = "L"
+                collected.append(position)
+                cursor += 2
+            elif upper == "H":
+                position = (position[0] + numbers[cursor] if relative else numbers[cursor], position[1])
+                collected.append(position)
+                cursor += 1
+            elif upper == "V":
+                position = (position[0], position[1] + numbers[cursor] if relative else numbers[cursor])
+                collected.append(position)
+                cursor += 1
+            elif upper in CURVE_ARGUMENT_COUNT:
+                width = CURVE_ARGUMENT_COUNT[upper]
+                segment = numbers[cursor:cursor + width]
+                collected.extend(segment_extremes(position, upper, segment, relative))
+                position = absolute_or_relative(position, segment[-2], segment[-1], relative)
+                cursor += width
+            elif upper == "A":
+                radii = numbers[cursor:cursor + 7]
+                end = absolute_or_relative(position, radii[5], radii[6], relative)
+                samples, growth = arc_extremes(position, end, radii[0], radii[1], radii[2],
+                                              radii[3], radii[4])
+                collected.extend((point_x - growth, point_y - growth) for point_x, point_y in samples)
+                collected.extend((point_x + growth, point_y + growth) for point_x, point_y in samples)
+                position = end
+                cursor += 7
+            else:
+                raise SystemExit(f"path command {letter} is not measured")
+    return collected
+
+
+def shape_points(name: str, attrs: dict[str, str]) -> list[tuple[float, float]] | Ellipse:
+    """Either the exact finite point set that bounds the shape, or the Ellipse record a
+    circle or ellipse needs in order to be measured through the matrix."""
+
+    def number(key: str) -> float:
+        return float(attrs.get(key, 0) or 0)
+
+    if name in ("polygon", "polyline"):
+        return [(float(pair[0]), float(pair[1])) for pair in COORDINATE_PAIR.findall(attrs["points"])]
+    if name == "path":
+        return path_points(attrs.get("d", ""))
+    if name == "rect":
+        origin_x, origin_y = number("x"), number("y")
+        width, height = number("width"), number("height")
+        near_x, near_y = min(width, 0.0), min(height, 0.0)
+        far_x, far_y = near_x + width, near_y + height
+        return [(origin_x + near_x, origin_y + near_y), (origin_x + near_x, origin_y + far_y),
+                (origin_x + far_x, origin_y + near_y), (origin_x + far_x, origin_y + far_y)]
+    if name == "ellipse":
+        return Ellipse(number("cx"), number("cy"), number("rx"), number("ry"))
+    if name == "circle":
+        radius = number("r")
+        return Ellipse(number("cx"), number("cy"), radius, radius)
+    return [(number("x1"), number("y1")), (number("x2"), number("y2"))]
+
+
+def ellipse_extent(
+    matrix: tuple[float, ...], ellipse: Ellipse
+) -> tuple[float, float, float, float]:
+    """Half-extents of an ellipse carried through an arbitrary matrix, read off the images
+    of its two basis vectors. A circle's extent under a rotation about any point is its
+    radius, and an ellipse's is never more than max(radius_x, radius_y); carrying the
+    corners of the ellipse's own box through the matrix instead measures a rotated disc as
+    a rotated square, which over-reports by up to a factor of root two."""
+    moved_x, moved_y = transform_point(matrix, ellipse.center_x, ellipse.center_y)
+    half_width = math.hypot(matrix[0] * ellipse.radius_x, matrix[2] * ellipse.radius_y)
+    half_height = math.hypot(matrix[1] * ellipse.radius_x, matrix[3] * ellipse.radius_y)
+    return moved_x - half_width, moved_y - half_height, moved_x + half_width, moved_y + half_height
+
+
+def shape_stroke_growth(
+    attrs: dict[str, str], matrix: tuple[float, ...], pixels_per_unit: float
+) -> float:
+    """Half a stroke width in frame units, or zero when the stroke cannot put ink outside
+    the geometry. A stroke is centred on its path, so whatever shape it is drawn on the
+    box grows by exactly this much on each side under the round pen this theme declares."""
+    if attrs.get("stroke") == "none":
+        return 0.0
+    stroke_width = float(attrs.get("stroke-width", 0) or 0)
+    if stroke_width <= 0.0:
+        return 0.0
+    opacity = float(attrs.get("opacity", 1) or 1) * float(attrs.get("stroke-opacity", 1) or 1)
+    if opacity * stroke_width * pixels_per_unit < FAINT_STROKE_PIXELS:
+        return 0.0
+    return stroke_width / 2.0 * matrix_scale(matrix)
+
+
+def shape_box(
+    name: str, attrs: dict[str, str], matrix: tuple[float, ...], pixels_per_unit: float
+) -> tuple[float, float, float, float]:
+    geometry = shape_points(name, attrs)
+    if isinstance(geometry, Ellipse):
+        minimum_x, minimum_y, maximum_x, maximum_y = ellipse_extent(matrix, geometry)
+    else:
+        moved = [transform_point(matrix, point_x, point_y) for point_x, point_y in geometry]
+        minimum_x = min(point[0] for point in moved)
+        maximum_x = max(point[0] for point in moved)
+        minimum_y = min(point[1] for point in moved)
+        maximum_y = max(point[1] for point in moved)
+    growth = shape_stroke_growth(attrs, matrix, pixels_per_unit)
+    return minimum_x - growth, minimum_y - growth, maximum_x + growth, maximum_y + growth
+
+
+def frame_ink_box(image: str, box_width: float) -> tuple[float, float, float, float]:
+    """The ink bounding box of one frame: group transforms applied, curve bulges resolved,
+    a stroked shape grown by half its stroke width.
+
+    box_width is the frame's own viewBox width, which is what says what a user unit is
+    worth on the board. A tower frame is 32 units across and an enemy frame 2, and both are
+    drawn 27 pixels wide, so the same stroke width is a very different weight in each. A
+    finite point set is transformed point by point, which is exact because a minimum and a
+    maximum commute with a per-point map; a circle or an ellipse is the one shape whose ink
+    is an infinite set, so it is measured through the matrix analytically instead.
+
+    Two things are deliberately measured as more ink than they carry, because a validator
+    that under-reports is worse than one that over-reports. A dashed stroke is taken as
+    solid, since a dash's ink is still bounded by the line it sits on. A rounded rect's
+    corners are carried through the rotation even though the rounding cuts them back, which
+    over-reports by at most corner_radius * (root two - 1).
+    """
+    pixels_per_unit = BOARD_PIXELS / box_width if box_width else 1.0
+    boxes: list[tuple[float, float, float, float]] = []
+    stack: list[tuple[float, ...]] = [IDENTITY]
+    stroked = False
+
+    for match in ANY_TAG.finditer(image):
+        name = match.group(1)
+        body = match.group(2)
+        if name == "/g":
+            if len(stack) > 1:
+                stack.pop()
+            continue
+        if name == "g":
+            # A nested group's transform is applied before its parent's, so the stack
+            # accumulates by multiplication on the left.
+            transform = tag_attributes(body).get("transform", "")
+            if not match.group(3):
+                stack.append(multiply_matrices(stack[-1], matrix_from_transform(transform)))
+            continue
+        if name not in SHAPE_NAMES:
+            continue
+        attrs = tag_attributes(body)
+        if attrs.get("stroke", "none") != "none":
+            stroked = True
+        matrix = multiply_matrices(stack[-1], matrix_from_transform(attrs.get("transform", "")))
+        boxes.append(shape_box(name, attrs, matrix, pixels_per_unit))
+
+    if stroked and ROUND_PEN_DECLARATION not in image:
+        raise SystemExit("a stroked frame must declare a round pen, or half-stroke growth"
+                          " overstates what the miter joins actually paint")
+    if not boxes:
+        raise SystemExit("frame carries no measurable ink")
+    return (
+        min(box[0] for box in boxes),
+        min(box[1] for box in boxes),
+        max(box[2] for box in boxes),
+        max(box[3] for box in boxes),
+    )
+
+
+
+
+def assert_frame_inside_clip_box(
+    image: str, label: str, clip_half: float, allowance: float = CLIP_SLACK
+) -> None:
+    """A frame's ink has to stay inside the viewBox that clips it, to within the generator's
+    own two-decimal coordinate rounding. This is the per-frame gate every sprite frame goes
+    through, so the paint constraint rides here rather than beside it."""
+    assert_paint(image, label)
+    minimum_x, minimum_y, maximum_x, maximum_y = frame_ink_box(image, clip_half * 2.0)
+    overrun = max(-clip_half - minimum_x, -clip_half - minimum_y,
+                  maximum_x - clip_half, maximum_y - clip_half) - allowance
+    if overrun > 0.0:
+        raise SystemExit(f"{label}: ink leaves the {num(clip_half)} unit clip box "
+                          f"by {num(round(overrun, 4))} units")
+
+
+def assert_no_ground_shadow(unit_id: str, images: list[str]) -> None:
+    """A baked ground shadow rotates with the sprite and lands as a dark wedge hanging off
+    the wrong edge, which is the one defect a player sees immediately. The renderer injects
+    nothing, so the generator has to refuse to write one."""
+    for image in images:
+        if GROUND_SHADOW_COLOR in image:
+            raise SystemExit(f"{unit_id}: frame paints the ground shadow color "
+                              f"{GROUND_SHADOW_COLOR}")
 
 
 def first_field_fill(tile_image: str, label: str) -> str:

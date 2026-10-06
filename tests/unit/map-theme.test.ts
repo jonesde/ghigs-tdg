@@ -1182,6 +1182,40 @@ describe("Entity symbol frames carry no injected ground shadow", () => {
     expect(defs).toContain('<symbol id="enemy-minion-hit-f0" viewBox="-1 -1 2 2"><path/></symbol>');
     expect(defs).not.toMatch(/enemy-[a-z]+-[a-z]*f\d+" viewBox="-1 -1 2 2"><ellipse/);
   });
+
+  const GROUND_SHADOW_FILL = "#120e0c";
+
+  function frameImages(
+    record: { frames: { image: string }[] } | null | undefined,
+    unit: string,
+  ): { unit: string; frame: string }[] {
+    return (record?.frames ?? []).map((entry) => ({ unit, frame: entry.image }));
+  }
+
+  it("ships no theme painting a ground shadow into a rotated sprite", () => {
+    for (const [label, rawTheme] of [
+      ["Polymath", defaultTheme],
+      ["Aftermath", aftermathTheme],
+      ["Chrithmath", chrithmathTheme],
+    ] as const) {
+      const theme = RawMapThemeSchema.parse(rawTheme);
+      const frames = [
+        ...Object.entries(theme.towers).flatMap(([towerId, tower]) => [
+          ...frameImages(tower.animation, `${label} ${towerId} animation`),
+          ...frameImages(tower.walking, `${label} ${towerId} walking`),
+        ]),
+        ...Object.entries(theme.enemies).flatMap(([enemyId, enemy]) => [
+          ...frameImages(enemy.walking, `${label} ${enemyId} walking`),
+          ...frameImages(enemy.hitReaction, `${label} ${enemyId} hitReaction`),
+          ...frameImages(enemy.attack, `${label} ${enemyId} attack`),
+        ]),
+      ];
+      expect(
+        frames.filter((entry) => entry.frame.includes(GROUND_SHADOW_FILL)).map((entry) => entry.unit),
+        `${label} bakes ${GROUND_SHADOW_FILL} into a sprite frame the renderer rotates`,
+      ).toEqual([]);
+    }
+  });
 });
 
 describe("Tile variants", () => {

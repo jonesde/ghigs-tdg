@@ -5,6 +5,25 @@ toys; towers fire candy, each based on a real Christmas candy tradition. Three r
 to Christian traditions: Western (Western Europe + American), Southern (Australian + Middle
 Eastern, the non-winter exception), Eastern (Eastern Europe, Orthodox branches).
 
+> **Corrected by `plans/ChrithmathV2.md`.** This document is kept as the original record and
+> the text below is unedited, but two things in it were found wrong after the theme shipped and
+> were fixed there. Read V2 first if you are building on this plan.
+>
+> - **§3's motif list was not delivered.** The palette table and the region tones landed as
+>   specified; the motifs promised alongside them — footprint stamps on the Yule path, cracked
+>   earth on Sunspice terrain2, gold candle specks on Icon Snows terrain4 — do not exist in the
+>   shipped art. V2 §7 (A1) records the finding and V2 step 7 is the fix.
+> - **§4/§5's sprite perspective was never stated and was got wrong.** These tables specify
+>   names, glyphs, colors and durations, all of which landed, but the perspective half of the
+>   frame contract was assumed rather than written down: the renderer rotates a tower sprite
+>   through a full 360° and an enemy sprite through 360° with its movement direction, and all
+>   17 sprites were drawn as side elevations. V2 §4 states the rule, V2 §8 gives the plan-view
+>   replacement for every id, and V2 §6 removes the ground shadow the frames also baked in.
+>
+> The perspective and no-shadow rules are now permanent text in
+> `src/render/themes/MapThemeHowTo.md` under "Rotated Sprites", so the gap in this plan is not
+> a gap a fourth theme can repeat.
+
 ## 1. Theme identity & files
 
 - **Label**: "Chrithmath" (Christmas × math). **id**: `chrithmath`, **file**:

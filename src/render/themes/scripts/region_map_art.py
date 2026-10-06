@@ -536,6 +536,26 @@ def lighthouse_unit(x: float, base_y: float, width: float, height: float, wall: 
     return tower + band + lantern + roof + light
 
 
+def lantern_panes(x: float, base_y: float, width: float, height: float, pane: str,
+                  frame: str) -> str:
+    """Glaze a lighthouse lantern housing, sharing lighthouse_unit's geometry.
+
+    The brightness has to live inside the housing: a plan view has no light
+    direction, so a soft disc painted on the air beside the tower reads as a
+    hovering object rather than as a lamp.
+    """
+    housing_top = base_y - height - width * 0.34
+    housing_height = width * 0.34
+    housing_left = x + width * 0.28
+    housing_width = width * 0.44
+    glazing = rect(housing_left, housing_top, housing_width, housing_height, 0, pane, frame, 0.9)
+    mullion_x = housing_left + housing_width * 0.5
+    transom_y = housing_top + housing_height * 0.46
+    return (glazing
+            + line(mullion_x, housing_top, mullion_x, housing_top + housing_height, frame, 1.4)
+            + line(housing_left, transom_y, housing_left + housing_width, transom_y, frame, 0.9))
+
+
 def shop_front(x: float, y: float, width: float, height: float, wall: str,
                front: str, outline: str, opacity: float | None = None) -> str:
     body = rect(x, y, width, height, 0, wall, outline, 1.0, opacity)
@@ -1187,7 +1207,7 @@ def yule_vale_map() -> str:
         (150, 616, 30, 24, "#3a4c60", "#22344a"), (200, 634, 28, 22, "#31465e", "#22344a"),
         (240, 610, 30, 24, "#3a4c60", "#22344a"), (420, 560, 28, 22, "#31465e", "#22344a"),
         (470, 586, 30, 24, "#3a4c60", "#22344a"), (680, 540, 28, 22, "#31465e", "#22344a"),
-        (730, 566, 30, 24, "#3a4c60", "#22344a"), (830, 596, 28, 22, "#31465e", "#22344a"),
+        (730, 566, 30, 24, "#3a4c60", "#22344a"), (814, 602, 28, 22, "#31465e", "#22344a"),
     )
     for house_x, house_y, house_width, house_height, house_wall, house_roof in village_houses:
         parts.append(pitched_house(house_x, house_y, house_width, house_height, house_wall,
@@ -1195,10 +1215,8 @@ def yule_vale_map() -> str:
     parts.append(barn_house(300, 630, 40, 30, "#4a3a2c", "#22303f", INK))
     parts.append(fence_run(140, 620, 290, 620, "#3a2a1c", 0.7))
     parts.append(fence_run(660, 546, 800, 546, "#3a2a1c", 0.7))
-    parts.append(polyline("165,610 220,600 262,604 438,552 486,578", accent, 1.6, 0.4,
-                          dash="2 7"))
-    parts.append(church_unit(430, 170, 44, 76, "#31465e", "#22344a", INK))
-    parts.append(onion_dome_house(320, 200, 54, 64, "#2c3e50", "#8fb8d8", INK, 0.8))
+    parts.append(church_unit(448, 170, 44, 76, "#3a5068", "#6f849e", INK))
+    parts.append(onion_dome_house(320, 212, 54, 64, "#2c3e50", "#8fb8d8", INK, 0.8))
     parts.append(birds_unit(640, 150, accent, 3, 0.5))
     parts.append(birds_unit(340, 250, accent, 2, 0.4))
     parts.append(scatter_dots(550, 350, 330, 48, "#c8d6e2", 0.12))
@@ -1210,34 +1228,38 @@ def sunspice_coast_map() -> str:
     accent = "#d2c09a"
     parts = [
         rect(0, 0, MAP_WIDTH, MAP_HEIGHT, 0, "#2e2718"),
-        ellipse(260, 190, 280, 130, "#4a4230", opacity=0.3),
-        ellipse(620, 420, 300, 140, "#4a4230", opacity=0.22),
+        ellipse(260, 190, 280, 130, "#4a4230", opacity=0.2),
+        ellipse(620, 420, 300, 140, "#4a4230", opacity=0.15),
         dune_fill(0, MAP_WIDTH, 606, 14, 260, "#4a4230", 0.3),
     ]
-    sea_crest = sampled_wave_path(0, MAP_WIDTH, 660, 12, 300)
+    sea_crest = sampled_wave_path(0, MAP_WIDTH, 638, 12, 300)
     parts.append(path_shape(f"{sea_crest} L {MAP_WIDTH} {MAP_HEIGHT} L 0 {MAP_HEIGHT} Z",
                             "#1f3438", None, None, 0.9))
     parts.append(path_shape(sampled_wave_path(40, 1060, 672, 8, 220), "none", accent, 1.6, 0.25))
     parts.append(path_shape(sampled_wave_path(60, 1040, 686, 7, 240), "none", accent, 1.2, 0.18))
-    boat = (polygon("270,676 330,676 318,688 282,688", "#3a3428", INK, 1.0)
-            + line(300, 676, 300, 648, accent, 1.4, 0.8)
-            + polygon("300,650 300,674 322,674", "#c2b280", None, None, 0.7))
+    boat = (polygon("270,660 330,660 318,672 282,672", "#3a3428", INK, 1.0)
+            + line(300, 660, 300, 632, accent, 1.4, 0.8)
+            + polygon("300,634 300,658 322,658", "#c2b280", None, None, 0.7))
     parts.append(boat)
     parts.append(route_band(CHRITHMATH_MAP_LAYOUTS[1], "#17130c", "#3a2e20", accent, "#5a4d40"))
+    # The level chain runs along the shore road, so each building has to sit in a gap
+    # between two markers rather than under one, and the whole row has to stand clear of
+    # the crest at its own x. What is left between those gaps is the beach.
     for shop_x, shop_wall, shop_front_color in (
-        (430, "#6a5a44", "#c45a48"), (484, "#5a4a3a", "#4a8a8a"), (538, "#6a5a44", "#4a6a9a"),
+        (136, "#6a5a44", "#c45a48"), (420, "#5a4a3a", "#4a8a8a"), (584, "#6a5a44", "#4a6a9a"),
     ):
-        parts.append(shop_front(shop_x, 622, 46, 30, shop_wall, shop_front_color, INK))
-    parts.append(pitched_house(620, 626, 34, 24, "#6a5a44", "#3a2a1c", INK))
-    parts.append(pitched_house(790, 624, 30, 22, "#5a4a3a", "#3a2a1c", INK))
-    parts.append(barn_house(940, 622, 44, 30, "#6a5a44", "#3a2a1c", INK))
-    for cactus_x, cactus_y, cactus_height in ((380, 640, 26), (700, 650, 24), (900, 648, 28)):
+        parts.append(shop_front(shop_x, 540, 46, 30, shop_wall, shop_front_color, INK))
+    parts.append(pitched_house(300, 546, 34, 24, "#6a5a44", "#3a2a1c", INK))
+    parts.append(pitched_house(700, 546, 34, 24, "#5a4a3a", "#3a2a1c", INK))
+    parts.append(pitched_house(856, 546, 30, 22, "#5a4a3a", "#3a2a1c", INK))
+    parts.append(barn_house(990, 540, 44, 30, "#6a5a44", "#3a2a1c", INK))
+    for cactus_x, cactus_y, cactus_height in ((573, 610, 20), (1052, 600, 22)):
         parts.append(cactus_unit(cactus_x, cactus_y, cactus_height, "#5a6a44", 0.8))
-    parts.append(dead_tree_unit(760, 660, 26, "#4a3a2c"))
-    parts.append(dead_tree_unit(330, 654, 22, "#4a3a2c"))
-    parts.append(fence_run(420, 618, 600, 618, "#3a2a1c", 0.7))
-    parts.append(lighthouse_unit(955, 158, 34, 118, "#5a5248", "#c45a48", INK))
-    parts.append(ellipse(972, 66, 30, 10, "#c45a48", opacity=0.18))
+    parts.append(dead_tree_unit(745, 606, 24, "#4a3a2c"))
+    parts.append(dead_tree_unit(48, 600, 24, "#4a3a2c"))
+    parts.append(fence_run(150, 526, 620, 526, "#3a2a1c", 0.7))
+    parts.append(lighthouse_unit(978, 158, 34, 118, "#5a5248", "#c45a48", INK))
+    parts.append(lantern_panes(978, 158, 34, 118, "#e0c48c", INK))
     parts.append(birds_unit(500, 120, accent, 3, 0.5))
     parts.append(birds_unit(820, 200, accent, 2, 0.4))
     parts.append(scatter_dots(450, 300, 340, 36, "#c2b280", 0.1))
@@ -1256,20 +1278,22 @@ def icon_snows_map() -> str:
     parts.append(circle(550, 360, 150, "none", accent, 1.5, 0.14))
     parts.append(circle(550, 360, 210, "none", accent, 1.2, 0.1))
     parts.append(route_band(CHRITHMATH_MAP_LAYOUTS[2], "#10141f", "#323a50", accent, "#3a4360"))
-    parts.append(onion_dome_house(495, 276, 110, 128, "#2c3650", "#e0b040", INK))
-    for chapel_x, chapel_y in ((268, 214), (716, 214), (288, 436), (608, 436)):
-        parts.append(onion_dome_house(chapel_x, chapel_y, 60, 68, "#26304a", "#e0b040", INK, 0.85))
+    # The domes stay in the region's own blue and under the marker gold in value, so the
+    # brightest thing on the map is the marker the player has to read, not a roof.
+    parts.append(onion_dome_house(495, 276, 110, 128, "#2c3650", "#4d5d86", INK))
+    for chapel_x, chapel_y in ((368, 196), (636, 196), (390, 452), (712, 452)):
+        parts.append(onion_dome_house(chapel_x, chapel_y, 60, 68, "#26304a", "#44527a", INK, 0.85))
     for drift_x, drift_y, drift_rx, drift_ry in (
         (550, 420, 90, 20), (300, 300, 70, 16), (800, 320, 70, 16), (560, 120, 90, 16),
     ):
         parts.append(ellipse(drift_x, drift_y, drift_rx, drift_ry, "#3a4360", opacity=0.4))
     for fir_x, fir_y, fir_width, fir_height in (
         (60, 120, 26, 44), (110, 150, 22, 38), (980, 100, 24, 42), (1040, 150, 22, 36),
-        (60, 620, 24, 40), (1040, 640, 24, 40), (300, 640, 22, 36), (760, 660, 22, 36),
+        (60, 620, 24, 40), (1040, 640, 24, 40), (300, 640, 22, 36), (698, 656, 22, 36),
     ):
         parts.append(conifer_unit(fir_x, fir_y, fir_width, fir_height, "#2e4a40", "#3a2a1c"))
     parts.append(fence_run(470, 430, 630, 430, "#3a2a1c", 0.6))
-    parts.append(birds_unit(500, 80, accent, 3, 0.5))
+    parts.append(birds_unit(300, 62, accent, 3, 0.5))
     parts.append(scatter_dots(550, 360, 300, 44, "#c8d6e2", 0.1))
     parts.append(region_frame(accent))
     return svg_root("".join(parts))
