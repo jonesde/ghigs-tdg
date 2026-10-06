@@ -1,5 +1,6 @@
 import { bossAbilityLabel } from "@/sim/bossAbilities.js";
 import {
+  BETWEEN_WAVES_TIMER,
   WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN,
   WAVE_GRAPH_COLOR_BASE_HEALTH_RED,
   WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW,
@@ -20,7 +21,9 @@ import {
   TOWER_SCALED_SIZE,
 } from "./types.js";
 
-const WAVE_TOP_DISPLAY_SECONDS = 3;
+// The medals are stamped when a wave ends, so they cover the whole between-waves
+// countdown rather than a copy of its length that could drift from the pack.
+const WAVE_TOP_DISPLAY_SECONDS = BETWEEN_WAVES_TIMER;
 const WAVE_TOP_MEDALS = ["🥇", "🥈", "🥉"];
 
 export class UiOverlayManager {
@@ -82,24 +85,11 @@ export class UiOverlayManager {
       this.hpLastFill.push("");
     }
 
+    // One rect per slot: the shield fill rides on top of the health fill in the
+    // same bar row, so the health bar's own background and border back the pair.
+    // The shield pool is appended after the health pool, which is what puts the
+    // cyan fill in front.
     for (let i = 0; i < SHIELD_BAR_POOL_SIZE; i++) {
-      const bg = document.createElementNS(SVG_NS, "rect");
-      bg.style.visibility = "hidden";
-      bg.setAttribute("width", "24");
-      bg.setAttribute("height", "3");
-      bg.setAttribute("fill", "var(--color-bg)");
-      bg.setAttribute("opacity", "0.6");
-      layer.appendChild(bg);
-
-      const border = document.createElementNS(SVG_NS, "rect");
-      border.style.visibility = "hidden";
-      border.setAttribute("width", "24");
-      border.setAttribute("height", "3");
-      border.setAttribute("fill", "none");
-      border.setAttribute("stroke", "#000000");
-      border.setAttribute("stroke-width", "0.5");
-      layer.appendChild(border);
-
       const fg = document.createElementNS(SVG_NS, "rect");
       fg.style.visibility = "hidden";
       fg.setAttribute("width", "24");
@@ -107,7 +97,7 @@ export class UiOverlayManager {
       fg.setAttribute("fill", "#00ffff");
       layer.appendChild(fg);
 
-      this.shieldBarPool.push(bg, border, fg);
+      this.shieldBarPool.push(fg);
       this.shieldLastTransform.push("");
       this.shieldLastWidth.push("");
     }
@@ -218,7 +208,6 @@ export class UiOverlayManager {
     towers: TowerSnapshot[] = [],
   ): void {
     let barIndex = 0;
-    let shieldIndex = 0;
     let bossIndex = 0;
     let hpBarGroup = 0;
     let shieldBarGroup = 0;
@@ -232,6 +221,9 @@ export class UiOverlayManager {
       const fg = this.hpBarPool[barIndex + 2]!;
       barIndex += 3;
 
+      // One bar row per enemy. A live shield shares the health row, so the health
+      // fill is the background the cyan drains away to reveal.
+      const hasShield = enemy.shield > 0 && enemy.maxShield > 0;
       const barX = enemy.x - 12;
       const barY = enemy.y - 12;
       const barTransform = `translate(${barX}, ${barY})`;
@@ -244,10 +236,11 @@ export class UiOverlayManager {
         this.hpLastTransform[hpGroupIdx] = barTransform;
       }
       // Full-HP enemies render no bar (matches the text renderer and the
-      // damaged-only tower bars); the pool slot stays reserved so group
-      // indices remain pinned to enemy order for the dirty checks.
+      // damaged-only tower bars), except while a shield is up — the shield bar
+      // needs the health fill behind it even at full health. The pool slot stays
+      // reserved either way so group indices remain pinned to enemy order.
       const hpPercent = enemy.maxHp > 0 ? Math.max(0, Math.min(1, enemy.hp / enemy.maxHp)) : 0;
-      const showHpBar = hpPercent < 1;
+      const showHpBar = hpPercent < 1 || hasShield;
       bg.style.visibility = showHpBar ? "visible" : "hidden";
       border.style.visibility = showHpBar ? "visible" : "hidden";
       fg.style.visibility = showHpBar ? "visible" : "hidden";
@@ -266,32 +259,20 @@ export class UiOverlayManager {
       }
       hpBarGroup++;
 
-      if (enemy.shield > 0 && enemy.maxShield > 0 && shieldIndex + 2 < this.shieldBarPool.length) {
-        const shieldBg = this.shieldBarPool[shieldIndex]!;
-        const shieldBorder = this.shieldBarPool[shieldIndex + 1]!;
-        const shieldFg = this.shieldBarPool[shieldIndex + 2]!;
-        shieldIndex += 3;
+      if (hasShield && shieldBarGroup < this.shieldBarPool.length) {
+        const shieldFg = this.shieldBarPool[shieldBarGroup]!;
 
-        const shieldBarX = enemy.x - 12;
-        const shieldBarY = enemy.y - 16;
-        const shieldTransform = `translate(${shieldBarX}, ${shieldBarY})`;
-
-        const shGroupIdx = shieldBarGroup;
-        if (this.shieldLastTransform[shGroupIdx] !== shieldTransform) {
-          shieldBg.setAttribute("transform", shieldTransform);
-          shieldBorder.setAttribute("transform", shieldTransform);
-          shieldFg.setAttribute("transform", shieldTransform);
-          this.shieldLastTransform[shGroupIdx] = shieldTransform;
+        if (this.shieldLastTransform[shieldBarGroup] !== barTransform) {
+          shieldFg.setAttribute("transform", barTransform);
+          this.shieldLastTransform[shieldBarGroup] = barTransform;
         }
-        shieldBg.style.visibility = "visible";
-        shieldBorder.style.visibility = "visible";
         shieldFg.style.visibility = "visible";
 
-        const shieldPercent = Math.max(0, enemy.shield / enemy.maxShield);
+        const shieldPercent = Math.max(0, Math.min(1, enemy.shield / enemy.maxShield));
         const shieldWidth = `${24 * shieldPercent}`;
-        if (this.shieldLastWidth[shGroupIdx] !== shieldWidth) {
+        if (this.shieldLastWidth[shieldBarGroup] !== shieldWidth) {
           shieldFg.setAttribute("width", shieldWidth);
-          this.shieldLastWidth[shGroupIdx] = shieldWidth;
+          this.shieldLastWidth[shieldBarGroup] = shieldWidth;
         }
         shieldBarGroup++;
       }
@@ -322,10 +303,7 @@ export class UiOverlayManager {
       this.hpBarPool[g * 3 + 2]!.style.visibility = "hidden";
     }
     for (let g = shieldBarGroup; g < this.shieldLastTransform.length; g++) {
-      if (g * 3 + 2 >= this.shieldBarPool.length) break;
-      this.shieldBarPool[g * 3]!.style.visibility = "hidden";
-      this.shieldBarPool[g * 3 + 1]!.style.visibility = "hidden";
-      this.shieldBarPool[g * 3 + 2]!.style.visibility = "hidden";
+      this.shieldBarPool[g]!.style.visibility = "hidden";
     }
     for (let i = bossGroup; i < this.bossTextPool.length; i++) {
       this.bossTextPool[i]!.style.visibility = "hidden";

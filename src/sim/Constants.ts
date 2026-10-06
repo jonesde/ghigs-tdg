@@ -123,6 +123,9 @@ export const MAX_STEPS_PER_FRAME = 12;
 // through it, validateCommand whitelists it for the debug setTimeScale command,
 // and the UI reads it to render the speed control, so it lives in one place.
 export const TIME_SCALES = [1, 2, 4, 8] as const;
+// Ceiling the engine enforces on itself when a boss enters the world. A member of
+// TIME_SCALES, so the debug whitelist and cycleTimeScale still recognize the value.
+export const BOSS_SPEED_LIMIT = 2;
 
 // ===== Game flow / economy (from content) =====
 

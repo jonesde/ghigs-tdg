@@ -41,7 +41,7 @@ src/
 │   ├── GameHud.vue              # Top HUD bar: lives, gold, gems, wave, speed/sound/pause/menu buttons
 │   ├── GameShop.vue             # Tower shop bar: build selection with cost display and discount support
 │   ├── TowerPanel.vue           # Tower detail panel: stats, targeting, upgrade/sell, specialization
-│   ├── WaveCountdown.vue        # Inter-wave countdown overlay shown before each wave spawns
+│   ├── WaveCountdown.vue        # Inter-wave countdown overlay shown before each wave spawns (the wave-top medals are up for its duration)
 │   ├── WaveGraph.vue            # Per-wave graph overlay: damage, gold, gems, max enemy HP
 │   ├── PauseMenu.vue            # Pause menu overlay: resume, skill tree, options, quit
 │   ├── ProgressivePlacement.vue # Block-offer cards (5×5 previews shaded by tile height with the active theme's region tiles, rotation, site hint) plus the paused post-placement undo button
@@ -57,7 +57,7 @@ src/
 │   ├── ProgressiveMapDialog.vue # Progressive-map custom-run dialog (teleported to body): region/level/base-entries/seed form on persistStore, validates, starts the run via gameStore + /game
 │   ├── RegionMap.vue            # Region map SVG renderer: mapImage background, connection lines, level/progressive markers with tooltips, select/start events
 │   ├── SkillTree.vue            # Skill tree: tower levels, specializations, add-ons, general upgrades
-│   ├── EndScreen.vue            # Game over / victory screen: gem breakdown and navigation
+│   ├── EndScreen.vue            # Game over / victory screen: gem breakdown, navigation, and the campaign-only "Play Next" button
 │   ├── ConfirmDialog.vue        # Reusable modal dialog (teleported to body)
 │   ├── DebugPanel.vue           # Debug buttons: gold/gems/lives injection, wave skip, map unlock, time scale
 │   ├── StatsPanel.vue           # Wave composition, enemy list, and run statistics
@@ -139,7 +139,7 @@ src/
 │       ├── ProjectileManager.ts # Projectile rendering pool: <circle> bullets, <line> beams
 │       ├── ParticleManager.ts   # Particle rendering pool: <circle> elements
 │       ├── EffectManager.ts     # Lightning, stun aura, build preview, range circle, upgrade button
-│       ├── UiOverlayManager.ts  # HP bars, shield bars, boss HP text rendering
+│       ├── UiOverlayManager.ts  # Composite enemy bar (health fill with the shield fill in front), boss HP text, wave-top medals
 │       ├── SpawnManager.ts      # Spawn point rendering pool: <use> elements for spawn indicators
 │       ├── MapSiteLayer.ts      # Site glyph markup (pulsing drop ring, icon glyphs, caches with HP bars, dimmed buildings) keyed by a signature cache
 │   ├── siteHover.ts         # Site hover hit test (package radius, building box, nearest wins) plus siteHoverAtTile for the highlighted build tile, and tooltip copy per site state
@@ -212,7 +212,7 @@ The SVG structure is:
 
 ### Four Pinia Stores
 
-- **`gameStore`** — reactive mirror/projection of the simulation `SimulationSnapshot`. The worker is authoritative for simulation state; `gameStore` holds the subset the Vue UI binds to (lives, gold, wave, game state, selection, time scale, dialog visibility, frame id, run gem/boss counters, milestone breakdown, end-screen data) and is updated by snapshot diffs each frame. Main-thread-only state (camera, hover tile, hover-upgrade-button, tower/base-panel/minimap/shop positions, random-map params, worker reference) also lives here. Reset when starting a new map. `timeScale` is in the mirrored set and is **not** written by the UI.
+- **`gameStore`** — reactive mirror/projection of the simulation `SimulationSnapshot`. The worker is authoritative for simulation state; `gameStore` holds the subset the Vue UI binds to (lives, gold, wave, game state, selection, time scale, dialog visibility, frame id, run gem/boss counters, milestone breakdown, end-screen data) and is updated by snapshot diffs each frame. Main-thread-only state (camera, hover tile, hover-upgrade-button, tower/base-panel/minimap/shop positions, random-map params, worker reference) also lives here. Reset when starting a new map. `timeScale` is in the mirrored set and is **not** written by the UI (the sim lowers it itself on boss emergence — see "Worker-TimeScale Is Snapshot-Only").
 - **`persistStore`** — persistent meta-progression (gems, unlocked skills, map progress, difficulty, general add-ons, random-map and progressive-map preferences, last-selected theme and map) and LLM commander configurations (`llmCommanders` array). Auto-saved to `localStorage` via manual `save()` calls.
 - **`uiStore`** — UI overlay visibility and confirm dialog state, plus notifications, minimap toggle, enemy commander selection ("none"/"stubby"/"stubbs"), random-map panel visibility, and one `overlayPausedSim` flag that owns the pause the overlays take. `beginOverlayPause()` pauses only when the sim is actually running (so opening a second overlay on top of a paused one does not dispatch a second toggle), and `endOverlayPause()` resumes only when the last of `showPauseMenu` / `showSkillTree` / `showStatsPanel` / `showHelpDialog` has closed — the getter `anyPauseOverlayOpen` is what it tests. One flag, not four `wasPlayingWhen…` booleans: with per-panel flags, closing an overlay underneath another one resumed the run behind the overlay that was still up. Resume authority is the flag rather than `gameStore.state`, since the flag is set exactly when this store dispatched the pause. `Space` follows the same model — it calls `closeAllDialogs()` when `anyPauseOverlayOpen`, and only falls through to toggling the sim when nothing is up.
 - **`mapThemeStore`** — map theme state: `defaultTheme` (preloaded at app init for synchronous access by non-game screens) and `activeTheme` (resolved for the current run), plus `availableThemes` and preload/load actions. Also exposes `resolvedMaps` (the active world's effective maps catalog, `theme.maps` absent when the theme carries no override), `regionNames` (per-region display names, active theme over default over `Region N` fallback), and `ensureActiveTheme()` (resolves `activeTheme` to `persistStore.lastSelectedThemeId` before a run starts, so the main thread and worker both use the active world's catalog).
@@ -490,6 +490,71 @@ time-scale debug command already dispatched only. `TIME_SCALES` in
 `validateCommand` whitelists it for the debug `setTimeScale` command, and `DebugPanel`
 reads it.
 
+**The sim writes it too, on boss emergence.** `GameEngine.onEnemySpawned` — the single
+hook `EnemyManager.spawn` calls for every enemy, immediate or released from the pending
+queue — lowers `runState.timeScale` to `BOSS_SPEED_LIMIT` (2, `Constants.ts`) whenever a
+`type === "boss"` enemy enters the world above it, because a boss is unreadable faster.
+It is a member of `TIME_SCALES`, so the debug whitelist and `cycleTimeScale` still
+recognize the value and no restore path is needed: the player re-raises the speed with the
+HUD button or Tab. The clamp is per boss, so a multi-boss wave (30/60/90) re-checks and is a
+no-op once already at the limit. It reads `runState` directly, not the store — the mirror
+lands on the HUD label within one snapshot. No progressive-placement-hold guard is needed
+because a hold pauses the sim, so no boss can spawn during one.
+
+### Wave Top Tower Medals
+
+After each wave the three highest-damage sources earn a medal glyph above themselves for
+the whole of the following between-waves countdown.
+
+- **Ranking** happens in `GameEngine.stampWaveTopTowers`, called from the two wave-end
+  seams — `onWaveCleared` and `onWaveExpired` — not from `onWaveStart`. The wave's
+  `waveDamage` is still live at that point; `onWaveStart` zeroes it once the next wave is
+  under way. Ranking key is `waveDamage`, tie-broken by `totalDamageDealt`, and the base
+  defense competes as the `"base"` tower id (`BASE_SELECTION_ID`). `slice(0, 3)` is the only
+  cap; a 4th rank would fall back to its numeric string in the renderer.
+- **Stamping at wave end rather than wave start** is what puts the medals *at the start* of
+  the countdown. `onWaveStart` fires in the same tick `WaveManager` clears `countdownActive`
+  and `GameEngine.update` nulls `runState.waveCountdown`, so a wave-start stamp could only
+  ever appear after the countdown overlay was already gone. The countdown is
+  `BETWEEN_WAVES_TIMER` sim seconds and `UiOverlayManager` uses that same constant as its
+  display window, so the two cannot drift.
+- **Timer expiry and the progressive `"expire-advance"` hold skip the countdown** and go
+  straight to `startNextWave`. They stamp from `onWaveExpired`, so the medals still appear
+  for one window from the moment the wave ended. The `VICTORY_WAVE` clear stamps nothing:
+  the engine calls `endGame(true)` in that same tick and no countdown ever opens.
+- **Transport** is `SnapshotMeta.waveTopTowers` (`WaveTopTowerSnapshot[] | null`, each entry
+  carrying its own `simSeconds`), shipped on every snapshot — the array only changes content
+  at a wave end, so it needs no generation gate. It is **not** mirrored into `gameStore`;
+  `SvgGameRoot` reads it off the raw snapshot, because resolving the tower positions it needs
+  would otherwise mean mirroring the whole tower array and the camera frame into the store.
+- **Rendering** is `UiOverlayManager.syncWaveTopTowers` → three pooled `<text>` elements.
+  A `"base"` entry draws at the base tile center. A tower sold mid-window drops its medal
+  (the id lookup misses). There is no dirty-check cache on this pool, so it rewrites
+  `textContent` and `transform` every rendered frame — three elements, not worth caching.
+
+### End Screen Play Next
+
+`EndScreen.vue` is one component behind both `/game-over` and `/victory`, so the conditional
+**"Play Next: <Region> Map <level>"** button sits on either. It is rendered between "Play
+Again" and "Select Map" and only when `gameStore.mapIndex` is a campaign index `0..TOTAL_MAPS - 2`
+whose successor is unlocked (`persistStore.getThemeProgress(lastSelectedThemeId).highestUnlockedMap
+>= mapIndex + 1`) — the same `locked: i > progress.highestUnlockedMap` rule `MapSelect` uses and
+the same `mapIndex + 1 < 36` ceiling `maybeUnlockNextMap` enforces. Custom runs
+(`CUSTOM_RANDOM_MAP_INDEX` -1, `CUSTOM_PROGRESSIVE_MAP_INDEX` -2) and the progressive catalog
+range (36-47) have no campaign successor, so the button is absent there.
+
+The label comes from `getMapDisplayName(getMap(index, resolvedMaps), theme)`, which yields
+`` `${region.name} Map ${level}` `` from the active theme and falls back to the generator's own
+`Region N Map M` name when no theme is loaded. `playNext` reads `nextMapIndex` **before**
+`resetToMenu` clears `mapIndex`/`map`, then mirrors `MapSelect.startMap`: clear the target
+map's saved active wave, `ensureActiveTheme()`, `initMap(index, resolveGeneratedMap(...), null)`
+— `initMap` rather than the direct `gameStore.mapIndex = …` assignment `replay()` uses, so the
+new run gets its full reset — and push `/game`.
+
+This works because nothing resets the store on the way off `/game`: `GameScreen.onUnmounted`
+only removes its popstate listener and the router guard disposes the worker without touching
+`gameStore`, so the finished run's `mapIndex`/`map` are still there at first render.
+
 ### Router Navigation Guards
 
 `router.beforeEach` disposes the game engine and saves progress when leaving `/game`. Auto-redirects to `/game-over` or `/victory` when the game state transitions.
@@ -545,7 +610,7 @@ reads it.
 | `src/components/GameShop.vue` | Bottom bar: tower build selection with cost (from constants) and themed name/color/icon (from active theme). Cards are real `<button>`s with `:disabled` and `aria-pressed`. Header drag + touch drag come from `usePanelDrag`; the resize edge-pinning handler is local |
 | `src/components/TowerPanel.vue` | Floating detail panel: tower stats, targeting mode, upgrade/sell, specialization, fixed-aim pad; themed name/color/icon from active theme. Position is `gameStore.towerPanelPos`; shared panel chrome lives in `detailPanel.css` |
 | `src/components/BasePanel.vue` | Floating detail panel for the base: health, the short/long sentry gun stat blocks, targeting, upgrade/downgrade. Position is `gameStore.basePanelPos`, deliberately separate from `towerPanelPos` so dragging one panel cannot move the other; shared chrome lives in `detailPanel.css` |
-| `src/components/WaveCountdown.vue` | Inter-wave countdown overlay shown before each wave spawns; the label carries the next wave's rolled boss abilities |
+| `src/components/WaveCountdown.vue` | Inter-wave countdown overlay shown before each wave spawns; the label carries the next wave's rolled boss abilities. The wave-top medals are stamped when the wave ends, so they are already on screen for this overlay's whole run and expire as it leaves |
 | `src/components/BonusPicker.vue` | Three-card reward picker for a supply drop or a map cache: card copy with current → next mults, themed specialist tower name (`Sharpened · Rifle Tower (Basic)`), wave-scaled cache fee or Free for a broken cache, dismiss leaves the package claimable. An intact cache opens locked — only `Unlock for N gold` and `Leave it`, dispatching `action:unlockCache` — and shows the cards once unlocked |
 | `src/components/WaveGraph.vue` | Per-wave graph overlay: damage dealt, gold earned, gems earned, max enemy HP across all waves |
 | `src/components/PauseMenu.vue` | Pause menu overlay: resume, skill tree, difficulty adjustment, quit to main menu |
@@ -556,7 +621,7 @@ reads it.
 | `src/components/MapSelect.vue` | Map selection screen: header row with the 3 region tabs on the left and theme drop-down / "Generate" / "Progressive" / Back controls on the right (narrow screens stack to two centered rows with the controls above the tabs); each tab shows a `RegionMap` with 12 level + 4 progressive markers (unlock status, best waves, gem multipliers in tooltips); click selects a marker (details panel with Play button plus an on-map play button under the marker), double-click plays, locked markers never start; the selected map index persists (region tab derived from it; switching tabs pre-selects that region's first map level, so the details panel always shows a map) and restores on load, falling back to the default region's first level when nothing was saved; awaits theme resolution before navigation; "Generate" / "Progressive" buttons open the shared `GeneratedMapDialog` / `ProgressiveMapDialog` components (one at a time, parent-owned `show` refs), which render their custom-run forms teleported to body |
 | `src/components/RegionMap.vue` | Region map SVG renderer: theme `mapImage` background (nested `<svg>` via `v-html`), connection lines resolved from `RegionMapLayout.connections`, per-node markers (`RegionMapNodeView`: label, tooltip, locked/selected/progressive states, `tabindex`/`role`); emits `select(mapIndex)` on click/Enter, `start(mapIndex)` on double-click or the on-map play button under the selected marker (never for locked markers) |
 | `src/components/SkillTree.vue` | Skill tree: tower level unlocks, specializations, add-ons, general upgrades; reads default theme (not active theme) |
-| `src/components/EndScreen.vue` | Victory/game-over screen: gem breakdown, wave count, navigation buttons; reads default theme for region names |
+| `src/components/EndScreen.vue` | Victory/game-over screen: gem breakdown, wave count, navigation buttons; reads default theme for region names. Adds a **"Play Next: <Region> Map <level>"** button between "Play Again" and "Select Map" — see the End Screen Play Next section |
 | `src/components/ConfirmDialog.vue` | Global modal dialog (teleported to body, driven by uiStore) |
 | `src/components/DebugPanel.vue` | Debug overlay: gold/gems/lives injection, wave skip, enemy clear, map unlock |
 | `src/components/StatsPanel.vue` | Wave composition, enemy list, and run statistics; reads enemy name/color/shape from active theme |
@@ -572,7 +637,7 @@ reads it.
 
 | File | Description |
 |---|---|
-| `src/sim/GameEngine.ts` | Simulation core: no rendering. Takes plain `GameRunState` + `PersistState` + `HostBindings` + `ThemeBundle`; runs inside the Web Worker (`src/sim/WorkerEntry.ts`) on a `setTimeout` fixed-timestep loop; produces a `SimulationSnapshot` each tick and applies `Command`s via `applyCommand`; passes visual meta to Tower/Enemy constructors |
+| `src/sim/GameEngine.ts` | Simulation core: no rendering. Takes plain `GameRunState` + `PersistState` + `HostBindings` + `ThemeBundle`; runs inside the Web Worker (`src/sim/WorkerEntry.ts`) on a `setTimeout` fixed-timestep loop; produces a `SimulationSnapshot` each tick and applies `Command`s via `applyCommand`; passes visual meta to Tower/Enemy constructors. `onEnemySpawned` (the boss-emergence hook) clamps `timeScale`; `stampWaveTopTowers` runs from the wave-end seams |
 | `src/sim/Constants.ts` | Facade over content packs + engine/UI wiring: wave/economy/map tables from `getGameContent()`, plus FIXED_DT, `TIME_SCALES`, `progressiveRerollGoldPerWave(worldMaps)` (the active world's re-roll price, falling back to the pack default — shared by the engine, `ProgressivePlacement`, and the help dialog so the quoted cost cannot disagree with the charge), GameState, wave-graph colors. The old `HEADER_HEIGHT` / `FOOTER_HEIGHT` UI-layout exports are gone: chrome heights are CSS custom properties |
 | `src/sim/ConstantsTower.ts` | Facade: TowerIds, TOWER_BASE/META/VARIANTS/ADDON_EFFECTS and combat scalars from `src/content/data/towers.json` |
 | `src/sim/ConstantsEnemy.ts` | Facade: ENEMY_TYPES and enemy/wave scalars from `src/content/data/enemies.json` |
@@ -675,7 +740,7 @@ Multipliers compound multiplicatively, like every other effect in the game. The 
 | `src/render/svg/ProjectileManager.ts` | Projectile rendering pool: `<circle>` bullets, `<line>` beams |
 | `src/render/svg/ParticleManager.ts` | Particle rendering pool: `<circle>` elements with fade/expansion |
 | `src/render/svg/EffectManager.ts` | Lightning paths, stun aura paths, build preview rect, range circle, upgrade button SVG elements |
-| `src/render/svg/UiOverlayManager.ts` | HP bars (enemy bars only while hp < maxHp, matching the text renderer; tower bars only while damaged), shield bars, boss HP text as pooled `<rect>` and `<text>` elements |
+| `src/render/svg/UiOverlayManager.ts` | Pooled `<rect>` / `<text>` overlays: the **composite enemy bar**, boss HP text, and the wave-top medals. One bar row per enemy at `enemy.y - 12` — the health fill (`#00ff00` / `#ffff00` / `#ff0000` by hp percent) is the background and, when `shield > 0 && maxShield > 0`, the `#00ffff` shield fill draws in front of it in the same slot (the shield pool is appended after the health pool, which is what puts it in front; the shield slot is a bare `<rect>` because the health bar's own bg/border back the pair). That is why the health bar is force-shown while a shield is up, including at full hp — otherwise there is nothing for the shield to drain onto — and why breaking the shield leaves the green fill standing at the current enemy health with no position jump. Unshielded enemies keep the old rule: no bar at all while `hp === maxHp` (matching the text renderer). Tower bars render only while damaged. Wave-top medals are three pooled `<text>` glyphs drawn `TOWER_SCALED_SIZE / 2 + 12` above a tower (or the base center for the `"base"` entry); see the Wave Top Towers section |
 | `src/render/svg/SpawnManager.ts` | Spawn point rendering pool: `<use>` elements for spawn location indicators |
 | `src/render/svg/MapSiteLayer.ts` | Site glyph markup (supply drops with the `site-drop-pulse` halo ring and `aria-label`, caches with HP bars plus icon and wave-scaled lock/unlock label, buildings with icon and a `buildingBlurb` aria-label, an unpowered one wrapped in `<g opacity="0.45">`) behind a signature cache that includes `unlocked` and each building's `active` flag, so the layer only rewrites when a site, its unlock or powered state, or the wave changes |
 | `src/render/svg/siteHover.ts` | Map-site hover: `siteHoverAt` (package click radius, ±14-unit building box — half the 26-unit glyph plus a pixel — nearest package wins over the building behind it), `siteHoverAtTile` (the site on a given tile — buildings, caches, and drops are tile-exclusive by placement, so at most one match), and `siteHoverText` (per-state tooltip copy for drops, locked/unlocked/broken caches, and buildings via `buildingDetailLines(kind, active)`, the same copy source as the glyph aria-label); consumed by `SvgGameRoot` into the `.site-hover` tooltip div |
@@ -686,7 +751,7 @@ Multipliers compound multiplicatively, like every other effect in the game. The 
 | `src/render/text/TextTowerManager.ts` | Draws each tower theme `icon` in theme `color` at its tile-center on the canvas overlay |
 | `src/render/text/TextEnemyManager.ts` | Draws each enemy theme glyph (via `getEnemyGlyph(shape)`) in theme `color` at the enemy's scaled `enemy.x/enemy.y` on the canvas overlay |
 | `src/render/text/TextPathRenderer.ts` | Draws worker-authoritative enemy paths as faint polylines on the canvas overlay, caching the last non-null paths across cleared frames |
-| `src/render/text/TextOverlayRenderer.ts` | Canvas overlay: projectile dots, thin HP bars, lightning lines, stun marks (mirrors svg Projectile/UiOverlay/Effect managers) plus one letter per map building (A/M/B/F/C/V by kind, in `BUILDING_COLORS`, alpha 0.45 while the building is unpowered) |
+| `src/render/text/TextOverlayRenderer.ts` | Canvas overlay: projectile dots, thin HP bars, lightning lines, stun marks (mirrors svg Projectile/UiOverlay/Effect managers) plus one letter per map building (A/M/B/F/C/V by kind, in `BUILDING_COLORS`, alpha 0.45 while the building is unpowered). Draws **no** shield bar, so the composite enemy bar has nothing to mirror there and the minimap keeps the plain `hpFraction >= 1 → skip` rule |
 | `src/render/text/types.ts` | `TextRenderScale` (separate x/y world→canvas scales) and `TextThemeAccess` interfaces |
 | `src/components/TextGameRoot.vue` | Second passive renderer: renders a `<pre>` static base grid + a `<canvas>` overlay, driven by its own rAF loop reading `getLatestSnapshot()`; no worker, no `snapshotAck`, no input |
 | `src/components/MinimapPanel.vue` | Movable hovering panel (drag from `usePanelDrag`, uses `gameStore.minimapPanelPos`) hosting `TextGameRoot`; toggled by `uiStore.showMinimap` |

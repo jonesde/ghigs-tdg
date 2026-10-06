@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { RouteRecordRaw } from "vue-router";
 import { createMemoryHistory, createRouter } from "vue-router";
 import EndScreen from "@/components/EndScreen.vue";
-import { CUSTOM_PROGRESSIVE_MAP_INDEX } from "@/sim/Constants.js";
+import { CUSTOM_PROGRESSIVE_MAP_INDEX, CUSTOM_RANDOM_MAP_INDEX, GameState } from "@/sim/Constants.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -171,5 +171,75 @@ describe("EndScreen", () => {
     expect(gameStore.map.level).toBe(4);
     expect(gameStore.map.entryCount).toBe(2);
     expect(gameStore.map.seed).toBe(31337);
+  });
+
+  describe("play next", () => {
+    function playNextButton(wrapper) {
+      return wrapper.findAll("button").find((button) => button.text().startsWith("Play Next"));
+    }
+
+    it("offers the next campaign map when it is unlocked", async () => {
+      const { pinia, gameStore, persistStore, router } = mountEndScreen();
+      gameStore.mapIndex = 0;
+      gameStore.map = { regionId: 0, level: 1 };
+      persistStore.setHighestUnlockedMap(persistStore.lastSelectedThemeId, 1);
+
+      const wrapper = mount(EndScreen, { props: { won: false }, global: { plugins: [router, pinia] } });
+      expect(playNextButton(wrapper).text()).toBe("Play Next: Region 1 Map 2");
+
+      await playNextButton(wrapper).trigger("click");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(router.currentRoute.value.path).toBe("/game");
+      expect(gameStore.mapIndex).toBe(1);
+      expect(gameStore.map.regionId).toBe(0);
+      expect(gameStore.map.level).toBe(2);
+      expect(gameStore.state).toBe(GameState.PLAYING);
+    });
+
+    it("hides the button while the next map is still locked", () => {
+      const { pinia, gameStore, persistStore, router } = mountEndScreen();
+      gameStore.mapIndex = 0;
+      gameStore.map = { regionId: 0, level: 1 };
+      persistStore.setHighestUnlockedMap(persistStore.lastSelectedThemeId, 0);
+
+      const wrapper = mount(EndScreen, { props: { won: false }, global: { plugins: [router, pinia] } });
+      expect(playNextButton(wrapper)).toBeUndefined();
+    });
+
+    it("hides the button on the last campaign map", () => {
+      const { pinia, gameStore, persistStore, router } = mountEndScreen();
+      gameStore.mapIndex = 35;
+      gameStore.map = { regionId: 2, level: 12 };
+      persistStore.setHighestUnlockedMap(persistStore.lastSelectedThemeId, 35);
+
+      const wrapper = mount(EndScreen, { props: { won: false }, global: { plugins: [router, pinia] } });
+      expect(playNextButton(wrapper)).toBeUndefined();
+    });
+
+    it.each([
+      ["a custom generated map", CUSTOM_RANDOM_MAP_INDEX],
+      ["a custom progressive map", CUSTOM_PROGRESSIVE_MAP_INDEX],
+      ["a progressive catalog entry", 36],
+    ])("hides the button on %s", (_label, mapIndex) => {
+      const { pinia, gameStore, persistStore, router } = mountEndScreen();
+      gameStore.mapIndex = mapIndex;
+      gameStore.map = { regionId: 0, level: 1 };
+      persistStore.setHighestUnlockedMap(persistStore.lastSelectedThemeId, 35);
+
+      const wrapper = mount(EndScreen, { props: { won: false }, global: { plugins: [router, pinia] } });
+      expect(playNextButton(wrapper)).toBeUndefined();
+    });
+
+    it("sits between Play Again and Select Map", () => {
+      const { pinia, gameStore, persistStore, router } = mountEndScreen();
+      gameStore.mapIndex = 0;
+      gameStore.map = { regionId: 0, level: 1 };
+      persistStore.setHighestUnlockedMap(persistStore.lastSelectedThemeId, 1);
+
+      const wrapper = mount(EndScreen, { props: { won: false }, global: { plugins: [router, pinia] } });
+      const labels = wrapper.findAll("button").map((button) => button.text());
+      expect(labels.indexOf("Play Next: Region 1 Map 2")).toBe(labels.indexOf("Play Again") + 1);
+      expect(labels.indexOf("Play Next: Region 1 Map 2") + 1).toBe(labels.indexOf("Select Map"));
+    });
   });
 });

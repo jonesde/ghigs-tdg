@@ -53,7 +53,7 @@ describe("SnapshotSerializer (Phase 5)", () => {
     const second = buildTowerOnValidTile(engine);
     second.waveDamage = 20;
     engine.simSeconds = 12;
-    engine.onWaveStart(2);
+    engine.onWaveCleared(1);
     const snap = buildSnapshot(engine, 0);
     expect(snap.meta.waveTopTowers).toEqual([
       { towerId: first.id, rank: 1, damage: 50, simSeconds: 12 },

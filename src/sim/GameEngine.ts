@@ -108,6 +108,7 @@ import { type WaveEntry, WaveManager } from "@/sim/waves/WaveManager.js";
 import {
   BETWEEN_WAVES_TIMER,
   BONUS_GEM_BASE,
+  BOSS_SPEED_LIMIT,
   CUSTOM_PROGRESSIVE_MAP_INDEX,
   CUSTOM_RANDOM_MAP_INDEX,
   DIFFICULTY_MULT_GEM_BASE,
@@ -827,6 +828,10 @@ export class GameEngine {
   onWaveCleared(wave: number): void {
     setWave(this.runState, wave);
     this.applyWaveProgressRewards(wave);
+    // Stamped at the end of the wave, not onWaveStart, so the medals are already
+    // up when the between-waves countdown overlay appears. The VICTORY_WAVE clear
+    // ends the run in this same tick and never opens a countdown.
+    if (wave < VICTORY_WAVE) this.stampWaveTopTowers();
     if (this.isProgressiveHoldWave(wave)) this.armPlacementHold("countdown");
   }
 
@@ -837,6 +842,9 @@ export class GameEngine {
   onWaveExpired(wave: number): void {
     setWave(this.runState, wave);
     this.applyWaveProgressRewards(wave);
+    // Expiry goes straight into the next wave with no countdown, so this is the
+    // same "the wave just ended" moment the medals are stamped on.
+    if (wave < VICTORY_WAVE) this.stampWaveTopTowers();
     if (this.isProgressiveHoldWave(wave)) this.armPlacementHold("expire-advance");
   }
 
@@ -893,31 +901,6 @@ export class GameEngine {
   onWaveStart(wave: number): void {
     setWave(this.runState, wave);
     this.waveGraphTracker?.onWaveStart(wave);
-
-    const ranked: { towerId: string; damage: number; totalDamage: number }[] = [];
-    for (const tower of this.towerManager!.towers) {
-      if (tower.waveDamage > 0) {
-        ranked.push({ towerId: tower.id, damage: tower.waveDamage, totalDamage: tower.totalDamageDealt });
-      }
-    }
-    if (this.baseDefense && this.baseDefense.waveDamage > 0) {
-      ranked.push({
-        towerId: BASE_SELECTION_ID,
-        damage: this.baseDefense.waveDamage,
-        totalDamage: this.baseDefense.totalDamageDealt,
-      });
-    }
-    ranked.sort((entryA, entryB) => entryB.damage - entryA.damage || entryB.totalDamage - entryA.totalDamage);
-    const topRanked = ranked.slice(0, 3);
-    this.waveTopTowers =
-      topRanked.length > 0
-        ? topRanked.map((entry, index) => ({
-            towerId: entry.towerId,
-            rank: index + 1,
-            damage: entry.damage,
-            simSeconds: this.simSeconds,
-          }))
-        : null;
 
     this.towerManager!.towers.forEach((tower) => {
       tower.waveDamage = 0;
@@ -1981,9 +1964,43 @@ export class GameEngine {
   private onEnemySpawned(enemy: Enemy): void {
     if (enemy.type !== "boss" || !this.grid) return;
     this.runState.bossesSpawned += 1;
+    // A boss is unreadable above BOSS_SPEED_LIMIT. The worker owns timeScale, so
+    // the HUD label follows on the next snapshot; a multi-boss wave re-checks per
+    // boss and is a no-op once already at the limit.
+    if (this.runState.timeScale > BOSS_SPEED_LIMIT) this.runState.timeScale = BOSS_SPEED_LIMIT;
     configureBossAbility(enemy, enemy.bossAbility, this.grid.tileSize);
     if (enemy.bossAbility !== "healAura") return;
     enemy.mendSuppresses = (source, ally) => nearerMendBlocksIn(this.mendSources, source, ally);
+  }
+
+  // Ranks the wave that just ended by its damage and stamps the display window.
+  // Called from the two wave-end seams, while tower.waveDamage is still live —
+  // onWaveStart zeroes it once the next wave is under way.
+  private stampWaveTopTowers(): void {
+    const ranked: { towerId: string; damage: number; totalDamage: number }[] = [];
+    for (const tower of this.towerManager!.towers) {
+      if (tower.waveDamage > 0) {
+        ranked.push({ towerId: tower.id, damage: tower.waveDamage, totalDamage: tower.totalDamageDealt });
+      }
+    }
+    if (this.baseDefense && this.baseDefense.waveDamage > 0) {
+      ranked.push({
+        towerId: BASE_SELECTION_ID,
+        damage: this.baseDefense.waveDamage,
+        totalDamage: this.baseDefense.totalDamageDealt,
+      });
+    }
+    ranked.sort((entryA, entryB) => entryB.damage - entryA.damage || entryB.totalDamage - entryA.totalDamage);
+    const topRanked = ranked.slice(0, 3);
+    this.waveTopTowers =
+      topRanked.length > 0
+        ? topRanked.map((entry, index) => ({
+            towerId: entry.towerId,
+            rank: index + 1,
+            damage: entry.damage,
+            simSeconds: this.simSeconds,
+          }))
+        : null;
   }
 
   private stampBossAbilities(entries: readonly WaveEntry[], waveNumber: number): void {

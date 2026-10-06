@@ -2,8 +2,8 @@
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
-import { CUSTOM_PROGRESSIVE_MAP_INDEX, CUSTOM_RANDOM_MAP_INDEX } from "@/sim/Constants.js";
-import { generateRandomMap } from "@/sim/grid/Map.js";
+import { CUSTOM_PROGRESSIVE_MAP_INDEX, CUSTOM_RANDOM_MAP_INDEX, TOTAL_MAPS } from "@/sim/Constants.js";
+import { generateRandomMap, getMap, getMapDisplayName } from "@/sim/grid/Map.js";
 import { generateProgressiveMap, type ProgressiveConfig, resolveGeneratedMap } from "@/sim/grid/ProgressiveMap.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
@@ -25,9 +25,42 @@ const finalWave = computed(() => gameStore.endScreenData?.wave || 0);
 const deadBosses = computed(() => gameStore.bossesKilledThisRun);
 const basedBosses = computed(() => gameStore.bossesReachedBaseThisRun);
 
+// Campaign progression only. The custom run indexes (-1, -2) are excluded by the
+// >= 0 test and the progressive catalog range (36+) by the TOTAL_MAPS ceiling, which
+// is the same one maybeUnlockNextMap enforces when it raises highestUnlockedMap. So
+// the button appears exactly when mapIndex + 1 names a campaign map the player has
+// reached.
+const nextMapIndex = computed<number | null>(() => {
+  const currentIndex = gameStore.mapIndex;
+  if (currentIndex < 0 || currentIndex + 1 >= TOTAL_MAPS) return null;
+  const progress = persistStore.getThemeProgress(persistStore.lastSelectedThemeId);
+  return currentIndex + 1 <= progress.highestUnlockedMap ? currentIndex + 1 : null;
+});
+
+const nextMapLabel = computed(() => {
+  const nextIndex = nextMapIndex.value;
+  if (nextIndex === null) return "";
+  const theme = themeStore.activeTheme ?? themeStore.defaultTheme;
+  return `Play Next: ${getMapDisplayName(getMap(nextIndex, themeStore.resolvedMaps), theme)}`;
+});
+
 function navigate(to: string) {
   gameStore.resetToMenu();
   router.push(to);
+}
+
+async function playNext() {
+  // Read before resetToMenu clears mapIndex/map.
+  const nextIndex = nextMapIndex.value;
+  if (nextIndex === null) {
+    navigate("/map-select");
+    return;
+  }
+  persistStore.clearActiveWave(persistStore.lastSelectedThemeId, nextIndex);
+  await themeStore.ensureActiveTheme();
+
+  gameStore.initMap(nextIndex, resolveGeneratedMap(nextIndex, themeStore.resolvedMaps), null);
+  router.push("/game");
 }
 
 async function replay() {
@@ -123,6 +156,7 @@ function formatBreakdown(section: string) {
 
       <div class="btn-group">
         <button class="end-btn primary" @click="replay">Play Again</button>
+        <button v-if="nextMapIndex !== null" class="end-btn" @click="playNext">{{ nextMapLabel }}</button>
         <button class="end-btn" @click="navigate('/map-select')">Select Map</button>
         <button class="end-btn" @click="navigate('/skill-tree')">Upgrades!</button>
         <button class="end-btn" @click="navigate('/')">Main Menu</button>
