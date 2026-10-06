@@ -7,4 +7,6 @@ export interface RegionMapNodeView {
   tooltip: string;
   locked: boolean;
   mapIndex: number;
+  bestWave: number;
+  cleared: boolean;
 }

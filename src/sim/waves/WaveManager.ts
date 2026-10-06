@@ -358,6 +358,12 @@ export class WaveManager {
     // not kills), which is why GameEngine.onWaveExpired shares that path.
     if (this._waveGameTime >= PRE_EMPTIVE_WAVE_TIMER) {
       if (this.currentWave >= VICTORY_WAVE) {
+        // Same wave-end notification as the branch below, minus startNextWave.
+        // Dropping it here left VICTORY_WAVE unrewarded: GameEngine.update ends
+        // the run once this parks betweenWaves with an empty field, so without
+        // the callback the victory wave never reached applyWaveProgressRewards
+        // and the map's best wave froze at VICTORY_WAVE - 1.
+        (onWaveExpired ?? onWaveCleared)?.(this.currentWave);
         this.betweenWaves = true;
         return;
       }

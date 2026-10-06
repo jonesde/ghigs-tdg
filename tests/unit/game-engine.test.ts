@@ -1,6 +1,7 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it } from "vitest";
+import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
 import {
   BOSS_SPEED_LIMIT,
   BOUNTY_BLOCKED_RATIO,
@@ -834,6 +835,15 @@ describe("GameEngine", () => {
       initEngine(0, createTestPersistState());
       buildDamagedTower(40);
       engine.onWaveCleared(VICTORY_WAVE);
+      expect(engine.waveTopTowers).toBeNull();
+    });
+
+    it("records the victory wave as the best wave when the wave ends by timer expiry", () => {
+      const persistState = createTestPersistState();
+      initEngine(0, persistState);
+      buildDamagedTower(40);
+      engine.onWaveExpired(VICTORY_WAVE);
+      expect(persistState.themeProgress[DEFAULT_THEME_ID]?.bestWaves.best_0).toBe(VICTORY_WAVE);
       expect(engine.waveTopTowers).toBeNull();
     });
   });

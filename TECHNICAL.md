@@ -56,7 +56,8 @@ src/
 │   ├── MapSelect.vue            # Map selection: region tabs + themed region map with level/progressive markers (last map index persisted, region tab derived from it, first level pre-selected when none) + header buttons opening the shared GeneratedMapDialog / ProgressiveMapDialog custom-run dialogs
 │   ├── GeneratedMapDialog.vue   # Generated-map custom-run dialog (teleported to body): region/level/style/width/height/seed form on persistStore, validates, resolves the active theme, starts the run via gameStore + /game
 │   ├── ProgressiveMapDialog.vue # Progressive-map custom-run dialog (teleported to body): region/level/base-entries/seed form on persistStore, validates, starts the run via gameStore + /game
-│   ├── RegionMap.vue            # Region map SVG renderer: mapImage background, connection lines, level/progressive markers with tooltips, select/start events
+│   ├── RegionMap.vue            # Region map SVG renderer: mapImage background, connection lines, level/progressive markers with tooltips, best-wave readout inside the circle, earned milestone medal row above it, gold rings + crown on a cleared map, select/start events
+    ├── regionMapProgress.ts     # Region marker progress rules: milestone medal glyphs per best wave, cleared-at-victory-wave test (the crown itself keys off persist firstClears)
 │   ├── SkillTree.vue            # Skill tree: tower levels, specializations, add-ons, general upgrades
 │   ├── EndScreen.vue            # Game over / victory screen: gem breakdown, navigation, and the campaign-only "Play Next" button
 │   ├── ConfirmDialog.vue        # Reusable modal dialog (teleported to body)
@@ -106,7 +107,7 @@ src/
 │   │   ├── enemyWaveStats.ts    # The one HP/damage/shield/bounty scaling curve (level, wave, late-wave, difficulty)
 │   │   └── EnemyManager.ts      # Enemy spawning, lifecycle, death handling
 │   ├── waves/
-│   │   └── WaveManager.ts       # Wave composition, boss cadence, inter-wave timer
+│   │   └── WaveManager.ts       # Wave composition, boss cadence, inter-wave timer, pre-emptive expiry (notifies the wave end at VICTORY_WAVE too, so best wave records 100)
 │   ├── navmesh/
 │   │   ├── CrowdManager.ts      # DetourCrowd agents: path follow + avoidance → Rapier linvel
 │   │   ├── NavMeshBuilder.ts    # Tiled navmesh + TileCache tower obstacles + findPath
