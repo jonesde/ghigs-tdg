@@ -6,6 +6,7 @@ import {
   bossAbilityLabel,
   collectMendSources,
   configureBossAbility,
+  MINION_FIRST_DELAY_SECONDS,
   minionPulseCount,
   nearerMendBlocksIn,
   rollBossAbilities,
@@ -108,6 +109,11 @@ describe("boss abilities", () => {
     if (!grid || !boss || !engine.waveManager) throw new Error("no boss");
     engine.waveManager.currentWave = 10;
     configureBossAbility(boss, "spawnMinions", grid.tileSize);
+    expect(boss.minionTimer).toBe(MINION_FIRST_DELAY_SECONDS);
+    engine.update(FIXED_DT);
+    expect(
+      (engine.enemyManager?.enemies ?? []).filter((enemy) => enemy !== boss && enemy.type === "minion"),
+    ).toHaveLength(0);
     boss.minionTimer = FIXED_DT;
     const farPath = firstTile(grid, (tileX, tileY) => {
       if (!grid.isPath(tileX, tileY)) return false;
