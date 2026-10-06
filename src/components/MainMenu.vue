@@ -122,6 +122,14 @@ function openSkillTree() {
         </h1>
       </header>
 
+      <nav class="home-actions" aria-label="Meta">
+        <button class="action-btn upgrades-btn" @click="openSkillTree()">
+          Upgrades! <span class="gem-count">💎 {{ persistStore.gems }}</span>
+        </button>
+        <button class="action-btn ghost-btn" @click="router.push('/commanders')">Commanders</button>
+        <button class="action-btn ghost-btn" @click="router.push('/history')">Run History</button>
+      </nav>
+
       <main class="home-grid">
         <section class="play-panel" aria-label="New Game">
           <button class="play-primary" @click="newGame()">Select Map</button>
@@ -183,13 +191,10 @@ function openSkillTree() {
       </main>
 
       <footer class="home-footer">
-        <nav class="footer-actions" aria-label="Meta">
-          <button class="action-btn upgrades-btn" @click="openSkillTree()">
-            Upgrades! <span class="gem-count">💎 {{ persistStore.gems }}</span>
-          </button>
-          <button class="action-btn ghost-btn" @click="router.push('/commanders')">Commanders</button>
-          <button class="action-btn ghost-btn" @click="router.push('/history')">Run History</button>
-        </nav>
+        <p class="footer-notice">
+          <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0 1.0 Universal</a> ·
+          <a href="https://github.com/jonesde/ghigs-tdg" target="_blank" rel="noopener">Source on GitHub</a>
+        </p>
       </footer>
     </div>
 
@@ -251,7 +256,7 @@ function openSkillTree() {
 .home-header {
   display: flex;
   justify-content: center;
-  margin-bottom: 52px;
+  margin-bottom: 0;
 }
 
 .game-title {
@@ -321,9 +326,26 @@ function openSkillTree() {
 
 .home-footer {
   margin-top: 12px;
+  text-align: center;
 }
 
-.footer-actions {
+.footer-notice {
+  font-size: var(--font-sm);
+  color: var(--color-text-dim);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+}
+
+.footer-notice a {
+  color: var(--color-text-dim);
+  text-decoration: underline;
+  transition: color 0.15s;
+}
+
+.footer-notice a:hover {
+  color: var(--color-text);
+}
+
+.home-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -588,10 +610,6 @@ function openSkillTree() {
   .menu-home {
     padding: 24px 20px 32px;
     gap: 22px;
-  }
-
-  .home-header {
-    margin-bottom: 58px;
   }
 
   .game-title-acronym {

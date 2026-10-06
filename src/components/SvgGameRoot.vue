@@ -3,7 +3,7 @@
     <svg ref="svgRoot" class="game-svg" xmlns="http://www.w3.org/2000/svg"
          :class="{ panning: panActive }" :viewBox="displayedViewBox" preserveAspectRatio="xMidYMid meet"
          @mousemove="onMouseMove" @click="onClick" @mousedown="onMouseDown" @wheel.prevent="onWheel"
-         @contextmenu.prevent @mouseleave="siteHoverState = null">
+          @contextmenu.prevent @mouseleave="onSvgMouseLeave">
       <defs ref="defsLayer"></defs>
 
       <g ref="worldLayer" class="camera-wrapper">
@@ -26,6 +26,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { currentBuildTile } from "@/composables/buildTile.js";
 import { useInput } from "@/composables/Input.js";
 import { progressivePlacementCommand, rotateProgressiveBlockAt } from "@/composables/progressivePlacement.js";
 import { fitFrame, frameFromCenter, TILE_SIZE, wheelZoomFactor } from "@/render/svg/cameraFrame.js";
@@ -41,7 +42,13 @@ import { MapSiteLayer, siteGlyphMarkup } from "@/render/svg/MapSiteLayer.js";
 import { ParticleManager } from "@/render/svg/ParticleManager.js";
 import { ProjectileManager } from "@/render/svg/ProjectileManager.js";
 import { SpawnManager } from "@/render/svg/SpawnManager.js";
-import { type SiteHoverRef, type SiteHoverSites, siteHoverAt, siteHoverText } from "@/render/svg/siteHover.js";
+import {
+  type SiteHoverRef,
+  type SiteHoverSites,
+  siteHoverAt,
+  siteHoverAtTile,
+  siteHoverText,
+} from "@/render/svg/siteHover.js";
 import { isNewSnapshotRendered, snapshotAnimDt } from "@/render/svg/snapshotAnimDt.js";
 import { TowerManager } from "@/render/svg/TowerManager.js";
 import { UiOverlayManager } from "@/render/svg/UiOverlayManager.js";
@@ -117,6 +124,8 @@ const { staticDefsContent, mapDefsContent, gridContent } = useSvgStaticContent(
   computed(() => gameStore.grid),
 );
 
+// Last pointer world position while over the SVG (null after mouseleave), so a
+// keyboard build-tile step can re-resolve the site tooltip at the pointer.
 const mouseWorldPos = ref<{ x: number; y: number } | null>(null);
 
 // Custom tooltip over a map site. Client offsets are relative to .svg-wrapper,
@@ -156,18 +165,9 @@ const siteHoverStyle = computed(() => {
   return { left: `${left}px`, top: `${top}px` };
 });
 
-const buildPreviewTilePos = computed(() => {
-  if (gameStore.selectedTowerType) {
-    if (gameStore.hoverTile) {
-      return gameStore.hoverTile;
-    }
-    const grid = gameStore.grid;
-    if (grid) {
-      return { tileX: Math.floor(grid.width / 2), tileY: Math.floor(grid.height / 2) };
-    }
-  }
-  return null;
-});
+const buildPreviewTilePos = computed(() =>
+  gameStore.selectedTowerType ? currentBuildTile(gameStore.grid, gameStore.hoverTile) : null,
+);
 
 function buildCost(towerType: TowerId): number {
   const meta = TOWER_META[towerType];
@@ -587,9 +587,47 @@ const flushHover = (): void => {
   gameStore.setHoverUpgradeBtn(computeHoverUpgradeBtn(worldPos.x, worldPos.y));
 };
 
+// Wrapper-pixel anchor for the tile-driven tooltip: the tile center in world
+// space through the live world-to-screen matrix. A fresh CTM read is fine
+// here; this runs on tile and pointer changes, not per frame.
+const tileCenterAnchor = (tileX: number, tileY: number): { x: number; y: number } | null => {
+  const grid = gameStore.grid;
+  const matrix = worldLayer.value?.getScreenCTM();
+  const svg = svgRoot.value;
+  const wrapper = svg?.parentElement;
+  if (!grid || !matrix || !svg || !wrapper) return null;
+  const world = grid.tileToWorld(tileX, tileY);
+  const point = svg.createSVGPoint();
+  point.x = world.x;
+  point.y = world.y;
+  const screen = point.matrixTransform(matrix);
+  const rect = wrapper.getBoundingClientRect();
+  return { x: screen.x - rect.left, y: screen.y - rect.top };
+};
+
+// The site the highlighted build tile carries, with its tile-center anchor, or
+// null outside build mode or when the tile holds no site: then the pointer's
+// own hit test decides, as before.
+const buildTileSiteHover = (): { site: SiteHoverRef; anchor: { x: number; y: number } } | null => {
+  if (!gameStore.selectedTowerType) return null;
+  const tile = currentBuildTile(gameStore.grid, gameStore.hoverTile);
+  if (!tile) return null;
+  const site = siteHoverAtTile(siteHoverSites.value, tile.tileX, tile.tileY);
+  if (!site) return null;
+  const anchor = tileCenterAnchor(tile.tileX, tile.tileY);
+  return anchor ? { site, anchor } : null;
+};
+
 // The site tooltip shares the pointer's world position but renders in wrapper
-// pixels, so it stays under the cursor at every zoom level.
+// pixels, so it stays under the cursor at every zoom level. In build mode the
+// highlighted build tile takes precedence: the arrow keys move it without a
+// pointer event, so it anchors at the tile center instead of the pointer.
 const updateSiteHover = (worldX: number, worldY: number): void => {
+  const tileHover = buildTileSiteHover();
+  if (tileHover) {
+    siteHoverState.value = { site: tileHover.site, offsetX: tileHover.anchor.x, offsetY: tileHover.anchor.y };
+    return;
+  }
   const wrapper = svgRoot.value?.parentElement;
   const rect = wrapper?.getBoundingClientRect();
   const tileSize = gameStore.grid?.tileSize || TILE_SIZE;
@@ -599,6 +637,41 @@ const updateSiteHover = (worldX: number, worldY: number): void => {
     return;
   }
   siteHoverState.value = { site, offsetX: pendingHoverX - rect.left, offsetY: pendingHoverY - rect.top };
+};
+
+// The arrow keys move the build tile without a pointer event, so the rAF hover
+// flush never runs for them: re-resolve the tooltip when the tile, the build
+// selection, or a site list changes. A pointer-driven tile change re-resolves
+// to the state its flush just wrote, so the extra pass is a no-op.
+const syncSiteHoverForTile = (): void => {
+  const pointer = mouseWorldPos.value;
+  if (pointer) {
+    updateSiteHover(pointer.x, pointer.y);
+    return;
+  }
+  const tileHover = buildTileSiteHover();
+  siteHoverState.value = tileHover
+    ? { site: tileHover.site, offsetX: tileHover.anchor.x, offsetY: tileHover.anchor.y }
+    : null;
+};
+
+watch(
+  () => [
+    gameStore.selectedTowerType,
+    gameStore.hoverTile,
+    gameStore.mapBuildings,
+    gameStore.mapCaches,
+    gameStore.supplyDrops,
+  ],
+  syncSiteHoverForTile,
+);
+
+// The pointer owns the tooltip only while it is over the SVG. Clearing
+// mouseWorldPos with it keeps a later keyboard tile step from re-resolving
+// against a stale pointer position.
+const onSvgMouseLeave = (): void => {
+  siteHoverState.value = null;
+  mouseWorldPos.value = null;
 };
 
 // The upgrade button hit-test that used to live on GameEngine.setHover. It

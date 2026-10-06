@@ -15,6 +15,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { computed, nextTick, watch } from "vue";
+import { GameState } from "@/sim/Constants.js";
 import type { TowerSnapshot } from "@/sim/SimulationSnapshot.js";
 import { SNAPSHOT_SCHEMA_VERSION } from "@/sim/SimulationSnapshot.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
@@ -187,5 +188,35 @@ describe("SnapshotStore selectedTower mirroring", () => {
     engine.runState.waveCountdown = null;
     store.apply(buildSnapshot(engine, nextCommandId++));
     expect(gameStore.waveCountdown).toBeNull();
+  });
+
+  it("re-mirrors mapCaches when a paid unlock flips unlocked with no hp or layout change", () => {
+    const gameStore = createTestGameStore();
+    const store = new SnapshotStore(gameStore as never);
+    const engine = createTestEngine();
+    const grid = engine.grid;
+    const cache = engine.mapCaches[0];
+    if (!grid || !cache) throw new Error("no cache");
+
+    store.apply(buildSnapshot(engine, nextCommandId++));
+    expect(gameStore.mapCaches.find((site) => site.id === cache.id)?.unlocked).toBe(false);
+
+    const world = grid.tileToWorld(cache.tileX, cache.tileY);
+    engine.runState.state = GameState.PLAYING;
+    engine.runState.gold = 10_000;
+    engine.handleClick(world.x, world.y);
+    if (!engine.runState.bonusPicker) throw new Error("locked picker did not open");
+
+    store.apply(buildSnapshot(engine, nextCommandId++));
+    expect(gameStore.bonusPickerLocked).toBe(true);
+
+    // The paid unlock changes only `unlocked` on the site: no hp, tile, or layout
+    // move. The site signature must carry the flag or the mirror stays locked and
+    // the player pays twice for a picker that never shows its cards.
+    expect(engine.unlockCache()).toBe(true);
+    store.apply(buildSnapshot(engine, nextCommandId++));
+
+    expect(gameStore.mapCaches.find((site) => site.id === cache.id)?.unlocked).toBe(true);
+    expect(gameStore.bonusPickerLocked).toBe(false);
   });
 });

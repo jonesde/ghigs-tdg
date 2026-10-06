@@ -55,6 +55,23 @@ export function siteHoverAt(
   return null;
 }
 
+// Tile-based counterpart of siteHoverAt: the highlighted build tile moves by
+// keyboard without a pointer event, so the tooltip keys off the tile it sits
+// on. Placement keeps at most one site per tile (buildings and caches on
+// terrain, drops on path), so the first match is the answer.
+export function siteHoverAtTile(sites: SiteHoverSites, tileX: number, tileY: number): SiteHoverRef | null {
+  for (const building of sites.buildings) {
+    if (building.tileX === tileX && building.tileY === tileY) return { kind: "building", id: building.id };
+  }
+  for (const cache of sites.caches) {
+    if (cache.tileX === tileX && cache.tileY === tileY) return { kind: "cache", id: cache.id };
+  }
+  for (const drop of sites.drops) {
+    if (drop.tileX === tileX && drop.tileY === tileY) return { kind: "drop", id: drop.id };
+  }
+  return null;
+}
+
 // Copy for the hovered site, or null when it has been claimed or consumed since
 // the pointer arrived, which is how the tooltip hides without extra bookkeeping.
 export function siteHoverText(ref: SiteHoverRef, sites: SiteHoverSites, currentWave: number): SiteHoverText | null {

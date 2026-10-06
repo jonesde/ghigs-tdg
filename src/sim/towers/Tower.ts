@@ -347,6 +347,7 @@ export class Tower {
   isGhost: boolean;
   ghostTimer: number;
   pendingGhostEffect: boolean;
+  pendingRestoreEffect: boolean;
   // A corner body's radius overlaps the adjacent terrain cuboid. That tower is
   // not a path block, so the overlap must not damage it or count as a siege.
   enemyAttackImmune: boolean = false;
@@ -441,6 +442,7 @@ export class Tower {
     this.isGhost = false;
     this.ghostTimer = 0;
     this.pendingGhostEffect = false;
+    this.pendingRestoreEffect = false;
     const placedTile = grid?.tiles?.[tileY]?.[tileX];
     if (placedTile) {
       this.terrainHeight = placedTile.height || 1;
@@ -729,6 +731,11 @@ export class Tower {
     this.health = this.maxHealth;
     this.ghostTimer = 0;
     this.grid.clearTowerGhost(this.tileX, this.tileY);
+    // Crosses into the engine: a restored tower re-powers the building it stands
+    // beside, and that building's whole-board bonus reaches every other tower, so
+    // the engine must recompute it. Tower has no engine reference, so the restore
+    // latches here and GameEngine.update drains it, mirroring pendingGhostEffect.
+    this.pendingRestoreEffect = true;
   }
 
   // Recomputes max health from base + level + variant health multiplier. Used so

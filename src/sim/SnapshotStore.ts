@@ -459,8 +459,12 @@ export class SnapshotStore {
       meta.runId ?? 0,
       ...drops.map((drop) => `d${drop.id}:${drop.tileX},${drop.tileY}`),
       // hp travels too: a cache damaged between layout changes has to refresh the
-      // store copies the progressive ghost preview reads.
-      ...caches.map((cache) => `c${cache.id}:${cache.tileX},${cache.tileY}:${Math.ceil(cache.hp)}`),
+      // store copies the progressive ghost preview reads. unlocked travels too: a
+      // paid unlock changes no other field, and the picker's locked view is read
+      // off this copy, so without it a paid cache would stay locked on the UI.
+      ...caches.map(
+        (cache) => `c${cache.id}:${cache.tileX},${cache.tileY}:${Math.ceil(cache.hp)}:${cache.unlocked ? 1 : 0}`,
+      ),
       ...buildings.map(
         // active travels too: a tower built or sold beside a building changes which
         // glyph is dimmed, and the copies here are what the render layer reads.

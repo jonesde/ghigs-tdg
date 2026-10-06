@@ -1017,7 +1017,24 @@ describe("useInput", () => {
       expect(click?.worldY).toBe(3 * 36 + 18);
     });
 
-    it("does nothing when in build mode but hoverTile is null", () => {
+    it("builds at the map center when in build mode with no hover tile yet", () => {
+      gameStore.setState(GameState.PLAYING);
+      const grid = {
+        width: 10,
+        height: 10,
+        tileToWorld: (tx: number, ty: number) => ({ x: tx * 36 + 18, y: ty * 36 + 18 }),
+      };
+      gameStore.initMap(0, { regionId: 0, tiles: [] } as unknown as GeneratedMap, grid as unknown as Grid);
+      gameStore.selectedTowerType = "cannon";
+      gameStore.hoverTile = null;
+      useInput(gameStore, dispatcher, uiStore);
+      triggerInput("Enter");
+      const click = lastOfType("input:click");
+      expect(click?.worldX).toBe(5 * 36 + 18);
+      expect(click?.worldY).toBe(5 * 36 + 18);
+    });
+
+    it("does nothing when in build mode but hoverTile is null and no grid", () => {
       gameStore.setState(GameState.PLAYING);
       gameStore.selectedTowerType = "cannon";
       gameStore.hoverTile = null;

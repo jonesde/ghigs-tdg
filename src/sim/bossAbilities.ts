@@ -215,7 +215,9 @@ export function tickBossAbilities(enemies: readonly Enemy[], dt: number, context
   resetHaste(enemies);
   applyHasteAuras(enemies, context.tileSize);
   for (const enemy of enemies) {
-    if (enemy.removed || enemy.type !== "boss") continue;
+    // Stun is a full action freeze: minion pulses, shield pulses, and the
+    // bombard (armed and in flight) all hold while the boss is stunned.
+    if (enemy.removed || enemy.type !== "boss" || enemy.stunTimer > 0) continue;
     if (enemy.bossAbility === "spawnMinions") tickMinions(enemy, dt, context);
     if (enemy.bossAbility === "shieldPulse") tickShield(enemy, dt, enemies, context.tileSize);
     if (enemy.bossAbility === "towerShot") tickBombard(enemy, dt, context);
@@ -225,7 +227,8 @@ export function tickBossAbilities(enemies: readonly Enemy[], dt: number, context
 function resetHaste(enemies: readonly Enemy[]): void {
   for (const enemy of enemies) {
     if (enemy.removed) continue;
-    enemy.hasteFactor = enemy.bossAbility === "speedAura" ? HASTE_BOSS_FACTOR : 1;
+    // A stunned haste boss holds no aura, its own included, while frozen.
+    enemy.hasteFactor = enemy.bossAbility === "speedAura" && enemy.stunTimer <= 0 ? HASTE_BOSS_FACTOR : 1;
   }
 }
 
@@ -233,7 +236,7 @@ function applyHasteAuras(enemies: readonly Enemy[], tileSize: number): void {
   const radius = HASTE_AURA_RANGE_TILES * tileSize;
   const radiusSquared = radius * radius;
   for (const source of enemies) {
-    if (source.removed || source.bossAbility !== "speedAura") continue;
+    if (source.removed || source.bossAbility !== "speedAura" || source.stunTimer > 0) continue;
     for (const other of enemies) {
       if (other.removed || other === source || other.bossAbility === "speedAura") continue;
       const deltaX = other.x - source.x;
@@ -273,10 +276,10 @@ function tickShield(boss: Enemy, dt: number, enemies: readonly Enemy[], tileSize
   }
 }
 
+// The loop in tickBossAbilities skips stunned bosses, so an armed telegraph holds
+// its remaining time and the shot does not resolve while the boss is stunned.
 function tickBombard(boss: Enemy, dt: number, context: BossTickContext): void {
   if (boss.bombardTelegraphRemaining > 0) {
-    // Stun freezes the telegraph. The shot does not resolve while the boss is stunned.
-    if (boss.stunTimer > 0) return;
     boss.bombardTelegraphRemaining -= dt;
     if (boss.bombardTelegraphRemaining > 0) return;
     boss.bombardTelegraphRemaining = 0;

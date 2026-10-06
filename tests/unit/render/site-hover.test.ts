@@ -1,14 +1,19 @@
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
-import { type SiteHoverSites, siteHoverAt, siteHoverText } from "@/render/svg/siteHover.js";
+import { type SiteHoverSites, siteHoverAt, siteHoverAtTile, siteHoverText } from "@/render/svg/siteHover.js";
 import type { BonusOffer } from "@/sim/runBonuses.js";
 import type { MapBuildingSnapshot, MapCacheSnapshot, SupplyDropSnapshot } from "@/sim/SimulationSnapshot.js";
 
 const TILE_SIZE = 36;
 const OFFER: BonusOffer = ["sharpened", "smallPurse", "largePurse"];
 
-function makeDrop(id: number, worldX: number, worldY: number): SupplyDropSnapshot {
-  return { id, tileX: 0, tileY: 0, worldX, worldY, offer: OFFER };
+function makeDrop(
+  id: number,
+  worldX: number,
+  worldY: number,
+  fields: Partial<SupplyDropSnapshot> = {},
+): SupplyDropSnapshot {
+  return { id, tileX: 0, tileY: 0, worldX, worldY, offer: OFFER, ...fields };
 }
 
 function makeCache(
@@ -59,6 +64,30 @@ describe("site hover hit test", () => {
   it("gives a package under the pointer priority over the building behind it", () => {
     const sites = sitesOf({ drops: [makeDrop(1, 205, 200)], buildings: [makeBuilding(4, 200, 200)] });
     expect(siteHoverAt(sites, TILE_SIZE, 205, 200)).toEqual({ kind: "drop", id: 1 });
+  });
+});
+
+describe("site hover at a tile", () => {
+  it("returns the building, cache, or drop sitting on the tile", () => {
+    expect(siteHoverAtTile(sitesOf({ buildings: [makeBuilding(4, 200, 200)] }), 2, 2)).toEqual({
+      kind: "building",
+      id: 4,
+    });
+    expect(siteHoverAtTile(sitesOf({ caches: [makeCache(2, 200, 200)] }), 1, 1)).toEqual({ kind: "cache", id: 2 });
+    expect(siteHoverAtTile(sitesOf({ drops: [makeDrop(1, 200, 200, { tileX: 3, tileY: 4 })] }), 3, 4)).toEqual({
+      kind: "drop",
+      id: 1,
+    });
+  });
+
+  it("returns nothing when the tile holds no site", () => {
+    const sites = sitesOf({
+      buildings: [makeBuilding(4, 200, 200)],
+      caches: [makeCache(2, 300, 300)],
+      drops: [makeDrop(1, 100, 100, { tileX: 3, tileY: 4 })],
+    });
+    expect(siteHoverAtTile(sites, 5, 5)).toBeNull();
+    expect(siteHoverAtTile(sitesOf({}), 5, 5)).toBeNull();
   });
 });
 
