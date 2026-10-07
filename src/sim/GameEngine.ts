@@ -63,6 +63,7 @@ import {
   freshActiveBuildingBonus,
   neighborBonus,
   playerPlacedBlockCount,
+  progressiveStampIndex,
   refreshBuildingActivity,
   stampWorldKeysForBlock,
 } from "@/sim/mapSites.js";
@@ -1726,7 +1727,11 @@ export class GameEngine {
     this.sites.shift(shift.shiftX, shift.shiftY);
     const playerBlock = committed.added.find((block) => !block.fill);
     const stampWorldKeys = playerBlock ? this.playerStampKeys(playerBlock.blockX, playerBlock.blockY) : null;
-    this.adoptLayoutSites(previousWorldKeys, playerPlacedBlockCount(this.progressivePlacements), stampWorldKeys);
+    this.adoptLayoutSites(
+      previousWorldKeys,
+      progressiveStampIndex(config.entryCount, playerPlacedBlockCount(this.progressivePlacements)),
+      stampWorldKeys,
+    );
     this.enemyManager.reindexSpawns(previousSpawns, nextMap.spawns);
     this.waveManager.map = nextMap;
     this.waveManager.resizeSpawnStatesById(previousSpawns, nextMap.spawns);

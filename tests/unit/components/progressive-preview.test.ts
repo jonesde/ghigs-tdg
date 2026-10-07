@@ -2,11 +2,16 @@ import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { describe, expect, it, vi } from "vitest";
 import ProgressivePlacement from "@/components/ProgressivePlacement.vue";
-import { progressivePatternMarkup, progressivePreviewFill } from "@/components/progressivePreview.js";
+import {
+  progressiveCellRects,
+  progressivePatternMarkup,
+  progressivePreviewFill,
+} from "@/components/progressivePreview.js";
 import type { MapThemeData, RegionVisualMeta } from "@/render/themes/index.js";
 import { GameState } from "@/sim/Constants.js";
 import * as commandBus from "@/sim/commandBus.js";
 import {
+  type BlockTemplate,
   generateProgressiveCatalog,
   generateProgressiveMap,
   progressiveConfigForIndex,
@@ -101,6 +106,7 @@ describe("ProgressivePlacement offer cards", () => {
     expect(fills.has(KNOWN_PATH_FILL)).toBe(true);
     const terrainFills = [...fills].filter((fill) => fill !== KNOWN_PATH_FILL);
     expect(terrainFills.length).toBeGreaterThanOrEqual(2);
+    expect(wrapper.find("svg").element.querySelector('path[data-edge="path-contour"]')).not.toBeNull();
   });
 
   it("keeps Enter from rotating a focused card or re-rolling", async () => {
@@ -219,6 +225,88 @@ describe("ProgressivePlacement undo", () => {
     await wrapper.vm.$nextTick();
     expect(wrapper.find(".progressive-card").exists()).toBe(true);
     expect(wrapper.find(".progressive-undo").exists()).toBe(false);
+  });
+});
+
+describe("progressive path contour", () => {
+  function columnPathCatalog(): BlockTemplate[] {
+    const tiles: BlockTemplate["tiles"] = [];
+    for (let localY = 0; localY < 5; localY++) {
+      const row: BlockTemplate["tiles"][number] = [];
+      for (let localX = 0; localX < 5; localX++) {
+        row.push(localX === 2 ? { type: "path", height: 1 } : { type: "terrain", height: localX === 0 ? 1 : 4 });
+      }
+      tiles.push(row);
+    }
+    return [
+      {
+        pattern: "straight",
+        open: true,
+        mouths: ["N", "S"],
+        tiles,
+        heightPattern: "slope",
+        flatHeight: 1,
+        peakCorner: 0,
+      },
+    ];
+  }
+
+  function terrainOnlyCatalog(): BlockTemplate[] {
+    const tiles: BlockTemplate["tiles"] = [];
+    for (let localY = 0; localY < 5; localY++) {
+      const row: BlockTemplate["tiles"][number] = [];
+      for (let localX = 0; localX < 5; localX++) {
+        row.push({ type: "terrain", height: (localX + localY) % 2 === 0 ? 1 : 4 });
+      }
+      tiles.push(row);
+    }
+    return [
+      { pattern: "terrain", open: false, mouths: [], tiles, heightPattern: "scatter", flatHeight: 1, peakCorner: 0 },
+    ];
+  }
+
+  function contourSegments(markup: string): string[] {
+    const match = markup.match(/<path data-edge="path-contour" d="([^"]*)"/);
+    if (!match) return [];
+    return match[1]!
+      .split(/(?=M)/)
+      .map((segment) => segment.trim())
+      .filter((segment) => segment.length > 0);
+  }
+
+  it("strokes each internal path edge once and skips the block perimeter", () => {
+    const markup = progressiveCellRects(columnPathCatalog(), 0, 0, 0, 0, 1, null);
+    const segments = contourSegments(markup);
+    expect(segments).toHaveLength(10);
+    for (let localY = 0; localY < 5; localY++) {
+      expect(segments).toContain(`M2,${localY} L2,${localY + 1}`);
+      expect(segments).toContain(`M3,${localY} L3,${localY + 1}`);
+    }
+    expect(segments).not.toContain("M2,0 L3,0");
+    expect(segments).not.toContain("M2,5 L3,5");
+    expect(markup).toContain('stroke="rgba(0,0,0,0.7)"');
+    expect(markup).toContain('stroke-width="0.1"');
+  });
+
+  it("draws no contour between terrain heights", () => {
+    const markup = progressiveCellRects(terrainOnlyCatalog(), 0, 0, 0, 0, 1, null);
+    expect(markup).not.toContain("path-contour");
+  });
+
+  it("follows a rotated path and places the ghost contour in world coordinates", () => {
+    const rotated = contourSegments(progressiveCellRects(columnPathCatalog(), 0, 1, 0, 0, 1, null));
+    expect(rotated).toHaveLength(10);
+    for (let localX = 0; localX < 5; localX++) {
+      expect(rotated).toContain(`M${localX},2 L${localX + 1},2`);
+      expect(rotated).toContain(`M${localX},3 L${localX + 1},3`);
+    }
+
+    const ghost = progressivePatternMarkup(columnPathCatalog(), 0, 0, 72, 108, 36, true, null);
+    const ghostSegments = contourSegments(ghost);
+    expect(ghostSegments).toContain("M144,108 L144,144");
+    expect(ghost).toContain('stroke-width="3.6"');
+    expect(ghost).toContain('opacity="0.75"');
+    expect(ghost).toContain('stroke="var(--color-accent)"');
   });
 });
 

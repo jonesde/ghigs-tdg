@@ -258,10 +258,18 @@ export function cacheMaxHealth(mapLevel: number): number {
   return 60 + 20 * (mapLevel - 1);
 }
 
-// Block 1 is 5%. Block 17 and later are 85%. Zero blocks is the initial fill, which does not roll.
+// Index 0 does not roll. Index 1 is the base block at 5%. Index 17 and later are 85%.
 export function progressiveSiteChance(placedBlocks: number): number {
   if (placedBlocks <= 0) return 0;
   return clamp(placedBlocks / 20, 0.05, 0.85);
+}
+
+// Opening blocks occupy 1 through 1+entryCount. playerPlacedBlocks counts non-fill
+// stamps and includes the stamp being rolled, so the first player block follows
+// the last entry instead of repeating the base block's roll.
+export function progressiveStampIndex(entryCount: number, playerPlacedBlocks: number): number {
+  const openingBlocks = 1 + Math.max(0, Math.floor(entryCount));
+  return openingBlocks + Math.max(0, Math.floor(playerPlacedBlocks));
 }
 
 export function playerPlacedBlockCount(stamps: readonly { fill: boolean }[]): number {
@@ -486,10 +494,11 @@ export interface ReconcileSitesInput {
   // Null places against the whole board. A set is the world keys that already
   // existed, so a grown board only fills tiles that were not in that set.
   previousWorldKeys: ReadonlySet<string> | null;
-  // Zero is the initial fill, which tops the board up to the region quota and
-  // does not roll. A positive count rolls one building and one cache onto
-  // stampWorldKeys. The building roll keeps going after the region quota; the
-  // cache roll still stops at cacheCountFor.
+  // Lineup index of the block being rolled. Zero does not roll. A progressive
+  // opening ignores this field and numbers its own blocks from 1. A positive
+  // count rolls one building and one cache onto stampWorldKeys. The building
+  // roll keeps going after the region quota; the cache roll still stops at
+  // cacheCountFor.
   placedBlocks: number;
   stampWorldKeys: ReadonlySet<string> | null;
   allocateId: () => number;
@@ -509,7 +518,8 @@ export function reconcileMapSites(input: ReconcileSitesInput): void {
 
   const occupied = occupiedKeys(input.buildings, input.caches);
   if (input.previousWorldKeys === null) {
-    fillSiteQuota(input, occupied);
+    if (input.mapStyle === "progressive") rollOpeningBlocks(input, occupied);
+    else fillSiteQuota(input, occupied);
     return;
   }
   rollStampSites(input, occupied);
@@ -587,14 +597,68 @@ function fillSiteQuota(input: ReconcileSitesInput, occupied: Set<string>): void 
   placeCaches(input, occupied, cacheTarget);
 }
 
+// The opening board is the base plus the entry blocks, already on the grid.
+// Each one takes the next lineup index and the same roll a later stamp uses.
+// A shallow copy keeps the caller's placedBlocks and stampWorldKeys unchanged.
+function rollOpeningBlocks(input: ReconcileSitesInput, occupied: Set<string>): void {
+  const lineup = openingBlockLineup(input.grid);
+  for (let index = 0; index < lineup.length; index++) {
+    const block = lineup[index];
+    if (!block) continue;
+    rollStampSites(
+      {
+        ...input,
+        placedBlocks: index + 1,
+        stampWorldKeys: stampWorldKeysForBlock(input.grid, block.blockX, block.blockY),
+      },
+      occupied,
+    );
+  }
+}
+
+// Base first, then the entry edges in the order createProgressiveBoard adds them
+// (N, E, S, W). Any other block follows, sorted so the index stays stable.
+function openingBlockLineup(grid: SiteGrid): { blockX: number; blockY: number }[] {
+  const originTileX = Math.round(grid.worldOriginX / grid.tileSize);
+  const originTileY = Math.round(grid.worldOriginY / grid.tileSize);
+  const blocks = new Map<string, { blockX: number; blockY: number }>();
+  const addBlock = (tileX: number, tileY: number): void => {
+    const block = blockCoordinateForTile(originTileX, originTileY, tileX, tileY);
+    blocks.set(`${block.blockX},${block.blockY}`, block);
+  };
+  addBlock(grid.base.x, grid.base.y);
+  for (let tileY = 0; tileY < grid.height; tileY++) {
+    for (let tileX = 0; tileX < grid.width; tileX++) {
+      if (!grid.isTerrain(tileX, tileY) && !grid.isPath(tileX, tileY)) continue;
+      addBlock(tileX, tileY);
+    }
+  }
+  const base = blockCoordinateForTile(originTileX, originTileY, grid.base.x, grid.base.y);
+  const edgeOrder = [
+    { blockX: base.blockX, blockY: base.blockY - 1 },
+    { blockX: base.blockX + 1, blockY: base.blockY },
+    { blockX: base.blockX, blockY: base.blockY + 1 },
+    { blockX: base.blockX - 1, blockY: base.blockY },
+  ];
+  const lineup = [base];
+  const used = new Set<string>([`${base.blockX},${base.blockY}`]);
+  for (const edge of edgeOrder) {
+    const key = `${edge.blockX},${edge.blockY}`;
+    if (!blocks.has(key) || used.has(key)) continue;
+    lineup.push(edge);
+    used.add(key);
+  }
+  const remaining = [...blocks.values()].filter((block) => !used.has(`${block.blockX},${block.blockY}`));
+  remaining.sort((left, right) => left.blockY - right.blockY || left.blockX - right.blockX);
+  return lineup.concat(remaining);
+}
+
 function rollStampSites(input: ReconcileSitesInput, occupied: Set<string>): void {
   const stamp = input.stampWorldKeys;
   if (!stamp || stamp.size === 0) return;
   const chance = progressiveSiteChance(input.placedBlocks);
   if (chance <= 0) return;
   const cacheTarget = cacheCountFor(input.regionId, input.mapLevel);
-  // The region quota is the opening budget. Later blocks keep rolling a building
-  // so a long progressive run grows past the start board.
   if (stampRoll(input.seed, input.placedBlocks, BUILDING_STAMP_TAG) < chance) {
     placeBuildings(input, occupied, input.buildings.length + 1);
   }

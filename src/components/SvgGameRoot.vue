@@ -86,6 +86,7 @@ import {
   PACKAGE_CLICK_RADIUS_TILES,
   planSitesForStampedBoard,
   playerPlacedBlockCount,
+  progressiveStampIndex,
   stampWorldKeysForBlock,
 } from "@/sim/mapSites.js";
 import { ParticleSystem } from "@/sim/ParticleSystem.js";
@@ -280,7 +281,10 @@ function previewNewSites(
     buildings,
     caches,
     previousWorldKeys,
-    placedBlocks: playerPlacedBlockCount(gameStore.progressivePlacements) + 1,
+    placedBlocks: progressiveStampIndex(
+      config.entryCount,
+      playerPlacedBlockCount(gameStore.progressivePlacements) + 1,
+    ),
     stampWorldKeys: stampWorldKeysForBlock(nextGrid, selected.blockX, selected.blockY),
     rollOffer: () => GHOST_OFFER,
   });

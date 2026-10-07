@@ -277,33 +277,27 @@ function tileKindOf(tile: TileInfo): TileKind {
 }
 
 interface ContourEdgeData {
-  curb: string;
   cliffThin: string;
   cliffThick: string;
   border: string;
 }
 
-function tileLevel(tile: TileInfo): number {
-  return tile.type === "terrain" ? tile.height : 1;
-}
-
-function isPathFamily(tile: TileInfo): boolean {
-  return tile.type === "path" || tile.type === "spawn" || tile.type === "base";
+// Terrain keeps its authored height (1–4). Path, spawn, and base sit one step
+// below the lowest terrain, so a path edge against height 1 is the thin contour
+// and a taller neighbor is the thick contour. Adjacent walkable tiles share
+// level 0 and draw no interior edge.
+function contourLevel(tile: TileInfo): number {
+  return tile.type === "terrain" ? tile.height : 0;
 }
 
 function appendContourEdge(edges: ContourEdgeData, leftTile: TileInfo, rightTile: TileInfo, segment: string): void {
-  if (isPathFamily(leftTile) && isPathFamily(rightTile)) return;
-  if (leftTile.type === "terrain" && rightTile.type === "terrain") {
-    const heightDelta = Math.abs(tileLevel(leftTile) - tileLevel(rightTile));
-    if (heightDelta === 0) return;
-    if (heightDelta === 1) {
-      edges.cliffThin += `${segment} `;
-    } else {
-      edges.cliffThick += `${segment} `;
-    }
-    return;
+  const heightDelta = Math.abs(contourLevel(leftTile) - contourLevel(rightTile));
+  if (heightDelta === 0) return;
+  if (heightDelta === 1) {
+    edges.cliffThin += `${segment} `;
+  } else {
+    edges.cliffThick += `${segment} `;
   }
-  edges.curb += `${segment} `;
 }
 
 // Classifies each internal edge exactly once, via the right and bottom neighbors; the
@@ -311,7 +305,7 @@ function appendContourEdge(edges: ContourEdgeData, leftTile: TileInfo, rightTile
 // the classified bottom/right edge of the neighbor tile. OOB or void neighbors make
 // the segment a border.
 function buildContourEdges(map: MapInfo, originX: number, originY: number): ContourEdgeData {
-  const edges: ContourEdgeData = { curb: "", cliffThin: "", cliffThick: "", border: "" };
+  const edges: ContourEdgeData = { cliffThin: "", cliffThick: "", border: "" };
   const tileAt = (tileX: number, tileY: number): TileInfo | null =>
     tileX < 0 || tileY < 0 || tileX >= map.width || tileY >= map.height ? null : map.tiles[tileY]![tileX]!;
   for (let tileY = 0; tileY < map.height; tileY++) {
@@ -349,7 +343,6 @@ function buildContourEdges(map: MapInfo, originX: number, originY: number): Cont
 
 function contourEdgeMarkup(edges: ContourEdgeData): string {
   const strokeSpecs: { edgeName: string; pathData: string; strokeColor: string; strokeWidth: number }[] = [
-    { edgeName: "curb", pathData: edges.curb, strokeColor: "rgba(0,0,0,0.35)", strokeWidth: 0.75 },
     { edgeName: "cliff-thin", pathData: edges.cliffThin, strokeColor: "rgba(0,0,0,0.45)", strokeWidth: 1.2 },
     { edgeName: "cliff-thick", pathData: edges.cliffThick, strokeColor: "rgba(0,0,0,0.45)", strokeWidth: 1.8 },
     { edgeName: "border", pathData: edges.border, strokeColor: "rgba(0,0,0,0.5)", strokeWidth: 1 },

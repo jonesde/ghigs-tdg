@@ -16,6 +16,7 @@ import {
   type MapCacheSite,
   playerPlacedBlockCount,
   progressiveSiteChance,
+  progressiveStampIndex,
   stampWorldKeysForBlock,
   worldKey,
 } from "@/sim/mapSites.js";
@@ -91,7 +92,7 @@ function runProgressiveStamps(
       buildings,
       caches,
       previousWorldKeys,
-      step,
+      progressiveStampIndex(config.entryCount, step),
       stampWorldKeysForBlock(grid, chosen.blockX, chosen.blockY),
       () => nextSiteId++,
     );
@@ -127,6 +128,8 @@ describe("map sites", () => {
     expect(progressiveSiteChance(17)).toBeCloseTo(0.85, 5);
     expect(progressiveSiteChance(40)).toBeCloseTo(0.85, 5);
     expect(playerPlacedBlockCount([{ fill: false }, { fill: true }, { fill: false }])).toBe(2);
+    expect(progressiveStampIndex(1, 1)).toBe(3);
+    expect(progressiveStampIndex(4, 1)).toBe(6);
   });
 
   it("fills every catalog map to its building and cache quota", () => {
@@ -370,19 +373,19 @@ describe("map sites", () => {
     }
   });
 
-  it("places caches on a progressive board through the engine", () => {
-    // The first progressive catalog index. Its opening board used to place zero
-    // caches on every variant, because the generated rings left no legal tile
-    // inside a 5x5 block.
+  it("rolls a progressive opening once per block instead of filling the quota", () => {
     const engine = freshEngine(36);
     const map = engine.runState.map;
     if (!map) throw new Error("no map");
     expect(map.style).toBe("progressive");
-    expect(engine.mapCaches).toHaveLength(cacheCountFor(map.regionId, map.level));
-    expect(engine.mapBuildings).toHaveLength(buildingCountFor(map.regionId, map.level));
+    const openingBlocks = 1 + (map.entryCount ?? 1);
+    expect(engine.mapCaches.length).toBeLessThanOrEqual(openingBlocks);
+    expect(engine.mapBuildings.length).toBeLessThanOrEqual(openingBlocks);
+    expect(engine.mapCaches.length).toBeLessThanOrEqual(cacheCountFor(map.regionId, map.level));
+    expect(engine.mapBuildings.length).toBeLessThanOrEqual(buildingCountFor(map.regionId, map.level));
   });
 
-  it("fills every progressive variant to its quota over a run of stamped blocks", () => {
+  it("keeps progressive stamps inside the cache quota without filling the opening", () => {
     const catalogs = [
       MAPS_CONTENT,
       resolveThemeMaps(ThemeMapsOverrideSchema.parse(aftermathRaw.maps)),
@@ -392,11 +395,21 @@ describe("map sites", () => {
       for (const config of catalog.progressive.variants) {
         const buildingTarget = buildingCountFor(config.regionId, config.level);
         const cacheTarget = cacheCountFor(config.regionId, config.level);
+        const openingBlocks = 1 + config.entryCount;
         const opening = runProgressiveStamps(config, 0);
+        expect(opening.buildings.length).toBeLessThanOrEqual(openingBlocks);
+        expect(opening.caches.length).toBeLessThanOrEqual(openingBlocks);
+        expect(opening.buildings.length).toBeLessThanOrEqual(buildingTarget);
+        expect(opening.caches.length).toBeLessThanOrEqual(cacheTarget);
+        if (config.regionId === 2 && config.level === 12) {
+          expect(opening.buildings.length).toBeLessThan(buildingTarget);
+          expect(opening.caches.length).toBeLessThan(cacheTarget);
+        }
         for (const salt of [0, 7, 13]) {
           const run = runProgressiveStamps(config, 20, salt);
-          expect(run.buildings.length).toBeGreaterThanOrEqual(buildingTarget);
-          expect(run.caches.length).toBe(cacheTarget);
+          expect(run.caches.length).toBeLessThanOrEqual(cacheTarget);
+          expect(run.buildings.length).toBeLessThanOrEqual(openingBlocks + 20);
+          expect(run.buildings.length).toBeGreaterThanOrEqual(opening.buildings.length);
           if (config.regionId === 0) expect(run.buildings.length).toBeGreaterThan(opening.buildings.length);
         }
       }

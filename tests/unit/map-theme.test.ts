@@ -1112,7 +1112,7 @@ describe("Contour edge pass", () => {
     return (match[1]!.match(/M/g) ?? []).length;
   }
 
-  it("draws a cliff at the height step, curbs at terrain/path bounds, and a map border", () => {
+  it("draws a cliff at the height step, the same contours on path edges, and a map border", () => {
     const store = createTestMapThemeStore();
     const customTheme = buildCustomTheme();
     store.activeTheme = customTheme;
@@ -1127,10 +1127,30 @@ describe("Contour edge pass", () => {
     const { gridContent } = useSvgStaticContent({ value: map } as never);
     const svg = gridContent.value;
 
-    expect(edgeSegmentCount(svg, "cliff-thin")).toBe(1);
-    expect(edgeSegmentCount(svg, "cliff-thick")).toBe(0);
-    expect(edgeSegmentCount(svg, "curb")).toBe(2);
+    // height 1→2 is thin; path (level 0)→height 2 is thick; path→height 1 is thin.
+    expect(edgeSegmentCount(svg, "cliff-thin")).toBe(2);
+    expect(edgeSegmentCount(svg, "cliff-thick")).toBe(1);
+    expect(edgeSegmentCount(svg, "curb")).toBe(0);
     expect(edgeSegmentCount(svg, "border")).toBe(10);
+  });
+
+  it("draws no interior edge between path, spawn, and base, and a thick contour against tall terrain", () => {
+    const store = createTestMapThemeStore();
+    const customTheme = buildCustomTheme();
+    store.activeTheme = customTheme;
+    store.defaultTheme = customTheme;
+
+    const map = makeContourMap([
+      { type: "spawn", height: 1 },
+      { type: "path", height: 1 },
+      { type: "base", height: 1 },
+      { type: "terrain", height: 3 },
+    ]);
+    const { gridContent } = useSvgStaticContent({ value: map } as never);
+    const svg = gridContent.value;
+
+    expect(edgeSegmentCount(svg, "cliff-thin")).toBe(0);
+    expect(edgeSegmentCount(svg, "cliff-thick")).toBe(1);
   });
 
   it("draws no interior edge between same-height terrain neighbors", () => {
@@ -1147,7 +1167,7 @@ describe("Contour edge pass", () => {
     const svg = gridContent.value;
 
     expect(edgeSegmentCount(svg, "cliff-thin")).toBe(0);
-    expect(edgeSegmentCount(svg, "curb")).toBe(0);
+    expect(edgeSegmentCount(svg, "cliff-thick")).toBe(0);
     expect(edgeSegmentCount(svg, "border")).toBe(6);
   });
 

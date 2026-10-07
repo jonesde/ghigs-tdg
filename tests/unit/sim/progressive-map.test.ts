@@ -28,6 +28,7 @@ import {
   placementLegal,
   progressiveConfigForIndex,
   progressiveConfigFromMap,
+  progressiveEntryGold,
   progressiveUnlockMapIndex,
   replayProgressiveBoard,
   rotatedMouths,
@@ -537,6 +538,12 @@ describe("progressive config recovery", () => {
 });
 
 describe("progressive economy", () => {
+  it("pays progressive entry gold only for entries beyond the first", () => {
+    expect(progressiveEntryGold(1)).toBe(0);
+    expect(progressiveEntryGold(2)).toBe(50);
+    expect(progressiveEntryGold(4)).toBe(150);
+  });
+
   it("uses the linked normal map's gem multiplier and ramps the early enemy level", () => {
     expect(gemMultiplierForRegionLevel(0, 1)).toBe(1);
     expect(gemMultiplierForRegionLevel(0, 12)).toBe(3);

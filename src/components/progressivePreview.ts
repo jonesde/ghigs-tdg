@@ -35,6 +35,48 @@ export function progressivePreviewFill(
   return terrainFillOf(regionVisual, heightStep);
 }
 
+const PATH_CONTOUR_STROKE_RATIO = 0.1;
+
+function isPreviewPath(tile: { type: string } | null): boolean {
+  return tile?.type === "path";
+}
+
+// Outlines the path inside the block only. A mouth on the 5×5 perimeter is left
+// open: that edge continues into the neighboring block, and a stroke there would
+// read as a wall that vanishes once the block is stamped.
+function progressivePathContourMarkup(
+  tiles: ({ type: string } | null)[][],
+  originX: number,
+  originY: number,
+  cellSize: number,
+): string {
+  let pathData = "";
+  for (let localY = 0; localY < PROGRESSIVE_BLOCK_SIZE; localY++) {
+    for (let localX = 0; localX < PROGRESSIVE_BLOCK_SIZE; localX++) {
+      const tile = tiles[localY]![localX] ?? null;
+      const cellX = originX + localX * cellSize;
+      const cellY = originY + localY * cellSize;
+      const rightTile = localX + 1 < PROGRESSIVE_BLOCK_SIZE ? (tiles[localY]![localX + 1] ?? null) : null;
+      if (rightTile && isPreviewPath(tile) !== isPreviewPath(rightTile)) {
+        const edgeX = cellX + cellSize;
+        pathData += `M${edgeX},${cellY} L${edgeX},${cellY + cellSize} `;
+      }
+      const bottomTile = localY + 1 < PROGRESSIVE_BLOCK_SIZE ? (tiles[localY + 1]![localX] ?? null) : null;
+      if (bottomTile && isPreviewPath(tile) !== isPreviewPath(bottomTile)) {
+        const edgeY = cellY + cellSize;
+        pathData += `M${cellX},${edgeY} L${cellX + cellSize},${edgeY} `;
+      }
+    }
+  }
+  const trimmedPathData = pathData.trim();
+  if (!trimmedPathData) return "";
+  const strokeWidth = cellSize * PATH_CONTOUR_STROKE_RATIO;
+  return (
+    `<path data-edge="path-contour" d="${trimmedPathData}" fill="none" stroke="rgba(0,0,0,0.7)" ` +
+    `stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round" />`
+  );
+}
+
 // Unit-cell <rect> markup for one block in absolute coordinates. Shared by the
 // offer cards (origin 0,0 and cellSize 1 inside a "0 0 5 5" viewBox) and the
 // on-map ghost (origin at the block corner, cellSize = tile size).
@@ -61,17 +103,21 @@ export function progressiveCellRects(
     flatHeight: 1,
     peakCorner: 0,
   };
+  const tiles: ReturnType<typeof localTile>[][] = [];
   let cells = "";
   for (let localY = 0; localY < PROGRESSIVE_BLOCK_SIZE; localY++) {
+    const row: ReturnType<typeof localTile>[] = [];
     for (let localX = 0; localX < PROGRESSIVE_BLOCK_SIZE; localX++) {
       const tile = localTile(catalog, block, localX, localY);
+      row.push(tile);
       const fill = progressivePreviewFill(tile ?? { type: "terrain", height: 1 }, regionVisual);
       const cellX = originX + localX * cellSize;
       const cellY = originY + localY * cellSize;
       cells += `<rect x="${cellX}" y="${cellY}" width="${cellSize}" height="${cellSize}" fill="${fill}" />`;
     }
+    tiles.push(row);
   }
-  return cells;
+  return cells + progressivePathContourMarkup(tiles, originX, originY, cellSize);
 }
 
 export function progressivePatternMarkup(

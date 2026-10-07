@@ -26,6 +26,7 @@ const economy = getGameContent().economy;
 const maps = getGameContent().maps;
 
 export const StartingGold = economy.startingGoldByRegion;
+export const PROGRESSIVE_GOLD_PER_ENTRY = economy.progressiveGoldPerEntry;
 
 // Default (no-theme) maps catalog. Theme worlds override this per run via
 // MapThemeData.maps; the engine and map generators take it as a parameter and

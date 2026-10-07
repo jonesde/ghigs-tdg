@@ -8,6 +8,7 @@ import {
   MAP_GEM_MULTIPLIERS,
   MAPS_CONTENT,
   MAPS_PER_REGION,
+  PROGRESSIVE_GOLD_PER_ENTRY,
   PROGRESSIVE_MAP_COUNT,
   PROGRESSIVE_MAP_INDEX_BASE,
 } from "@/sim/Constants.js";
@@ -15,12 +16,11 @@ import { BOSS_CADENCE } from "@/sim/ConstantsEnemy.js";
 import { type GeneratedMap, getMap, type MapSpawnPoint, mulberry32 } from "@/sim/grid/Map.js";
 
 export const PROGRESSIVE_BLOCK_SIZE = 5;
-// Added to StartingGold once per base entry. One entry is +100, four is +400.
-export const PROGRESSIVE_ENTRY_GOLD = 100;
 
+// Added to StartingGold for each base entry beyond the first.
 export function progressiveEntryGold(entryCount: number): number {
-  if (entryCount <= 0) return 0;
-  return PROGRESSIVE_ENTRY_GOLD * Math.floor(entryCount);
+  const entriesBeyondFirst = Math.max(0, Math.floor(entryCount) - 1);
+  return PROGRESSIVE_GOLD_PER_ENTRY * entriesBeyondFirst;
 }
 const BLOCK_CENTER = 2;
 const MARGIN_BLOCKS = 1;

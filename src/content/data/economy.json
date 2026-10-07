@@ -1,5 +1,6 @@
 {
   "startingGoldByRegion": [80, 70, 60],
+  "progressiveGoldPerEntry": 50,
   "victoryWave": 100,
   "milestoneWaves": [15, 30, 50],
   "milestoneGems": { "15": 2, "30": 3, "50": 5 },

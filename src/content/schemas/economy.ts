@@ -2,6 +2,8 @@ import { z } from "zod";
 
 export const EconomyContentSchema = z.object({
   startingGoldByRegion: z.tuple([z.number(), z.number(), z.number()]),
+  // Per entry beyond 1.
+  progressiveGoldPerEntry: z.number().int().min(0),
   victoryWave: z.number(),
   milestoneWaves: z.tuple([z.number(), z.number(), z.number()]),
   milestoneGems: z.record(z.string(), z.number()),
