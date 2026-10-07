@@ -146,6 +146,34 @@ export function waveUnitCount(wave: number): number {
   return WAVE_COUNT_BASE + Math.floor(wave * WAVE_COUNT_SCALE);
 }
 
+// Waves 1..15 on a progressive map ramp the map-level term from 1 up to the real
+// map level, so a level-12 board does not open on level-12 minions. Wave 15
+// matches enemyLevelForWave; later waves use that function unchanged.
+export const PROGRESSIVE_EARLY_WAVE_COUNT = 15;
+const PROGRESSIVE_EARLY_WAVE_SPAN = PROGRESSIVE_EARLY_WAVE_COUNT - 1;
+const PROGRESSIVE_EARLY_ENTRY_WEIGHT = 0.25;
+
+export function progressiveEnemyLevel(wave: number, mapLevel: number): number {
+  if (wave > PROGRESSIVE_EARLY_WAVE_COUNT) return enemyLevelForWave(wave, mapLevel);
+  const progress = (wave - 1) / PROGRESSIVE_EARLY_WAVE_SPAN;
+  const rampedMapLevel = 1 + Math.round((mapLevel - 1) * progress);
+  return Math.max(1, Math.floor(wave / 3) + rampedMapLevel);
+}
+
+// Count scale holds bounty steady while the level ramp is below the real map
+// level (raw bounty factor, not the ceiled payout), then adds a quarter per
+// entry past the first so each extra mouth still pays for a tower.
+export function progressiveWaveUnitCount(wave: number, mapLevel: number, entryCount: number): number {
+  const baseCount = waveUnitCount(wave);
+  if (wave > PROGRESSIVE_EARLY_WAVE_COUNT) return baseCount;
+  const normalFactor = 1 + BOUNTY_LEVEL_GROWTH * (enemyLevelForWave(wave, mapLevel) - 1);
+  const rampedFactor = 1 + BOUNTY_LEVEL_GROWTH * (progressiveEnemyLevel(wave, mapLevel) - 1);
+  const scale = normalFactor / rampedFactor;
+  const safeEntryCount = Math.max(1, entryCount);
+  const entryScale = 1 + PROGRESSIVE_EARLY_ENTRY_WEIGHT * (safeEntryCount - 1);
+  return Math.max(baseCount, Math.round(baseCount * scale * entryScale));
+}
+
 // Cadence waves carry a boss, and a second one once the wave number passes 30.
 export function waveBossCount(wave: number, bossCadence: number): number {
   if (bossCadence <= 0 || wave % bossCadence !== 0) return 0;

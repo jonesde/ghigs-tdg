@@ -1,6 +1,7 @@
 /** @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
 import { MAP_GEM_MULTIPLIERS, TOTAL_MAPS } from "@/sim/Constants.js";
+import { enemyLevelForWave, progressiveEnemyLevel } from "@/sim/ConstantsEnemy.js";
 import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap, mulberry32 } from "@/sim/grid/Map.js";
@@ -334,7 +335,22 @@ describe("progressive placement", () => {
     expect(tee!.board.spawns.map((candidate) => candidate.id).sort((left, right) => left - right)).toEqual([1, 2]);
   });
 
-  it("drops both spawns when one block bridges two mouths", () => {
+  it("drops the joined spawns when a bridge leaves another opening", () => {
+    const catalog = generateProgressiveCatalog(1);
+    const board = emptyBoard(
+      [placed(0, 1, -1, 0), placed(0, 0, 0, -1), placed(0, 0, 5, 0)],
+      [
+        { id: 1, blockX: -1, blockY: 0, edge: "E", fixed: false },
+        { id: 2, blockX: 0, blockY: -1, edge: "S", fixed: false },
+        { id: 3, blockX: 5, blockY: 0, edge: "N", fixed: false },
+      ],
+    );
+    const bridged = commitPlacement(board, catalog, 3, 3, 0, 0, () => 0);
+    expect(bridged).not.toBeNull();
+    expect(bridged!.board.spawns.map((spawn) => spawn.id)).toEqual([3]);
+  });
+
+  it("rejects a bridge that closes the last two openings", () => {
     const catalog = generateProgressiveCatalog(1);
     const board = emptyBoard(
       [placed(0, 1, -1, 0), placed(0, 0, 0, -1)],
@@ -343,9 +359,38 @@ describe("progressive placement", () => {
         { id: 2, blockX: 0, blockY: -1, edge: "S", fixed: false },
       ],
     );
-    const bridged = commitPlacement(board, catalog, 3, 3, 0, 0, () => 0);
-    expect(bridged).not.toBeNull();
-    expect(bridged!.board.spawns).toEqual([]);
+    expect(placementLegal(board, catalog, 3, 3, 0, 0)).toBe(false);
+    expect(commitPlacement(board, catalog, 3, 3, 0, 0, () => 0)).toBeNull();
+    expect(board.spawns).toHaveLength(2);
+  });
+
+  it("rejects an elbow that turns the only path into a cell bordered on three sides", () => {
+    const catalog = generateProgressiveCatalog(1);
+    const board = emptyBoard(
+      [placed(0, 0, 0, 1), placed(10, 0, 2, 0), placed(10, 0, 1, -1), placed(10, 0, 1, 1)],
+      [{ id: 1, blockX: 0, blockY: 1, edge: "N", fixed: false }],
+    );
+    // elbowRight rotated once has mouths E and S, so it docks onto the north
+    // mouth and turns east into the pocket at (1, 0).
+    expect(placementLegal(board, catalog, 3, 1, 0, 0)).toBe(false);
+    expect(commitPlacement(board, catalog, 3, 1, 0, 0, () => 0)).toBeNull();
+  });
+
+  it("still accepts a straight that continues into open space", () => {
+    const started = createProgressiveBoard(configFor(1));
+    const spawn = started.board.spawns[0]!;
+    const delta = EDGE_DELTA[spawn.edge];
+    const facing = OPPOSITE_EDGE[spawn.edge];
+    expect(
+      placementLegal(
+        started.board,
+        started.catalog,
+        0,
+        rotationFacing(started.catalog[0]!, facing),
+        spawn.blockX + delta.x,
+        spawn.blockY + delta.y,
+      ),
+    ).toBe(true);
   });
 
   it("fills a sealed hole, fixes a single mouth, and leaves a two-mouth hole empty", () => {
@@ -492,7 +537,7 @@ describe("progressive config recovery", () => {
 });
 
 describe("progressive economy", () => {
-  it("uses the linked normal map's gem multiplier and level", () => {
+  it("uses the linked normal map's gem multiplier and ramps the early enemy level", () => {
     expect(gemMultiplierForRegionLevel(0, 1)).toBe(1);
     expect(gemMultiplierForRegionLevel(0, 12)).toBe(3);
     expect(gemMultiplierForRegionLevel(0, 1)).toBe(MAP_GEM_MULTIPLIERS[0]);
@@ -511,7 +556,9 @@ describe("progressive economy", () => {
       getActiveEnemyCountForSpawn: () => 0,
       getEnemiesInRange: () => [],
     });
-    expect(manager.generateWave(3)[0]!.level).toBe(13);
+    expect(enemyLevelForWave(3, levelTwelve.level)).toBe(13);
+    expect(progressiveEnemyLevel(3, levelTwelve.level)).toBe(4);
+    expect(manager.generateWave(3)[0]!.level).toBe(4);
   });
 
   it("does not advance the campaign from a progressive clear and refunds the third choice", () => {

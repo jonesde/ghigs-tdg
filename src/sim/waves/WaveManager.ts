@@ -6,6 +6,9 @@ import {
   ENEMY_TYPES,
   enemyLevelForWave,
   HEALER_MIN_GAP,
+  PROGRESSIVE_EARLY_WAVE_COUNT,
+  progressiveEnemyLevel,
+  progressiveWaveUnitCount,
   tierThresholdForWave,
   waveBossCount,
   waveUnitCount,
@@ -18,6 +21,47 @@ interface MapRef {
   bossCadence: number;
   spawns: { x: number; y: number }[];
   seed: number;
+  style?: string;
+  entryCount?: number;
+}
+
+export interface SpawnWeightCredit {
+  spawnIndex: number;
+  weight: number;
+  current: number;
+}
+
+// Smooth weighted round-robin. A zero-only weight list falls back to equal
+// weights so a missing corridor field still emits. Lowest index wins a tie.
+export function createSpawnWeightCredits(weights: readonly number[]): SpawnWeightCredit[] {
+  const credits: SpawnWeightCredit[] = [];
+  for (let spawnIndex = 0; spawnIndex < weights.length; spawnIndex++) {
+    const weight = weights[spawnIndex] ?? 0;
+    if (weight > 0) credits.push({ spawnIndex, weight, current: 0 });
+  }
+  if (credits.length > 0) return credits;
+  for (let spawnIndex = 0; spawnIndex < weights.length; spawnIndex++) {
+    credits.push({ spawnIndex, weight: 1, current: 0 });
+  }
+  return credits;
+}
+
+export function pickWeightedSpawn(credits: SpawnWeightCredit[]): number {
+  let bestCreditIndex = 0;
+  let bestCurrent = Number.NEGATIVE_INFINITY;
+  let totalWeight = 0;
+  for (let creditIndex = 0; creditIndex < credits.length; creditIndex++) {
+    const credit = credits[creditIndex]!;
+    credit.current += credit.weight;
+    totalWeight += credit.weight;
+    if (credit.current > bestCurrent) {
+      bestCurrent = credit.current;
+      bestCreditIndex = creditIndex;
+    }
+  }
+  const picked = credits[bestCreditIndex]!;
+  picked.current -= totalWeight;
+  return picked.spawnIndex;
 }
 
 interface EnemyManagerRef {
@@ -76,6 +120,11 @@ export class WaveManager {
   // Stamping at generation (not at wave start) is what keeps every caller of
   // startNextWave covered, including the debug tools that bypass onWaveStart.
   bossAbilityStamper: ((entries: WaveEntry[], waveNumber: number) => void) | null = null;
+  // Corridor tile distance from a spawn to the base. Absent means equal weights.
+  // Installed by the engine from the through-field, which walks the path and
+  // treats blocking towers as traversable.
+  spawnCorridorTiles: ((spawnIndex: number) => number) | null = null;
+  private spawnWeightCredits: SpawnWeightCredit[] | null = null;
 
   constructor(map: MapRef, enemyManager: EnemyManagerRef) {
     this.map = map;
@@ -137,6 +186,7 @@ export class WaveManager {
     const newQueue = this.generateWave(this.currentWave);
     this.bossAbilityStamper?.(newQueue, this.currentWave);
     this.queue.push(...newQueue);
+    if (this.map.style === "progressive") this.spawnWeightCredits = createSpawnWeightCredits(this.corridorWeights());
     this.spawnTimer = 0;
     this._waveGameTime = 0;
     this.countdownActive = false;
@@ -240,9 +290,12 @@ export class WaveManager {
   }
 
   generateWave(n: number): WaveEntry[] {
-    const baseCount = waveUnitCount(n);
-    const enemyLevel = enemyLevelForWave(n, this.map.level);
-    const bossCount = waveBossCount(n, this.bossCadence);
+    const progressive = this.map.style === "progressive";
+    const baseCount = progressive
+      ? progressiveWaveUnitCount(n, this.map.level, this.map.entryCount ?? 1)
+      : waveUnitCount(n);
+    const enemyLevel = progressive ? progressiveEnemyLevel(n, this.map.level) : enemyLevelForWave(n, this.map.level);
+    const bossCount = progressive && n <= PROGRESSIVE_EARLY_WAVE_COUNT ? 0 : waveBossCount(n, this.bossCadence);
 
     // Render-pool size is not a gameplay balance lever; non-boss count is purely
     // driven by wave scaling. Overflow is absorbed by EnemyManager's pending queue.
@@ -409,21 +462,35 @@ export class WaveManager {
       if (!next || !ENEMY_TYPES[next.type]) {
         return;
       }
-      // Backlog-weighted spawn choice: sample two candidates and emit at the
-      // least-pending one (ties keep the first draw), so a uniform draw cannot
-      // keep piling onto an already-choked spawn while others drain. Draws come
-      // from the seeded wave rng, so emission stays deterministic per map seed.
-      const firstCandidate = Math.floor(this.rng() * this.map.spawns.length);
-      const secondCandidate = Math.floor(this.rng() * this.map.spawns.length);
+      // Progressive lanes emit in corridor-length order: twice as far, twice as
+      // many, spread by smooth weighted round-robin. Catalog maps keep the
+      // backlog-weighted two-candidate draw, seeded so a map stays deterministic.
       const spawnIdx =
-        this.enemyManager.getPendingCountForSpawn(secondCandidate) <
-        this.enemyManager.getPendingCountForSpawn(firstCandidate)
-          ? secondCandidate
-          : firstCandidate;
+        this.map.style === "progressive" && this.spawnWeightCredits && this.spawnWeightCredits.length > 0
+          ? pickWeightedSpawn(this.spawnWeightCredits)
+          : this.pickBacklogSpawn();
       this.markSpawnUsed(spawnIdx);
       this.enemyManager.enqueueOrSpawn(next.type, next.level, spawnIdx, this.currentWave, next.bossAbility);
       this.waveComposition[next.type] = (this.waveComposition[next.type] || 0) - 1;
       this.spawnTimer = next.delay;
     }
+  }
+
+  private corridorWeights(): number[] {
+    const weights: number[] = [];
+    for (let spawnIndex = 0; spawnIndex < this.map.spawns.length; spawnIndex++) {
+      const distance = this.spawnCorridorTiles?.(spawnIndex) ?? 0;
+      weights.push(distance > 0 ? distance : 0);
+    }
+    return weights;
+  }
+
+  private pickBacklogSpawn(): number {
+    const firstCandidate = Math.floor(this.rng() * this.map.spawns.length);
+    const secondCandidate = Math.floor(this.rng() * this.map.spawns.length);
+    return this.enemyManager.getPendingCountForSpawn(secondCandidate) <
+      this.enemyManager.getPendingCountForSpawn(firstCandidate)
+      ? secondCandidate
+      : firstCandidate;
   }
 }

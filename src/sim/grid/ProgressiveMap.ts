@@ -15,6 +15,13 @@ import { BOSS_CADENCE } from "@/sim/ConstantsEnemy.js";
 import { type GeneratedMap, getMap, type MapSpawnPoint, mulberry32 } from "@/sim/grid/Map.js";
 
 export const PROGRESSIVE_BLOCK_SIZE = 5;
+// Added to StartingGold once per base entry. One entry is +100, four is +400.
+export const PROGRESSIVE_ENTRY_GOLD = 100;
+
+export function progressiveEntryGold(entryCount: number): number {
+  if (entryCount <= 0) return 0;
+  return PROGRESSIVE_ENTRY_GOLD * Math.floor(entryCount);
+}
 const BLOCK_CENTER = 2;
 const MARGIN_BLOCKS = 1;
 const TERRAIN_TEMPLATE_INDEXES = [10, 11];
@@ -417,7 +424,7 @@ function sharedEdgeCompatible(ourMouths: BlockEdge[], ourEdge: BlockEdge, neighb
   return weOpen === theyOpen;
 }
 
-export function placementLegal(
+function placementEdgeLegal(
   board: ProgressiveBoard,
   catalog: BlockTemplate[],
   templateIndex: number,
@@ -443,6 +450,104 @@ export function placementLegal(
   if (sharedEdges === 0) return false;
   if (template.mouths.length === 0) return connections === 0;
   return connections > 0;
+}
+
+// Terrain does not consume an opening, so it stays on the edge rule. A path
+// stamp also has to leave a durable opening: applyPlayerStamp calls the edge
+// rule, which is what keeps this search from recursing.
+export function placementLegal(
+  board: ProgressiveBoard,
+  catalog: BlockTemplate[],
+  templateIndex: number,
+  rotation: number,
+  blockX: number,
+  blockY: number,
+): boolean {
+  if (!placementEdgeLegal(board, catalog, templateIndex, rotation, blockX, blockY)) return false;
+  const template = catalog[templateIndex];
+  if (!template || template.mouths.length === 0) return true;
+  return placementLeavesContinuation(board, catalog, templateIndex, rotation, blockX, blockY);
+}
+
+function placementLeavesContinuation(
+  board: ProgressiveBoard,
+  catalog: BlockTemplate[],
+  templateIndex: number,
+  rotation: number,
+  blockX: number,
+  blockY: number,
+): boolean {
+  const next = cloneBoard(board);
+  const player = catalogBlock(templateIndex, rotation, blockX, blockY, false);
+  if (!applyPlayerStamp(next, catalog, player)) return false;
+  return boardHasDurableOpening(next, catalog);
+}
+
+function boardHasDurableOpening(board: ProgressiveBoard, catalog: BlockTemplate[]): boolean {
+  for (const spawn of board.spawns) {
+    if (spawn.fixed) continue;
+    const delta = EDGE_DELTA[spawn.edge];
+    const facingX = spawn.blockX + delta.x;
+    const facingY = spawn.blockY + delta.y;
+    if (blockAt(board, facingX, facingY)) continue;
+    if (facingCellHasDurableFollowUp(board, catalog, facingX, facingY)) return true;
+  }
+  return false;
+}
+
+function facingCellHasDurableFollowUp(
+  board: ProgressiveBoard,
+  catalog: BlockTemplate[],
+  blockX: number,
+  blockY: number,
+): boolean {
+  for (let templateIndex = 0; templateIndex < catalog.length; templateIndex++) {
+    const template = catalog[templateIndex];
+    if (!template || template.mouths.length === 0) continue;
+    for (let rotation = 0; rotation < 4; rotation++) {
+      if (!placementExtendsOpening(board, catalog, templateIndex, rotation, blockX, blockY)) continue;
+      if (followUpAdmitsPath(board, catalog, templateIndex, rotation, blockX, blockY)) return true;
+    }
+  }
+  return false;
+}
+
+function followUpAdmitsPath(
+  board: ProgressiveBoard,
+  catalog: BlockTemplate[],
+  templateIndex: number,
+  rotation: number,
+  blockX: number,
+  blockY: number,
+): boolean {
+  const next = cloneBoard(board);
+  const player = catalogBlock(templateIndex, rotation, blockX, blockY, false);
+  if (!applyPlayerStamp(next, catalog, player)) return false;
+  for (const spawn of next.spawns) {
+    if (spawn.fixed) continue;
+    const delta = EDGE_DELTA[spawn.edge];
+    const facingX = spawn.blockX + delta.x;
+    const facingY = spawn.blockY + delta.y;
+    if (blockAt(next, facingX, facingY)) continue;
+    if (cellAdmitsPathTemplate(next, catalog, facingX, facingY)) return true;
+  }
+  return false;
+}
+
+function cellAdmitsPathTemplate(
+  board: ProgressiveBoard,
+  catalog: BlockTemplate[],
+  blockX: number,
+  blockY: number,
+): boolean {
+  for (let templateIndex = 0; templateIndex < catalog.length; templateIndex++) {
+    const template = catalog[templateIndex];
+    if (!template || template.mouths.length === 0) continue;
+    for (let rotation = 0; rotation < 4; rotation++) {
+      if (placementEdgeLegal(board, catalog, templateIndex, rotation, blockX, blockY)) return true;
+    }
+  }
+  return false;
 }
 
 export function legalSites(board: ProgressiveBoard, catalog: BlockTemplate[], templateIndex: number): BlockSite[] {
@@ -526,7 +631,9 @@ function catalogBlock(
 }
 
 function applyPlayerStamp(board: ProgressiveBoard, catalog: BlockTemplate[], stamp: PlacedBlock): boolean {
-  if (!placementLegal(board, catalog, stamp.templateIndex, stamp.rotation, stamp.blockX, stamp.blockY)) return false;
+  // Edge rule only. placementLegal calls this while searching for a continuation.
+  if (!placementEdgeLegal(board, catalog, stamp.templateIndex, stamp.rotation, stamp.blockX, stamp.blockY))
+    return false;
   const template = catalog[stamp.templateIndex]!;
   const ourMouths = rotatedMouths(template, stamp.rotation);
   const consumed: BoardSpawn[] = [];
@@ -689,6 +796,7 @@ export function commitPlacement(
   blockY: number,
   rng: () => number,
 ): { board: ProgressiveBoard; added: PlacedBlock[] } | null {
+  if (!placementLegal(board, catalog, templateIndex, rotation, blockX, blockY)) return null;
   const next = cloneBoard(board);
   const player = catalogBlock(templateIndex, rotation, blockX, blockY, false);
   if (!applyPlayerStamp(next, catalog, player)) return null;
@@ -718,6 +826,7 @@ export function boardWithPlayerStamp(
   blockX: number,
   blockY: number,
 ): ProgressiveBoard | null {
+  if (!placementLegal(board, catalog, templateIndex, rotation, blockX, blockY)) return null;
   const next = cloneBoard(board);
   const player = catalogBlock(templateIndex, rotation, blockX, blockY, false);
   if (!applyPlayerStamp(next, catalog, player)) return null;
@@ -798,7 +907,7 @@ export function placementExtendsOpening(
   blockX: number,
   blockY: number,
 ): boolean {
-  if (!placementLegal(board, catalog, templateIndex, rotation, blockX, blockY)) return false;
+  if (!placementEdgeLegal(board, catalog, templateIndex, rotation, blockX, blockY)) return false;
   const template = catalog[templateIndex];
   if (!template || template.mouths.length === 0) return false;
   const mouths = rotatedMouths(template, rotation);
