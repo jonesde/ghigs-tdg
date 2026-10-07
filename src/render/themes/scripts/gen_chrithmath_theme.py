@@ -2642,7 +2642,11 @@ def maps_override() -> dict:
         ],
         "progressive": {
             "blockSize": 5,
-            "placementInterval": 3,
+            "placementIntervalSteps": [
+                {"afterWave": 0, "interval": 3},
+                {"afterWave": 30, "interval": 4},
+                {"afterWave": 50, "interval": 5},
+            ],
             "rerollGoldPerWave": 3,
             "variants": [
                 {
@@ -3493,6 +3497,8 @@ MAPS_LEVEL_PATTERN = re.compile(
 MAPS_VARIANT_PATTERN = re.compile(
     r'\{\s*"regionId": (\d+),\s*"level": (\d+),\s*"entryCount": (\d+),\s*"seed": (\d+)\s*\}'
 )
+MAPS_INTERVAL_STEPS_PATTERN = re.compile(r'"placementIntervalSteps":\s*\[\s*(\{[^{}]*\}(?:\s*,\s*\{[^{}]*\})*)\s*\]')
+MAPS_INTERVAL_STEP_PATTERN = re.compile(r'\{\s*"afterWave":\s*(\d+),\s*"interval":\s*(\d+)\s*\}')
 
 
 def collapse_maps_lines(text: str) -> str:
@@ -3506,8 +3512,17 @@ def collapse_maps_lines(text: str) -> str:
         return (f'{{ "regionId": {region_id}, "level": {level}, '
                 f'"entryCount": {entry_count}, "seed": {seed} }}')
 
+    def collapse_step(match: re.Match[str]) -> str:
+        return f'{{ "afterWave": {match.group(1)}, "interval": {match.group(2)} }}'
+
+    def collapse_steps(match: re.Match[str]) -> str:
+        objects = MAPS_INTERVAL_STEP_PATTERN.sub(collapse_step, match.group(1))
+        objects = re.sub(r'\s*,\s*', ', ', objects)
+        return f'"placementIntervalSteps": [{objects}]'
+
     text = MAPS_LEVEL_PATTERN.sub(collapse_level, text)
-    return MAPS_VARIANT_PATTERN.sub(collapse_variant, text)
+    text = MAPS_VARIANT_PATTERN.sub(collapse_variant, text)
+    return MAPS_INTERVAL_STEPS_PATTERN.sub(collapse_steps, text)
 
 
 def write_theme(theme: dict) -> None:

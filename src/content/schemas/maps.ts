@@ -18,6 +18,14 @@ export const ProgressiveVariantSchema = z.object({
   seed: z.number().int(),
 });
 
+// A placement-interval step: the interval in effect for every wave strictly
+// after `afterWave`. Steps run in ascending afterWave order, so the first
+// entry (afterWave 0) is the base interval from wave 1 onward.
+export const PlacementIntervalStepSchema = z.object({
+  afterWave: z.number().int().min(0),
+  interval: z.number().int().min(1),
+});
+
 export const MapsContentSchema = z.object({
   mapBaseSize: z.number(),
   mapSizeScale: z.number(),
@@ -30,7 +38,7 @@ export const MapsContentSchema = z.object({
   levels: z.array(MapLevelConfigSchema).length(36),
   progressive: z.object({
     blockSize: z.literal(5),
-    placementInterval: z.number().int().min(1),
+    placementIntervalSteps: z.array(PlacementIntervalStepSchema).min(1),
     rerollGoldPerWave: z.number().int().min(0),
     variants: z.array(ProgressiveVariantSchema).length(12),
   }),
@@ -46,4 +54,5 @@ export type MapsContent = z.infer<typeof MapsContentSchema>;
 export type MapLevelConfigData = z.infer<typeof MapLevelConfigSchema>;
 export type MapStyleData = z.infer<typeof MapStyleSchema>;
 export type ProgressiveVariantData = z.infer<typeof ProgressiveVariantSchema>;
+export type PlacementIntervalStepData = z.infer<typeof PlacementIntervalStepSchema>;
 export type ThemeMapsOverride = z.infer<typeof ThemeMapsOverrideSchema>;
