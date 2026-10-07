@@ -22,6 +22,7 @@ import {
   type ProgressiveSiteDirection,
   type ProgressiveStamp,
   progressiveConfigFromMap,
+  progressiveEntryGold,
   replayProgressiveBoard,
   sitesAtRotation,
 } from "@/sim/grid/ProgressiveMap.js";
@@ -441,7 +442,12 @@ export const useGameStore = defineStore("game", {
       this.state = GameState.PLAYING;
       this.baseHealth = STARTING_BASE_HEALTH;
       this.maxBaseHealth = STARTING_BASE_HEALTH;
-      this.gold = StartingGold[mapData.regionId]!;
+      const regionGold = StartingGold[mapData.regionId] ?? StartingGold[0] ?? 0;
+      const entryGold =
+        mapData.style === "progressive" && mapData.entryCount !== undefined
+          ? progressiveEntryGold(mapData.entryCount)
+          : 0;
+      this.gold = regionGold + entryGold;
       this.currentWave = 0;
       this.commanderHold = false;
       this.resetRunRewards();

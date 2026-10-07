@@ -486,8 +486,10 @@ export interface ReconcileSitesInput {
   // Null places against the whole board. A set is the world keys that already
   // existed, so a grown board only fills tiles that were not in that set.
   previousWorldKeys: ReadonlySet<string> | null;
-  // Zero is the initial fill. A positive count rolls one building and one cache
-  // onto stampWorldKeys instead of topping the board up to the target.
+  // Zero is the initial fill, which tops the board up to the region quota and
+  // does not roll. A positive count rolls one building and one cache onto
+  // stampWorldKeys. The building roll keeps going after the region quota; the
+  // cache roll still stops at cacheCountFor.
   placedBlocks: number;
   stampWorldKeys: ReadonlySet<string> | null;
   allocateId: () => number;
@@ -590,12 +592,10 @@ function rollStampSites(input: ReconcileSitesInput, occupied: Set<string>): void
   if (!stamp || stamp.size === 0) return;
   const chance = progressiveSiteChance(input.placedBlocks);
   if (chance <= 0) return;
-  const buildingTarget = buildingCountFor(input.regionId, input.mapLevel);
   const cacheTarget = cacheCountFor(input.regionId, input.mapLevel);
-  if (
-    input.buildings.length < buildingTarget &&
-    stampRoll(input.seed, input.placedBlocks, BUILDING_STAMP_TAG) < chance
-  ) {
+  // The region quota is the opening budget. Later blocks keep rolling a building
+  // so a long progressive run grows past the start board.
+  if (stampRoll(input.seed, input.placedBlocks, BUILDING_STAMP_TAG) < chance) {
     placeBuildings(input, occupied, input.buildings.length + 1);
   }
   if (input.caches.length < cacheTarget && stampRoll(input.seed, input.placedBlocks, CACHE_STAMP_TAG) < chance) {

@@ -13,10 +13,11 @@ import {
   WAVE_COUNT_BASE,
   WAVE_COUNT_SCALE,
 } from "@/sim/Constants.js";
+import { enemyLevelForWave } from "@/sim/ConstantsEnemy.js";
 import { resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
-import { WaveManager } from "@/sim/waves/WaveManager.js";
+import { createSpawnWeightCredits, pickWeightedSpawn, WaveManager } from "@/sim/waves/WaveManager.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap, makeMapData } from "../helpers/mock-grid";
 import { makeParticleSystem } from "../helpers/mock-managers";
@@ -375,6 +376,34 @@ describe("WaveManager", () => {
       }
     });
 
+    it("keeps a catalog wave 1 on the unscaled count", () => {
+      const waveManager = makeWaveManager(makeBastionMap());
+      const wave = waveManager.generateWave(1);
+      expect(wave.filter((entry) => entry.type !== "boss")).toHaveLength(
+        WAVE_COUNT_BASE + Math.floor(WAVE_COUNT_SCALE),
+      );
+    });
+
+    it("ramps a progressive level-12 wave and skips the early boss", () => {
+      const map = makeBastionMap();
+      map.style = "progressive";
+      map.level = 12;
+      map.entryCount = 4;
+      map.bossCadence = 5;
+      const waveManager = makeWaveManager(map);
+      const waveOne = waveManager.generateWave(1);
+      expect(waveOne.filter((entry) => entry.type !== "boss")).toHaveLength(47);
+      expect(waveOne.every((entry) => entry.level === 1)).toBe(true);
+      expect(waveOne.some((entry) => entry.type === "boss")).toBe(false);
+      const waveFive = waveManager.generateWave(5);
+      expect(waveFive.some((entry) => entry.type === "boss")).toBe(false);
+      const waveFifteen = waveManager.generateWave(15);
+      expect(waveFifteen.every((entry) => entry.type === "boss" || entry.level === enemyLevelForWave(15, 12))).toBe(
+        true,
+      );
+      expect(waveFifteen.some((entry) => entry.type === "boss")).toBe(false);
+    });
+
     it("each entry has a delay property", () => {
       const waveManager = makeWaveManager(makeBastionMap());
       const wave = waveManager.generateWave(1);
@@ -382,6 +411,40 @@ describe("WaveManager", () => {
         expect(entry.delay).toBeDefined();
         expect(typeof entry.delay).toBe("number");
       }
+    });
+  });
+
+  describe("progressive spawn weights", () => {
+    it("emits twice as many enemies from a lane that is twice as far", () => {
+      const credits = createSpawnWeightCredits([10, 20]);
+      const sequence = [];
+      for (let step = 0; step < 6; step++) sequence.push(pickWeightedSpawn(credits));
+      expect(sequence).toEqual([1, 0, 1, 1, 0, 1]);
+    });
+
+    it("uses equal weights when every corridor length is missing", () => {
+      const credits = createSpawnWeightCredits([0, 0]);
+      const sequence = [];
+      for (let step = 0; step < 4; step++) sequence.push(pickWeightedSpawn(credits));
+      expect(sequence).toEqual([0, 1, 0, 1]);
+    });
+
+    it("emits a progressive wave in corridor order when the length function is installed", () => {
+      const map = makeMultiSpawnMap();
+      map.spawns = map.spawns.slice(0, 2);
+      map.style = "progressive";
+      map.level = 1;
+      map.entryCount = 1;
+      const waveManager = makeWaveManager(map);
+      waveManager.spawnCorridorTiles = (spawnIndex) => (spawnIndex === 0 ? 10 : 20);
+      const spawned = [];
+      waveManager.enemyManager.enqueueOrSpawn = (_type, _level, spawnIndex) => {
+        spawned.push(spawnIndex);
+      };
+      waveManager.startNextWave();
+      waveManager.queue = Array.from({ length: 6 }, () => ({ type: "minion", level: 1, delay: 0 }));
+      for (let step = 0; step < 6; step++) waveManager.update(0, null, null);
+      expect(spawned).toEqual([1, 0, 1, 1, 0, 1]);
     });
   });
 

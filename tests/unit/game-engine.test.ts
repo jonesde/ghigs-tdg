@@ -75,6 +75,13 @@ describe("GameEngine", () => {
       expect(engine.runState.gold).toBe(StartingGold[0]);
     });
 
+    it("adds 100 gold per progressive entry", () => {
+      const persistState = createTestPersistState();
+      engine = new GameEngine(persistState, createTestThemeBundle(), mockHost, -2);
+      engine.loadProgressiveMap({ regionId: 0, level: 12, entryCount: 4, seed: 1 });
+      expect(engine.runState.gold).toBe(StartingGold[0] + 400);
+    });
+
     it("resets lives to 20", () => {
       const persistState = createTestPersistState();
       initEngine(0, persistState);

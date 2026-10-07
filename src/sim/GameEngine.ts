@@ -50,6 +50,7 @@ import {
   type ProgressiveConfig,
   type ProgressiveStamp,
   progressiveConfigFromMap,
+  progressiveEntryGold,
   replayProgressiveBoard,
   resolveGeneratedMap,
 } from "@/sim/grid/ProgressiveMap.js";
@@ -519,6 +520,7 @@ export class GameEngine {
     });
     this.waveManager = new WaveManager(mapData, this.enemyManager);
     this.waveManager.bossAbilityStamper = (entries, waveNumber) => this.stampBossAbilities(entries, waveNumber);
+    this.waveManager.spawnCorridorTiles = (spawnIndex) => this.corridorTilesForSpawn(spawnIndex);
 
     this.waveGraphTracker = new WaveGraphTracker(
       this.runState,
@@ -544,8 +546,12 @@ export class GameEngine {
   _applyStartingBonuses(): void {
     const generalAddons = this.persistState.generalAddons;
 
-    const regionId = this.runState.map?.regionId ?? 0;
+    const map = this.runState.map;
+    const regionId = map?.regionId ?? 0;
     this.runState.gold = StartingGold[regionId] ?? StartingGold[0];
+    if (map?.style === "progressive" && map.entryCount !== undefined) {
+      this.runState.gold += progressiveEntryGold(map.entryCount);
+    }
 
     const ehTier = generalAddons.extraHealth;
     let levelOneHealth = STARTING_BASE_HEALTH;
@@ -558,6 +564,15 @@ export class GameEngine {
     if (sgTier !== null && sgTier !== undefined) {
       this.runState.gold += STARTING_GOLD_BONUS[sgTier] || 0;
     }
+  }
+
+  private corridorTilesForSpawn(spawnIndex: number): number {
+    const grid = this.grid;
+    const spawn = grid?.spawns[spawnIndex];
+    if (!grid || !spawn || !this.navDistanceField) return 0;
+    this.navDistanceField.ensureUpToDate();
+    const distance = this.navDistanceField.getThroughDistanceToBase(spawn.x, spawn.y);
+    return distance > 0 ? distance : 0;
   }
 
   // Every map — catalog, progressive variant, or custom — earns the gem multiplier
