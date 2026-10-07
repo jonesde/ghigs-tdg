@@ -520,6 +520,28 @@ describe("GameEngine", () => {
       expect(engine.runState.gold).toBe(goldBefore - lv5Cost);
     });
 
+    it("specializeSelected applies upgradeCostReduction once", () => {
+      engine.persistState.unlocked.basic.levels[2] = true;
+      engine.persistState.unlocked.basic.levels[3] = true;
+      engine.persistState.unlocked.basic.variantA[0] = true;
+      engine.persistState.generalAddons.upgradeCostReduction = 1;
+      const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
+      for (let i = 0; i < 3; i++) {
+        const cost = engine.getUpgradeCost(tower!);
+        engine.runState.gold -= cost;
+        tower!.doUpgrade(engine.persistState, cost);
+      }
+      expect(tower!.level).toBe(4);
+      engine.runState.selectedTowerId = String(tower!.id);
+      expect(engine.getUpgradeCost(tower!)).toBe(120);
+      engine.runState.gold = 120;
+      engine.specializeSelected("A");
+      const selected = engine.getSelectedTower() as Tower;
+      expect(selected.level).toBe(5);
+      expect(selected.variant).toBe("A");
+      expect(engine.runState.gold).toBe(0);
+    });
+
     it("specializeSelected does not deduct gold when the variant is not unlocked in the worker persistState", () => {
       // Simulate the mid-run desync: the main thread unlocked the variant (so the
       // UI shows the button as enabled) but the worker's persistState clone is stale.

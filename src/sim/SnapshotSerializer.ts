@@ -1,5 +1,5 @@
 import { BOMBARD_TELEGRAPH_SECONDS } from "@/sim/bossAbilities.js";
-import { UPGRADE_COST_REDUCTION_PCT, WAVE_GRAPH_MAX_SEND } from "@/sim/Constants.js";
+import { applyUpgradeCostReduction, cashOutAmount, WAVE_GRAPH_MAX_SEND } from "@/sim/Constants.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { GameEngine } from "@/sim/GameEngine.js";
 import { formatTowerBonusLine } from "@/sim/runBonuses.js";
@@ -15,6 +15,7 @@ import type {
   StatusEffectSnapshot,
   SupplyDropSnapshot,
   TowerSnapshot,
+  TowerUpgradeCheck,
   WaveGraphDot,
 } from "./SimulationSnapshot.js";
 import { SNAPSHOT_SCHEMA_VERSION } from "./SimulationSnapshot.js";
@@ -350,6 +351,18 @@ function buildEnemyStatusEffects(
   return effects;
 }
 
+function nextDowngradePaid(tower: Tower): number {
+  if (tower.level <= 1 || tower.isGhost) return 0;
+  if (tower.variant) return tower.levelCosts[tower.levelCosts.length - 1] ?? 0;
+  return tower.levelCosts[tower.level - 1] ?? 0;
+}
+
+function payableUpgradeCheck(tower: Tower, persistState: PersistState): TowerUpgradeCheck {
+  const check = tower.canUpgrade(persistState);
+  if (!check.ok || check.cost === undefined) return check;
+  return { ...check, cost: applyUpgradeCostReduction(check.cost, persistState.generalAddons.upgradeCostReduction) };
+}
+
 function snapshotTower(t: Tower, persistState: PersistState, isSelected: boolean): TowerSnapshot {
   // Cheap per-tower path: only the visual/structural fields the render managers
   // and selection logic read every frame. The derived UI-decision fields
@@ -390,18 +403,12 @@ function snapshotTower(t: Tower, persistState: PersistState, isSelected: boolean
     ...base,
     ...(bonusLine.length > 0 ? { bonusLine } : {}),
     sellValue: t.sellValue(),
-    canUpgrade: t.canUpgrade(persistState),
+    sellCredit: t.isGhost ? 0 : cashOutAmount(t.totalInvested, persistState.generalAddons.sellActive),
+    downgradeRefund: cashOutAmount(nextDowngradePaid(t), persistState.generalAddons.sellActive),
+    canUpgrade: payableUpgradeCheck(t, persistState),
     levelCosts: [...t.levelCosts],
     milestoneBonus: t.currentMilestoneBonus(),
-    upgradeCostAt5: (() => {
-      const lv5Cost = t.upgradeCost(5);
-      const ucrTier = persistState.generalAddons.upgradeCostReduction;
-      if (ucrTier !== null && ucrTier !== undefined) {
-        const reduction = UPGRADE_COST_REDUCTION_PCT[ucrTier] || 0;
-        return Math.floor(lv5Cost * (1 - reduction));
-      }
-      return lv5Cost;
-    })(),
+    upgradeCostAt5: applyUpgradeCostReduction(t.upgradeCost(5), persistState.generalAddons.upgradeCostReduction),
     stats: {
       damage: t.stats.damage,
       range: t.stats.range,

@@ -39,6 +39,8 @@ interface MockTower {
   levelCosts: number[];
   totalInvested: number;
   sellValue: number;
+  sellCredit: number;
+  downgradeRefund: number;
   isGhost: boolean;
   health: number;
   maxHealth: number;
@@ -68,6 +70,8 @@ function makeMockTower(overrides: Partial<MockTower> = {}): MockTower {
     levelCosts,
     totalInvested: 20,
     sellValue: 12,
+    sellCredit: 12,
+    downgradeRefund: 0,
     isGhost: false,
     health: 100,
     maxHealth: 100,
@@ -188,6 +192,30 @@ describe("TowerPanel", () => {
     expect(wrapper.text()).toContain("Upgrade");
   });
 
+  it("shows the snapshot upgrade cost without applying Cheaper Upgrades again", () => {
+    const { pinia, persistStore } = mountTowerPanel(
+      makeMockTower({ canUpgrade: { ok: true, nextLevel: 4, cost: 60 } }),
+    );
+    persistStore.generalAddons.upgradeCostReduction = 1;
+    const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
+    expect(wrapper.text()).toContain("Upgrade (60g)");
+  });
+
+  it("shows the snapshot specialization cost without applying Cheaper Upgrades again", () => {
+    const { pinia, persistStore } = mountTowerPanel(
+      makeMockTower({
+        level: 4,
+        canUpgrade: { ok: false, reason: "Choose specialization", needVariant: true },
+        upgradeCostAt5: 120,
+      }),
+    );
+    unlockVariantTiers(persistStore, true, false);
+    persistStore.generalAddons.upgradeCostReduction = 1;
+    const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
+    expect(wrapper.text()).toContain("(120g)");
+    expect(wrapper.text()).not.toContain("(90g)");
+  });
+
   it("disables upgrade when cannot afford", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore } = mountTowerPanel(
@@ -197,6 +225,19 @@ describe("TowerPanel", () => {
     const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
     const upgradeBtn = wrapper.find("button.action-btn:not(.sell-btn)");
     expect(upgradeBtn.attributes("disabled")).toBeDefined();
+  });
+
+  it("shows the snapshot sell credit rather than the 60% sell value", () => {
+    const { pinia } = mountTowerPanel(makeMockTower({ sellValue: 12, sellCredit: 20, placedAt: 120000, level: 2 }));
+    const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
+    expect(wrapper.text()).toContain("Sell (+20g)");
+    expect(wrapper.text()).not.toContain("Sell (+12g)");
+  });
+
+  it("shows the snapshot downgrade refund", () => {
+    const { pinia } = mountTowerPanel(makeMockTower({ level: 2, downgradeRefund: 0 }));
+    const wrapper = mount(TowerPanel, { global: { plugins: [pinia] } });
+    expect(wrapper.text()).toContain("+0g");
   });
 
   it("shows sell button with refund value", () => {

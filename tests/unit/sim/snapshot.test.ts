@@ -1,6 +1,7 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
+import { SELL_VALUE_RATIO } from "@/sim/ConstantsTower.js";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { GameEngine } from "@/sim/GameEngine.js";
 import { WorkerParticleSpawner } from "@/sim/ParticleSystem.js";
@@ -145,6 +146,60 @@ describe("SnapshotSerializer (Phase 5)", () => {
     expect(t.canUpgrade).toBeTruthy();
     expect(t.stats).toBeTruthy();
     expect(t.animation).toBeTruthy();
+  });
+
+  it("publishes the Cheaper Upgrades price the worker charges", () => {
+    const engine = makeEngine();
+    const tower = buildTowerOnValidTile(engine);
+    engine.runState.selectedTowerId = String(tower.id);
+
+    const rawSnapshot = buildSnapshot(engine, 0);
+    const rawTower = rawSnapshot.towers.find((entry) => entry.id === String(tower.id));
+    expect(rawTower.canUpgrade.cost).toBe(20);
+    expect(rawTower.upgradeCostAt5).toBe(160);
+
+    engine.persistState.generalAddons.upgradeCostReduction = 1;
+    const reducedSnapshot = buildSnapshot(engine, 0);
+    const reducedTower = reducedSnapshot.towers.find((entry) => entry.id === String(tower.id));
+    expect(reducedTower.canUpgrade.cost).toBe(15);
+    expect(reducedTower.upgradeCostAt5).toBe(120);
+
+    engine.persistState.unlocked.basic.levels[2] = true;
+    engine.persistState.unlocked.basic.levels[3] = true;
+    tower.doUpgrade(engine.persistState, tower.upgradeCost(2));
+    tower.doUpgrade(engine.persistState, tower.upgradeCost(3));
+    tower.doUpgrade(engine.persistState, tower.upgradeCost(4));
+    expect(tower.level).toBe(4);
+
+    const gateSnapshot = buildSnapshot(engine, 0);
+    const gateTower = gateSnapshot.towers.find((entry) => entry.id === String(tower.id));
+    expect(gateTower.canUpgrade.needVariant).toBe(true);
+    expect(gateTower.canUpgrade.cost).toBeUndefined();
+    expect(gateTower.upgradeCostAt5).toBe(120);
+  });
+
+  it("publishes the sell and downgrade payout the worker credits", () => {
+    const engine = makeEngine();
+    const tower = buildTowerOnValidTile(engine);
+    const upgradeCost = tower.upgradeCost(2);
+    tower.doUpgrade(engine.persistState, upgradeCost);
+    engine.runState.selectedTowerId = String(tower.id);
+
+    const selected = () => buildSnapshot(engine, 0).towers.find((entry) => entry.id === String(tower.id));
+
+    const defaultTower = selected();
+    expect(defaultTower.sellCredit).toBe(Math.round(tower.totalInvested * SELL_VALUE_RATIO));
+    expect(defaultTower.downgradeRefund).toBe(Math.round(upgradeCost * SELL_VALUE_RATIO));
+
+    engine.persistState.generalAddons.sellActive = "refund";
+    const refundTower = selected();
+    expect(refundTower.sellCredit).toBe(tower.totalInvested);
+    expect(refundTower.downgradeRefund).toBe(upgradeCost);
+
+    engine.persistState.generalAddons.sellActive = "discount";
+    const discountTower = selected();
+    expect(discountTower.sellCredit).toBe(0);
+    expect(discountTower.downgradeRefund).toBe(0);
   });
 
   it("omits derived fields on non-selected towers", () => {

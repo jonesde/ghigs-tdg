@@ -68,6 +68,7 @@ export {
   CHARGE_SHOT_COUNT,
   CHARGE_SHOT_MULT,
   CRIT_CHANCE,
+  cashOutAmount,
   DOUBLE_DISCHARGE_CHANCE,
   GOLD_PER_CRIT,
   ICE_AURA_DURATION,
@@ -215,6 +216,15 @@ export const SELL_DISCOUNT_PCT = economy.sellDiscountPct;
 export const TERRAIN_HEIGHT_BONUS_PCT = economy.terrainHeightBonusPct;
 export const TERRAIN_HEIGHT_RANGE_BONUS = economy.terrainHeightRangeBonus;
 export const UPGRADE_COST_REDUCTION_PCT = economy.upgradeCostReductionPct;
+
+// Payable gold for a tower or base upgrade. Tier is generalAddons.upgradeCostReduction
+// (null until Cheaper Upgrades is bought). The snapshot and the charge both call this
+// so the button shows the amount the worker deducts.
+export function applyUpgradeCostReduction(rawCost: number, tier: number | null | undefined): number {
+  if (tier === null || tier === undefined) return rawCost;
+  const reduction = UPGRADE_COST_REDUCTION_PCT[tier] || 0;
+  return Math.floor(rawCost * (1 - reduction));
+}
 export const STARTING_GOLD_BONUS = economy.startingGoldBonus;
 export const STARTING_HEALTH_BONUS = economy.startingHealthBonus;
 export const STARTING_BASE_HEALTH = economy.startingBaseHealth;

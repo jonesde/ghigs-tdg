@@ -401,6 +401,9 @@ export interface TowerSnapshot {
   upgradeCostAt5?: number; // cost to specialize to level 5
   levelCosts?: number[];
   sellValue?: number;
+  // Gold the worker credits for a sell or the next downgrade, after sellActive.
+  sellCredit?: number;
+  downgradeRefund?: number;
   milestoneBonus?: { damagePct: number; speedPct: number; tiers: number };
   stats?: TowerStatsSnapshot;
   // Selected tower only. Persistent run cards and adjacent buildings, as one line.

@@ -99,6 +99,14 @@ export const TOWER_LEVEL_RANGE_MULT = tuning.levelRangeMult;
 export const TOWER_LEVEL_SPLASH_MULT = tuning.levelSplashMult;
 export const UPGRADE_COST_BASE = tuning.upgradeCostBase;
 export const SELL_VALUE_RATIO = tuning.sellValueRatio;
+
+// Gold returned for a spent amount. sellActive is generalAddons.sellActive.
+// The snapshot and the worker payout both call this.
+export function cashOutAmount(paid: number, sellActive: string | null | undefined): number {
+  if (sellActive === "refund") return paid;
+  if (sellActive === "discount") return 0;
+  return Math.round(paid * SELL_VALUE_RATIO);
+}
 export const CANCEL_BUILD_WINDOW_MS = tuning.cancelBuildWindowMs;
 export const ICE_AURA_SLOW_MULT = tuning.iceAuraSlowMult;
 export const ICE_AURA_DURATION = tuning.iceAuraDuration;

@@ -1,14 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { usePanelDrag } from "@/composables/usePanelDrag.js";
-import { MILESTONE_THRESHOLD, UPGRADE_COST_REDUCTION_PCT } from "@/sim/Constants.js";
-import {
-  CANCEL_BUILD_WINDOW_MS,
-  SELL_VALUE_RATIO,
-  TOWER_META,
-  targetsLabel,
-  towerGroundOnly,
-} from "@/sim/ConstantsTower.js";
+import { MILESTONE_THRESHOLD } from "@/sim/Constants.js";
+import { CANCEL_BUILD_WINDOW_MS, TOWER_META, targetsLabel, towerGroundOnly } from "@/sim/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import type { TowerSnapshot } from "@/sim/SimulationSnapshot.js";
 import { VARIANT_INFO } from "@/sim/towers/SkillTree.js";
@@ -25,7 +19,7 @@ const themeStore = useMapThemeStore();
 // reads plain data fields — never calls tower methods.
 const tower = computed(() => gameStore.selectedTower as unknown as TowerSnapshot | null);
 const upgradeCheck = computed(() => tower.value?.canUpgrade ?? null);
-const sellValue = computed(() => tower.value?.sellValue ?? 0);
+const sellCredit = computed(() => tower.value?.sellCredit ?? 0);
 
 function getTowerName(type: string): string {
   return themeStore.getTowerVisual(type)?.name || type;
@@ -125,13 +119,7 @@ const sellDisabled = computed(
   () => (persistStore.generalAddons && persistStore.generalAddons.sellActive === "discount") || !!tower.value?.isGhost,
 );
 
-const downgradeRefund = computed(() => {
-  if (!tower.value || tower.value.level <= 1) return 0;
-  const levelCosts = tower.value.levelCosts;
-  const delta = levelCosts[tower.value.level - 1] || 0;
-  const isRefund = persistStore.generalAddons?.sellActive === "refund";
-  return isRefund ? delta : Math.round(delta * SELL_VALUE_RATIO);
-});
+const downgradeRefund = computed(() => tower.value?.downgradeRefund ?? 0);
 
 const variantInfo = computed(() => {
   if (tower.value) return VARIANT_INFO[tower.value.type];
@@ -148,17 +136,7 @@ const variantBUnlocked = computed(() => {
   return unlocked?.variantB?.[0] || false;
 });
 
-// Phase 3: level 5 cost for specialization
-const lv5Cost = computed(() => {
-  if (!tower.value) return 0;
-  const cost = tower.value.upgradeCostAt5;
-  const ucrTier = persistStore.generalAddons?.upgradeCostReduction;
-  if (ucrTier !== null && ucrTier !== undefined) {
-    const reduction = UPGRADE_COST_REDUCTION_PCT[ucrTier] || 0;
-    return Math.floor(cost * (1 - reduction));
-  }
-  return cost;
-});
+const lv5Cost = computed(() => tower.value?.upgradeCostAt5 ?? 0);
 
 const canAffordSpecialize = computed(() => {
   return gameStore.gold >= lv5Cost.value;
@@ -277,7 +255,7 @@ function handleFixedAim(dir: string | null) {
     >
       <span class="btn-content">
         <template v-if="canCancel">Cancel Build — {{ tower.totalInvested }}g ({{ cancelRemaining }}s)</template>
-        <template v-else>{{ sellDisabled ? 'Selling disabled (discount mode)' : `Sell (+${sellValue}g)` }}</template>
+        <template v-else>{{ sellDisabled ? 'Selling disabled (discount mode)' : `Sell (+${sellCredit}g)` }}</template>
         <kbd v-if="canCancel || tower.level <= 1">S</kbd>
       </span>
     </button>

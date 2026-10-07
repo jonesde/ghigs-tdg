@@ -109,11 +109,13 @@ import { TowerManager } from "@/sim/towers/TowerManager.js";
 import { WaveGraphTracker } from "@/sim/WaveGraphTracker.js";
 import { type WaveEntry, WaveManager } from "@/sim/waves/WaveManager.js";
 import {
+  applyUpgradeCostReduction,
   BETWEEN_WAVES_TIMER,
   BONUS_GEM_BASE,
   BOSS_SPEED_LIMIT,
   CUSTOM_PROGRESSIVE_MAP_INDEX,
   CUSTOM_RANDOM_MAP_INDEX,
+  cashOutAmount,
   DIFFICULTY_MULT_GEM_BASE,
   FIXED_DT,
   GAMEPLAY_ENEMY_CAP,
@@ -123,13 +125,11 @@ import {
   progressivePlacementInterval,
   progressiveRerollGoldPerWave,
   SELL_DISCOUNT_PCT,
-  SELL_VALUE_RATIO,
   SLOW_HEALING_PER_ROUND,
   STARTING_BASE_HEALTH,
   STARTING_GOLD_BONUS,
   STARTING_HEALTH_BONUS,
   StartingGold,
-  UPGRADE_COST_REDUCTION_PCT,
   VICTORY_WAVE,
 } from "./Constants.js";
 import { GHOST_PARTICLE_COUNT, GHOST_PARTICLE_DURATION, TOWER_META, type TowerId } from "./ConstantsTower.js";
@@ -1182,25 +1182,12 @@ export class GameEngine {
 
   getUpgradeCost(tower: Tower): number {
     const check = tower.canUpgrade(this.persistState);
+    const tier = this.persistState.generalAddons.upgradeCostReduction;
     if (!check.ok) {
-      if (check.needVariant) {
-        const specializationCost = tower.upgradeCost(5);
-        const ucrTier = this.persistState.generalAddons.upgradeCostReduction;
-        if (ucrTier !== null && ucrTier !== undefined) {
-          const reduction = UPGRADE_COST_REDUCTION_PCT[ucrTier] || 0;
-          return Math.floor(specializationCost * (1 - reduction));
-        }
-        return specializationCost;
-      }
-      return 0;
+      if (!check.needVariant) return 0;
+      return applyUpgradeCostReduction(tower.upgradeCost(5), tier);
     }
-    const cost = check.cost ?? 0;
-    const ucrTier = this.persistState.generalAddons.upgradeCostReduction;
-    if (ucrTier !== null && ucrTier !== undefined) {
-      const reduction = UPGRADE_COST_REDUCTION_PCT[ucrTier] || 0;
-      return Math.floor(cost * (1 - reduction));
-    }
-    return cost;
+    return applyUpgradeCostReduction(check.cost ?? 0, tier);
   }
 
   canAffordUpgrade(tower: Tower): boolean {
@@ -1209,12 +1196,7 @@ export class GameEngine {
   }
 
   private reducedUpgradeCost(rawCost: number): number {
-    const ucrTier = this.persistState.generalAddons.upgradeCostReduction;
-    if (ucrTier !== null && ucrTier !== undefined) {
-      const reduction = UPGRADE_COST_REDUCTION_PCT[ucrTier] || 0;
-      return Math.floor(rawCost * (1 - reduction));
-    }
-    return rawCost;
+    return applyUpgradeCostReduction(rawCost, this.persistState.generalAddons.upgradeCostReduction);
   }
 
   private upgradeBase(): void {
@@ -1235,12 +1217,7 @@ export class GameEngine {
     const check = defense.canUpgrade(maxLevel);
     const upgradeCost = check.ok ? this.reducedUpgradeCost(check.cost) : 0;
     const paid = defense.lastPaidCost();
-    const sellActive = this.persistState.generalAddons?.sellActive;
-    let downgradeRefund = 0;
-    if (defense.level > 1) {
-      if (sellActive === "refund") downgradeRefund = paid;
-      else if (sellActive !== "discount") downgradeRefund = Math.round(paid * SELL_VALUE_RATIO);
-    }
+    const downgradeRefund = defense.level > 1 ? cashOutAmount(paid, this.persistState.generalAddons?.sellActive) : 0;
     const shortGun = defense.shortGun();
     const longGun = defense.longGun();
     return {
@@ -1273,10 +1250,7 @@ export class GameEngine {
     const defense = this.baseDefense;
     if (!defense || defense.level <= 1) return;
     const paid = defense.downgrade();
-    const sellActive = this.persistState.generalAddons?.sellActive;
-    let refund = 0;
-    if (sellActive === "refund") refund = paid;
-    else if (sellActive !== "discount") refund = Math.round(paid * SELL_VALUE_RATIO);
+    const refund = cashOutAmount(paid, this.persistState.generalAddons?.sellActive);
     if (refund > 0) setGold(this.runState, this.runState.gold + refund);
   }
 
@@ -1319,13 +1293,7 @@ export class GameEngine {
     const tower = this.getSelectedTower();
     if (!tower) return;
 
-    const lv5Cost = tower.upgradeCost(5);
-    const ucrTier = this.persistState.generalAddons.upgradeCostReduction;
-    let cost = lv5Cost;
-    if (ucrTier !== null && ucrTier !== undefined) {
-      const reduction = UPGRADE_COST_REDUCTION_PCT[ucrTier] || 0;
-      cost = Math.floor(cost * (1 - reduction));
-    }
+    const cost = applyUpgradeCostReduction(tower.upgradeCost(5), this.persistState.generalAddons.upgradeCostReduction);
     if (this.runState.gold < cost) return;
 
     // Only deduct the cost if the specialization actually applied. Tower.specialize
@@ -1478,12 +1446,10 @@ export class GameEngine {
       });
   }
 
-  // Canonical sell credit: refund mode returns total invested, otherwise the
-  // discounted sell value. Used for the confirm dialog, the worker-side recompute,
-  // and the actual credit so all three always agree.
+  // Confirm dialog, worker recompute, and credited gold all come from here.
   private sellCreditFor(tower: Tower): number {
-    const isRefund = this.persistState.generalAddons?.sellActive === "refund";
-    return isRefund ? tower.totalInvested : tower.sellValue();
+    if (tower.isGhost) return 0;
+    return cashOutAmount(tower.totalInvested, this.persistState.generalAddons?.sellActive);
   }
 
   executeSellById(towerId: string, precomputedCreditAmount?: number): boolean {
@@ -1586,15 +1552,7 @@ export class GameEngine {
     if (tower.isGhost) return;
 
     const delta = this.towerManager!.downgradeTower(tower);
-    const sellActive = this.persistState.generalAddons?.sellActive;
-    // Discount mode: no cash-out on downgrade (mirrors "can't sell"); still level down.
-    let refund = 0;
-    if (sellActive === "refund") {
-      refund = delta;
-    } else if (sellActive !== "discount") {
-      refund = Math.round(delta * SELL_VALUE_RATIO);
-    }
-
+    const refund = cashOutAmount(delta, this.persistState.generalAddons?.sellActive);
     if (refund > 0) setGold(this.runState, this.runState.gold + refund);
   }
 
