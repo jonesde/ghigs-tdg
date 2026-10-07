@@ -3,8 +3,8 @@
   "addonCosts": [100, 300, 900],
   "variantInfo": {
     "basic": {
-      "A": { "name": "Rapid Fire", "desc": "Fires 3× faster with reduced damage per shot." },
-      "B": { "name": "Heavy Shot", "desc": "Fires slower but each round deals 2.5× damage." }
+      "A": { "name": "Rapid Fire", "desc": "Fires 2× faster with 60% damage per shot." },
+      "B": { "name": "Heavy Shot", "desc": "Fires half as fast but each round deals 2.5× damage." }
     },
     "ice": {
       "A": { "name": "Permafrost", "desc": "Shots deal frost AoE damage in a growing radius around each hit." },

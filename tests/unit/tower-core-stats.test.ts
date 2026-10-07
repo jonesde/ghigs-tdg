@@ -142,7 +142,7 @@ describe("computeTowerCoreStats", () => {
       expect(level4.damage).toBeCloseTo(baseDamage * TOWER_LEVEL_DMG_MULT ** 3, 10);
       const level5 = computeTowerCoreStats(TOWER_BASE.basic, "basic", 5, "A");
       expect(level5.damage).toBeCloseTo(baseDamage * TOWER_LEVEL_DMG_MULT ** 4 * 0.6, 10);
-      expect(level5.fireRate).toBeCloseTo(TOWER_BASE.basic.fireRate * TOWER_LEVEL_RATE_MULT ** 4 * 3, 10);
+      expect(level5.fireRate).toBeCloseTo(TOWER_BASE.basic.fireRate * TOWER_LEVEL_RATE_MULT ** 4 * 2, 10);
       const level7 = computeTowerCoreStats(TOWER_BASE.basic, "basic", 7, "A");
       expect(level7.damage).toBeCloseTo(baseDamage * TOWER_LEVEL_DMG_MULT ** 6 * 0.6, 10);
     });

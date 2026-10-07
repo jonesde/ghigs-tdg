@@ -230,7 +230,7 @@ describe("Tower", () => {
       tower.level = 5;
       tower.variant = "A";
       const towerStats = tower.stats;
-      const expectedRate = TOWER_BASE.basic.fireRate * TOWER_LEVEL_RATE_MULT ** 4 * 3;
+      const expectedRate = TOWER_BASE.basic.fireRate * TOWER_LEVEL_RATE_MULT ** 4 * 2;
       const expectedDamage = TOWER_BASE.basic.damage * TOWER_LEVEL_DMG_MULT ** 4 * 0.6;
       expect(towerStats.fireRate).toBeCloseTo(expectedRate, 4);
       expect(towerStats.damage).toBeCloseTo(expectedDamage, 4);
