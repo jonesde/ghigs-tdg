@@ -109,6 +109,7 @@ function freshSave(): SaveFixture {
       upgradeCostReduction: null,
       terrainHeightBonus: null,
       damageMilestoneBonus: null,
+      enemyWoundDamageReduction: null,
       progressiveThirdChoice: null,
     },
   };
@@ -515,6 +516,7 @@ describe("SkillTree — General Add-ons", () => {
         "upgradeCostReduction",
         "terrainHeightBonus",
         "damageMilestoneBonus",
+        "enemyWoundDamageReduction",
         "progressiveThirdChoice",
       ];
       for (const key of categories) {

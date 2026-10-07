@@ -117,6 +117,7 @@ import {
   CUSTOM_RANDOM_MAP_INDEX,
   cashOutAmount,
   DIFFICULTY_MULT_GEM_BASE,
+  ENEMY_WOUND_DAMAGE_REDUCTION_PCT,
   FIXED_DT,
   GAMEPLAY_ENEMY_CAP,
   GameState,
@@ -386,6 +387,7 @@ export class GameEngine {
       this.theme,
       this.themeBundle.defaultEnemyVisuals,
     );
+    this.enemyManager.setWoundDamageReductionPct(this.woundDamageReductionPct());
     // Runs inside spawn, after the ability field is set and before the crowd agent.
     this.enemyManager.onSpawned = (enemy) => this.onEnemySpawned(enemy);
     this.projectileManager = new ProjectileManager(this.enemyManager, this.particleSpawner, null, this.grid);
@@ -533,6 +535,14 @@ export class GameEngine {
     if (sgTier !== null && sgTier !== undefined) {
       this.runState.gold += STARTING_GOLD_BONUS[sgTier] || 0;
     }
+  }
+
+  // Share of enemy attack damage the Anti-Arms add-on removes at 1 HP, resolved
+  // from the worker's persist copy. Null tier (not purchased) is a no-op.
+  private woundDamageReductionPct(): number {
+    const tier = this.persistState.generalAddons.enemyWoundDamageReduction;
+    if (typeof tier !== "number") return 0;
+    return ENEMY_WOUND_DAMAGE_REDUCTION_PCT[tier] || 0;
   }
 
   private corridorTilesForSpawn(spawnIndex: number): number {
@@ -1282,6 +1292,9 @@ export class GameEngine {
   ): boolean {
     if (unlocked) this.persistState.unlocked = unlocked;
     if (generalAddons) this.persistState.generalAddons = generalAddons;
+    // Anti-Arms changes what every live enemy deals, so a mid-run purchase has to
+    // re-price the current field rather than only the enemies spawned after it.
+    this.enemyManager?.setWoundDamageReductionPct(this.woundDamageReductionPct());
     // baseUnlocks is main-thread-owned. Copying it here raises the live gold cap
     // after a mid-run gem purchase; omitting it leaves the worker copy unchanged.
     if (baseUnlocks) this.persistState.baseUnlocks = baseUnlocks;

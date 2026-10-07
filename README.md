@@ -23,7 +23,7 @@ Defend your base against 100 waves of enemies across 36 procedurally-generated m
 - **8 tower types** with 3 specialization variants each (unlock at level 4)
 - **6 enemy types** including minions, runners, tanks, shielded, healers, and bosses
 - **Gem economy** with milestone rewards, first-time bonuses, and difficulty scaling
-- **General add-ons** for starting gold/health, upgrade cost reduction, terrain bonuses, and damage milestones
+- **General add-ons** for starting gold/health, upgrade cost reduction, terrain bonuses, experience bonuses, and Anti-Arms enemy damage reduction
 
 ## Keyboard Controls
 

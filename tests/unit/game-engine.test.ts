@@ -6,6 +6,7 @@ import {
   BOSS_SPEED_LIMIT,
   BOUNTY_BLOCKED_RATIO,
   DIFFICULTY_MULT_GEM_BASE,
+  ENEMY_WOUND_DAMAGE_REDUCTION_PCT,
   FIRST_TIME_MILESTONE_MULT,
   GameState,
   MAP_GEM_MULTIPLIERS,
@@ -609,6 +610,26 @@ describe("GameEngine", () => {
       engine.syncPersist(engine.persistState.unlocked, engine.persistState.generalAddons, 0);
       expect(engine.persistState.gems).toBe(106);
       expect(engine.persistDirty).toBe(false);
+    });
+
+    it("syncPersist re-prices live enemies when Anti-Arms is bought mid-run", () => {
+      initEngine(0, createTestPersistState());
+      const enemy = engine.enemyManager!.spawn("minion", 1, 0, 1);
+      enemy.hp = enemy.maxHp * 0.5;
+      expect(enemy.effectiveAttackDamage).toBeCloseTo(enemy.attackDamage, 6);
+
+      const syncedAddons = createDefaultPersistState().generalAddons;
+      syncedAddons.enemyWoundDamageReduction = 2;
+      engine.syncPersist(engine.persistState.unlocked, syncedAddons);
+      expect(engine.enemyManager!.woundDamageReductionPct).toBe(ENEMY_WOUND_DAMAGE_REDUCTION_PCT[2]);
+      expect(enemy.effectiveAttackDamage / enemy.attackDamage).toBeCloseTo(0.5, 6);
+    });
+
+    it("starts a run with the Anti-Arms tier already on the enemy manager", () => {
+      const persistState = createTestPersistState();
+      persistState.generalAddons.enemyWoundDamageReduction = 1;
+      initEngine(0, persistState);
+      expect(engine.enemyManager!.woundDamageReductionPct).toBe(ENEMY_WOUND_DAMAGE_REDUCTION_PCT[1]);
     });
 
     it("debug mutates the authoritative runState/persistState", () => {

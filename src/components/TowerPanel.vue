@@ -198,7 +198,7 @@ function handleFixedAim(dir: string | null) {
     <div class="stat-row"><span>Previous Wave</span><span>{{ damageStats?.previousWave?.toLocaleString() ?? 0 }}</span></div>
 
     <div v-if="milestoneBonus && milestoneBonus.tiers > 0" class="milestone-bonus">
-      Milestone Bonus: +{{ Math.round(milestoneBonus.damagePct) }}% dmg, +{{ Math.round(milestoneBonus.speedPct) }}% speed ({{ milestoneBonus.tiers }}×{{ milestoneStepLabel }} total)
+      Experience Bonus: +{{ Math.round(milestoneBonus.damagePct) }}% dmg, +{{ Math.round(milestoneBonus.speedPct) }}% speed ({{ milestoneBonus.tiers }}×{{ milestoneStepLabel }} total)
     </div>
 
     <div class="stat-row"><span>Targeting</span><kbd>F</kbd></div>

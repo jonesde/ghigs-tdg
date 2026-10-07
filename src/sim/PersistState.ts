@@ -69,6 +69,7 @@ function defaultGeneralAddons(): GeneralAddons {
     terrainHeightBonus: null,
     terrainHeightRangeBonus: null,
     damageMilestoneBonus: null,
+    enemyWoundDamageReduction: null,
     slowHealing: null,
     progressiveThirdChoice: null,
   };

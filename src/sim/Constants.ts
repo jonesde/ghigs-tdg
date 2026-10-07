@@ -214,6 +214,7 @@ export const SLOW_HEALING_PER_ROUND = economy.slowHealingPerRound;
 export const SELL_OPTION_GEM_COST = economy.sellOptionGemCost;
 export const SELL_DISCOUNT_PCT = economy.sellDiscountPct;
 export const TERRAIN_HEIGHT_BONUS_PCT = economy.terrainHeightBonusPct;
+export const ENEMY_WOUND_DAMAGE_REDUCTION_PCT = economy.enemyWoundDamageReductionPct;
 export const TERRAIN_HEIGHT_RANGE_BONUS = economy.terrainHeightRangeBonus;
 export const UPGRADE_COST_REDUCTION_PCT = economy.upgradeCostReductionPct;
 

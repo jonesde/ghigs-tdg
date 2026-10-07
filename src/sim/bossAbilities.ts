@@ -299,7 +299,7 @@ function tickBombard(boss: Enemy, dt: number, context: BossTickContext): void {
     if (!targetId) return;
     // damageTower drops the hit when the tower is gone or has become a ghost,
     // which is the same check the old id lookup into the tower list made.
-    context.damageTower(targetId, boss.attackDamage * BOMBARD_DAMAGE_FRACTION, boss);
+    context.damageTower(targetId, boss.effectiveAttackDamage * BOMBARD_DAMAGE_FRACTION, boss);
     return;
   }
   boss.bombardTimer -= dt;

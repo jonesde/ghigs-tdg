@@ -46,6 +46,7 @@ describe("PersistStore", () => {
       expect(store.generalAddons.upgradeCostReduction).toBeNull();
       expect(store.generalAddons.terrainHeightBonus).toBeNull();
       expect(store.generalAddons.damageMilestoneBonus).toBeNull();
+      expect(store.generalAddons.enemyWoundDamageReduction).toBeNull();
       expect(store.generalAddons.slowHealing).toBeNull();
       expect(store.generalAddons.progressiveThirdChoice).toBeNull();
     });
@@ -60,6 +61,7 @@ describe("PersistStore", () => {
         "upgradeCostReduction",
         "terrainHeightBonus",
         "damageMilestoneBonus",
+        "enemyWoundDamageReduction",
         "slowHealing",
         "progressiveThirdChoice",
       ];

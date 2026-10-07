@@ -82,6 +82,41 @@ describe("EnemyManager", () => {
     });
   });
 
+  describe("Anti-Arms wound damage reduction", () => {
+    it("leaves a spawned enemy at full damage until a tier is set", () => {
+      const enemy = manager.spawn("minion", 1, 0, 1);
+      enemy.hp = enemy.maxHp * 0.5;
+      expect(enemy.effectiveAttackDamage).toBeCloseTo(enemy.attackDamage, 6);
+    });
+
+    it("prices an enemy spawned after the tier was set", () => {
+      manager.setWoundDamageReductionPct(0.5);
+      const enemy = manager.spawn("minion", 1, 0, 1);
+      enemy.hp = enemy.maxHp * 0.5;
+      expect(enemy.effectiveAttackDamage / enemy.attackDamage).toBeCloseTo(0.75, 6);
+    });
+
+    it("re-prices enemies already on the field when the tier changes", () => {
+      const enemy = manager.spawn("minion", 1, 0, 1);
+      enemy.hp = enemy.maxHp * 0.5;
+      manager.setWoundDamageReductionPct(1);
+      expect(enemy.effectiveAttackDamage / enemy.attackDamage).toBeCloseTo(0.5, 6);
+    });
+
+    it("restores full damage when the tier is cleared", () => {
+      manager.setWoundDamageReductionPct(1);
+      const enemy = manager.spawn("minion", 1, 0, 1);
+      enemy.hp = enemy.maxHp * 0.5;
+      manager.setWoundDamageReductionPct(0);
+      expect(enemy.effectiveAttackDamage).toBeCloseTo(enemy.attackDamage, 6);
+    });
+
+    it("treats a non-finite tier as no reduction rather than poisoning every hit", () => {
+      manager.setWoundDamageReductionPct(Number.NaN);
+      expect(manager.woundDamageReductionPct).toBe(0);
+    });
+  });
+
   describe("damage credit sink", () => {
     it("routes creditDamage through the wired sink and filters non-positive amounts", () => {
       const credits: Array<{ towerId: string; amount: number }> = [];

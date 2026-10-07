@@ -36,6 +36,7 @@ const GeneralAddonsSchema = z
     terrainHeightBonus: z.number().nullable(),
     terrainHeightRangeBonus: z.number().nullable(),
     damageMilestoneBonus: z.number().nullable(),
+    enemyWoundDamageReduction: z.number().nullable(),
     slowHealing: z.number().nullable(),
     progressiveThirdChoice: z.number().nullable(),
   })

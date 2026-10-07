@@ -50,6 +50,7 @@ export interface GeneralAddons {
   terrainHeightBonus: number | null;
   terrainHeightRangeBonus: number | null;
   damageMilestoneBonus: number | null;
+  enemyWoundDamageReduction: number | null;
   slowHealing: number | null;
   progressiveThirdChoice: number | null;
   [key: string]: number | null | boolean | string;
@@ -147,6 +148,7 @@ function defaultGeneralAddons(): GeneralAddons {
     terrainHeightBonus: null,
     terrainHeightRangeBonus: null,
     damageMilestoneBonus: null,
+    enemyWoundDamageReduction: null,
     slowHealing: null,
     progressiveThirdChoice: null,
   };

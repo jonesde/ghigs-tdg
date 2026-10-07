@@ -88,7 +88,7 @@
   ],
   "generalAddonCategories": {
     "economy": { "label": "Economy", "addons": ["sellOption", "startingGold", "upgradeCostReduction", "progressiveThirdChoice"] },
-    "damage": { "label": "Damage", "addons": ["terrainHeightBonus", "terrainHeightRangeBonus", "damageMilestoneBonus"] }
+    "damage": { "label": "Combat", "addons": ["terrainHeightBonus", "terrainHeightRangeBonus", "damageMilestoneBonus", "enemyWoundDamageReduction"] }
   },
   "generalAddonDefs": {
     "extraHealth": {
@@ -147,7 +147,7 @@
     },
     "terrainHeightBonus": {
       "key": "terrainHeightBonus",
-      "label": "Elevation Advantage",
+      "label": "Elevation Damage",
       "desc": "Towers on higher terrain deal more damage.",
       "tiers": [
         { "label": "+5%/lvl", "desc": "+5% damage per terrain height level (max +20%)." },
@@ -169,7 +169,7 @@
     },
     "damageMilestoneBonus": {
       "key": "damageMilestoneBonus",
-      "label": "Damage Milestones",
+      "label": "Experience Bonus",
       "desc": "Towers gain bonus damage & speed per 6,000 total damage dealt.",
       "tiers": [
         { "label": "+5%/+2%", "desc": "+5% dmg, +2% speed per 6,000 damage." },
@@ -177,6 +177,17 @@
         { "label": "+20%/+10%", "desc": "+20% dmg, +10% speed per 6,000 damage." }
       ],
       "costKey": "damageMilestoneBonus"
+    },
+    "enemyWoundDamageReduction": {
+      "key": "enemyWoundDamageReduction",
+      "label": "Anti-Arms",
+      "desc": "Enemies deal less damage the more health they have lost.",
+      "tiers": [
+        { "label": "-30%", "desc": "Up to 30% less damage at 1 HP. A half-health enemy hits for 85%." },
+        { "label": "-60%", "desc": "Up to 60% less damage at 1 HP. A half-health enemy hits for 70%." },
+        { "label": "-100%", "desc": "No damage at 1 HP. A half-health enemy hits for 50%." }
+      ],
+      "costKey": "enemyWoundDamageReduction"
     },
     "progressiveThirdChoice": {
       "key": "progressiveThirdChoice",

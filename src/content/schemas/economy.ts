@@ -26,12 +26,16 @@ export const EconomyContentSchema = z.object({
     terrainHeightBonus: z.tuple([z.number(), z.number(), z.number()]),
     terrainHeightRangeBonus: z.tuple([z.number(), z.number(), z.number()]),
     damageMilestoneBonus: z.tuple([z.number(), z.number(), z.number()]),
+    enemyWoundDamageReduction: z.tuple([z.number(), z.number(), z.number()]),
     progressiveThirdChoice: z.tuple([z.number()]),
   }),
   slowHealingPerRound: z.tuple([z.number(), z.number(), z.number()]),
   sellOptionGemCost: z.number(),
   sellDiscountPct: z.number(),
   terrainHeightBonusPct: z.tuple([z.number(), z.number(), z.number()]),
+  // Share of an enemy's attack damage removed at 1 HP, by tier. Interpolated
+  // against the fraction of its max health it has lost (see Enemy.effectiveAttackDamage).
+  enemyWoundDamageReductionPct: z.tuple([z.number(), z.number(), z.number()]),
   terrainHeightRangeBonus: z.tuple([z.number(), z.number(), z.number()]),
   upgradeCostReductionPct: z.tuple([z.number(), z.number(), z.number()]),
   startingGoldBonus: z.tuple([z.number(), z.number(), z.number()]),

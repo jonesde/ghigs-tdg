@@ -4,7 +4,7 @@
 import { createPinia, setActivePinia } from "pinia";
 import { Detour } from "recast-navigation";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
+import { DIFFICULTY_MULT_TICK, ENEMY_WOUND_DAMAGE_REDUCTION_PCT } from "@/sim/Constants.js";
 import {
   BOSS_STUN_REDUCTION,
   ENEMY_LEVEL_DAMAGE_MULT,
@@ -244,6 +244,80 @@ describe("Enemy", () => {
         grid.tileToWorld(base.x, base.y),
       );
       expect(corridor.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("effectiveAttackDamage (Anti-Arms)", () => {
+    function woundedEnemy(reductionPct: number, healthFraction: number): Enemy {
+      const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
+      enemy.readWoundDamageReduction = () => reductionPct;
+      enemy.hp = enemy.maxHp * healthFraction;
+      return enemy;
+    }
+
+    it("deals full damage while the add-on is not purchased", () => {
+      const enemy = woundedEnemy(0, 0.25);
+      expect(enemy.effectiveAttackDamage).toBeCloseTo(enemy.attackDamage, 6);
+    });
+
+    it("deals full damage at full health even when a tier is owned", () => {
+      const enemy = woundedEnemy(ENEMY_WOUND_DAMAGE_REDUCTION_PCT[2], 1);
+      expect(enemy.effectiveAttackDamage).toBeCloseTo(enemy.attackDamage, 6);
+    });
+
+    it("scales the reduction by the fraction of max health lost", () => {
+      const enemy = woundedEnemy(ENEMY_WOUND_DAMAGE_REDUCTION_PCT[0], 0.5);
+      expect(enemy.effectiveAttackDamage / enemy.attackDamage).toBeCloseTo(0.85, 6);
+    });
+
+    it("halves a half-health enemy's damage at tier 2", () => {
+      const enemy = woundedEnemy(ENEMY_WOUND_DAMAGE_REDUCTION_PCT[2], 0.5);
+      expect(enemy.effectiveAttackDamage / enemy.attackDamage).toBeCloseTo(0.5, 6);
+    });
+
+    it("nearly zeroes the damage at tier 2 once the enemy is at 1 HP", () => {
+      const enemy = woundedEnemy(ENEMY_WOUND_DAMAGE_REDUCTION_PCT[2], 0.001);
+      expect(enemy.effectiveAttackDamage / enemy.attackDamage).toBeLessThan(0.01);
+    });
+
+    it("never returns a negative multiplier, even past 100% health lost", () => {
+      const enemy = woundedEnemy(ENEMY_WOUND_DAMAGE_REDUCTION_PCT[2], -5);
+      expect(enemy.effectiveAttackDamage).toBeGreaterThanOrEqual(0);
+    });
+
+    it("restores full punch after the enemy heals back to full health", () => {
+      const enemy = woundedEnemy(ENEMY_WOUND_DAMAGE_REDUCTION_PCT[1], 0.2);
+      const wounded = enemy.effectiveAttackDamage;
+      enemy.hp = enemy.maxHp;
+      expect(enemy.effectiveAttackDamage).toBeCloseTo(enemy.attackDamage, 6);
+      expect(wounded).toBeLessThan(enemy.attackDamage);
+    });
+
+    it("leaves base health untouched when maxHp is 0 rather than dividing by zero", () => {
+      const enemy = woundedEnemy(ENEMY_WOUND_DAMAGE_REDUCTION_PCT[2], 0);
+      enemy.maxHp = 0;
+      enemy.hp = 0;
+      expect(enemy.effectiveAttackDamage).toBeCloseTo(enemy.attackDamage, 6);
+    });
+
+    it("hands the reduced number to the base on a real attack tick", () => {
+      const enemy = spawn("minion");
+      enemy.readWoundDamageReduction = () => ENEMY_WOUND_DAMAGE_REDUCTION_PCT[0];
+      enemy.hp = enemy.maxHp * 0.5;
+      const hits = [];
+      enemy.baseTarget = {
+        takeDamage: (amount) => {
+          hits.push(amount);
+        },
+        centerX: 0,
+        centerY: 0,
+        health: 100,
+      };
+      enemy.attackingBase = true;
+      enemy.attackTimer = 0;
+      enemy.postPhysics(1 / 60);
+      expect(hits).toHaveLength(1);
+      expect(hits[0]).toBeCloseTo(enemy.attackDamage * 0.85, 6);
     });
   });
 

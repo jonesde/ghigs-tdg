@@ -53,6 +53,10 @@ export class EnemyManager {
   // GameEngine configures a boss when the body is created, including a release
   // from the pending queue. Direct constructions leave this null.
   onSpawned: ((enemy: Enemy) => void) | null = null;
+  // Run-scoped Anti-Arms tier, owned here rather than snapshotted onto each enemy:
+  // GameEngine re-points it on action:syncPersist so a mid-run purchase reaches
+  // enemies already on the field, not just ones spawned afterwards.
+  woundDamageReductionPct: number = 0;
   private idToEnemy: Map<number, Enemy>;
   private pendingQueues: Map<number, PendingEnemyEntry[]>;
   // Overflow evictions since run start. Bounded queues must stay lossless-visible:
@@ -106,6 +110,12 @@ export class EnemyManager {
   // Wires the DetourCrowd wrapper. Enemies spawned after this get a crowd agent.
   setCrowdManager(crowdManager: CrowdManager | null): void {
     this.crowdManager = crowdManager;
+  }
+
+  // Crosses into the sim: every enemy reads the run's Anti-Arms tier through the
+  // manager, so this one write re-prices the whole live field.
+  setWoundDamageReductionPct(reductionPct: number): void {
+    this.woundDamageReductionPct = Number.isFinite(reductionPct) ? reductionPct : 0;
   }
 
   // Tile-graph face of the wall between an unreachable tile and the base.
@@ -389,6 +399,7 @@ export class EnemyManager {
       this.crowdManager.addAgent(enemy);
       this.crowdManager.setBaseTarget(enemy, this.grid.tileToWorld(this.grid.getBase().x, this.grid.getBase().y));
     }
+    enemy.readWoundDamageReduction = () => this.woundDamageReductionPct;
     enemy.towerAt = (tileX, tileY) => this.towerAt(tileX, tileY) ?? null;
     enemy.liveTowerAt = (tileX, tileY) => {
       const tower = this.towerAt(tileX, tileY);

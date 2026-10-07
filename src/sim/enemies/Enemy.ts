@@ -330,6 +330,10 @@ export class Enemy {
   // Attack ability. Damage scales with level and wave through its own
   // coefficients, independent of the HP coefficients above.
   attackDamage: number = 0;
+  // Cross-module: EnemyManager owns the run's Anti-Arms tier and re-points this at
+  // every live enemy when action:syncPersist carries a mid-run purchase, so the
+  // reduction tracks the enemy rather than a value frozen at spawn.
+  readWoundDamageReduction: () => number = () => 0;
   attackSpeed: number = 0;
   attackTimer: number = 0;
   attackAnimTime: number = 0;
@@ -508,6 +512,18 @@ export class Enemy {
 
     this.removed = false;
     this.onPathBlocked = false;
+  }
+
+  // What one attack actually lands: the Anti-Arms general add-on removes a share of
+  // attackDamage equal to the fraction of this enemy's max health it has lost, so a
+  // wounded enemy attacks proportionally weaker and a tier-3 one at 1 HP deals nothing.
+  // Read per hit rather than folded into attackDamage, because the enemy's own health
+  // changes between hits and healing restores its full punch.
+  get effectiveAttackDamage(): number {
+    const reductionPct = this.readWoundDamageReduction();
+    if (!(reductionPct > 0)) return this.attackDamage;
+    const healthLostFraction = this.maxHp > 0 ? Math.max(0, 1 - this.hp / this.maxHp) : 0;
+    return this.attackDamage * Math.max(0, 1 - reductionPct * healthLostFraction);
   }
 
   applySlow(amount: number, duration: number) {
@@ -936,7 +952,7 @@ export class Enemy {
       openDistanceTiles: openDistance,
       throughDistanceTiles: throughDistance,
       blockers,
-      enemyDamagePerSecond: this.attackDamage * this.attackSpeed,
+      enemyDamagePerSecond: this.effectiveAttackDamage * this.attackSpeed,
       enemySpeedTilesPerSecond: this.speed,
       hysteresisSeconds: BREACH_HYSTERESIS_SECONDS,
       currentlySieging,
@@ -1084,7 +1100,7 @@ export class Enemy {
     if (this.attackingBase && this.baseTarget && this.stunTimer <= 0) {
       this.attackTimer -= dt;
       if (this.attackTimer <= 0) {
-        this.baseTarget.takeDamage(this.attackDamage, this);
+        this.baseTarget.takeDamage(this.effectiveAttackDamage, this);
         this.attackAnimTime = this._gameSeconds;
         this.attackTimer = 1 / (this.attackSpeed * this.slowFactor);
       }
@@ -1101,7 +1117,7 @@ export class Enemy {
     ) {
       this.attackTimer -= dt;
       if (this.attackTimer <= 0) {
-        this.blockedByTower.takeDamage(this.attackDamage, this);
+        this.blockedByTower.takeDamage(this.effectiveAttackDamage, this);
         this.attackAnimTime = this._gameSeconds;
         this.attackTimer = 1 / (this.attackSpeed * this.slowFactor);
       }
@@ -1358,7 +1374,7 @@ export class Enemy {
       if (this.motionLock !== "park" || this.stunTimer > 0 || this.attackingBase || tower.enemyAttackImmune) return;
       this.attackTimer -= deltaSeconds;
       if (this.attackTimer <= 0) {
-        tower.takeDamage(this.attackDamage, this);
+        tower.takeDamage(this.effectiveAttackDamage, this);
         this.attackAnimTime = this._gameSeconds;
         this.attackTimer = 1 / (this.attackSpeed * this.slowFactor);
       }
@@ -1373,7 +1389,7 @@ export class Enemy {
     if (occupancyKey !== this.strafeOccupancyKey) {
       this.strafeOccupancyKey = occupancyKey;
       if (liveTarget && tower) {
-        tower.takeDamage(this.attackDamage, this);
+        tower.takeDamage(this.effectiveAttackDamage, this);
         this.attackAnimTime = this._gameSeconds;
         this.attackTimer = 1 / (this.attackSpeed * this.slowFactor);
       }
@@ -1381,7 +1397,7 @@ export class Enemy {
     }
     this.attackTimer -= deltaSeconds;
     if (liveTarget && tower && this.attackTimer <= 0) {
-      tower.takeDamage(this.attackDamage, this);
+      tower.takeDamage(this.effectiveAttackDamage, this);
       this.attackAnimTime = this._gameSeconds;
       this.attackTimer = 1 / (this.attackSpeed * this.slowFactor);
     }
