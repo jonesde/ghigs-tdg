@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regenerate the mapImage and menuBackground values in the shipped theme JSON files.
 
-Only the seven art lines per theme (three region mapImage values plus one
+Only the four art values per theme (three region mapImage values plus one
 menuBackground) are rewritten; every other byte of each JSON file is
 preserved, including the compact mapLayout formatting. The layouts in the
 files are verified against region_map_art first so the art can never drift
@@ -16,13 +16,13 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 
 SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIRECTORY)
 import menu_background_art  # noqa: E402
 import region_map_art  # noqa: E402
+import theme_field_patch  # noqa: E402
 
 THEME_PATHS = {
     "default": os.path.normpath(os.path.join(SCRIPT_DIRECTORY, "..", "data", "default-map-theme.json")),
@@ -40,8 +40,6 @@ MENU_BACKGROUND_PATHS = {
 PREVIEW_DIRECTORY = os.path.normpath(
     os.path.join(SCRIPT_DIRECTORY, "..", "..", "..", "..", "tmp", "region-map-preview")
 )
-MAP_IMAGE_PATTERN = re.compile(r'^([ \t]*"mapImage": ")(.*)(",)$', re.MULTILINE)
-MENU_BACKGROUND_PATTERN = re.compile(r'^([ \t]*"menuBackground": ")(.*)(",)$', re.MULTILINE)
 
 
 def verify_layouts_match(raw_text: str, theme_id: str) -> None:
@@ -52,24 +50,6 @@ def verify_layouts_match(raw_text: str, theme_id: str) -> None:
     for region, layout in zip(theme["regions"], layouts):
         if region["mapLayout"] != layout:
             raise SystemExit(f"{theme_id} region {region['id']}: mapLayout drifted from region_map_art")
-
-
-def patch_line_values(raw_text: str, pattern: re.Pattern[str], images: list[str],
-                      field_name: str) -> str:
-    replaced_count = 0
-
-    def replace(match: re.Match[str]) -> str:
-        nonlocal replaced_count
-        if replaced_count >= len(images):
-            raise SystemExit(f"more {field_name} lines in file than generated images")
-        image = images[replaced_count]
-        replaced_count += 1
-        return match.group(1) + json.dumps(image)[1:-1] + match.group(3)
-
-    patched_text = pattern.sub(replace, raw_text)
-    if replaced_count != len(images):
-        raise SystemExit(f"expected {len(images)} {field_name} lines, replaced {replaced_count}")
-    return patched_text
 
 
 def write_menu_background_sidecar(theme_id: str, menu_image: str) -> str:
@@ -117,9 +97,12 @@ def main() -> None:
         for region_index, image in enumerate(map_images):
             region_map_art.assert_map_paint(image, f"{theme_id} region {region_index}")
         menu_background_art.assert_menu_paint(menu_image, f"{theme_id} menu background")
-        patched_text = patch_line_values(raw_text, MAP_IMAGE_PATTERN, map_images, "mapImage")
-        patched_text = patch_line_values(patched_text, MENU_BACKGROUND_PATTERN,
-                                         [menu_image], "menuBackground")
+        patched_text = theme_field_patch.replace_field_value_spans(
+            raw_text, "mapImage", [json.dumps(image, ensure_ascii=False) for image in map_images]
+        )
+        patched_text = theme_field_patch.replace_top_level_value(
+            patched_text, "menuBackground", json.dumps(menu_image, ensure_ascii=False)
+        )
         with open(theme_path, "w", encoding="utf-8") as theme_file:
             theme_file.write(patched_text)
         sidecar_path = write_menu_background_sidecar(theme_id, menu_image)

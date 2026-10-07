@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draw the Chrithmath map theme and overwrite data/chrithmath.json.
+"""Draw the Chrithmath map theme and update its generated fields in data/chrithmath.json. The file's id, label and maps override are hand-maintained and never written by this script.
 
 Flat three-tone paint, no gradients and no url() references. Tower symbols are
 clipped to viewBox -16 -16 32 32, enemies to -1 -1 2 2, tiles and spawns to
@@ -21,6 +21,7 @@ SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIRECTORY)
 import menu_background_art  # noqa: E402
 import region_map_art  # noqa: E402
+import theme_field_patch  # noqa: E402
 
 THEME_PATH = os.path.normpath(os.path.join(SCRIPT_DIRECTORY, "..", "data", "chrithmath.json"))
 SIDECAR_PATH = os.path.normpath(os.path.join(SCRIPT_DIRECTORY, "..", "data", "chrithmath-menu.json"))
@@ -2566,100 +2567,6 @@ def chrithmath_menu_background() -> str:
 
 # --- assembly ---------------------------------------------------------------
 
-# The Chrithmath world's own map catalog, overriding the default one through
-# ThemeMapsOverrideSchema (src/content/schemas/maps.ts): 36 level configs and
-# the 12 progressive variant seeds. Data rather than art, but it belongs to this
-# script because the script rewrites the whole theme file — without it here a
-# rerun would drop the override and hand the world the default catalog back.
-CHRITHMATH_MAP_LEVELS = [
-    (15, 10, 0, 1, "serpentine", 76111),
-    (15, 10, 0, 2, "canyon", 76222),
-    (10, 15, 0, 3, "serpentine", 76333),
-    (15, 10, 0, 4, "split", 76444),
-    (18, 18, 0, 5, "bastion", 76555),
-    (18, 18, 0, 6, "battlefield", 76666),
-    (20, 12, 0, 7, "canyon", 76777),
-    (20, 12, 0, 8, "serpentine", 76888),
-    (12, 20, 0, 9, "split", 76999),
-    (25, 15, 0, 10, "bastion", 760000),
-    (25, 18, 0, 11, "battlefield", 760111),
-    (25, 18, 0, 12, "open", 760222),
-    (15, 10, 1, 1, "serpentine", 86111),
-    (20, 12, 1, 2, "split", 86222),
-    (20, 20, 1, 3, "bastion", 86333),
-    (20, 20, 1, 4, "battlefield", 86444),
-    (25, 15, 1, 5, "open", 86555),
-    (25, 15, 1, 6, "canyon", 86666),
-    (15, 20, 1, 7, "split", 86777),
-    (25, 20, 1, 8, "bastion", 86888),
-    (25, 25, 1, 9, "battlefield", 86999),
-    (25, 25, 1, 10, "open", 860000),
-    (30, 20, 1, 11, "canyon", 860111),
-    (30, 20, 1, 12, "serpentine", 860222),
-    (20, 20, 2, 1, "bastion", 96111),
-    (20, 20, 2, 2, "battlefield", 96222),
-    (25, 15, 2, 3, "open", 96333),
-    (25, 15, 2, 4, "canyon", 96444),
-    (15, 25, 2, 5, "serpentine", 96555),
-    (30, 20, 2, 6, "split", 96666),
-    (25, 25, 2, 7, "open", 96777),
-    (30, 20, 2, 8, "canyon", 96888),
-    (30, 20, 2, 9, "serpentine", 96999),
-    (18, 25, 2, 10, "split", 960000),
-    (30, 20, 2, 11, "battlefield", 960111),
-    (30, 20, 2, 12, "bastion", 960222),
-]
-
-# (regionId, branch level, entry count, seed) per progressive variant.
-CHRITHMATH_PROGRESSIVE_VARIANTS = [
-    (0, 1, 1, 76161),
-    (0, 5, 2, 57575),
-    (0, 9, 3, 97979),
-    (0, 12, 4, 970004),
-    (1, 1, 1, 970005),
-    (1, 5, 2, 970006),
-    (1, 9, 3, 970007),
-    (1, 12, 4, 970008),
-    (2, 1, 1, 970009),
-    (2, 5, 2, 970010),
-    (2, 9, 3, 970011),
-    (2, 12, 4, 970012),
-]
-
-
-def maps_override() -> dict:
-    return {
-        "levels": [
-            {
-                "width": width,
-                "height": height,
-                "regionId": region_id,
-                "level": level,
-                "style": style,
-                "seed": seed,
-            }
-            for width, height, region_id, level, style, seed in CHRITHMATH_MAP_LEVELS
-        ],
-        "progressive": {
-            "blockSize": 5,
-            "placementIntervalSteps": [
-                {"afterWave": 0, "interval": 3},
-                {"afterWave": 30, "interval": 4},
-                {"afterWave": 50, "interval": 5},
-            ],
-            "rerollGoldPerWave": 3,
-            "variants": [
-                {
-                    "regionId": region_id,
-                    "level": level,
-                    "entryCount": entry_count,
-                    "seed": seed,
-                }
-                for region_id, level, entry_count, seed in CHRITHMATH_PROGRESSIVE_VARIANTS
-            ],
-        },
-    }
-
 
 def animation_record(duration: float, images: list[str]) -> dict:
     return {"duration": duration, "frames": [{"image": image} for image in images]}
@@ -2718,9 +2625,6 @@ def build_theme() -> dict:
         },
     ]
     return {
-        "id": "chrithmath",
-        "label": "Chrithmath",
-        "maps": maps_override(),
         "menuBackground": chrithmath_menu_background(),
         "towers": towers,
         "enemies": enemies,
@@ -2771,9 +2675,6 @@ def validate_region_palette(region_name: str, field_fills: dict[str, str]) -> No
 
 
 def validate_theme(theme: dict) -> None:
-    if theme["id"] != "chrithmath" or theme["label"] != "Chrithmath":
-        raise SystemExit("theme id/label drifted")
-    validate_maps_override(theme["maps"])
     menu_background_art.assert_menu_paint(theme["menuBackground"], "menu background")
     for tower_id, name, color, icon, fire_duration, walk_duration in TOWER_META:
         tower = theme["towers"][tower_id]
@@ -2858,22 +2759,6 @@ def verify_sidecar_round_trips(theme: dict) -> None:
         written_text = sidecar_file.read()
     if written_text != menu_sidecar_text(theme["menuBackground"]):
         raise SystemExit(f"{os.path.basename(SIDECAR_PATH)} does not round-trip the written theme")
-
-
-def validate_maps_override(override: dict) -> None:
-    """The world catalog has to survive every rerun of this script, so it is
-    checked against the same shape ThemeMapsOverrideSchema enforces."""
-    if sorted(override) != ["levels", "progressive"]:
-        raise SystemExit("maps override carries fields the theme schema does not allow")
-    if len(override["levels"]) != 36:
-        raise SystemExit(f"maps override needs 36 levels, found {len(override['levels'])}")
-    for level_number, level_config in enumerate(override["levels"], start=1):
-        if (level_config["level"] != (level_number - 1) % 12 + 1
-                or level_config["regionId"] != (level_number - 1) // 12):
-            raise SystemExit(f"maps override level {level_number} is out of region order")
-    progressive = override["progressive"]
-    if progressive["blockSize"] != 5 or len(progressive["variants"]) != 12:
-        raise SystemExit("maps override progressive block drifted")
 
 
 def validate_site_art(sites: dict) -> None:
@@ -3487,48 +3372,16 @@ def collapse_layout_lines(text: str) -> str:
     return CONNECTION_PATTERN.sub(collapse_connection, text)
 
 
-# Biome keeps a short JSON object on one line, so the maps catalog rows are
-# emitted that way too: a rerun then leaves the file byte identical instead of
-# dirtying it with a pure formatting diff.
-MAPS_LEVEL_PATTERN = re.compile(
-    r'\{\s*"width": (\d+),\s*"height": (\d+),\s*"regionId": (\d+),\s*"level": (\d+),\s*'
-    r'"style": "(\w+)",\s*"seed": (\d+)\s*\}'
-)
-MAPS_VARIANT_PATTERN = re.compile(
-    r'\{\s*"regionId": (\d+),\s*"level": (\d+),\s*"entryCount": (\d+),\s*"seed": (\d+)\s*\}'
-)
-MAPS_INTERVAL_STEPS_PATTERN = re.compile(r'"placementIntervalSteps":\s*\[\s*(\{[^{}]*\}(?:\s*,\s*\{[^{}]*\})*)\s*\]')
-MAPS_INTERVAL_STEP_PATTERN = re.compile(r'\{\s*"afterWave":\s*(\d+),\s*"interval":\s*(\d+)\s*\}')
-
-
-def collapse_maps_lines(text: str) -> str:
-    def collapse_level(match: re.Match[str]) -> str:
-        width, height, region_id, level, style, seed = match.groups()
-        return (f'{{ "width": {width}, "height": {height}, "regionId": {region_id}, '
-                f'"level": {level}, "style": "{style}", "seed": {seed} }}')
-
-    def collapse_variant(match: re.Match[str]) -> str:
-        region_id, level, entry_count, seed = match.groups()
-        return (f'{{ "regionId": {region_id}, "level": {level}, '
-                f'"entryCount": {entry_count}, "seed": {seed} }}')
-
-    def collapse_step(match: re.Match[str]) -> str:
-        return f'{{ "afterWave": {match.group(1)}, "interval": {match.group(2)} }}'
-
-    def collapse_steps(match: re.Match[str]) -> str:
-        objects = MAPS_INTERVAL_STEP_PATTERN.sub(collapse_step, match.group(1))
-        objects = re.sub(r'\s*,\s*', ', ', objects)
-        return f'"placementIntervalSteps": [{objects}]'
-
-    text = MAPS_LEVEL_PATTERN.sub(collapse_level, text)
-    text = MAPS_VARIANT_PATTERN.sub(collapse_variant, text)
-    return MAPS_INTERVAL_STEPS_PATTERN.sub(collapse_steps, text)
-
-
 def write_theme(theme: dict) -> None:
-    dumped = collapse_layout_lines(collapse_maps_lines(json.dumps(theme, indent=2, ensure_ascii=False)))
+    raw_text = theme_field_patch.load_theme_text(THEME_PATH, "chrithmath", "Chrithmath")
+    for field_name in ("menuBackground", "towers", "enemies", "regions", "sites", "spawns"):
+        value_text = theme_field_patch.render_value(theme[field_name])
+        if field_name == "regions":
+            value_text = collapse_layout_lines(value_text)
+        raw_text = theme_field_patch.replace_top_level_value(raw_text, field_name, value_text)
+    json.loads(raw_text)
     with open(THEME_PATH, "w", encoding="utf-8") as theme_file:
-        theme_file.write(dumped + "\n")
+        theme_file.write(raw_text)
     with open(SIDECAR_PATH, "w", encoding="utf-8") as sidecar_file:
         sidecar_file.write(menu_sidecar_text(theme["menuBackground"]))
 

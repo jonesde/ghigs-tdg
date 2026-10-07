@@ -281,10 +281,7 @@ function previewNewSites(
     buildings,
     caches,
     previousWorldKeys,
-    placedBlocks: progressiveStampIndex(
-      config.entryCount,
-      playerPlacedBlockCount(gameStore.progressivePlacements) + 1,
-    ),
+    placedBlocks: progressiveStampIndex(config.entryCount, playerPlacedBlockCount(gameStore.progressivePlacements) + 1),
     stampWorldKeys: stampWorldKeysForBlock(nextGrid, selected.blockX, selected.blockY),
     rollOffer: () => GHOST_OFFER,
   });

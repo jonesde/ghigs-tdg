@@ -36,6 +36,7 @@ import sys
 SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIRECTORY)
 import region_map_art  # noqa: E402
+import theme_field_patch  # noqa: E402
 
 THEME_PATH = os.path.normpath(os.path.join(SCRIPT_DIRECTORY, "..", "data", "default-map-theme.json"))
 PREVIEW_DIRECTORY = os.path.normpath(
@@ -537,38 +538,6 @@ def assert_boxed_art(svg: str, label: str, box_size: float) -> None:
 # ===== JSON patching =====
 
 
-def find_value_span(text: str, start: int) -> int:
-    """Index just past the JSON value that begins at `start`, skipping strings."""
-    opening = text[start]
-    if opening == '"':
-        cursor = start + 1
-        while cursor < len(text):
-            if text[cursor] == "\\":
-                cursor += 2
-                continue
-            if text[cursor] == '"':
-                return cursor + 1
-            cursor += 1
-        raise SystemExit("unterminated JSON string")
-    if opening == "[":
-        depth = 0
-        cursor = start
-        while cursor < len(text):
-            char = text[cursor]
-            if char == '"':
-                cursor = find_value_span(text, cursor)
-                continue
-            if char in "[{":
-                depth += 1
-            elif char in "]}":
-                depth -= 1
-                if depth == 0:
-                    return cursor + 1
-            cursor += 1
-        raise SystemExit("unterminated JSON array")
-    raise SystemExit(f"unexpected JSON value start {opening!r}")
-
-
 def json_array_lines(variants: list[str], field_indent: str) -> str:
     """One variant per line, which is the shape biome formats JSON into, so the
     generator's output and `npm run lint:fix` agree."""
@@ -594,7 +563,7 @@ def patch_field_values(raw_text: str, field_name: str, images: list[list[str]]) 
         if replaced >= len(images):
             raise SystemExit(f"more {field_name} fields in file than generated images")
         value_start = match.end()
-        value_end = find_value_span(patched_text, value_start)
+        value_end = theme_field_patch.find_value_span(patched_text, value_start)
         variants = json_array_lines(images[replaced], match.group(1))
         patched_text = patched_text[:value_start] + variants + patched_text[value_end:]
         replaced += 1
@@ -793,24 +762,20 @@ def main() -> None:
             patched_text, kind, [tiles[region["id"]][kind] for region in REGIONS]
         )
 
-    # `sites` is a whole new top-level block, so it is rebuilt rather than patched
-    # line by line: any block this script wrote before is removed first, which
-    # keeps repeated runs idempotent.
-    patched_text = re.sub(r'\n  "sites": \{.*?\n  \},\n', "\n", patched_text, flags=re.DOTALL)
-    sites_block = (
-        '  "sites": {\n'
-        '    "buildings": {\n'
-        + ",\n".join(f'      "{kind}": {json.dumps(sites[f"building-{kind}"])}' for kind in BUILDING_KINDS)
-        + "\n    },\n"
-        '    "caches": {\n'
-        + ",\n".join(f'      "{state}": {json.dumps(sites[f"cache-{state}"])}' for state in CACHE_STATES)
-        + "\n    },\n"
-        f'    "supplyDrop": {json.dumps(sites["supply-drop"])}\n'
-        "  },\n"
+    patched_text = theme_field_patch.replace_field_value_spans(
+        patched_text, "base", [json.dumps(base, ensure_ascii=False) for base in bases]
     )
-    if '  "spawns": {' not in patched_text:
-        raise SystemExit("no top-level spawns block to anchor the sites block against")
-    patched_text = patched_text.replace('  "spawns": {', sites_block + '  "spawns": {', 1)
+    sites_value = {
+        "buildings": {kind: sites[f"building-{kind}"] for kind in BUILDING_KINDS},
+        "caches": {state: sites[f"cache-{state}"] for state in CACHE_STATES},
+        "supplyDrop": sites["supply-drop"],
+    }
+    patched_text = theme_field_patch.replace_top_level_value(
+        patched_text, "sites", theme_field_patch.render_value(sites_value)
+    )
+    patched_text = theme_field_patch.replace_top_level_value(
+        patched_text, "spawns", theme_field_patch.render_value(spawns)
+    )
 
     json.loads(patched_text)
     with open(THEME_PATH, "w", encoding="utf-8") as theme_file:
