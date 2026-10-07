@@ -1,4 +1,4 @@
-import type { MapThemeData, SpawnState } from "@/render/themes/index.js";
+import type { MapThemeData } from "@/render/themes/index.js";
 import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
 import {
   type ActiveMendSource,
@@ -134,38 +134,6 @@ import {
 } from "./Constants.js";
 import { GHOST_PARTICLE_COUNT, GHOST_PARTICLE_DURATION, TOWER_META, type TowerId } from "./ConstantsTower.js";
 
-interface WaveManagerRef {
-  currentWave: number;
-  betweenWaves: boolean;
-  countdownActive: boolean;
-  countdownTimer: number;
-  betweenTimer: number;
-  baseReached: boolean;
-  waveComposition: Record<string, number>;
-  active: boolean;
-  _waveGameTime: number;
-  spawnStates: SpawnState[];
-  advanceHeld: boolean;
-  map: {
-    regionId: number;
-    level: number;
-    bossCadence: number;
-    spawns: { x: number; y: number; id?: number }[];
-    seed: number;
-  };
-  resizeSpawnStatesById(previousSpawns: Array<{ id?: number }>, nextSpawns: Array<{ id?: number }>): void;
-  update(
-    dt: number,
-    onWaveCleared: ((wave: number) => void) | null,
-    onWaveStart: ((wave: number) => void) | null,
-    onWaveExpired: ((wave: number) => void) | null,
-  ): void;
-  startNextWave(): void;
-  debugJumpToWave(wave: number): void;
-  getRemainingScheduledSpawns(): number;
-  bossAbilityStamper: ((entries: WaveEntry[], waveNumber: number) => void) | null;
-}
-
 export class GameEngine {
   runState!: GameRunState;
   persistState!: PersistState;
@@ -182,7 +150,7 @@ export class GameEngine {
   flightDistanceField: FlightDistanceField | null = null;
   // Last grid.pathVersion we rebuilt tower/corridor colliders + nav field for.
   private lastPathVersion = -1;
-  waveManager: WaveManagerRef | null;
+  waveManager: WaveManager | null;
   projectileManager: ProjectileManager | null;
   baseDefense: BaseDefense | null = null;
   particleSpawner: ParticleSpawner;

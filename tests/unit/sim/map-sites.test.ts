@@ -385,6 +385,7 @@ describe("map sites", () => {
     expect(engine.mapBuildings.length).toBeLessThanOrEqual(buildingCountFor(map.regionId, map.level));
   });
 
+  // Full cross-catalog sweep (36 configs x 4 stamp runs); needs more than the default 5000 ms under parallel-file contention.
   it("keeps progressive stamps inside the cache quota without filling the opening", () => {
     const catalogs = [
       MAPS_CONTENT,
@@ -414,5 +415,5 @@ describe("map sites", () => {
         }
       }
     }
-  });
+  }, 15000);
 });
