@@ -2,6 +2,8 @@
 
 GHiGS is a browser-based tower defense game with pure SVG rendering, gem-based meta-progression, and an upgrade unlock system. Built with Vue 3, Pinia, and Vite.
 
+Try it here on GitHub Pages, built with GitHub actions: <https://jonesde.github.io/ghigs-tdg/>
+
 **Human Goals**
 
 1. Explore and refine AI assisted coding workflow and toolset, both AI-specific tools like OpenCode and general coding tools like compilers, linters, formatters, and frameworks that help steer AI toward .
@@ -162,4 +164,3 @@ npm run test -- --coverage
 ## For Developers
 
 Detailed architecture, file structure, design decisions, and testing coverage are documented in [TECHNICAL.md](./TECHNICAL.md).
-

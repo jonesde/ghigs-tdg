@@ -47,7 +47,7 @@
   ],
   "progressive": {
     "blockSize": 5,
-    "placementInterval": 3,
+    "placementIntervalSteps": [{ "afterWave": 0, "interval": 3 }, { "afterWave": 30, "interval": 4 }, { "afterWave": 50, "interval": 5 }],
     "rerollGoldPerWave": 3,
     "variants": [
       { "regionId": 0, "level": 1, "entryCount": 1, "seed": 11011 },

@@ -79,6 +79,16 @@ describe("progressive placement hold", () => {
     expect(engine.waveManager?.currentWave).toBe(100);
   });
 
+  it("thins the block cadence to every 4 waves after 30 and every 5 after 50", () => {
+    const expectedHoldWaves = new Set([
+      3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 32, 36, 40, 44, 48, 55, 60, 65, 70, 75, 80, 85, 90, 95,
+    ]);
+    for (let wave = 1; wave <= 99; wave++) {
+      engine.debug("setWave", wave);
+      expect(engine.progressivePlacementHold, `wave ${wave}`).toBe(expectedHoldWaves.has(wave));
+    }
+  });
+
   it("keeps the run paused after a placement and applies the pending resume on unpause", () => {
     engine.debug("setWave", 3);
     const config = progressiveConfigForIndex(36);

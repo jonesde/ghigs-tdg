@@ -120,7 +120,7 @@ import {
   GameState,
   MILESTONE_GEMS,
   MILESTONE_WAVES,
-  PROGRESSIVE_PLACEMENT_INTERVAL,
+  progressivePlacementInterval,
   progressiveRerollGoldPerWave,
   SELL_DISCOUNT_PCT,
   SELL_VALUE_RATIO,
@@ -1762,7 +1762,7 @@ export class GameEngine {
 
   private isProgressiveHoldWave(wave: number): boolean {
     if (this.runState.map?.style !== "progressive") return false;
-    const placementInterval = this.theme?.maps?.progressive.placementInterval ?? PROGRESSIVE_PLACEMENT_INTERVAL;
+    const placementInterval = progressivePlacementInterval(this.theme?.maps, wave);
     return wave % placementInterval === 0 && wave > 0 && wave < VICTORY_WAVE;
   }
 
