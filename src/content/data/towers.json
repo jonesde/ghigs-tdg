@@ -11,7 +11,7 @@
     "shotgunTank": { "cost": 35 }
   },
   "base": {
-    "basic": { "range": 2.5, "damage": 14, "fireRate": 1.0, "projSpeed": 14, "splash": 0, "health": 20 },
+    "basic": { "range": 2.5, "damage": 16, "fireRate": 0.9, "projSpeed": 14, "splash": 0, "health": 20 },
     "ice": { "range": 2, "damage": 10, "fireRate": 0.9, "projSpeed": 24, "slowAmt": 0.45, "slowDur": 1.5, "splash": 0.25, "health": 20 },
     "sniper": { "range": 4, "damage": 42, "fireRate": 0.6, "projSpeed": 30, "splash": 0, "stun": 0.2, "health": 25 },
     "cannon": { "range": 2.5, "damage": 32, "fireRate": 0.4, "projSpeed": 7, "splash": 0.5, "groundOnly": true, "health": 30 },
@@ -27,7 +27,7 @@
       "health": 45
     },
     "sturdyWall": { "range": 0, "damage": 0, "fireRate": 0, "projSpeed": 0, "groundOnly": true, "health": 100 },
-    "shotgunTank": { "range": 1, "damage": 6, "fireRate": 0.8, "projSpeed": 12, "splash": 0.25, "groundOnly": true, "health": 75 }
+    "shotgunTank": { "range": 1, "damage": 20, "fireRate": 0.8, "projSpeed": 12, "splash": 0.25, "groundOnly": true, "health": 75 }
   },
   "tuning": {
     "projectileSpeedMultiplier": 0.25,
@@ -135,18 +135,18 @@
   },
   "baseDefense": {
     "shortRange": [
-      { "range": 2.5, "damage": 12, "fireRate": 0.9, "projSpeed": 12 },
-      { "range": 3, "damage": 25, "fireRate": 1.2, "projSpeed": 12 },
-      { "range": 3.5, "damage": 50, "fireRate": 1.5, "projSpeed": 12 },
-      { "range": 3.5, "damage": 75, "fireRate": 1.5, "projSpeed": 12 },
-      { "range": 4, "damage": 125, "fireRate": 1.6, "projSpeed": 12 },
-      { "range": 4, "damage": 200, "fireRate": 1.7, "projSpeed": 12 },
-      { "range": 4.5, "damage": 400, "fireRate": 1.8, "projSpeed": 12 }
+      { "range": 2.5, "damage": 15, "fireRate": 1, "projSpeed": 12 },
+      { "range": 3, "damage": 40, "fireRate": 2, "projSpeed": 14 },
+      { "range": 3.5, "damage": 70, "fireRate": 3, "projSpeed": 16 },
+      { "range": 3.5, "damage": 120, "fireRate": 4, "projSpeed": 18 },
+      { "range": 4, "damage": 200, "fireRate": 5, "projSpeed": 20 },
+      { "range": 4, "damage": 300, "fireRate": 6, "projSpeed": 22 },
+      { "range": 4.5, "damage": 450, "fireRate": 7, "projSpeed": 24 }
     ],
     "longRange": [
-      { "range": 5, "damage": 100, "fireRate": 0.5, "projSpeed": 22 },
-      { "range": 6, "damage": 200, "fireRate": 0.6, "projSpeed": 24 },
-      { "range": 7, "damage": 400, "fireRate": 0.75, "projSpeed": 26 }
+      { "range": 5, "damage": 250, "fireRate": 3, "projSpeed": 26 },
+      { "range": 6, "damage": 400, "fireRate": 4, "projSpeed": 28 },
+      { "range": 7, "damage": 700, "fireRate": 5, "projSpeed": 30 }
     ],
     "levelSevenDamageMultiplier": 2
   }
