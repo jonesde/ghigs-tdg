@@ -331,7 +331,7 @@ function showRefundAllConfirm() {
             <div class="base-levels-card">
               <div class="skill-section">Levels</div>
               <div
-                v-for="node in BASE_LEVEL_NODES"
+                v-for="node in BASE_LEVEL_NODES.filter((n) => n.index >= 2)"
                 :key="'base-' + node.index"
                 class="skill-node"
                 :class="{
