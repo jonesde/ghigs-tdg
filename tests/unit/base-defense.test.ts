@@ -224,11 +224,11 @@ describe("GameEngine base selection", () => {
     const levelOne = engine.runState.maxBaseHealth;
     engine.upgradeSelected();
     expect(engine.baseDefense!.level).toBe(2);
-    expect(engine.runState.gold).toBe(900);
+    expect(engine.runState.gold).toBe(950);
     expect(engine.runState.maxBaseHealth).toBe(levelOne * BASE_LEVEL_HEALTH_MULT);
     engine.upgradeSelected();
     expect(engine.baseDefense!.level).toBe(2);
-    expect(engine.runState.gold).toBe(900);
+    expect(engine.runState.gold).toBe(950);
 
     engine.persistState.generalAddons.upgradeCostReduction = 0;
     engine.syncPersist(engine.persistState.unlocked, engine.persistState.generalAddons, 0, {
@@ -236,19 +236,19 @@ describe("GameEngine base selection", () => {
     });
     engine.upgradeSelected();
     expect(engine.baseDefense!.level).toBe(3);
-    expect(engine.runState.gold).toBe(900 - Math.floor(200 * 0.9));
+    expect(engine.runState.gold).toBe(950 - Math.floor(100 * 0.9));
 
     const paid = engine.baseDefense!.lastPaidCost();
     engine.persistState.generalAddons.sellActive = null;
     engine.downgradeSelected();
     expect(engine.baseDefense!.level).toBe(2);
-    expect(engine.runState.gold).toBe(900 - Math.floor(200 * 0.9) + Math.round(paid * SELL_VALUE_RATIO));
+    expect(engine.runState.gold).toBe(950 - Math.floor(100 * 0.9) + Math.round(paid * SELL_VALUE_RATIO));
 
     engine.persistState.generalAddons.sellActive = "refund";
     engine.upgradeSelected();
     const beforeRefund = engine.runState.gold;
     engine.downgradeSelected();
-    expect(engine.runState.gold).toBe(beforeRefund + Math.floor(200 * 0.9));
+    expect(engine.runState.gold).toBe(beforeRefund + Math.floor(100 * 0.9));
 
     engine.persistState.generalAddons.sellActive = "discount";
     engine.upgradeSelected();
