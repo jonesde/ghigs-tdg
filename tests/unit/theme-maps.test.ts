@@ -2,6 +2,7 @@
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
 import { getGameContent } from "@/content/gameContent.js";
+import { MapsContentSchema } from "@/content/schemas/maps.js";
 import { resolveThemeMaps } from "@/content/themeMaps.js";
 import chrithmathRaw from "@/render/themes/data/chrithmath.json";
 import defaultRaw from "@/render/themes/data/default-map-theme.json";
@@ -102,5 +103,21 @@ describe("theme world maps", () => {
   it("rejects a mapsPerRegion override", () => {
     const base = getGameContent().maps;
     expect(() => resolveThemeMaps({ mapsPerRegion: 10, levels: base.levels, progressive: base.progressive })).toThrow();
+  });
+
+  it("rejects a levels.length that does not divide evenly by mapsPerRegion", () => {
+    // src/sim/mapSites.ts reads the region count off exactly this quotient, so a
+    // fractional result would produce a fractional region count at runtime.
+    const pack = structuredClone(getGameContent().maps);
+    expect(MapsContentSchema.safeParse(pack).success).toBe(true);
+
+    const uneven = structuredClone(pack);
+    uneven.mapsPerRegion = 5;
+    const parsed = MapsContentSchema.safeParse(uneven);
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      const levelIssue = parsed.error.issues.find((issue) => issue.path.join() === "levels");
+      expect(levelIssue?.message).toContain("36 / 5");
+    }
   });
 });

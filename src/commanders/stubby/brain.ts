@@ -6,7 +6,7 @@ import type { CommanderObservation } from "../observation.js";
 // holds each newly-seen enemy at its current tile; once the whole wave has emerged
 // (no scheduled spawns and no overflow-pending enemies) he releases just that
 // wave's held enemies in one rush to the base. State keyed by wave number so a
-// next-wave spillover (PRE_EMPTIVE_WAVE_TIMER) never dilutes a prior wave's rush.
+// next-wave spillover (the pre-emptive wave timer) never dilutes a prior wave's rush.
 export function createStubbyBrain(): CommanderBrain {
   return {
     decide(observation: CommanderObservation, memory: CommanderMemory): Command[] {

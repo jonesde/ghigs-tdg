@@ -1,5 +1,4 @@
-import { WAVE_GRAPH_DOT_SPACING, WAVE_GRAPH_WIDTH } from "@/sim/Constants.js";
-import { TYPED_MULT_FIELDS } from "@/sim/runBonuses.js";
+import { typedMultFields } from "@/sim/runBonuses.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import type { GameStore } from "@/stores/game.js";
 import type {
@@ -8,7 +7,7 @@ import type {
   SimulationSnapshot,
   WaveGraphDot,
 } from "./SimulationSnapshot.js";
-import { SNAPSHOT_SCHEMA_VERSION } from "./SimulationSnapshot.js";
+import { snapshotSchemaVersion, waveGraphDotCapacity, waveGraphDotWidth } from "./SimulationSnapshot.js";
 
 // Module-level mirror of the latest snapshot so non-reactive Vue components
 // (e.g. StatsPanel) can read it without threading the SnapshotStore instance
@@ -16,7 +15,7 @@ import { SNAPSHOT_SCHEMA_VERSION } from "./SimulationSnapshot.js";
 let latestSnapshot: SimulationSnapshot | null = null;
 
 // Cache of the accumulated wave-graph dots. The worker only ships the most
-// recent window (WAVE_GRAPH_MAX_SEND dots) when its generation changes, so the
+// recent window (waveGraphMaxDotsPerPost dots) when its generation changes, so the
 // receiver merges each window into this accumulation to fill the screen — see
 // the generation-based gating pattern. Cap mirrors the worker's retained
 // dot count so the accumulation never exceeds what can be displayed.
@@ -32,14 +31,14 @@ export function getLatestSnapshot(): SimulationSnapshot | null {
 }
 
 // Maximum accumulated dots: enough to fill a wide screen at the dot spacing.
-const WAVE_GRAPH_MAX_ACCUM = Math.ceil(WAVE_GRAPH_WIDTH / WAVE_GRAPH_DOT_SPACING);
+const waveGraphMaxAccum = waveGraphDotCapacity(waveGraphDotWidth);
 
 // Numeric dot fields are compared with this epsilon, not exact equality: the
 // worker re-sends an overlapping suffix window every time the dots generation
 // changes, and accumulated float values can drift in the last bits (different
 // summation order after a rebuild). Exact equality would then fail to detect the
 // overlap and append duplicates instead of merging.
-const WAVE_GRAPH_DOT_EPSILON = 1e-6;
+const waveGraphDotEpsilon = 1e-6;
 
 function gunStatsMatch(current: BaseGunStatsSnapshot | null, next: BaseGunStatsSnapshot | null): boolean {
   if (current === null || next === null) return current === next;
@@ -86,7 +85,7 @@ function mirrorBasePanel(gs: GameStore, view: BaseDefenseSnapshot | undefined): 
 }
 
 function numbersClose(a: number, b: number): boolean {
-  return Math.abs(a - b) <= WAVE_GRAPH_DOT_EPSILON;
+  return Math.abs(a - b) <= waveGraphDotEpsilon;
 }
 
 function areDotsEqual(a: WaveGraphDot, b: WaveGraphDot): boolean {
@@ -101,7 +100,7 @@ function areDotsEqual(a: WaveGraphDot, b: WaveGraphDot): boolean {
   );
 }
 
-// Merge an incoming window of (up to WAVE_GRAPH_MAX_SEND) dots into the
+// Merge an incoming window of (up to waveGraphMaxDotsPerPost) dots into the
 // accumulated array. The window is a contiguous suffix of the true dot
 // sequence. Find the largest prefix of the window already present at the tail
 // of the accumulation (so normally only the last dot is new), then append the
@@ -128,8 +127,8 @@ export function mergeWaveGraphDots(accumulated: WaveGraphDot[], window: WaveGrap
   for (let i = overlap; i < window.length; i++) {
     merged.push(window[i]!);
   }
-  if (merged.length > WAVE_GRAPH_MAX_ACCUM) {
-    merged.splice(0, merged.length - WAVE_GRAPH_MAX_ACCUM);
+  if (merged.length > waveGraphMaxAccum) {
+    merged.splice(0, merged.length - waveGraphMaxAccum);
   }
   return merged;
 }
@@ -172,11 +171,11 @@ export class SnapshotStore {
     // Reject an incompatible producer rather than mirroring garbage into the
     // reactive store. The previous snapshot is kept so the renderer freezes on
     // the last good frame instead of tearing. Warned once per store instance.
-    if (snapshot.schemaVersion !== SNAPSHOT_SCHEMA_VERSION) {
+    if (snapshot.schemaVersion !== snapshotSchemaVersion) {
       if (!this.schemaMismatchWarned) {
         console.warn(
           `SnapshotStore ignoring snapshot schemaVersion ${snapshot.schemaVersion}; ` +
-            `expected ${SNAPSHOT_SCHEMA_VERSION}`,
+            `expected ${snapshotSchemaVersion}`,
         );
         this.schemaMismatchWarned = true;
       }
@@ -393,7 +392,7 @@ export class SnapshotStore {
         bonuses.bountyMult,
         bonuses.slowMult,
         bonuses.armorMult,
-        ...TYPED_MULT_FIELDS.flatMap((field) =>
+        ...typedMultFields().flatMap((field) =>
           Object.entries(bonuses[field])
             .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
             .map(([towerId, value]) => `${field}.${towerId}=${value}`),

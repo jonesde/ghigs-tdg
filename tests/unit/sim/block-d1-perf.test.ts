@@ -2,8 +2,7 @@
 /** @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
-import { WAVE_GRAPH_DOT_SPACING, WAVE_GRAPH_INTERVAL_SECONDS } from "@/sim/Constants.js";
-import { ICE_AURA_RANGE, ICE_AURA_SLOW_MULT, STATIC_FIELD_RANGE, STATIC_FIELD_SLOW_AMT } from "@/sim/ConstantsTower.js";
+import { getGameContent } from "@/content/gameContent.js";
 import {
   Enemy,
   getNearestWalkableCacheStats,
@@ -22,6 +21,7 @@ import {
 import { createDefaultPersistState } from "@/sim/PersistState.js";
 import { ProjectileManager } from "@/sim/ProjectileManager.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { waveGraphDotSpacing, waveGraphIntervalSeconds } from "@/sim/SimulationSnapshot.js";
 import { Tower } from "@/sim/towers/Tower.js";
 import { WaveGraphTracker } from "@/sim/WaveGraphTracker.js";
 import { makeBastionMap } from "../../helpers/mock-grid.js";
@@ -152,8 +152,11 @@ describe("sensor fallback contract (Block D1-B)", () => {
     tower.update(1 / 60, enemyManager, { spawn: vi.fn(), fireLightning: vi.fn() }, { playSound: vi.fn() });
     expect(enemyManager.forEachSensorHits).toHaveBeenCalledWith(`${tower.id}:frost`, expect.any(Function));
     expect(enemyManager.forEachEnemyInRange).toHaveBeenCalledTimes(1);
-    expect(enemyManager.forEachEnemyInRange.mock.calls[0][2]).toBeCloseTo(ICE_AURA_RANGE * 36, 6);
-    expect(appliedSlowAmounts).toEqual([tower.stats.slowAmt * ICE_AURA_SLOW_MULT]);
+    expect(enemyManager.forEachEnemyInRange.mock.calls[0][2]).toBeCloseTo(
+      getGameContent().towers.tuning.iceAuraRange * 36,
+      6,
+    );
+    expect(appliedSlowAmounts).toEqual([tower.stats.slowAmt * getGameContent().towers.tuning.iceAuraSlowMult]);
   });
 
   it("applies the static field through forEachEnemyInRange when the sensor is missing", () => {
@@ -180,8 +183,11 @@ describe("sensor fallback contract (Block D1-B)", () => {
     };
     tower.update(1 / 60, enemyManager, { spawn: vi.fn(), fireLightning: vi.fn() }, { playSound: vi.fn() });
     expect(enemyManager.forEachEnemyInRange).toHaveBeenCalledTimes(1);
-    expect(enemyManager.forEachEnemyInRange.mock.calls[0][2]).toBeCloseTo(STATIC_FIELD_RANGE * 36, 6);
-    expect(appliedSlowAmounts).toEqual([STATIC_FIELD_SLOW_AMT]);
+    expect(enemyManager.forEachEnemyInRange.mock.calls[0][2]).toBeCloseTo(
+      getGameContent().towers.tuning.staticFieldRange * 36,
+      6,
+    );
+    expect(appliedSlowAmounts).toEqual([getGameContent().towers.tuning.staticFieldSlowAmt]);
   });
 
   it("skips the static field fallback when the sensor is present", () => {
@@ -462,31 +468,31 @@ describe("WaveGraphTracker flush semantics (Block D1-H)", () => {
 
   it("keeps interval overshoot instead of resetting the accumulator to zero", () => {
     const { tracker } = makeTracker();
-    tracker.update(WAVE_GRAPH_INTERVAL_SECONDS + 0.7);
+    tracker.update(waveGraphIntervalSeconds + 0.7);
     expect(tracker.getDots()).toHaveLength(1);
-    tracker.update(WAVE_GRAPH_INTERVAL_SECONDS - 0.7 + 0.01);
+    tracker.update(waveGraphIntervalSeconds - 0.7 + 0.01);
     expect(tracker.getDots()).toHaveLength(2);
   });
 
   it("bumps generation when setContainerWidth trims the dot window", () => {
     const { tracker } = makeTracker();
-    tracker.update(WAVE_GRAPH_INTERVAL_SECONDS);
-    tracker.update(WAVE_GRAPH_INTERVAL_SECONDS);
-    tracker.update(WAVE_GRAPH_INTERVAL_SECONDS);
+    tracker.update(waveGraphIntervalSeconds);
+    tracker.update(waveGraphIntervalSeconds);
+    tracker.update(waveGraphIntervalSeconds);
     expect(tracker.getDots()).toHaveLength(3);
     const generationBefore = tracker.getGeneration();
-    tracker.setContainerWidth(WAVE_GRAPH_DOT_SPACING);
+    tracker.setContainerWidth(waveGraphDotSpacing);
     expect(tracker.getDots()).toHaveLength(1);
     expect(tracker.getGeneration()).toBe(generationBefore + 1);
   });
 
   it("samples the enemy-HP peak at flush time", () => {
     const { tracker, enemyManager } = makeTracker([{ hp: 100 }]);
-    tracker.update(WAVE_GRAPH_INTERVAL_SECONDS / 2);
+    tracker.update(waveGraphIntervalSeconds / 2);
     enemyManager.enemies[0].hp = 500;
     tracker.update(0.001);
     enemyManager.enemies[0].hp = 10;
-    tracker.update(WAVE_GRAPH_INTERVAL_SECONDS / 2);
+    tracker.update(waveGraphIntervalSeconds / 2);
     const dots = tracker.getDots();
     expect(dots).toHaveLength(1);
     expect(dots[0].peakEnemyHp).toBe(10);

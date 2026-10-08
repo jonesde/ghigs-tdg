@@ -1,11 +1,11 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
-import { SELL_VALUE_RATIO } from "@/sim/ConstantsTower.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { GameEngine } from "@/sim/GameEngine.js";
 import { WorkerParticleSpawner } from "@/sim/ParticleSystem.js";
-import { SNAPSHOT_SCHEMA_VERSION } from "@/sim/SimulationSnapshot.js";
+import { snapshotSchemaVersion } from "@/sim/SimulationSnapshot.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import {
   createTestPersistState,
@@ -84,7 +84,7 @@ describe("SnapshotSerializer (Phase 5)", () => {
     engine.mapCaches[0].unlocked = true;
     const unlocked = buildSnapshot(engine, 1);
     expect(unlocked.meta.mapCaches[0].unlocked).toBe(true);
-    expect(unlocked.schemaVersion).toBe(SNAPSHOT_SCHEMA_VERSION);
+    expect(unlocked.schemaVersion).toBe(snapshotSchemaVersion);
   });
 
   it("builds a complete snapshot from a live engine", () => {
@@ -99,7 +99,7 @@ describe("SnapshotSerializer (Phase 5)", () => {
 
     const snap = buildSnapshot(engine, 7);
 
-    expect(snap.schemaVersion).toBe(SNAPSHOT_SCHEMA_VERSION);
+    expect(snap.schemaVersion).toBe(snapshotSchemaVersion);
     expect(snap.lastAppliedCommandId).toBe(7);
     expect(snap.frameId).toBeGreaterThan(0);
     expect(snap.meta.gold).toBe(engine.runState.gold);
@@ -188,8 +188,10 @@ describe("SnapshotSerializer (Phase 5)", () => {
     const selected = () => buildSnapshot(engine, 0).towers.find((entry) => entry.id === String(tower.id));
 
     const defaultTower = selected();
-    expect(defaultTower.sellCredit).toBe(Math.round(tower.totalInvested * SELL_VALUE_RATIO));
-    expect(defaultTower.downgradeRefund).toBe(Math.round(upgradeCost * SELL_VALUE_RATIO));
+    expect(defaultTower.sellCredit).toBe(
+      Math.round(tower.totalInvested * getGameContent().towers.tuning.sellValueRatio),
+    );
+    expect(defaultTower.downgradeRefund).toBe(Math.round(upgradeCost * getGameContent().towers.tuning.sellValueRatio));
 
     engine.persistState.generalAddons.sellActive = "refund";
     const refundTower = selected();

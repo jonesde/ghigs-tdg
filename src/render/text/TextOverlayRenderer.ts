@@ -1,5 +1,5 @@
 import type { BuildingKind } from "@/sim/mapSites.js";
-import { BUILDING_COLORS } from "@/sim/mapSites.js";
+import { buildingColors } from "@/sim/mapSites.js";
 import type { SimulationSnapshot } from "@/sim/SimulationSnapshot.js";
 import { type TextRenderScale, textPixelX, textPixelY } from "./types.js";
 
@@ -115,7 +115,7 @@ export class TextOverlayRenderer {
       ctx.stroke();
     }
     for (const building of meta.mapBuildings ?? []) {
-      ctx.fillStyle = BUILDING_COLORS[building.kind];
+      ctx.fillStyle = buildingColors[building.kind];
       // An unpowered building pays nothing, so the letter fades with it. The
       // enclosing save()/restore() puts alpha back for the next frame.
       ctx.globalAlpha = building.active ? 1 : 0.45;

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { EffectManager } from "@/render/svg/EffectManager.js";
 import { LIGHTNING_POOL_SIZE, STUN_POOL_SIZE } from "@/render/svg/types.js";
 
-// Matches LIGHTNING_LIFE_SECONDS / STUN_MARK_SECONDS on the manager side.
+// Matches lightningLifeSeconds / stunMarkSeconds on the manager side.
 const LIGHTNING_LIFE = 1 / 3;
 const STUN_MARK_LIFE = 0.3;
 

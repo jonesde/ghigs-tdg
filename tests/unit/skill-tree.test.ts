@@ -2,13 +2,12 @@
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
 import { getGameContent } from "@/content/gameContent.js";
-import { GENERAL_ADDON_GEM_COSTS, SELL_OPTION_GEM_COST } from "@/sim/Constants.js";
 import {
   canRefund,
   canRefundBase,
   canRefundGeneral,
   countRefundableGems,
-  GENERAL_ADDON_DEFS,
+  generalAddonDefs,
   getGeneralAddonValue,
   isAvailable,
   isBaseAvailable,
@@ -45,8 +44,10 @@ interface SaveFixture {
 }
 
 // Read the live costs from content so the assertions track balance tuning.
-const LEVEL_COSTS = getGameContent().skillTree.levelCosts;
-const ADDON_COSTS = getGameContent().skillTree.addonCosts;
+const levelCosts = getGameContent().skillTree.levelCosts;
+const addonCosts = getGameContent().skillTree.addonCosts;
+const generalAddonGemCosts = getGameContent().economy.generalAddonGemCosts;
+const sellOptionGemCost = getGameContent().economy.sellOptionGemCost;
 
 function freshSave(): SaveFixture {
   return {
@@ -147,28 +148,28 @@ describe("SkillTree — Tower Unlocks", () => {
   });
 
   describe("unlockCost", () => {
-    it("returns LEVEL_COSTS for level tier", () => {
-      expect(unlockCost("level", 2)).toBe(LEVEL_COSTS[2]);
-      expect(unlockCost("level", 3)).toBe(LEVEL_COSTS[3]);
+    it("returns levelCosts for level tier", () => {
+      expect(unlockCost("level", 2)).toBe(levelCosts[2]);
+      expect(unlockCost("level", 3)).toBe(levelCosts[3]);
     });
 
-    it("returns LEVEL_COSTS shifted by 4 for variant tiers", () => {
-      expect(unlockCost("variantA", 0)).toBe(LEVEL_COSTS[4]);
-      expect(unlockCost("variantA", 1)).toBe(LEVEL_COSTS[5]);
-      expect(unlockCost("variantA", 2)).toBe(LEVEL_COSTS[6]);
+    it("returns levelCosts shifted by 4 for variant tiers", () => {
+      expect(unlockCost("variantA", 0)).toBe(levelCosts[4]);
+      expect(unlockCost("variantA", 1)).toBe(levelCosts[5]);
+      expect(unlockCost("variantA", 2)).toBe(levelCosts[6]);
     });
 
-    it("returns ADDON_COSTS for addon tier", () => {
-      expect(unlockCost("addons", 0)).toBe(ADDON_COSTS[0]);
-      expect(unlockCost("addons", 1)).toBe(ADDON_COSTS[1]);
-      expect(unlockCost("addons", 2)).toBe(ADDON_COSTS[2]);
+    it("returns addonCosts for addon tier", () => {
+      expect(unlockCost("addons", 0)).toBe(addonCosts[0]);
+      expect(unlockCost("addons", 1)).toBe(addonCosts[1]);
+      expect(unlockCost("addons", 2)).toBe(addonCosts[2]);
     });
   });
 
   describe("tryUnlock", () => {
     it("unlocks level 3 and deducts gems", () => {
       const save = freshSave();
-      const cost = LEVEL_COSTS[2];
+      const cost = levelCosts[2];
       const result = tryUnlock(save, "basic", "level", 2);
       expect(result.ok).toBe(true);
       expect(save.gems).toBe(1000 - cost);
@@ -177,12 +178,12 @@ describe("SkillTree — Tower Unlocks", () => {
 
     it("unlocks level 4 and deducts gems", () => {
       const save = freshSave();
-      const cost = LEVEL_COSTS[3];
+      const cost = levelCosts[3];
       // Unlock level 3 first
       tryUnlock(save, "basic", "level", 2);
       const result = tryUnlock(save, "basic", "level", 3);
       expect(result.ok).toBe(true);
-      expect(save.gems).toBe(1000 - LEVEL_COSTS[2] - cost);
+      expect(save.gems).toBe(1000 - levelCosts[2] - cost);
     });
 
     it("fails when already unlocked", () => {
@@ -263,7 +264,7 @@ describe("SkillTree — Tower Unlocks", () => {
       const save = freshSave();
       tryUnlock(save, "basic", "level", 2);
       const refund = canRefund(save, "basic", "level", 2);
-      expect(refund).toBe(LEVEL_COSTS[2]);
+      expect(refund).toBe(levelCosts[2]);
     });
 
     it("returns 0 for level 3 when level 4 is unlocked (dependent)", () => {
@@ -285,7 +286,7 @@ describe("SkillTree — Tower Unlocks", () => {
     it("returns cost for addon tier 1 when tier 2 is not unlocked", () => {
       const save = freshSave();
       tryUnlock(save, "basic", "addons", 0);
-      expect(canRefund(save, "basic", "addons", 0)).toBe(ADDON_COSTS[0]);
+      expect(canRefund(save, "basic", "addons", 0)).toBe(addonCosts[0]);
     });
 
     it("returns 0 for addon tier 1 when tier 2 is unlocked", () => {
@@ -302,7 +303,7 @@ describe("SkillTree — Tower Unlocks", () => {
       tryUnlock(save, "basic", "level", 2);
       const result = tryRefund(save, "basic", "level", 2);
       expect(result.ok).toBe(true);
-      expect(result.gems).toBe(LEVEL_COSTS[2]);
+      expect(result.gems).toBe(levelCosts[2]);
       expect(isUnlocked(save, "basic", "level", 2)).toBe(false);
     });
 
@@ -376,18 +377,18 @@ describe("SkillTree — Tower Unlocks", () => {
     it("returns true when can afford and prerequisites met", () => {
       const save = freshSave();
       tryUnlock(save, "basic", "level", 2);
-      expect(isAvailable(save, "basic", "level", 2, LEVEL_COSTS[2])).toBe(true);
+      expect(isAvailable(save, "basic", "level", 2, levelCosts[2])).toBe(true);
     });
 
     it("returns false when cannot afford", () => {
       const save = freshSave();
       save.gems = 0;
-      expect(isAvailable(save, "basic", "level", 2, LEVEL_COSTS[2])).toBe(false);
+      expect(isAvailable(save, "basic", "level", 2, levelCosts[2])).toBe(false);
     });
 
     it("returns false when prerequisite not met", () => {
       const save = freshSave();
-      expect(isAvailable(save, "basic", "level", 3, LEVEL_COSTS[3])).toBe(false);
+      expect(isAvailable(save, "basic", "level", 3, levelCosts[3])).toBe(false);
     });
   });
 });
@@ -458,7 +459,7 @@ describe("SkillTree — General Add-ons", () => {
   describe("tryUnlockGeneral", () => {
     it("unlocks extraHealth tier 0 and deducts gems", () => {
       const save = freshSave();
-      const cost = GENERAL_ADDON_GEM_COSTS.extraHealth[0];
+      const cost = generalAddonGemCosts.extraHealth[0];
       const result = tryUnlockGeneral(save, "extraHealth", 0);
       expect(result.ok).toBe(true);
       expect(save.gems).toBe(1000 - cost);
@@ -468,10 +469,10 @@ describe("SkillTree — General Add-ons", () => {
     it("unlocks extraHealth tier 1 after tier 0", () => {
       const save = freshSave();
       tryUnlockGeneral(save, "extraHealth", 0);
-      const cost = GENERAL_ADDON_GEM_COSTS.extraHealth[1];
+      const cost = generalAddonGemCosts.extraHealth[1];
       const result = tryUnlockGeneral(save, "extraHealth", 1);
       expect(result.ok).toBe(true);
-      expect(save.gems).toBe(1000 - GENERAL_ADDON_GEM_COSTS.extraHealth[0] - cost);
+      expect(save.gems).toBe(1000 - generalAddonGemCosts.extraHealth[0] - cost);
       expect(getGeneralAddonValue(save, "extraHealth")).toBe(1);
     });
 
@@ -492,22 +493,22 @@ describe("SkillTree — General Add-ons", () => {
     it("buys the sell purchase for Full Refund and deducts gems", () => {
       const save = freshSave();
       const result = tryUnlockGeneral(save, "sellOption", 0);
-      expect(result).toEqual({ ok: true, gems: SELL_OPTION_GEM_COST });
+      expect(result).toEqual({ ok: true, gems: sellOptionGemCost });
       expect(save.generalAddons.sellActive).toBe("refund");
-      expect(save.gems).toBe(1000 - SELL_OPTION_GEM_COST);
+      expect(save.gems).toBe(1000 - sellOptionGemCost);
     });
 
     it("buys the sell purchase for Discounted first, without needing the other mode", () => {
       const save = freshSave();
       const result = tryUnlockGeneral(save, "sellOption", 1);
-      expect(result).toEqual({ ok: true, gems: SELL_OPTION_GEM_COST });
+      expect(result).toEqual({ ok: true, gems: sellOptionGemCost });
       expect(save.generalAddons.sellActive).toBe("discount");
-      expect(save.gems).toBe(1000 - SELL_OPTION_GEM_COST);
+      expect(save.gems).toBe(1000 - sellOptionGemCost);
     });
 
     it("refuses the buy when there are not enough gems", () => {
       const save = freshSave();
-      save.gems = SELL_OPTION_GEM_COST - 1;
+      save.gems = sellOptionGemCost - 1;
       expect(tryUnlockGeneral(save, "sellOption", 0).ok).toBe(false);
       expect(save.generalAddons.sellActive).toBeNull();
     });
@@ -534,7 +535,7 @@ describe("SkillTree — General Add-ons", () => {
         tryUnlockGeneral(save, "sellOption", index % 2);
         expect(["refund", "discount"]).toContain(save.generalAddons.sellActive);
       }
-      expect(save.gems).toBe(1000 - SELL_OPTION_GEM_COST);
+      expect(save.gems).toBe(1000 - sellOptionGemCost);
     });
 
     it("refuses to switch to the mode already in effect", () => {
@@ -599,15 +600,15 @@ describe("SkillTree — General Add-ons", () => {
 
   describe("general addon labels", () => {
     it("extraHealth tier labels are +100/+300/+500", () => {
-      const tiers = GENERAL_ADDON_DEFS.extraHealth.tiers;
+      const tiers = generalAddonDefs.extraHealth.tiers;
       expect(tiers.map((tier) => tier.label)).toEqual(["+100", "+300", "+500"]);
-      expect(GENERAL_ADDON_DEFS.extraHealth.costs).toBe(GENERAL_ADDON_GEM_COSTS.extraHealth);
+      expect(generalAddonDefs.extraHealth.costs).toBe(generalAddonGemCosts.extraHealth);
     });
 
     it("slowHealing tier labels are +20/round/+50/round/+100/round", () => {
-      const tiers = GENERAL_ADDON_DEFS.slowHealing.tiers;
+      const tiers = generalAddonDefs.slowHealing.tiers;
       expect(tiers.map((tier) => tier.label)).toEqual(["+20/round", "+50/round", "+100/round"]);
-      expect(GENERAL_ADDON_DEFS.slowHealing.costs).toBe(GENERAL_ADDON_GEM_COSTS.slowHealing);
+      expect(generalAddonDefs.slowHealing.costs).toBe(generalAddonGemCosts.slowHealing);
     });
   });
 
@@ -617,7 +618,7 @@ describe("SkillTree — General Add-ons", () => {
       tryUnlock(save, "basic", "level", 2);
       tryUnlock(save, "basic", "level", 3);
       tryUnlock(save, "basic", "variantA", 0);
-      const expected = LEVEL_COSTS[2] + LEVEL_COSTS[3] + LEVEL_COSTS[4];
+      const expected = levelCosts[2] + levelCosts[3] + levelCosts[4];
       expect(countRefundableGems(save)).toBe(expected);
     });
 
@@ -626,9 +627,9 @@ describe("SkillTree — General Add-ons", () => {
       tryUnlockGeneral(save, "sellOption", 0);
       tryUnlockGeneral(save, "sellOption", 1); // free switch, still one purchase
       const gemsBefore = save.gems;
-      expect(countRefundableGems(save)).toBe(SELL_OPTION_GEM_COST);
+      expect(countRefundableGems(save)).toBe(sellOptionGemCost);
       refundAllGems(save);
-      expect(save.gems).toBe(gemsBefore + SELL_OPTION_GEM_COST);
+      expect(save.gems).toBe(gemsBefore + sellOptionGemCost);
       expect(save.generalAddons.sellActive).toBeNull();
     });
   });
@@ -637,7 +638,7 @@ describe("SkillTree — General Add-ons", () => {
     it("reports the cost for the mode in effect only", () => {
       const save = freshSave();
       tryUnlockGeneral(save, "sellOption", 1);
-      expect(canRefundGeneral(save, "sellOption", 1)).toBe(SELL_OPTION_GEM_COST);
+      expect(canRefundGeneral(save, "sellOption", 1)).toBe(sellOptionGemCost);
       expect(canRefundGeneral(save, "sellOption", 0)).toBe(0);
     });
 
@@ -646,8 +647,8 @@ describe("SkillTree — General Add-ons", () => {
       tryUnlockGeneral(save, "sellOption", 0);
       const gemsAfterPurchase = save.gems;
       const result = tryRefundGeneral(save, "sellOption", 0);
-      expect(result).toEqual({ ok: true, gems: SELL_OPTION_GEM_COST });
-      expect(save.gems).toBe(gemsAfterPurchase + SELL_OPTION_GEM_COST);
+      expect(result).toEqual({ ok: true, gems: sellOptionGemCost });
+      expect(save.gems).toBe(gemsAfterPurchase + sellOptionGemCost);
       expect(save.generalAddons.sellActive).toBeNull();
     });
 

@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import { BUILTIN_STUBBS, BUILTIN_STUBBY } from "@/commanders/index.js";
-import { DIFFICULTY_MULT_GEM_BASE, DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -14,8 +14,14 @@ const persistStore = usePersistStore();
 const uiStore = useUiStore();
 
 const diffTick = computed(() => persistStore.difficulty?.multiplierTick || 0);
-const diffMult = computed(() => diffTick.value * DIFFICULTY_MULT_TICK + 1);
-const gemMult = computed(() => 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult.value - 1));
+const diffMult = computed(() => diffTick.value * getGameContent().economy.difficultyMultTick + 1);
+const gemMult = computed(() => 1 + getGameContent().economy.difficultyMultGemBase * (diffMult.value - 1));
+// Slider upper bound is the tick index the pack's difficulty ladder reaches.
+const maxDifficultyTick = computed(
+  () =>
+    (getGameContent().economy.difficultyMultMax - getGameContent().economy.difficultyMultMin) /
+    getGameContent().economy.difficultyMultTick,
+);
 
 function onDiffSliderInput(event: Event) {
   const target = event.target as HTMLInputElement;
@@ -72,7 +78,7 @@ function handleCommanderChange(event: Event) {
         <input
           type="range"
           min="0"
-          max="12"
+          :max="maxDifficultyTick"
           :value="diffTick"
           @input="onDiffSliderInput"
           class="diff-slider"

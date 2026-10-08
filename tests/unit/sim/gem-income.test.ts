@@ -6,14 +6,13 @@
 // boss, milestone, and completion gems, with no per-wave term in that sum.
 
 import { describe, expect, it } from "vitest";
-import {
-  CUSTOM_PROGRESSIVE_MAP_INDEX,
-  CUSTOM_RANDOM_MAP_INDEX,
-  MILESTONE_GEMS,
-  VICTORY_WAVE,
-} from "@/sim/Constants.js";
+import { getGameContent } from "@/content/gameContent.js";
+import { EconomyContentSchema } from "@/content/schemas/economy.js";
 import { GameEngine } from "@/sim/GameEngine.js";
+import { customProgressiveMapIndex, customRandomMapIndex } from "@/sim/GameRunState.js";
 import { createTestPersistState, createTestThemeBundle, MockHostBindings } from "../../helpers/mock-stores.js";
+
+const milestoneGems = getGameContent().economy.milestoneGems;
 
 function initEngine(mapIndex: number): GameEngine {
   const engine = new GameEngine(createTestPersistState(), createTestThemeBundle(), new MockHostBindings(), mapIndex);
@@ -41,16 +40,16 @@ describe("wave clear gem income", () => {
   it("pays only the first-time milestone on wave 15", () => {
     const engine = initEngine(0);
     engine.onWaveCleared(15);
-    expect(engine.runState.gemBreakdown.milestones.base).toBe(MILESTONE_GEMS[15]);
-    expect(engine.runState.gemBreakdown.milestones.afterFirstTime).toBe(MILESTONE_GEMS[15] * 2);
-    expect(engine.runState.runGemsEarned).toBe(MILESTONE_GEMS[15] * 2);
-    expect(engine.persistState.gems).toBeGreaterThanOrEqual(MILESTONE_GEMS[15] * 2);
+    expect(engine.runState.gemBreakdown.milestones.base).toBe(milestoneGems[15]);
+    expect(engine.runState.gemBreakdown.milestones.afterFirstTime).toBe(milestoneGems[15] * 2);
+    expect(engine.runState.runGemsEarned).toBe(milestoneGems[15] * 2);
+    expect(engine.persistState.gems).toBeGreaterThanOrEqual(milestoneGems[15] * 2);
   });
 
   it("doubles boss, milestone, and completion gems on a first full clear", () => {
     const engine = initEngine(0);
     engine.onWaveCleared(15);
-    engine.waveManager.currentWave = VICTORY_WAVE;
+    engine.waveManager.currentWave = getGameContent().economy.victoryWave;
     engine.endGame(true);
 
     const breakdown = engine.runState.gemBreakdown;
@@ -59,10 +58,35 @@ describe("wave clear gem income", () => {
       breakdown.milestones.afterFirstTime +
       breakdown.waveCompletion.afterFirstTime;
     expect(breakdown.firstClearBonus).toBe(subtotal * 2);
-    expect(breakdown.milestones.afterFirstTime).toBe(MILESTONE_GEMS[15] * 2);
+    expect(breakdown.milestones.afterFirstTime).toBe(milestoneGems[15] * 2);
     expect(engine.persistState.runHistory[engine.persistState.runHistory.length - 1].gems).toBe(
       engine.runState.runGemsEarned,
     );
+  });
+});
+
+describe("milestone gem payout table", () => {
+  it("rejects a milestoneWaves entry with no milestoneGems key at load time", () => {
+    // GameEngine reads milestoneGems[String(wave)] ?? 0, so a missing key pays
+    // zero gems for that milestone without any error.
+    const pack = structuredClone(getGameContent().economy);
+    expect(EconomyContentSchema.safeParse(pack).success).toBe(true);
+
+    const missingGems = structuredClone(pack);
+    delete missingGems.milestoneGems[String(pack.milestoneWaves[1])];
+    const parsed = EconomyContentSchema.safeParse(missingGems);
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      const gemIssues = parsed.error.issues.filter((issue) => issue.path.join() === "milestoneGems");
+      expect(gemIssues).toHaveLength(1);
+      expect(gemIssues[0]?.message).toContain(String(pack.milestoneWaves[1]));
+    }
+  });
+
+  it("pays a milestone wave a positive gem count", () => {
+    for (const milestoneWave of getGameContent().economy.milestoneWaves) {
+      expect(getGameContent().economy.milestoneGems[String(milestoneWave)]).toBeGreaterThan(0);
+    }
   });
 });
 
@@ -72,7 +96,7 @@ describe("custom map gem multipliers", () => {
       createTestPersistState(),
       createTestThemeBundle(),
       new MockHostBindings(),
-      CUSTOM_RANDOM_MAP_INDEX,
+      customRandomMapIndex,
     );
     engine.loadRandomMap(20, 20, 12, "open", 0, 42);
     engine.onBossKilled();
@@ -90,14 +114,14 @@ describe("custom map gem multipliers", () => {
       createTestPersistState(),
       createTestThemeBundle(),
       new MockHostBindings(),
-      CUSTOM_PROGRESSIVE_MAP_INDEX,
+      customProgressiveMapIndex,
     );
     engine.loadProgressiveMap({ regionId: 0, level: 12, entryCount: 1, seed: 999 });
     engine.onBossKilled();
     expect(engine.runState.gemBreakdown.bossKills.afterRegion).toBe(1);
     engine.endGame(false);
     const historyEntry = engine.persistState.runHistory[engine.persistState.runHistory.length - 1];
-    expect(historyEntry.mapIndex).toBe(CUSTOM_PROGRESSIVE_MAP_INDEX);
+    expect(historyEntry.mapIndex).toBe(customProgressiveMapIndex);
     expect(historyEntry.progressiveMapParams).toEqual({ regionId: 0, level: 12, entryCount: 1, seed: 999 });
   });
 });

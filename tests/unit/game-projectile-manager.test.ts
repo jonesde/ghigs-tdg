@@ -3,28 +3,24 @@
 
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PROJECTILE_HIT_SLOP } from "@/sim/Constants.js";
-import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
-import {
-  BOUNCE_DAMAGE_FALLOFF,
-  CHAIN_DAMAGE_FALLOFF,
-  NAPALM_BURN_DPS_RATIO,
-  NAPALM_BURN_DURATION,
-  SPLASH_DAMAGE_RATIO,
-} from "@/sim/ConstantsTower.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import {
   computeMaxHitCount,
-  MAX_PENDING_LIGHTNING_EFFECTS,
-  MAX_PENDING_STUN_EFFECTS,
+  maxPendingLightningEffects,
+  maxPendingStunEffects,
   ProjectileManager,
+  projectileHitSlop,
 } from "@/sim/ProjectileManager.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../helpers/mock-grid.js";
 import { makeParticleSystem } from "../helpers/mock-managers.js";
 import { mockDefaultTheme } from "../helpers/mock-stores.js";
+
+const bounceDamageFalloff = getGameContent().towers.tuning.bounceDamageFalloff;
+const napalmBurnDuration = getGameContent().towers.tuning.napalmBurnDuration;
 
 interface MockEnemy {
   id: number;
@@ -680,7 +676,8 @@ describe("ProjectileManager", () => {
 
       manager.update(0.016);
 
-      expect(applyBurn).toHaveBeenCalledWith(100 * NAPALM_BURN_DPS_RATIO, NAPALM_BURN_DURATION, "");
+      const expectedBurnDps = 100 * getGameContent().towers.tuning.napalmBurnDpsRatio;
+      expect(applyBurn).toHaveBeenCalledWith(expectedBurnDps, napalmBurnDuration, "");
     });
   });
 
@@ -892,7 +889,7 @@ describe("ProjectileManager", () => {
   });
 
   describe("bounce shot status falloff", () => {
-    it("scales burn, slow, and stun magnitudes by BOUNCE_DAMAGE_FALLOFF on the bounced hit", () => {
+    it("scales burn, slow, and stun magnitudes by bounceDamageFalloff on the bounced hit", () => {
       const firstApplyBurn = vi.fn();
       const secondApplyBurn = vi.fn();
       const secondApplySlow = vi.fn();
@@ -931,11 +928,11 @@ describe("ProjectileManager", () => {
         manager.update(0.016);
       }
 
-      const burnDps = 10 * NAPALM_BURN_DPS_RATIO;
-      expect(firstApplyBurn).toHaveBeenCalledWith(burnDps, NAPALM_BURN_DURATION, "");
-      expect(secondApplyBurn).toHaveBeenCalledWith(burnDps * BOUNCE_DAMAGE_FALLOFF, NAPALM_BURN_DURATION, "");
-      expect(secondApplySlow).toHaveBeenCalledWith(0.5 * BOUNCE_DAMAGE_FALLOFF, 1);
-      expect(secondApplyStun).toHaveBeenCalledWith(0.4 * BOUNCE_DAMAGE_FALLOFF);
+      const burnDps = 10 * getGameContent().towers.tuning.napalmBurnDpsRatio;
+      expect(firstApplyBurn).toHaveBeenCalledWith(burnDps, napalmBurnDuration, "");
+      expect(secondApplyBurn).toHaveBeenCalledWith(burnDps * bounceDamageFalloff, napalmBurnDuration, "");
+      expect(secondApplySlow).toHaveBeenCalledWith(0.5 * bounceDamageFalloff, 1);
+      expect(secondApplyStun).toHaveBeenCalledWith(0.4 * bounceDamageFalloff);
     });
   });
 
@@ -1228,7 +1225,7 @@ describe("ProjectileManager", () => {
       // splash radius = 1 * tileSize(36) = 36px; enemy2 at 30px away is within it.
       // Splash damage must forward the projectile's armorPiercing flag,
       // which is false here — consistency with the primary target.
-      expect(takeDamage2).toHaveBeenCalledWith(10 * SPLASH_DAMAGE_RATIO, false);
+      expect(takeDamage2).toHaveBeenCalledWith(10 * getGameContent().towers.tuning.splashDamageRatio, false);
     });
 
     it("forwards the armorPiercing flag to splash secondary targets", () => {
@@ -1261,7 +1258,7 @@ describe("ProjectileManager", () => {
       manager.update(0.5);
 
       // Shielded/secondary enemies must have shields bypassed, matching the primary.
-      expect(takeDamage2).toHaveBeenCalledWith(10 * SPLASH_DAMAGE_RATIO, true);
+      expect(takeDamage2).toHaveBeenCalledWith(10 * getGameContent().towers.tuning.splashDamageRatio, true);
     });
   });
 
@@ -1551,7 +1548,7 @@ describe("ProjectileManager", () => {
         chain: 1,
       });
 
-      expect(takeDamageNear).toHaveBeenCalledWith(20 * CHAIN_DAMAGE_FALLOFF);
+      expect(takeDamageNear).toHaveBeenCalledWith(20 * getGameContent().towers.tuning.chainDamageFalloff);
       expect(takeDamageFar).not.toHaveBeenCalled();
       expect(takeDamageFiller.every((fn) => fn.mock.calls.length === 0)).toBe(true);
     });
@@ -1615,7 +1612,7 @@ describe("ProjectileManager", () => {
 
       // wideEnemy is outside chain range (CHAIN_RANGE*36 = 72px) but within the
       // stormcall wide range (3*72 = 216px), so it must be struck.
-      expect(takeDamageWide).toHaveBeenCalledWith(20 * CHAIN_DAMAGE_FALLOFF);
+      expect(takeDamageWide).toHaveBeenCalledWith(20 * getGameContent().towers.tuning.chainDamageFalloff);
       expect(applyStunWide).toHaveBeenCalledWith(0.1);
       const effects = manager.getRenderVisualEffects();
       // chain hop flash + stormcall flash + tower->target flash = 3 lightning bolts
@@ -1739,17 +1736,17 @@ describe("ProjectileManager", () => {
   });
 });
 
-const HIT_STEP_DT = 0.02;
-const HIT_STEP_SPEED = 100;
-const HIT_MOVE_DIST = HIT_STEP_SPEED * HIT_STEP_DT;
-const GLYPH_RADIUS = 3;
+const hitStepDt = 0.02;
+const hitStepSpeed = 100;
+const hitMoveDist = hitStepSpeed * hitStepDt;
+const glyphRadius = 3;
 
 function configuredColliderRadius(enemyType: string): number {
-  return ENEMY_TYPES[enemyType].radius * 36 * 0.5;
+  return getGameContent().enemies.types[enemyType].radius * 36 * 0.5;
 }
 
 function hitReach(enemyRadius: number): number {
-  return GLYPH_RADIUS + PROJECTILE_HIT_SLOP + enemyRadius + HIT_MOVE_DIST;
+  return glyphRadius + projectileHitSlop + enemyRadius + hitMoveDist;
 }
 
 function shotDamagedEnemy(enemyRadius: number, gap: number, fixedAim: boolean): boolean {
@@ -1761,7 +1758,7 @@ function shotDamagedEnemy(enemyRadius: number, gap: number, fixedAim: boolean): 
     x: 0,
     y: 0,
     damage: 10,
-    speed: HIT_STEP_SPEED,
+    speed: hitStepSpeed,
     range: 30,
     towerType: "basic",
     towerLevel: 1,
@@ -1770,7 +1767,7 @@ function shotDamagedEnemy(enemyRadius: number, gap: number, fixedAim: boolean): 
     targetY: 0,
     critChance: 0,
   });
-  shotManager.update(HIT_STEP_DT);
+  shotManager.update(hitStepDt);
   return takeDamage.mock.calls.length > 0;
 }
 
@@ -1806,7 +1803,7 @@ describe("projectile hit reach uses the enemy radius", () => {
       x: 0,
       y: 0,
       damage: 10,
-      speed: HIT_STEP_SPEED,
+      speed: hitStepSpeed,
       range: 30,
       towerType: "basic",
       towerLevel: 1,
@@ -1816,12 +1813,12 @@ describe("projectile hit reach uses the enemy radius", () => {
       critChance: 0,
     });
 
-    shotManager.postPhysics(HIT_STEP_DT, []);
+    shotManager.postPhysics(hitStepDt, []);
     const renderData = shotManager.getRenderData();
     expect(renderData).toHaveLength(1);
     expect(renderData[0]!.x).toBeCloseTo(gap - enemyRadius, 5);
 
-    shotManager.prePhysics(HIT_STEP_DT);
+    shotManager.prePhysics(hitStepDt);
     expect(shotManager.getRenderData()).toHaveLength(0);
   });
 });
@@ -1831,13 +1828,13 @@ describe("pending visual-effect caps (Block D2)", () => {
     const enemy = createMockEnemy({ id: 1, x: 105, y: 200, hp: 1e9, maxHp: 1e9 });
     const manager = new ProjectileManager(createMockEnemyManager([enemy]), createMockParticleSystem());
 
-    for (let call = 0; call < MAX_PENDING_LIGHTNING_EFFECTS + 20; call++) {
+    for (let call = 0; call < maxPendingLightningEffects + 20; call++) {
       manager.fireLightning({ originX: 100, originY: 200, damage: 1, towerLevel: 1, targetId: 1, stunDuration: 0.1 });
     }
 
     const effects = manager.getRenderVisualEffects();
-    expect(effects.lightning).toHaveLength(MAX_PENDING_LIGHTNING_EFFECTS);
-    expect(effects.stuns).toHaveLength(MAX_PENDING_STUN_EFFECTS);
+    expect(effects.lightning).toHaveLength(maxPendingLightningEffects);
+    expect(effects.stuns).toHaveLength(maxPendingStunEffects);
   });
 });
 

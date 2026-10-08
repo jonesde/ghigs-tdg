@@ -74,24 +74,17 @@ export const TowerTuningSchema = z.object({
   chainRange: z.number(),
   napalmBurnDpsRatio: z.number(),
   napalmBurnDuration: z.number(),
-  critChance: z.number(),
-  goldPerCrit: z.number(),
   iceBurstStunDuration: z.number(),
   iceBurstInterval: z.number(),
   iceBurstRange: z.number(),
-  stunShellDuration: z.number(),
   staticFieldSlowAmt: z.number(),
   staticFieldSlowDur: z.number(),
   staticFieldRange: z.number(),
-  doubleDischargeChance: z.number(),
   burnCircuitDmgMult: z.number(),
   burnCircuitDuration: z.number(),
-  trueShotChance: z.number(),
-  markTargetDmgPct: z.number(),
   markTargetDuration: z.number(),
   chargeShotMult: z.number(),
   chargeShotCount: z.number(),
-  multiPierceCount: z.number(),
   bounceDamageFalloff: z.number(),
   antiHealDuration: z.number(),
   marksmanChance: z.number(),
@@ -122,7 +115,6 @@ export const BaseDefenseContentSchema = z.object({
 });
 
 export const TowersContentSchema = z.object({
-  ids: z.array(z.string()).min(1),
   meta: z.record(z.string(), TowerMetaSchema),
   base: z.record(z.string(), TowerBaseSchema),
   tuning: TowerTuningSchema,
@@ -132,8 +124,8 @@ export const TowersContentSchema = z.object({
 });
 
 export type TowersContent = z.infer<typeof TowersContentSchema>;
-export type TowerBaseData = z.infer<typeof TowerBaseSchema>;
-export type TowerMetaData = z.infer<typeof TowerMetaSchema>;
-export type TowerAddonEffectData = z.infer<typeof TowerAddonEffectSchema>;
+export type TowerBase = z.infer<typeof TowerBaseSchema>;
+export type TowerMeta = z.infer<typeof TowerMetaSchema>;
+export type TowerAddonEffect = z.infer<typeof TowerAddonEffectSchema>;
 export type TowerVariantDef = z.infer<typeof TowerVariantDefSchema>;
 export type TowerTuning = z.infer<typeof TowerTuningSchema>;

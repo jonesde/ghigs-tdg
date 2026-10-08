@@ -3,25 +3,23 @@
 
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-  BETWEEN_WAVES_TIMER,
-  BOSS_CADENCE,
-  ENEMY_TYPES,
-  HEALER_MIN_GAP,
-  PRE_EMPTIVE_WAVE_TIMER,
-  VICTORY_WAVE,
-  WAVE_COUNT_BASE,
-  WAVE_COUNT_SCALE,
-} from "@/sim/Constants.js";
-import { enemyLevelForWave } from "@/sim/ConstantsEnemy.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { createSpawnWeightCredits, pickWeightedSpawn, WaveManager } from "@/sim/waves/WaveManager.js";
+import { enemyLevelForWave } from "@/sim/waves/waveComposition.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap, makeMapData } from "../helpers/mock-grid";
 import { makeParticleSystem } from "../helpers/mock-managers";
 import { mockDefaultTheme } from "../helpers/mock-stores";
+
+const victoryWave = getGameContent().economy.victoryWave;
+const preEmptiveWaveTimer = getGameContent().economy.preEmptiveWaveTimer;
+const betweenWavesTimer = getGameContent().economy.betweenWavesTimer;
+const healerMinGap = getGameContent().enemies.healerMinGap;
+const waveCountBase = getGameContent().enemies.waveCountBase;
+const waveCountScale = getGameContent().enemies.waveCountScale;
 
 beforeEach(() => {
   const pinia = createPinia();
@@ -70,12 +68,12 @@ describe("WaveManager", () => {
     it("sets bossCadence from map", () => {
       const map = makeBastionMap();
       const waveManager = makeWaveManager(map);
-      expect(waveManager.bossCadence).toBe(BOSS_CADENCE[0]);
+      expect(waveManager.bossCadence).toBe(getGameContent().enemies.bossCadence[0]);
     });
 
-    it("sets maxWaves to VICTORY_WAVE", () => {
+    it("sets maxWaves to victoryWave", () => {
       const waveManager = makeWaveManager(makeBastionMap());
-      expect(waveManager.maxWaves).toBe(VICTORY_WAVE);
+      expect(waveManager.maxWaves).toBe(victoryWave);
     });
   });
 
@@ -83,7 +81,7 @@ describe("WaveManager", () => {
     it("generates correct enemy count for wave 1", () => {
       const waveManager = makeWaveManager(makeBastionMap());
       const wave = waveManager.generateWave(1);
-      const expectedCount = WAVE_COUNT_BASE + Math.floor(1 * WAVE_COUNT_SCALE);
+      const expectedCount = waveCountBase + Math.floor(1 * waveCountScale);
       expect(wave.length).toBe(expectedCount);
     });
 
@@ -91,8 +89,8 @@ describe("WaveManager", () => {
       const waveManager = makeWaveManager(makeBastionMap());
       const waveOne = waveManager.generateWave(1);
       const waveTen = waveManager.generateWave(10);
-      const expectedOne = WAVE_COUNT_BASE + Math.floor(1 * WAVE_COUNT_SCALE);
-      const expectedTen = WAVE_COUNT_BASE + Math.floor(10 * WAVE_COUNT_SCALE);
+      const expectedOne = waveCountBase + Math.floor(1 * waveCountScale);
+      const expectedTen = waveCountBase + Math.floor(10 * waveCountScale);
       // Wave 10 is a boss wave (10 % 5 === 0), so it has extra bosses
       expect(waveOne.length).toBe(expectedOne);
       expect(waveTen.length).toBeGreaterThanOrEqual(expectedTen);
@@ -111,7 +109,7 @@ describe("WaveManager", () => {
 
     it("includes boss at boss cadence waves for region 0", () => {
       const waveManager = makeWaveManager(makeBastionMap());
-      const wave = waveManager.generateWave(BOSS_CADENCE[0]);
+      const wave = waveManager.generateWave(getGameContent().enemies.bossCadence[0]);
       const bosses = wave.filter((enemy) => enemy.type === "boss");
       expect(bosses.length).toBeGreaterThanOrEqual(1);
     });
@@ -137,7 +135,7 @@ describe("WaveManager", () => {
       // non-boss count was clamped by (ENEMY_POOL_SIZE - bossCount), thinning waves.
       const wave = waveManager.generateWave(100);
       const nonBoss = wave.filter((enemy) => enemy.type !== "boss");
-      const expectedBaseCount = WAVE_COUNT_BASE + Math.floor(100 * WAVE_COUNT_SCALE);
+      const expectedBaseCount = waveCountBase + Math.floor(100 * waveCountScale);
       expect(nonBoss.length).toBe(expectedBaseCount);
     });
 
@@ -233,7 +231,7 @@ describe("WaveManager", () => {
       expect(sawHealer).toBe(true);
     });
 
-    it("keeps at least HEALER_MIN_GAP enemies between consecutive healers", () => {
+    it("keeps at least healerMinGap enemies between consecutive healers", () => {
       let sawHealer = false;
       for (let seed = 0; seed < 20; seed++) {
         const map = makeMapData({ ...makeBastionMap(), seed: 7000 + seed });
@@ -244,7 +242,7 @@ describe("WaveManager", () => {
           for (const entry of wave) {
             if (entry.type === "healer") {
               if (seenHealer) {
-                expect(sinceLastHealer).toBeGreaterThanOrEqual(HEALER_MIN_GAP);
+                expect(sinceLastHealer).toBeGreaterThanOrEqual(healerMinGap);
               }
               seenHealer = true;
               sinceLastHealer = 0;
@@ -265,9 +263,9 @@ describe("WaveManager", () => {
           const wave = makeWaveManager(map).generateWave(waveNumber);
           const healerCount = wave.filter((entry) => entry.type === "healer").length;
           const nonHealerCount = wave.length - healerCount;
-          expect(healerCount).toBeLessThanOrEqual(1 + Math.floor(nonHealerCount / HEALER_MIN_GAP));
+          expect(healerCount).toBeLessThanOrEqual(1 + Math.floor(nonHealerCount / healerMinGap));
           const nonBoss = wave.filter((entry) => entry.type !== "boss");
-          expect(nonBoss.length).toBe(WAVE_COUNT_BASE + Math.floor(waveNumber * WAVE_COUNT_SCALE));
+          expect(nonBoss.length).toBe(waveCountBase + Math.floor(waveNumber * waveCountScale));
         }
       }
     });
@@ -352,7 +350,7 @@ describe("WaveManager", () => {
           for (const entry of wave) {
             if (entry.type === "healer" || entry.type === "mender") {
               if (seenHealerType) {
-                expect(sinceLastHealerType).toBeGreaterThanOrEqual(HEALER_MIN_GAP);
+                expect(sinceLastHealerType).toBeGreaterThanOrEqual(healerMinGap);
               }
               seenHealerType = true;
               sinceLastHealerType = 0;
@@ -371,7 +369,7 @@ describe("WaveManager", () => {
       for (let waveNumber = 1; waveNumber <= 100; waveNumber++) {
         const wave = waveManager.generateWave(waveNumber);
         for (const entry of wave) {
-          expect(ENEMY_TYPES[entry.type]).toBeDefined();
+          expect(getGameContent().enemies.types[entry.type]).toBeDefined();
         }
       }
     });
@@ -379,9 +377,7 @@ describe("WaveManager", () => {
     it("keeps a catalog wave 1 on the unscaled count", () => {
       const waveManager = makeWaveManager(makeBastionMap());
       const wave = waveManager.generateWave(1);
-      expect(wave.filter((entry) => entry.type !== "boss")).toHaveLength(
-        WAVE_COUNT_BASE + Math.floor(WAVE_COUNT_SCALE),
-      );
+      expect(wave.filter((entry) => entry.type !== "boss")).toHaveLength(waveCountBase + Math.floor(waveCountScale));
     });
 
     it("ramps a progressive level-12 wave and skips the early boss", () => {
@@ -482,9 +478,9 @@ describe("WaveManager", () => {
   });
 
   describe("update", () => {
-    it("waits BETWEEN_WAVES_TIMER seconds before starting wave 1", () => {
+    it("waits betweenWavesTimer seconds before starting wave 1", () => {
       const waveManager = makeWaveManager(makeBastionMap());
-      // betweenTimer starts at BETWEEN_WAVES_TIMER, so a short update must not start a wave yet
+      // betweenTimer starts at betweenWavesTimer, so a short update must not start a wave yet
       let startedWave: number | null = null;
       waveManager.update(0.1, null, (wave) => {
         startedWave = wave;
@@ -492,7 +488,7 @@ describe("WaveManager", () => {
       expect(startedWave).toBe(null);
       expect(waveManager.betweenWaves).toBe(true);
       // After the full build delay, wave 1 starts
-      waveManager.update(BETWEEN_WAVES_TIMER + 0.1, null, (wave) => {
+      waveManager.update(betweenWavesTimer + 0.1, null, (wave) => {
         startedWave = wave;
       });
       expect(startedWave).toBe(1);
@@ -502,7 +498,7 @@ describe("WaveManager", () => {
     it("calls onWaveStart when starting a wave", () => {
       const waveManager = makeWaveManager(makeBastionMap());
       let startedWave: number | null = null;
-      waveManager.update(BETWEEN_WAVES_TIMER + 0.1, null, (wave) => {
+      waveManager.update(betweenWavesTimer + 0.1, null, (wave) => {
         startedWave = wave;
       });
       expect(startedWave).toBe(1);
@@ -522,25 +518,25 @@ describe("WaveManager", () => {
       waveManager.queue = [];
       waveManager.update(0.1, null, null);
       expect(waveManager.countdownActive).toBe(true);
-      expect(waveManager.countdownTimer).toBe(BETWEEN_WAVES_TIMER);
+      expect(waveManager.countdownTimer).toBe(betweenWavesTimer);
     });
 
-    it("does not start countdown before PRE_EMPTIVE_WAVE_TIMER when enemies remain", () => {
+    it("does not start countdown before preEmptiveWaveTimer when enemies remain", () => {
       const waveManager = makeWaveManager(makeBastionMap());
       waveManager.startNextWave();
       waveManager.enemyManager.spawn("minion", 1, 0, 1);
       waveManager.queue = [];
-      waveManager.update(PRE_EMPTIVE_WAVE_TIMER - 1, null, null);
+      waveManager.update(preEmptiveWaveTimer - 1, null, null);
       expect(waveManager.countdownActive).toBe(false);
       expect(waveManager.countdownTimer).toBe(0);
     });
 
-    it("starts next wave directly after PRE_EMPTIVE_WAVE_TIMER even when enemies remain", () => {
+    it("starts next wave directly after preEmptiveWaveTimer even when enemies remain", () => {
       const waveManager = makeWaveManager(makeBastionMap());
       waveManager.startNextWave();
       waveManager.enemyManager.spawn("minion", 1, 0, 1);
       waveManager.queue = [];
-      waveManager.update(PRE_EMPTIVE_WAVE_TIMER + 1, null, null);
+      waveManager.update(preEmptiveWaveTimer + 1, null, null);
       expect(waveManager.countdownActive).toBe(false);
       expect(waveManager.currentWave).toBe(2);
       expect(waveManager.betweenWaves).toBe(false);
@@ -551,7 +547,7 @@ describe("WaveManager", () => {
       waveManager.startNextWave();
       waveManager.queue = [];
       let startedWave: number | null = null;
-      waveManager.update(PRE_EMPTIVE_WAVE_TIMER + 1, null, (wave) => {
+      waveManager.update(preEmptiveWaveTimer + 1, null, (wave) => {
         startedWave = wave;
       });
       expect(startedWave).toBe(2);
@@ -568,7 +564,7 @@ describe("WaveManager", () => {
       let clearedWave: number | null = null;
       let startedWave: number | null = null;
       waveManager.update(
-        PRE_EMPTIVE_WAVE_TIMER + 1,
+        preEmptiveWaveTimer + 1,
         (wave) => {
           clearedWave = wave;
         },
@@ -581,15 +577,15 @@ describe("WaveManager", () => {
       expect(waveManager.currentWave).toBe(2);
     });
 
-    it("pre-emptive expiry at VICTORY_WAVE reports the wave end without starting another", () => {
+    it("pre-emptive expiry at victoryWave reports the wave end without starting another", () => {
       const waveManager = makeWaveManager(makeBastionMap());
       waveManager.startNextWave();
-      waveManager.currentWave = VICTORY_WAVE;
+      waveManager.currentWave = victoryWave;
       waveManager.queue = [];
       let clearedWave: number | null = null;
       let startedWave: number | null = null;
       waveManager.update(
-        PRE_EMPTIVE_WAVE_TIMER + 1,
+        preEmptiveWaveTimer + 1,
         (wave) => {
           clearedWave = wave;
         },
@@ -597,22 +593,22 @@ describe("WaveManager", () => {
           startedWave = wave;
         },
       );
-      expect(clearedWave).toBe(VICTORY_WAVE);
+      expect(clearedWave).toBe(victoryWave);
       expect(startedWave).toBeNull();
-      expect(waveManager.currentWave).toBe(VICTORY_WAVE);
+      expect(waveManager.currentWave).toBe(victoryWave);
       expect(waveManager.betweenWaves).toBe(true);
     });
 
-    it("pre-emptive expiry at VICTORY_WAVE reports the wave end exactly once", () => {
+    it("pre-emptive expiry at victoryWave reports the wave end exactly once", () => {
       const waveManager = makeWaveManager(makeBastionMap());
       waveManager.startNextWave();
-      waveManager.currentWave = VICTORY_WAVE;
+      waveManager.currentWave = victoryWave;
       waveManager.queue = [];
       const clearedWaves: number[] = [];
       const onWaveCleared = (wave: number) => clearedWaves.push(wave);
-      waveManager.update(PRE_EMPTIVE_WAVE_TIMER + 1, onWaveCleared, null);
-      waveManager.update(PRE_EMPTIVE_WAVE_TIMER + 1, onWaveCleared, null);
-      expect(clearedWaves).toEqual([VICTORY_WAVE]);
+      waveManager.update(preEmptiveWaveTimer + 1, onWaveCleared, null);
+      waveManager.update(preEmptiveWaveTimer + 1, onWaveCleared, null);
+      expect(clearedWaves).toEqual([victoryWave]);
     });
   });
 
@@ -758,7 +754,7 @@ describe("WaveManager", () => {
       waveManager.markSpawnUsed(0);
       waveManager.enemyManager.spawn("minion", 1, 0, 1);
       waveManager.queue = [];
-      waveManager.update(PRE_EMPTIVE_WAVE_TIMER + 1, null, null);
+      waveManager.update(preEmptiveWaveTimer + 1, null, null);
       expect(waveManager.currentWave).toBe(2);
       expect(waveManager.spawnStates[0]!.visualState).toBe("transition");
     });
@@ -776,7 +772,7 @@ describe("WaveManager", () => {
 
       // Advance past both the 1s transition timer and the between-waves timer
       let startedWave: number | null = null;
-      waveManager.update(BETWEEN_WAVES_TIMER + 0.1, null, (wave) => {
+      waveManager.update(betweenWavesTimer + 0.1, null, (wave) => {
         startedWave = wave;
       });
       expect(startedWave).toBe(2);

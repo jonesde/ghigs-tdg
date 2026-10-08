@@ -1,6 +1,7 @@
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useInput } from "@/composables/Input.js";
+import { TowerIds } from "@/content/towerIds.js";
 import {
   ARROW_PAN_FRACTION,
   EDGE_BUFFER_FRACTION,
@@ -10,9 +11,8 @@ import {
   ZOOM_STEP,
 } from "@/render/svg/cameraFrame.js";
 import type { Command } from "@/sim/Command.js";
-import { GameState } from "@/sim/Constants.js";
-import { TowerIds } from "@/sim/ConstantsTower.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
+import { GameState } from "@/sim/GameRunState.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
 import {
@@ -20,7 +20,7 @@ import {
   createProgressiveBoard,
   drawBlockOffer,
   generateProgressiveMap,
-  PROGRESSIVE_BLOCK_SIZE,
+  progressiveBlockSize,
   progressiveBlockWorldCorner,
   progressiveConfigForIndex,
   sitesAtRotation,
@@ -1247,13 +1247,13 @@ describe("useInput", () => {
   });
 
   describe("bonus picker", () => {
-    const OFFER = ["sharpenedType", "smallPurse", "largePurse"] as const;
+    const offer = ["sharpenedType", "smallPurse", "largePurse"] as const;
 
     function openPicker(sealed: boolean): void {
       gameStore.setState(GameState.PLAYING);
-      gameStore.bonusPicker = { source: "cache", id: 3, offer: [...OFFER], wasPlaying: true, specialistType: "basic" };
+      gameStore.bonusPicker = { source: "cache", id: 3, offer: [...offer], wasPlaying: true, specialistType: "basic" };
       gameStore.mapCaches = [
-        { id: 3, tileX: 0, tileY: 0, worldX: 0, worldY: 0, hp: 60, maxHp: 60, offer: [...OFFER], unlocked: !sealed },
+        { id: 3, tileX: 0, tileY: 0, worldX: 0, worldY: 0, hp: 60, maxHp: 60, offer: [...offer], unlocked: !sealed },
       ];
       gameStore.bonusPickerSelectedOption = 0;
     }
@@ -1671,15 +1671,15 @@ describe("useInput", () => {
       const destination = chooseAdjacentSite(sites, origin!, "right");
       gameStore.progressiveSelectedSite = { blockX: origin!.blockX, blockY: origin!.blockY };
       const tileSize = 36;
-      const halfBlock = (PROGRESSIVE_BLOCK_SIZE * tileSize) / 2;
+      const halfBlock = (progressiveBlockSize * tileSize) / 2;
       const corner = progressiveBlockWorldCorner(destination.blockX, destination.blockY, tileSize);
       return {
         map,
         destination,
         focusX: corner.x + halfBlock,
         focusY: corner.y + halfBlock,
-        worldDx: (destination.blockX - origin!.blockX) * PROGRESSIVE_BLOCK_SIZE * tileSize,
-        worldDy: (destination.blockY - origin!.blockY) * PROGRESSIVE_BLOCK_SIZE * tileSize,
+        worldDx: (destination.blockX - origin!.blockX) * progressiveBlockSize * tileSize,
+        worldDy: (destination.blockY - origin!.blockY) * progressiveBlockSize * tileSize,
       };
     }
 

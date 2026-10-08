@@ -1,20 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { enemyOrder } from "@/components/enemyOrder.js";
 import { formatEnemyLevelMult } from "@/content/formulas.js";
 import { getGameContent } from "@/content/gameContent.js";
-import { DIFFICULTY_MULT_TICK, REGION_DIFFICULTY_MULT } from "@/sim/Constants.js";
-import {
-  BOSS_CADENCE,
-  ENEMY_ORDER,
-  ENEMY_TIER_THRESHOLDS,
-  ENEMY_TYPES,
-  type EnemyMeta,
-  enemyLevelForWave,
-  waveBossCount,
-  waveUnitCount,
-} from "@/sim/ConstantsEnemy.js";
+import type { EnemyMeta } from "@/content/schemas/enemies.js";
 import { computeEnemyWaveStats } from "@/sim/enemies/enemyWaveStats.js";
 import { getMapDisplayName } from "@/sim/grid/Map.js";
+import { enemyLevelForWave, waveBossCount, waveUnitCount } from "@/sim/waves/waveComposition.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -23,26 +15,26 @@ const gameStore = useGameStore();
 const themeStore = useMapThemeStore();
 const persistStore = usePersistStore();
 
-const WAVE_STOPS = [1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+const waveStops = [1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 
 function nearestStopIndex(wave: number): number {
   let bestIndex = 0;
-  for (let stopIndex = 0; stopIndex < WAVE_STOPS.length; stopIndex++) {
-    if (WAVE_STOPS[stopIndex]! <= wave) bestIndex = stopIndex;
+  for (let stopIndex = 0; stopIndex < waveStops.length; stopIndex++) {
+    if (waveStops[stopIndex]! <= wave) bestIndex = stopIndex;
   }
   return bestIndex;
 }
 
 const waveStopIndex = ref(nearestStopIndex(gameStore.currentWave));
-const wave = computed(() => WAVE_STOPS[waveStopIndex.value]!);
+const wave = computed(() => waveStops[waveStopIndex.value]!);
 const mapLevel = computed(() => Math.max(1, gameStore.map?.level ?? 1));
-const bossCadence = computed(() => gameStore.map?.bossCadence ?? BOSS_CADENCE[0]!);
+const bossCadence = computed(() => gameStore.map?.bossCadence ?? getGameContent().enemies.bossCadence[0]!);
 const difficultyTick = computed(() => persistStore.difficulty?.multiplierTick ?? 0);
-const difficultyMult = computed(() => difficultyTick.value * DIFFICULTY_MULT_TICK + 1);
-const regionFactor = computed(() => REGION_DIFFICULTY_MULT * (gameStore.map?.regionId ?? 0));
+const difficultyMult = computed(() => difficultyTick.value * getGameContent().economy.difficultyMultTick + 1);
+const regionFactor = computed(() => getGameContent().economy.regionDifficultyMult * (gameStore.map?.regionId ?? 0));
 
 const firstWaveByType = new Map<string, number>();
-for (const threshold of ENEMY_TIER_THRESHOLDS) {
+for (const threshold of getGameContent().enemies.tierThresholds) {
   firstWaveByType.set(threshold.type, threshold.minWave);
 }
 
@@ -90,13 +82,13 @@ interface EnemyHelpRow {
 
 const enemyRows = computed<EnemyHelpRow[]>(() => {
   const enemyLevel = enemyLevelForWave(wave.value, mapLevel.value);
-  return ENEMY_ORDER.map((type) => {
-    const meta = ENEMY_TYPES[type] as EnemyMeta;
+  return enemyOrder.map((type) => {
+    const meta = getGameContent().enemies.types[type] as EnemyMeta;
     const visual = themeStore.getEnemyVisual(type);
     const waveStats = computeEnemyWaveStats(meta, enemyLevel, wave.value, difficultyTick.value, regionFactor.value);
     return {
       type,
-      name: visual?.name ?? meta.name ?? type,
+      name: visual?.name ?? type,
       color: visual?.color ?? "",
       sprite: visual?.walking?.referenceImages[0]?.svg ?? null,
       available: isAvailable(type),
@@ -119,15 +111,14 @@ const contextBossCount = computed(() => waveBossCount(wave.value, bossCadence.va
 const contextMapLabel = computed(() => getMapDisplayName(gameStore.map, themeStore.activeTheme));
 
 const spawnableTypes = computed(() =>
-  ENEMY_ORDER.filter((type) => isAvailable(type)).map((type) => themeStore.getEnemyVisual(type)?.name ?? type),
+  enemyOrder.filter((type) => isAvailable(type)).map((type) => themeStore.getEnemyVisual(type)?.name ?? type),
 );
 
-const enemyContent = getGameContent().enemies;
-const hpFormula = `HP = base × (${formatEnemyLevelMult(enemyContent.levelHpMult)}) × (1 + ${
-  enemyContent.waveHpMult
+const hpFormula = `HP = base × (${formatEnemyLevelMult(getGameContent().enemies.levelHpMult)}) × (1 + ${
+  getGameContent().enemies.waveHpMult
 } × (wave − 1)) × difficulty`;
-const damageFormula = `Damage = base × (${formatEnemyLevelMult(enemyContent.levelDamageMult)}) × (1 + ${
-  enemyContent.waveDamageMult
+const damageFormula = `Damage = base × (${formatEnemyLevelMult(getGameContent().enemies.levelDamageMult)}) × (1 + ${
+  getGameContent().enemies.waveDamageMult
 } × (wave − 1)) × difficulty`;
 </script>
 
@@ -140,7 +131,7 @@ const damageFormula = `Damage = base × (${formatEnemyLevelMult(enemyContent.lev
         class="help-slider"
         type="range"
         min="0"
-        :max="WAVE_STOPS.length - 1"
+        :max="waveStops.length - 1"
         step="1"
         v-model.number="waveStopIndex"
       />

@@ -1,18 +1,12 @@
 // @ts-nocheck
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it } from "vitest";
+import { getGameContent } from "@/content/gameContent.js";
 import { applyCommand } from "@/sim/applyCommand.js";
-import {
-  FIXED_DT,
-  GameState,
-  STARTING_BASE_HEALTH,
-  STARTING_GOLD_BONUS,
-  STARTING_HEALTH_BONUS,
-  StartingGold,
-} from "@/sim/Constants.js";
-import { CANCEL_BUILD_WINDOW_MS, TOWER_META } from "@/sim/ConstantsTower.js";
 import { GameEngine } from "@/sim/GameEngine.js";
+import { GameState } from "@/sim/GameRunState.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import {
   createTestMapThemeStore,
   createTestPersistState,
@@ -29,7 +23,7 @@ function setupPinia() {
 
 function runTicks(engine: GameEngine, ticks: number): void {
   for (let i = 0; i < ticks; i++) {
-    engine.update(FIXED_DT);
+    engine.update(fixedDeltaSeconds);
   }
 }
 
@@ -84,7 +78,7 @@ describe("Integration: Single Wave Simulation", () => {
     // on that first corner tile, so the boss meets it while turning the corner.
     const tower = engine.towerManager!.build("shotgunTank", 1, 8, engine.persistState, engine.grid!);
     expect(tower).not.toBeNull();
-    engine.update(FIXED_DT);
+    engine.update(fixedDeltaSeconds);
     const boss = engine.enemyManager!.spawn("boss", 1, 0, 1);
     expect(boss).not.toBeNull();
     // 25s. A solid pellet shoves the boss off the north face and tower health
@@ -163,7 +157,7 @@ describe("Integration: Tower Placement Flow", () => {
     buildTowerAt(engine, 0, 0);
     const tower = engine.towerManager!.towerAt(0, 0)!;
     // Age past the cancel window so the confirm/sell path (not cancel) applies.
-    tower._gameSeconds = (CANCEL_BUILD_WINDOW_MS + 1000) / 1000;
+    tower._gameSeconds = (getGameContent().towers.tuning.cancelBuildWindowMs + 1000) / 1000;
     applyCommand(engine, { type: "action:selectTower", towerId: tower.id });
 
     const goldBefore = buildSnapshot(engine).meta.gold;
@@ -197,7 +191,7 @@ describe("Integration: Economy Flow", () => {
     buildTowerAt(engine, 0, 0);
     buildTowerAt(engine, 2, 2);
 
-    expect(buildSnapshot(engine).meta.gold).toBe(initialGold - TOWER_META.basic.cost * 2);
+    expect(buildSnapshot(engine).meta.gold).toBe(initialGold - getGameContent().towers.meta.basic.cost * 2);
   });
 
   it("upgrading a tower costs the correct amount", () => {
@@ -216,7 +210,7 @@ describe("Integration: Economy Flow", () => {
   it("sell returns 60% of total invested", async () => {
     buildTowerAt(engine, 0, 0);
     const tower = engine.towerManager!.towerAt(0, 0)!;
-    tower._gameSeconds = (CANCEL_BUILD_WINDOW_MS + 1000) / 1000;
+    tower._gameSeconds = (getGameContent().towers.tuning.cancelBuildWindowMs + 1000) / 1000;
     applyCommand(engine, { type: "action:selectTower", towerId: tower.id });
 
     applyCommand(engine, { type: "action:upgradeSelected" });
@@ -241,7 +235,8 @@ describe("Integration: Economy Flow", () => {
     const newEngine = new GameEngine(newPersistState, createTestThemeBundle(), new MockHostBindings(), 0);
     newEngine.loadMap(0);
 
-    expect(newEngine.runState.gold).toBe(StartingGold[0] + STARTING_GOLD_BONUS[0]);
-    expect(newEngine.runState.baseHealth).toBe(STARTING_BASE_HEALTH + STARTING_HEALTH_BONUS[0]);
+    const economy = getGameContent().economy;
+    expect(newEngine.runState.gold).toBe(economy.startingGoldByRegion[0] + economy.startingGoldBonus[0]);
+    expect(newEngine.runState.baseHealth).toBe(economy.startingBaseHealth + economy.startingHealthBonus[0]);
   });
 });

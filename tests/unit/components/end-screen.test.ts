@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { RouteRecordRaw } from "vue-router";
 import { createMemoryHistory, createRouter } from "vue-router";
 import EndScreen from "@/components/EndScreen.vue";
-import { CUSTOM_PROGRESSIVE_MAP_INDEX, CUSTOM_RANDOM_MAP_INDEX, GameState } from "@/sim/Constants.js";
+import { customProgressiveMapIndex, customRandomMapIndex, GameState } from "@/sim/GameRunState.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -150,7 +150,7 @@ describe("EndScreen", () => {
     const { pinia, gameStore, persistStore, uiStore, router } = mountEndScreen();
     persistStore.runHistory = [
       {
-        mapIndex: CUSTOM_PROGRESSIVE_MAP_INDEX,
+        mapIndex: customProgressiveMapIndex,
         victory: true,
         wave: 20,
         gems: 50,
@@ -165,7 +165,7 @@ describe("EndScreen", () => {
     const replayButton = wrapper.findAll("button").find((button) => button.text() === "Play Again")!;
     await replayButton.trigger("click");
     await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(gameStore.mapIndex).toBe(CUSTOM_PROGRESSIVE_MAP_INDEX);
+    expect(gameStore.mapIndex).toBe(customProgressiveMapIndex);
     expect(gameStore.map.style).toBe("progressive");
     expect(gameStore.map.regionId).toBe(1);
     expect(gameStore.map.level).toBe(4);
@@ -217,8 +217,8 @@ describe("EndScreen", () => {
     });
 
     it.each([
-      ["a custom generated map", CUSTOM_RANDOM_MAP_INDEX],
-      ["a custom progressive map", CUSTOM_PROGRESSIVE_MAP_INDEX],
+      ["a custom generated map", customRandomMapIndex],
+      ["a custom progressive map", customProgressiveMapIndex],
       ["a progressive catalog entry", 36],
     ])("hides the button on %s", (_label, mapIndex) => {
       const { pinia, gameStore, persistStore, router } = mountEndScreen();

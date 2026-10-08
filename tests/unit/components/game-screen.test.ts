@@ -3,8 +3,8 @@ import { createPinia, type Pinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createRouter, type Router, type RouterHistory } from "vue-router";
 import GameScreen from "@/components/GameScreen.vue";
-import { GameState } from "@/sim/Constants.js";
-import { BASE_SELECTION_ID } from "@/sim/towers/BaseDefense.js";
+import { GameState } from "@/sim/GameRunState.js";
+import { baseSelectionId } from "@/sim/towers/BaseDefense.js";
 import { useGameStore } from "@/stores/game.js";
 import { useUiStore } from "@/stores/ui.js";
 
@@ -29,7 +29,7 @@ vi.mock("@/components/StatsPanel.vue", () => ({ default: { template: '<div class
 vi.mock("@/components/MinimapPanel.vue", () => ({ default: { template: '<div class="minimap-panel" />' } }));
 vi.mock("@/components/HelpDialog.vue", () => ({ default: { template: '<div class="help-dialog" />' } }));
 
-const ALWAYS_ON = [
+const alwaysOn = [
   "svg-game-root",
   "game-hud",
   "game-shop",
@@ -46,7 +46,7 @@ const ALWAYS_ON = [
 ];
 
 // Overlays the parent gates with v-if.
-const PARENT_GATED = ["wave-countdown", "pause-menu", "skill-tree", "stats-panel", "minimap-panel", "help-dialog"];
+const parentGated = ["wave-countdown", "pause-menu", "skill-tree", "stats-panel", "minimap-panel", "help-dialog"];
 
 function fakeHistory(): RouterHistory {
   return {
@@ -112,7 +112,7 @@ describe("GameScreen", () => {
   });
 
   describe("always-on children", () => {
-    it.each(ALWAYS_ON)("mounts %s with every overlay closed", (className) => {
+    it.each(alwaysOn)("mounts %s with every overlay closed", (className) => {
       const harness = createHarness();
       const wrapper = mountScreen(harness);
       expect(wrapper.find(`.${className}`).exists()).toBe(true);
@@ -120,7 +120,7 @@ describe("GameScreen", () => {
   });
 
   describe("overlay gating", () => {
-    it.each(PARENT_GATED)("does not mount %s while it is closed", (className) => {
+    it.each(parentGated)("does not mount %s while it is closed", (className) => {
       const harness = createHarness();
       const wrapper = mountScreen(harness);
       expect(wrapper.find(`.${className}`).exists()).toBe(false);
@@ -132,7 +132,7 @@ describe("GameScreen", () => {
       openEveryOverlay(harness);
       await wrapper.vm.$nextTick();
 
-      for (const className of [...PARENT_GATED, ...ALWAYS_ON]) {
+      for (const className of [...parentGated, ...alwaysOn]) {
         expect(wrapper.find(`.${className}`).exists()).toBe(true);
       }
     });
@@ -232,7 +232,7 @@ describe("GameScreen", () => {
   describe("base selection", () => {
     it("mounts both detail panels; each child gates its own content on the selection", () => {
       const harness = createHarness();
-      harness.gameStore.selectedTowerId = BASE_SELECTION_ID;
+      harness.gameStore.selectedTowerId = baseSelectionId;
       const wrapper = mountScreen(harness);
       // GameScreen mounts both unconditionally, so this asserts the parent's
       // contract only. TowerPanel/BasePanel are covered by their own tests.

@@ -1,30 +1,28 @@
 import { getGameContent } from "@/content/gameContent.js";
-import { BASE_GOLD_COST, BASE_LEVEL_HEALTH_MULT } from "@/sim/Constants.js";
-import { PROJECTILE_SPEED_MULTIPLIER, UPGRADE_COST_BASE } from "@/sim/ConstantsTower.js";
 import type { GameRunState } from "@/sim/GameRunState.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { SoundPlayer } from "@/sim/HostBindings.js";
 import { baseDistanceRanksAhead } from "@/sim/towers/Tower.js";
 
-export const BASE_SELECTION_ID = "base";
+export const baseSelectionId = "base";
 
-const BASE_LEVEL_COUNT = 7;
-const LONG_RANGE_UNLOCK_LEVEL = 4;
-const SENTRY_BARREL_OFFSET_RATIO = 0.22;
+const baseLevelCount = 7;
+const longRangeUnlockLevel = 4;
+const sentryBarrelOffsetRatio = 0.22;
 
 const baseDefenseContent = getGameContent().towers.baseDefense;
-const SHORT_RANGE_TIERS = baseDefenseContent.shortRange;
-const LONG_RANGE_TIERS = baseDefenseContent.longRange;
-const LEVEL_SEVEN_DAMAGE_MULTIPLIER = baseDefenseContent.levelSevenDamageMultiplier;
+const shortRangeTiers = baseDefenseContent.shortRange;
+const longRangeTiers = baseDefenseContent.longRange;
+const levelSevenDamageMultiplier = baseDefenseContent.levelSevenDamageMultiplier;
 
-const CORNER_OFFSETS: { deltaX: number; deltaY: number }[] = [
+const cornerOffsets: { deltaX: number; deltaY: number }[] = [
   { deltaX: -1, deltaY: -1 },
   { deltaX: 1, deltaY: -1 },
   { deltaX: -1, deltaY: 1 },
   { deltaX: 1, deltaY: 1 },
 ];
 
-const EDGE_OFFSETS: { deltaX: number; deltaY: number }[] = [
+const edgeOffsets: { deltaX: number; deltaY: number }[] = [
   { deltaX: 0, deltaY: -1 },
   { deltaX: -1, deltaY: 0 },
   { deltaX: 0, deltaY: 1 },
@@ -85,7 +83,7 @@ export interface BaseSentryRuntime {
 
 type GunKind = "short" | "long";
 
-const GUN_PRESENTATION: Record<GunKind, { color: string; sound: "shoot_basic" | "shoot_sniper" }> = {
+const gunPresentation: Record<GunKind, { color: string; sound: "shoot_basic" | "shoot_sniper" }> = {
   short: { color: "#e6c35c", sound: "shoot_basic" },
   long: { color: "#d7e4ff", sound: "shoot_sniper" },
 };
@@ -141,14 +139,15 @@ export class BaseDefense {
     this.totalDamageDealt = 0;
     this.waveDamage = 0;
     this.previousWaveDamage = 0;
-    const maxHealth = levelOneHealth * BASE_LEVEL_HEALTH_MULT ** 0 * this.runHealthMult;
+    const maxHealth = levelOneHealth * getGameContent().economy.baseLevelHealthMult ** 0 * this.runHealthMult;
     this.runState.baseHealth = maxHealth;
     this.runState.maxBaseHealth = maxHealth;
     this.setEngineMax(maxHealth);
   }
 
   recomputeMaxHealth(): void {
-    const newMax = this.levelOneHealth * BASE_LEVEL_HEALTH_MULT ** (this.level - 1) * this.runHealthMult;
+    const newMax =
+      this.levelOneHealth * getGameContent().economy.baseLevelHealthMult ** (this.level - 1) * this.runHealthMult;
     const ratio = this.runState.maxBaseHealth > 0 ? this.runState.baseHealth / this.runState.maxBaseHealth : 1;
     const nextHealth = Math.max(0, newMax * ratio);
     this.runState.maxBaseHealth = newMax;
@@ -157,11 +156,12 @@ export class BaseDefense {
   }
 
   upgradeCost(nextLevel: number): number {
-    return Math.round(BASE_GOLD_COST * UPGRADE_COST_BASE ** (nextLevel - 2));
+    const costGrowth = getGameContent().towers.tuning.upgradeCostBase;
+    return Math.round(getGameContent().economy.baseGoldCost * costGrowth ** (nextLevel - 2));
   }
 
   canUpgrade(maxLevel: number): { ok: boolean; cost: number; reason: string | null } {
-    if (this.level >= maxLevel || this.level >= BASE_LEVEL_COUNT) {
+    if (this.level >= maxLevel || this.level >= baseLevelCount) {
       return { ok: false, cost: 0, reason: "Max level reached" };
     }
     return { ok: true, cost: this.upgradeCost(this.level + 1), reason: null };
@@ -201,17 +201,17 @@ export class BaseDefense {
 
   shortGun(): BaseGunStats | null {
     if (this.level < 1) return null;
-    const tier = SHORT_RANGE_TIERS[this.level - 1];
+    const tier = shortRangeTiers[this.level - 1];
     if (!tier) return null;
-    const multiplier = this.level >= BASE_LEVEL_COUNT ? LEVEL_SEVEN_DAMAGE_MULTIPLIER : 1;
+    const multiplier = this.level >= baseLevelCount ? levelSevenDamageMultiplier : 1;
     return this.applyBuildingBonus(scaledGun(tier, multiplier));
   }
 
   longGun(): BaseGunStats | null {
-    if (this.level < LONG_RANGE_UNLOCK_LEVEL) return null;
-    const tier = LONG_RANGE_TIERS[Math.min(2, this.level - LONG_RANGE_UNLOCK_LEVEL)];
+    if (this.level < longRangeUnlockLevel) return null;
+    const tier = longRangeTiers[Math.min(2, this.level - longRangeUnlockLevel)];
     if (!tier) return null;
-    const multiplier = this.level >= BASE_LEVEL_COUNT ? LEVEL_SEVEN_DAMAGE_MULTIPLIER : 1;
+    const multiplier = this.level >= baseLevelCount ? levelSevenDamageMultiplier : 1;
     return this.applyBuildingBonus(scaledGun(tier, multiplier));
   }
 
@@ -293,14 +293,14 @@ export class BaseDefense {
     simSeconds: number,
     tileSize: number,
   ): void {
-    const presentation = GUN_PRESENTATION[kind];
-    const barrelOffset = tileSize * SENTRY_BARREL_OFFSET_RATIO;
+    const presentation = gunPresentation[kind];
+    const barrelOffset = tileSize * sentryBarrelOffsetRatio;
     projectileSpawn.spawn({
-      towerId: BASE_SELECTION_ID,
+      towerId: baseSelectionId,
       x: turret.x + Math.cos(turret.angle) * barrelOffset,
       y: turret.y + Math.sin(turret.angle) * barrelOffset,
       damage: stats.damage,
-      speed: stats.projSpeed * tileSize * PROJECTILE_SPEED_MULTIPLIER,
+      speed: stats.projSpeed * tileSize * getGameContent().towers.tuning.projectileSpeedMultiplier,
       range: stats.range,
       towerType: "basic",
       towerLevel: this.level,
@@ -376,9 +376,8 @@ export class BaseDefense {
 
   private syncSentryPositions(): void {
     const base = this.grid.getBase();
-    const shortPositions = this.turretPositions(base.x, base.y, CORNER_OFFSETS);
-    const longPositions =
-      this.level >= LONG_RANGE_UNLOCK_LEVEL ? this.turretPositions(base.x, base.y, EDGE_OFFSETS) : [];
+    const shortPositions = this.turretPositions(base.x, base.y, cornerOffsets);
+    const longPositions = this.level >= longRangeUnlockLevel ? this.turretPositions(base.x, base.y, edgeOffsets) : [];
     this.reconcileTurrets(this.shortSentries, shortPositions);
     this.reconcileTurrets(this.longSentries, longPositions);
   }

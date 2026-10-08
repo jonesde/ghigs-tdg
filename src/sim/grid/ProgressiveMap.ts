@@ -3,29 +3,31 @@
 // of it is negative. GeneratedMap normalizes those into a 0-based array plus
 // originTileX/originTileY so world positions stay put when the rectangle grows.
 
+import { getGameContent } from "@/content/gameContent.js";
 import type { MapsContent } from "@/content/schemas/maps.js";
-import {
-  MAP_GEM_MULTIPLIERS,
-  MAPS_CONTENT,
-  MAPS_PER_REGION,
-  PROGRESSIVE_GOLD_PER_ENTRY,
-  PROGRESSIVE_MAP_COUNT,
-  PROGRESSIVE_MAP_INDEX_BASE,
-} from "@/sim/Constants.js";
-import { BOSS_CADENCE } from "@/sim/ConstantsEnemy.js";
 import { type GeneratedMap, getMap, type MapSpawnPoint, mulberry32 } from "@/sim/grid/Map.js";
 
-export const PROGRESSIVE_BLOCK_SIZE = 5;
+export const progressiveBlockSize = getGameContent().maps.progressive.blockSize;
 
-// Added to StartingGold for each base entry beyond the first.
+// Default (no-theme) maps catalog. Theme worlds override this per run via
+// MapThemeData.maps; the engine and map generators take it as a parameter and
+// fall back to this default when a theme carries no override.
+const defaultMaps = getGameContent().maps;
+const progressiveMapIndexBase = defaultMaps.levels.length;
+const progressiveVariantCount = defaultMaps.progressive.variants.length;
+// The catalog groups progressive.variants by region, so a region's variants are
+// the stride between its first index and the next region's.
+const progressiveVariantsPerRegion = progressiveVariantCount / (defaultMaps.levels.length / defaultMaps.mapsPerRegion);
+
+// Added to the region's starting gold for each base entry beyond the first.
 export function progressiveEntryGold(entryCount: number): number {
   const entriesBeyondFirst = Math.max(0, Math.floor(entryCount) - 1);
-  return PROGRESSIVE_GOLD_PER_ENTRY * entriesBeyondFirst;
+  return getGameContent().economy.progressiveGoldPerEntry * entriesBeyondFirst;
 }
-const BLOCK_CENTER = 2;
-const MARGIN_BLOCKS = 1;
-const TERRAIN_TEMPLATE_INDEXES = [10, 11];
-const TWO_OPENING_TEMPLATE_COUNT = 6;
+const blockCenter = (progressiveBlockSize - 1) / 2;
+const marginBlocks = 1;
+const terrainTemplateIndexes = [10, 11];
+const twoOpeningTemplateCount = 6;
 
 export type BlockEdge = "N" | "E" | "S" | "W";
 export type PathPattern =
@@ -105,24 +107,24 @@ export interface ProgressiveStamp {
   fill: boolean;
 }
 
-const EDGES: BlockEdge[] = ["N", "E", "S", "W"];
-const EDGE_DELTA: Record<BlockEdge, { x: number; y: number }> = {
+const edges: BlockEdge[] = ["N", "E", "S", "W"];
+const edgeDelta: Record<BlockEdge, { x: number; y: number }> = {
   N: { x: 0, y: -1 },
   E: { x: 1, y: 0 },
   S: { x: 0, y: 1 },
   W: { x: -1, y: 0 },
 };
-const OPPOSITE_EDGE: Record<BlockEdge, BlockEdge> = { N: "S", E: "W", S: "N", W: "E" };
-const CLOCKWISE_EDGE: Record<BlockEdge, BlockEdge> = { N: "E", E: "S", S: "W", W: "N" };
-const MOUTH_LOCAL: Record<BlockEdge, { x: number; y: number }> = {
-  N: { x: BLOCK_CENTER, y: 0 },
-  E: { x: PROGRESSIVE_BLOCK_SIZE - 1, y: BLOCK_CENTER },
-  S: { x: BLOCK_CENTER, y: PROGRESSIVE_BLOCK_SIZE - 1 },
-  W: { x: 0, y: BLOCK_CENTER },
+const oppositeEdge: Record<BlockEdge, BlockEdge> = { N: "S", E: "W", S: "N", W: "E" };
+const clockwiseEdge: Record<BlockEdge, BlockEdge> = { N: "E", E: "S", S: "W", W: "N" };
+const mouthLocalByEdge: Record<BlockEdge, { x: number; y: number }> = {
+  N: { x: blockCenter, y: 0 },
+  E: { x: progressiveBlockSize - 1, y: blockCenter },
+  S: { x: blockCenter, y: progressiveBlockSize - 1 },
+  W: { x: 0, y: blockCenter },
 };
-const ENTRY_EDGES: BlockEdge[][] = [["N"], ["N", "S"], ["N", "E", "S"], ["N", "E", "S", "W"]];
-const HEIGHT_PATTERNS: HeightPattern[] = ["slope", "peak", "roughSlope", "scatter"];
-const CATALOG_PATTERNS: Array<{ pattern: PathPattern; open: boolean }> = [
+const entryEdgesByCount: BlockEdge[][] = [["N"], ["N", "S"], ["N", "E", "S"], ["N", "E", "S", "W"]];
+const heightPatterns: HeightPattern[] = ["slope", "peak", "roughSlope", "scatter"];
+const catalogPatterns: Array<{ pattern: PathPattern; open: boolean }> = [
   { pattern: "straight", open: false },
   { pattern: "straight", open: true },
   { pattern: "straightJog", open: false },
@@ -138,19 +140,16 @@ const CATALOG_PATTERNS: Array<{ pattern: PathPattern; open: boolean }> = [
 ];
 
 export function isProgressiveMapIndex(mapIndex: number): boolean {
-  return mapIndex >= PROGRESSIVE_MAP_INDEX_BASE && mapIndex < PROGRESSIVE_MAP_INDEX_BASE + PROGRESSIVE_MAP_COUNT;
+  return mapIndex >= progressiveMapIndexBase && mapIndex < progressiveMapIndexBase + progressiveVariantCount;
 }
 
 export function progressiveMapIndex(regionId: number, variantIndex: number): number {
-  return PROGRESSIVE_MAP_INDEX_BASE + regionId * 4 + variantIndex;
+  return progressiveMapIndexBase + regionId * progressiveVariantsPerRegion + variantIndex;
 }
 
-export function progressiveConfigForIndex(
-  mapIndex: number,
-  maps: MapsContent = MAPS_CONTENT,
-): ProgressiveConfig | null {
+export function progressiveConfigForIndex(mapIndex: number, maps: MapsContent = defaultMaps): ProgressiveConfig | null {
   if (!isProgressiveMapIndex(mapIndex)) return null;
-  const variant = maps.progressive.variants[mapIndex - PROGRESSIVE_MAP_INDEX_BASE];
+  const variant = maps.progressive.variants[mapIndex - progressiveMapIndexBase];
   if (!variant) return null;
   return { regionId: variant.regionId, level: variant.level, entryCount: variant.entryCount, seed: variant.seed };
 }
@@ -165,11 +164,11 @@ export function progressiveConfigFromMap(map: GeneratedMap | null): ProgressiveC
 }
 
 export function progressiveUnlockMapIndex(config: ProgressiveConfig): number {
-  return config.regionId * MAPS_PER_REGION + (config.level - 1);
+  return config.regionId * defaultMaps.mapsPerRegion + (config.level - 1);
 }
 
 export function gemMultiplierForRegionLevel(regionId: number, level: number): number {
-  return MAP_GEM_MULTIPLIERS[regionId * MAPS_PER_REGION + (level - 1)] || 1;
+  return getGameContent().economy.mapGemMultipliers[regionId * defaultMaps.mapsPerRegion + (level - 1)] || 1;
 }
 
 export function progressiveTileRotation(seed: number, absoluteX: number, absoluteY: number): number {
@@ -188,7 +187,7 @@ function normalizeQuarterTurns(rotation: number): number {
 export function rotateEdge(edge: BlockEdge, quarterTurns: number): BlockEdge {
   let current = edge;
   const turns = normalizeQuarterTurns(quarterTurns);
-  for (let step = 0; step < turns; step++) current = CLOCKWISE_EDGE[current];
+  for (let step = 0; step < turns; step++) current = clockwiseEdge[current];
   return current;
 }
 
@@ -204,10 +203,10 @@ function mouthsForPattern(pattern: PathPattern): BlockEdge[] {
 function closedPathKeys(pattern: PathPattern): Set<string> {
   const keys = new Set<string>();
   const addColumn = () => {
-    for (let localY = 0; localY < PROGRESSIVE_BLOCK_SIZE; localY++) keys.add(`${BLOCK_CENTER},${localY}`);
+    for (let localY = 0; localY < progressiveBlockSize; localY++) keys.add(`${blockCenter},${localY}`);
   };
   const addRow = () => {
-    for (let localX = 0; localX < PROGRESSIVE_BLOCK_SIZE; localX++) keys.add(`${localX},${BLOCK_CENTER}`);
+    for (let localX = 0; localX < progressiveBlockSize; localX++) keys.add(`${localX},${blockCenter}`);
   };
   const addTiles = (tiles: Array<[number, number]>) => {
     for (const [tileX, tileY] of tiles) keys.add(`${tileX},${tileY}`);
@@ -224,13 +223,12 @@ function closedPathKeys(pattern: PathPattern): Set<string> {
       [2, 0],
     ]);
   if (pattern === "elbowRight") {
-    for (let localY = 0; localY <= BLOCK_CENTER; localY++) keys.add(`${BLOCK_CENTER},${localY}`);
-    for (let localX = BLOCK_CENTER + 1; localX < PROGRESSIVE_BLOCK_SIZE; localX++)
-      keys.add(`${localX},${BLOCK_CENTER}`);
+    for (let localY = 0; localY <= blockCenter; localY++) keys.add(`${blockCenter},${localY}`);
+    for (let localX = blockCenter + 1; localX < progressiveBlockSize; localX++) keys.add(`${localX},${blockCenter}`);
   }
   if (pattern === "elbowLeft") {
-    for (let localY = 0; localY <= BLOCK_CENTER; localY++) keys.add(`${BLOCK_CENTER},${localY}`);
-    for (let localX = 0; localX < BLOCK_CENTER; localX++) keys.add(`${localX},${BLOCK_CENTER}`);
+    for (let localY = 0; localY <= blockCenter; localY++) keys.add(`${blockCenter},${localY}`);
+    for (let localX = 0; localX < blockCenter; localX++) keys.add(`${localX},${blockCenter}`);
   }
   if (pattern === "elbowRing")
     addTiles([
@@ -246,8 +244,8 @@ function closedPathKeys(pattern: PathPattern): Set<string> {
     ]);
   if (pattern === "tee") {
     addColumn();
-    keys.add(`${BLOCK_CENTER + 1},${BLOCK_CENTER}`);
-    keys.add(`${PROGRESSIVE_BLOCK_SIZE - 1},${BLOCK_CENTER}`);
+    keys.add(`${blockCenter + 1},${blockCenter}`);
+    keys.add(`${progressiveBlockSize - 1},${blockCenter}`);
   }
   if (pattern === "plus") {
     addColumn();
@@ -256,17 +254,17 @@ function closedPathKeys(pattern: PathPattern): Set<string> {
   return keys;
 }
 
-const PEAK_CORNERS = [
+const peakCorners = [
   { x: 0, y: 0 },
-  { x: PROGRESSIVE_BLOCK_SIZE - 1, y: 0 },
-  { x: PROGRESSIVE_BLOCK_SIZE - 1, y: PROGRESSIVE_BLOCK_SIZE - 1 },
-  { x: 0, y: PROGRESSIVE_BLOCK_SIZE - 1 },
+  { x: progressiveBlockSize - 1, y: 0 },
+  { x: progressiveBlockSize - 1, y: progressiveBlockSize - 1 },
+  { x: 0, y: progressiveBlockSize - 1 },
 ];
 
 function slopeHeightAt(peak: { x: number; y: number }, localX: number, localY: number): number {
-  const offsetX = peak.x === 0 ? localX : PROGRESSIVE_BLOCK_SIZE - 1 - localX;
-  const offsetY = peak.y === 0 ? localY : PROGRESSIVE_BLOCK_SIZE - 1 - localY;
-  const maxDistance = 2 * (PROGRESSIVE_BLOCK_SIZE - 1);
+  const offsetX = peak.x === 0 ? localX : progressiveBlockSize - 1 - localX;
+  const offsetY = peak.y === 0 ? localY : progressiveBlockSize - 1 - localY;
+  const maxDistance = 2 * (progressiveBlockSize - 1);
   return 4 - Math.round(((offsetX + offsetY) * 3) / maxDistance);
 }
 
@@ -283,7 +281,7 @@ function terrainHeightAt(
   localX: number,
   localY: number,
 ): number {
-  const peak = PEAK_CORNERS[peakCorner] ?? PEAK_CORNERS[0]!;
+  const peak = peakCorners[peakCorner] ?? peakCorners[0]!;
   const jitterSeed = (peakCorner + 1) * 5 + flatHeight;
   if (pattern === "slope") return slopeHeightAt(peak, localX, localY);
   if (pattern === "roughSlope") {
@@ -294,7 +292,7 @@ function terrainHeightAt(
     const height = flatHeight + terrainJitter(jitterSeed, localX, localY);
     return Math.min(4, Math.max(1, height));
   }
-  const opposite = PEAK_CORNERS[(peakCorner + 2) % 4] ?? PEAK_CORNERS[2]!;
+  const opposite = peakCorners[(peakCorner + 2) % 4] ?? peakCorners[2]!;
   if (localX === peak.x && localY === peak.y) return 4;
   if (localX === opposite.x && localY === opposite.y) return 1;
   const besidePeak =
@@ -304,7 +302,7 @@ function terrainHeightAt(
 }
 
 function rollHeight(rng: () => number): { heightPattern: HeightPattern; flatHeight: number; peakCorner: number } {
-  const heightPattern = HEIGHT_PATTERNS[Math.floor(rng() * HEIGHT_PATTERNS.length)] ?? "slope";
+  const heightPattern = heightPatterns[Math.floor(rng() * heightPatterns.length)] ?? "slope";
   const flatHeight = 1 + Math.floor(rng() * 4);
   const peakCorner = Math.floor(rng() * 4);
   return { heightPattern, flatHeight, peakCorner };
@@ -323,12 +321,12 @@ function buildTemplateTiles(
       for (let localX = 1; localX <= 3; localX++) pathKeys.add(`${localX},${localY}`);
     }
     // The carved center stays terrain, including where a closed cross ran through it.
-    pathKeys.delete(`${BLOCK_CENTER},${BLOCK_CENTER}`);
+    pathKeys.delete(`${blockCenter},${blockCenter}`);
   }
   const tiles: TemplateTile[][] = [];
-  for (let localY = 0; localY < PROGRESSIVE_BLOCK_SIZE; localY++) {
+  for (let localY = 0; localY < progressiveBlockSize; localY++) {
     const row: TemplateTile[] = [];
-    for (let localX = 0; localX < PROGRESSIVE_BLOCK_SIZE; localX++) {
+    for (let localX = 0; localX < progressiveBlockSize; localX++) {
       const isPath = pathKeys.has(`${localX},${localY}`);
       row.push({
         type: isPath ? "path" : "terrain",
@@ -342,7 +340,7 @@ function buildTemplateTiles(
 
 export function generateProgressiveCatalog(seed: number): BlockTemplate[] {
   const rng = mulberry32(seed);
-  return CATALOG_PATTERNS.map((entry) => {
+  return catalogPatterns.map((entry) => {
     const height = rollHeight(rng);
     const mouths = mouthsForPattern(entry.pattern);
     return {
@@ -367,7 +365,7 @@ function sourceLocalAfterInverseRotation(
   const turns = normalizeQuarterTurns(quarterTurns);
   for (let step = 0; step < turns; step++) {
     const nextX = y;
-    const nextY = PROGRESSIVE_BLOCK_SIZE - 1 - x;
+    const nextY = progressiveBlockSize - 1 - x;
     x = nextX;
     y = nextY;
   }
@@ -407,8 +405,8 @@ export function localTile(
   }
   const inBase = localX >= 1 && localX <= 3 && localY >= 1 && localY <= 3;
   if (inBase) return { type: "path", height: 1 };
-  const mouth = EDGES.find((edge) => {
-    const mouthLocal = MOUTH_LOCAL[edge];
+  const mouth = edges.find((edge) => {
+    const mouthLocal = mouthLocalByEdge[edge];
     return mouthLocal.x === localX && mouthLocal.y === localY && block.entryEdges.includes(edge);
   });
   if (mouth) return { type: "path", height: 1 };
@@ -420,7 +418,7 @@ export function localTile(
 
 function sharedEdgeCompatible(ourMouths: BlockEdge[], ourEdge: BlockEdge, neighborMouths: BlockEdge[]): boolean {
   const weOpen = ourMouths.includes(ourEdge);
-  const theyOpen = neighborMouths.includes(OPPOSITE_EDGE[ourEdge]);
+  const theyOpen = neighborMouths.includes(oppositeEdge[ourEdge]);
   return weOpen === theyOpen;
 }
 
@@ -438,8 +436,8 @@ function placementEdgeLegal(
   const ourMouths = rotatedMouths(template, rotation);
   let sharedEdges = 0;
   let connections = 0;
-  for (const edge of EDGES) {
-    const delta = EDGE_DELTA[edge];
+  for (const edge of edges) {
+    const delta = edgeDelta[edge];
     const neighbor = blockAt(board, blockX + delta.x, blockY + delta.y);
     if (!neighbor) continue;
     sharedEdges += 1;
@@ -486,7 +484,7 @@ function placementLeavesContinuation(
 function boardHasDurableOpening(board: ProgressiveBoard, catalog: BlockTemplate[]): boolean {
   for (const spawn of board.spawns) {
     if (spawn.fixed) continue;
-    const delta = EDGE_DELTA[spawn.edge];
+    const delta = edgeDelta[spawn.edge];
     const facingX = spawn.blockX + delta.x;
     const facingY = spawn.blockY + delta.y;
     if (blockAt(board, facingX, facingY)) continue;
@@ -525,7 +523,7 @@ function followUpAdmitsPath(
   if (!applyPlayerStamp(next, catalog, player)) return false;
   for (const spawn of next.spawns) {
     if (spawn.fixed) continue;
-    const delta = EDGE_DELTA[spawn.edge];
+    const delta = edgeDelta[spawn.edge];
     const facingX = spawn.blockX + delta.x;
     const facingY = spawn.blockY + delta.y;
     if (blockAt(next, facingX, facingY)) continue;
@@ -586,11 +584,11 @@ function deriveInitialSpawns(board: ProgressiveBoard, catalog: BlockTemplate[]):
   board.nextSpawnId = 1;
   for (const block of board.blocks) {
     const mouths = blockMouths(block, catalog);
-    for (const edge of EDGES) {
+    for (const edge of edges) {
       if (!mouths.includes(edge)) continue;
-      const delta = EDGE_DELTA[edge];
+      const delta = edgeDelta[edge];
       const neighbor = blockAt(board, block.blockX + delta.x, block.blockY + delta.y);
-      if (neighbor && blockMouths(neighbor, catalog).includes(OPPOSITE_EDGE[edge])) continue;
+      if (neighbor && blockMouths(neighbor, catalog).includes(oppositeEdge[edge])) continue;
       board.spawns.push({ id: board.nextSpawnId, blockX: block.blockX, blockY: block.blockY, edge, fixed: false });
       board.nextSpawnId += 1;
     }
@@ -601,11 +599,11 @@ function refreshFixed(board: ProgressiveBoard, catalog: BlockTemplate[]): void {
   for (const spawn of board.spawns) {
     // A spawn that already faces a filled mouth stays put for the rest of the run.
     if (spawn.fixed) continue;
-    const delta = EDGE_DELTA[spawn.edge];
+    const delta = edgeDelta[spawn.edge];
     const neighbor = blockAt(board, spawn.blockX + delta.x, spawn.blockY + delta.y);
     if (!neighbor) continue;
     const neighborMouths = blockMouths(neighbor, catalog);
-    spawn.fixed = !neighborMouths.includes(OPPOSITE_EDGE[spawn.edge]);
+    spawn.fixed = !neighborMouths.includes(oppositeEdge[spawn.edge]);
   }
 }
 
@@ -639,12 +637,12 @@ function applyPlayerStamp(board: ProgressiveBoard, catalog: BlockTemplate[], sta
   const consumed: BoardSpawn[] = [];
   const connectedEdges: BlockEdge[] = [];
   for (const edge of ourMouths) {
-    const delta = EDGE_DELTA[edge];
+    const delta = edgeDelta[edge];
     const neighborX = stamp.blockX + delta.x;
     const neighborY = stamp.blockY + delta.y;
     const neighbor = blockAt(board, neighborX, neighborY);
     if (!neighbor) continue;
-    const neighborEdge = OPPOSITE_EDGE[edge];
+    const neighborEdge = oppositeEdge[edge];
     if (!blockMouths(neighbor, catalog).includes(neighborEdge)) continue;
     connectedEdges.push(edge);
     const spawn = spawnOnMouth(board, neighborX, neighborY, neighborEdge);
@@ -652,7 +650,7 @@ function applyPlayerStamp(board: ProgressiveBoard, catalog: BlockTemplate[], sta
   }
   board.blocks.push(stamp);
   const newEdges = ourMouths.filter((edge) => !connectedEdges.includes(edge));
-  const edgeOrder = EDGES.filter((edge) => newEdges.includes(edge));
+  const edgeOrder = edges.filter((edge) => newEdges.includes(edge));
   if (consumed.length === 1 && edgeOrder.length > 0) {
     const moved = consumed[0]!;
     const destination = edgeOrder[0]!;
@@ -720,8 +718,8 @@ function findHoles(board: ProgressiveBoard): Array<Array<{ x: number; y: number 
   while (head < queue.length) {
     const current = queue[head]!;
     head += 1;
-    for (const edge of EDGES) {
-      const delta = EDGE_DELTA[edge];
+    for (const edge of edges) {
+      const delta = edgeDelta[edge];
       const nextX = current.x + delta.x;
       const nextY = current.y + delta.y;
       if (nextX < reachMinX || nextX > reachMaxX || nextY < reachMinY || nextY > reachMaxY) continue;
@@ -752,8 +750,8 @@ function findHoles(board: ProgressiveBoard): Array<Array<{ x: number; y: number 
       const current = componentQueue[componentHead]!;
       componentHead += 1;
       component.push(current);
-      for (const edge of EDGES) {
-        const delta = EDGE_DELTA[edge];
+      for (const edge of edges) {
+        const delta = edgeDelta[edge];
         const next = { x: current.x + delta.x, y: current.y + delta.y };
         const nextKey = blockKey(next.x, next.y);
         if (!remaining.has(nextKey)) continue;
@@ -774,14 +772,14 @@ function mouthsIntoComponent(
   const cellKeys = new Set(cells.map((cell) => blockKey(cell.x, cell.y)));
   let count = 0;
   for (const cell of cells) {
-    for (const edge of EDGES) {
-      const delta = EDGE_DELTA[edge];
+    for (const edge of edges) {
+      const delta = edgeDelta[edge];
       const neighborX = cell.x + delta.x;
       const neighborY = cell.y + delta.y;
       if (cellKeys.has(blockKey(neighborX, neighborY))) continue;
       const neighbor = blockAt(board, neighborX, neighborY);
       if (!neighbor) continue;
-      if (blockMouths(neighbor, catalog).includes(OPPOSITE_EDGE[edge])) count += 1;
+      if (blockMouths(neighbor, catalog).includes(oppositeEdge[edge])) count += 1;
     }
   }
   return count;
@@ -805,7 +803,7 @@ export function commitPlacement(
     const mouthCount = mouthsIntoComponent(next, catalog, component);
     if (mouthCount > 1) continue;
     for (const cell of component) {
-      const terrainIndex = TERRAIN_TEMPLATE_INDEXES[Math.floor(rng() * TERRAIN_TEMPLATE_INDEXES.length)] ?? 10;
+      const terrainIndex = terrainTemplateIndexes[Math.floor(rng() * terrainTemplateIndexes.length)] ?? 10;
       const fillRotation = Math.floor(rng() * 4);
       const fill = catalogBlock(terrainIndex, fillRotation, cell.x, cell.y, true);
       next.blocks.push(fill);
@@ -914,13 +912,13 @@ export function placementExtendsOpening(
   let connectedToOpening = 0;
   let newMouths = 0;
   for (const edge of mouths) {
-    const delta = EDGE_DELTA[edge];
+    const delta = edgeDelta[edge];
     const neighbor = blockAt(board, blockX + delta.x, blockY + delta.y);
     if (!neighbor) {
       newMouths += 1;
       continue;
     }
-    if (blockMouths(neighbor, catalog).includes(OPPOSITE_EDGE[edge])) connectedToOpening += 1;
+    if (blockMouths(neighbor, catalog).includes(oppositeEdge[edge])) connectedToOpening += 1;
   }
   return connectedToOpening > 0 && newMouths > 0;
 }
@@ -1045,7 +1043,7 @@ export function createProgressiveBoard(config: ProgressiveConfig): {
   const catalog = generateProgressiveCatalog(config.seed);
   const rng = mulberry32((config.seed ^ 0x51ed9b3) >>> 0);
   const baseHeight = rollHeight(rng);
-  const entryEdges = ENTRY_EDGES[config.entryCount - 1] ?? ENTRY_EDGES[0]!;
+  const entryEdges = entryEdgesByCount[config.entryCount - 1] ?? entryEdgesByCount[0]!;
   const base: PlacedBlock = {
     kind: "base",
     templateIndex: -1,
@@ -1060,10 +1058,10 @@ export function createProgressiveBoard(config: ProgressiveConfig): {
   };
   const board: ProgressiveBoard = { blocks: [base], spawns: [], nextSpawnId: 1 };
   for (const entryEdge of entryEdges) {
-    const delta = EDGE_DELTA[entryEdge];
-    const requiredEdge = OPPOSITE_EDGE[entryEdge];
+    const delta = edgeDelta[entryEdge];
+    const requiredEdge = oppositeEdge[entryEdge];
     const options: Array<{ templateIndex: number; rotation: number }> = [];
-    for (let templateIndex = 0; templateIndex < TWO_OPENING_TEMPLATE_COUNT; templateIndex++) {
+    for (let templateIndex = 0; templateIndex < twoOpeningTemplateCount; templateIndex++) {
       const template = catalog[templateIndex];
       if (!template) continue;
       for (let rotation = 0; rotation < 4; rotation++) {
@@ -1110,19 +1108,16 @@ export function blockCoordinateForTile(
 ): { blockX: number; blockY: number } {
   const absoluteX = originTileX + tileX;
   const absoluteY = originTileY + tileY;
-  return {
-    blockX: Math.floor(absoluteX / PROGRESSIVE_BLOCK_SIZE),
-    blockY: Math.floor(absoluteY / PROGRESSIVE_BLOCK_SIZE),
-  };
+  return { blockX: Math.floor(absoluteX / progressiveBlockSize), blockY: Math.floor(absoluteY / progressiveBlockSize) };
 }
 
 export function progressiveBlockWorldCorner(blockX: number, blockY: number, tileSize = 36): { x: number; y: number } {
-  return { x: blockX * PROGRESSIVE_BLOCK_SIZE * tileSize, y: blockY * PROGRESSIVE_BLOCK_SIZE * tileSize };
+  return { x: blockX * progressiveBlockSize * tileSize, y: blockY * progressiveBlockSize * tileSize };
 }
 
 function absoluteMouthTile(blockX: number, blockY: number, edge: BlockEdge): { x: number; y: number } {
-  const local = MOUTH_LOCAL[edge];
-  return { x: blockX * PROGRESSIVE_BLOCK_SIZE + local.x, y: blockY * PROGRESSIVE_BLOCK_SIZE + local.y };
+  const local = mouthLocalByEdge[edge];
+  return { x: blockX * progressiveBlockSize + local.x, y: blockY * progressiveBlockSize + local.y };
 }
 
 export function boardToGeneratedMap(
@@ -1140,14 +1135,14 @@ export function boardToGeneratedMap(
     minBlockY = Math.min(minBlockY, block.blockY);
     maxBlockY = Math.max(maxBlockY, block.blockY);
   }
-  minBlockX -= MARGIN_BLOCKS;
-  maxBlockX += MARGIN_BLOCKS;
-  minBlockY -= MARGIN_BLOCKS;
-  maxBlockY += MARGIN_BLOCKS;
-  const originTileX = minBlockX * PROGRESSIVE_BLOCK_SIZE;
-  const originTileY = minBlockY * PROGRESSIVE_BLOCK_SIZE;
-  const width = (maxBlockX - minBlockX + 1) * PROGRESSIVE_BLOCK_SIZE;
-  const height = (maxBlockY - minBlockY + 1) * PROGRESSIVE_BLOCK_SIZE;
+  minBlockX -= marginBlocks;
+  maxBlockX += marginBlocks;
+  minBlockY -= marginBlocks;
+  maxBlockY += marginBlocks;
+  const originTileX = minBlockX * progressiveBlockSize;
+  const originTileY = minBlockY * progressiveBlockSize;
+  const width = (maxBlockX - minBlockX + 1) * progressiveBlockSize;
+  const height = (maxBlockY - minBlockY + 1) * progressiveBlockSize;
   const tiles: GeneratedMap["tiles"] = [];
   for (let row = 0; row < height; row++) {
     const tileRow: GeneratedMap["tiles"][number] = [];
@@ -1161,10 +1156,10 @@ export function boardToGeneratedMap(
     }),
   );
   for (const block of board.blocks) {
-    for (let localY = 0; localY < PROGRESSIVE_BLOCK_SIZE; localY++) {
-      for (let localX = 0; localX < PROGRESSIVE_BLOCK_SIZE; localX++) {
-        const absoluteX = block.blockX * PROGRESSIVE_BLOCK_SIZE + localX;
-        const absoluteY = block.blockY * PROGRESSIVE_BLOCK_SIZE + localY;
+    for (let localY = 0; localY < progressiveBlockSize; localY++) {
+      for (let localX = 0; localX < progressiveBlockSize; localX++) {
+        const absoluteX = block.blockX * progressiveBlockSize + localX;
+        const absoluteY = block.blockY * progressiveBlockSize + localY;
         const indexX = absoluteX - originTileX;
         const indexY = absoluteY - originTileY;
         const sample = localTile(catalog, block, localX, localY);
@@ -1183,8 +1178,8 @@ export function boardToGeneratedMap(
     const absolute = absoluteMouthTile(spawn.blockX, spawn.blockY, spawn.edge);
     return { x: absolute.x - originTileX, y: absolute.y - originTileY, id: spawn.id, fixed: spawn.fixed };
   });
-  const baseIndexX = BLOCK_CENTER - originTileX;
-  const baseIndexY = BLOCK_CENTER - originTileY;
+  const baseIndexX = blockCenter - originTileX;
+  const baseIndexY = blockCenter - originTileY;
   return {
     regionId: config.regionId,
     level: config.level,
@@ -1195,7 +1190,7 @@ export function boardToGeneratedMap(
     spawns,
     base: { x: baseIndexX, y: baseIndexY },
     name: "",
-    bossCadence: BOSS_CADENCE[config.regionId] ?? BOSS_CADENCE[0]!,
+    bossCadence: getGameContent().enemies.bossCadence[config.regionId] ?? getGameContent().enemies.bossCadence[0]!,
     seed: config.seed,
     entryCount: config.entryCount,
     originTileX,
@@ -1211,7 +1206,7 @@ export function generateProgressiveMap(config: ProgressiveConfig, stamps: Progre
 export function generateProgressiveMapByIndex(
   mapIndex: number,
   stamps: ProgressiveStamp[] = [],
-  maps: MapsContent = MAPS_CONTENT,
+  maps: MapsContent = defaultMaps,
 ): GeneratedMap | null {
   const config = progressiveConfigForIndex(mapIndex, maps);
   if (!config) return null;
@@ -1221,7 +1216,7 @@ export function generateProgressiveMapByIndex(
 // Normal indices stay on the cached generator. Progressive indices rebuild the
 // seeded start (placements are applied by the caller, not here). The maps
 // catalog selects which world's level configs / progressive variants resolve.
-export function resolveGeneratedMap(mapIndex: number, maps: MapsContent = MAPS_CONTENT): GeneratedMap {
+export function resolveGeneratedMap(mapIndex: number, maps: MapsContent = defaultMaps): GeneratedMap {
   if (isProgressiveMapIndex(mapIndex)) {
     const map = generateProgressiveMapByIndex(mapIndex, [], maps);
     if (!map) throw new Error(`Progressive map ${mapIndex} is not configured`);

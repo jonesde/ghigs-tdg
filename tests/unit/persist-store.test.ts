@@ -308,7 +308,7 @@ describe("PersistStore", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // legacy key 1 (gempath_save_v1)
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
-        .mockReturnValueOnce(JSON.stringify(testData)); // STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(testData)); // storageKey
       store.load();
       expect(store.gems).toBe(50);
       expect(store.themeProgress.default.highestUnlockedMap).toBe(3);
@@ -319,7 +319,7 @@ describe("PersistStore", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // legacy key 1 (gempath_save_v1)
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
-        .mockReturnValueOnce(JSON.stringify(testData)); // STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(testData)); // storageKey
       store.load();
       expect(store.gems).toBe(50);
       expect(store.themeProgress.default).toEqual({
@@ -349,7 +349,7 @@ describe("PersistStore", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // legacy key 1 (gempath_save_v1)
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
-        .mockReturnValueOnce(JSON.stringify(oldData)); // STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(oldData)); // storageKey
       store.load();
       expect(store.saveVersion).toBe(7);
       expect(store.gems).toBe(100);
@@ -364,7 +364,7 @@ describe("PersistStore", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // legacy key 1 (gempath_save_v1)
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
-        .mockReturnValueOnce(JSON.stringify(v1Data)); // STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(v1Data)); // storageKey
       store.load();
       expect(store.saveVersion).toBe(7);
       expect(store.gems).toBe(200);
@@ -391,7 +391,7 @@ describe("PersistStore", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // legacy key 1 (gempath_save_v1)
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
-        .mockReturnValueOnce(JSON.stringify(v2Data)); // STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(v2Data)); // storageKey
       store.load();
       expect(store.saveVersion).toBe(7);
       expect(store.gems).toBe(300);
@@ -419,7 +419,7 @@ describe("PersistStore", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // legacy key 1 (gempath_save_v1)
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
-        .mockReturnValueOnce(JSON.stringify(v3Data)); // STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(v3Data)); // storageKey
       store.load();
       expect(store.saveVersion).toBe(7);
       expect(store.llmCommanders[0]?.requestTimeoutMs).toBe(30000);
@@ -433,7 +433,7 @@ describe("PersistStore", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // legacy key 1 (gempath_save_v1)
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
-        .mockReturnValueOnce(JSON.stringify(futureData)); // STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(futureData)); // storageKey
       store.load();
       expect(store.gems).toBe(9999);
       expect(store.saveVersion).toBe(99);
@@ -446,7 +446,7 @@ describe("PersistStore", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // legacy key 1 (gempath_save_v1)
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
-        .mockReturnValueOnce(JSON.stringify(v1Data)); // STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(v1Data)); // storageKey
       store.load();
       expect(store.gems).toBe(50);
       expect(store.generalAddons.extraHealth).toBe(15);
@@ -467,7 +467,7 @@ describe("PersistStore", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // legacy key 1 (gempath_save_v1)
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
-        .mockReturnValueOnce(JSON.stringify(v1Data)); // STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(v1Data)); // storageKey
       store.load();
       expect(store.difficulty.multiplierTick).toBe(6);
       expect(store.themeProgress.default.bestWaves.best_10).toBe(88);
@@ -554,7 +554,7 @@ describe("PersistStore", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // legacy key 1 (gempath_save_v1)
         .mockReturnValueOnce(JSON.stringify(oldData)) // legacy key 2 (lol_ya_tdg_save_1)
-        .mockReturnValueOnce(JSON.stringify(migratedData)); // STORAGE_KEY (after migration)
+        .mockReturnValueOnce(JSON.stringify(migratedData)); // storageKey (after migration)
       store.load();
       expect(store.gems).toBe(100);
       expect(store.themeProgress.default.highestUnlockedMap).toBe(5);
@@ -567,7 +567,7 @@ describe("PersistStore", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(JSON.stringify(oldData)) // legacy key 1 (gempath_save_v1)
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
-        .mockReturnValueOnce(null); // STORAGE_KEY
+        .mockReturnValueOnce(null); // storageKey
       store.load();
       expect((localStorage.removeItem as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
       expect((localStorage.removeItem as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("gempath_save_v1");
@@ -577,7 +577,7 @@ describe("PersistStore", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce("not json") // legacy key 1 (gempath_save_v1) - corrupted
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
-        .mockReturnValueOnce(null); // STORAGE_KEY - empty
+        .mockReturnValueOnce(null); // storageKey - empty
       expect(() => store.load()).not.toThrow();
       expect(store.gems).toBe(0);
     });
@@ -610,7 +610,7 @@ describe("PersistStore", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // legacy key 1 (gempath_save_v1)
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
-        .mockReturnValueOnce(JSON.stringify(oldData)); // STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(oldData)); // storageKey
       store.load();
       expect(store.unlocked.basic.levels.length).toBe(7);
       expect(store.unlocked.basic.levels[0]).toBe(true);
@@ -635,7 +635,7 @@ describe("PersistStore", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // legacy key 1 (gempath_save_v1)
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
-        .mockReturnValueOnce(JSON.stringify(data)); // STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(data)); // storageKey
       store.load();
       expect(store.unlocked.basic.levels.length).toBe(8);
       expect(store.unlocked.basic.levels[7]).toBe(true);
@@ -656,7 +656,7 @@ describe("PersistStore", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // legacy key 1 (gempath_save_v1)
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
-        .mockReturnValueOnce(JSON.stringify(data)); // STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(data)); // storageKey
       store.load();
       expect(store.unlocked.basic.variantA.length).toBe(3);
       expect(store.unlocked.basic.variantA[0]).toBe(true);
@@ -686,7 +686,7 @@ describe("PersistStore", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // legacy key 1 (gempath_save_v1)
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
-        .mockReturnValueOnce(JSON.stringify(data)); // STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(data)); // storageKey
       store.load();
       expect(store.unlocked.basic.levels[0]).toBe(false);
       expect(store.unlocked.basic.levels[1]).toBe(false);
@@ -738,7 +738,7 @@ describe("PersistStore", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // legacy key 1 (gempath_save_v1)
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
-        .mockReturnValueOnce(JSON.stringify(data)); // STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(data)); // storageKey
       store.load();
       expect(store.unlocked.basic.levels.length).toBe(7);
       expect(store.unlocked.ice.levels.length).toBe(7);
@@ -806,7 +806,7 @@ describe("PersistStore", () => {
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // legacy key 1 (gempath_save_v1)
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
-        .mockReturnValueOnce(JSON.stringify(saved)); // STORAGE_KEY
+        .mockReturnValueOnce(JSON.stringify(saved)); // storageKey
       const fresh = createTestPersistStore();
       fresh.load();
       expect(fresh.llmCommanders.length).toBe(1);

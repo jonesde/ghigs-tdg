@@ -1,10 +1,10 @@
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
+import { getGameContent } from "@/content/gameContent.js";
 import { ThemeMapsOverrideSchema } from "@/content/schemas/maps.js";
 import { resolveThemeMaps } from "@/content/themeMaps.js";
 import chrithmathRaw from "@/render/themes/data/chrithmath.json";
 import aftermathRaw from "@/render/themes/data/the-aftermath.json";
-import { MAPS_CONTENT } from "@/sim/Constants.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap, mulberry32 } from "@/sim/grid/Map.js";
 import { generateProgressiveMap, legalSites, replayProgressiveBoard } from "@/sim/grid/ProgressiveMap.js";
@@ -23,6 +23,8 @@ import {
 import type { BonusOffer } from "@/sim/runBonuses.js";
 import { freshEngine, nearestPathDistance, reconcileSample } from "../../helpers/simFixtures";
 
+const defaultMaps = getGameContent().maps;
+
 function chebyshev(left: { tileX: number; tileY: number }, right: { tileX: number; tileY: number }): number {
   return Math.max(Math.abs(left.tileX - right.tileX), Math.abs(left.tileY - right.tileY));
 }
@@ -32,7 +34,7 @@ function chebyshev(left: { tileX: number; tileY: number }, right: { tileX: numbe
 // WASM) once per map.
 function fillOpeningBoard(
   index: number,
-  catalog?: typeof MAPS_CONTENT,
+  catalog?: typeof defaultMaps,
 ): { grid: Grid; map: ReturnType<typeof getMap>; buildings: MapBuildingSite[]; caches: MapCacheSite[] } {
   const map = getMap(index, catalog);
   const grid = new Grid(map);
@@ -334,7 +336,7 @@ describe("map sites", () => {
   });
 
   it("leaves the progressive margin out of the world keys so a stamped block is new world", () => {
-    const config = MAPS_CONTENT.progressive.variants[11];
+    const config = defaultMaps.progressive.variants[11];
     if (!config) throw new Error("no progressive variant");
     const grid = new Grid(generateProgressiveMap(config, []));
     const keys = collectWorldKeys(grid);
@@ -352,7 +354,7 @@ describe("map sites", () => {
   });
 
   it("lets a progressive block host a cache beside the corridor and a building beside the base", () => {
-    const config = MAPS_CONTENT.progressive.variants[11];
+    const config = defaultMaps.progressive.variants[11];
     if (!config) throw new Error("no progressive variant");
     const stamped = runProgressiveStamps(config, 20);
     expect(stamped.caches.length).toBeGreaterThan(0);
@@ -388,7 +390,7 @@ describe("map sites", () => {
   // Full cross-catalog sweep (36 configs x 4 stamp runs); needs more than the default 5000 ms under parallel-file contention.
   it("keeps progressive stamps inside the cache quota without filling the opening", () => {
     const catalogs = [
-      MAPS_CONTENT,
+      defaultMaps,
       resolveThemeMaps(ThemeMapsOverrideSchema.parse(aftermathRaw.maps)),
       resolveThemeMaps(ThemeMapsOverrideSchema.parse(chrithmathRaw.maps)),
     ];

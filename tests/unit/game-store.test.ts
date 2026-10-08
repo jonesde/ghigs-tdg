@@ -1,11 +1,14 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it } from "vitest";
-import { GameState, STARTING_BASE_HEALTH, StartingGold } from "@/sim/Constants.js";
+import { getGameContent } from "@/content/gameContent.js";
+import { GameState } from "@/sim/GameRunState.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import { createTestGameStore } from "../helpers/mock-stores";
+
+const startingBaseHealth = getGameContent().economy.startingBaseHealth;
 
 interface GemBreakdown {
   bossKills: { base: number; afterDiff: number; afterRegion: number; afterFirstTime: number };
@@ -35,8 +38,8 @@ describe("GameStore", () => {
       expect(store.state).toBe(GameState.MENU);
     });
 
-    it("starts with base health at STARTING_BASE_HEALTH", () => {
-      expect(store.baseHealth).toBe(STARTING_BASE_HEALTH);
+    it("starts with base health at startingBaseHealth", () => {
+      expect(store.baseHealth).toBe(startingBaseHealth);
     });
 
     it("starts with gold = 0", () => {
@@ -173,11 +176,11 @@ describe("GameStore", () => {
   describe("damageBase", () => {
     it("reduces lives by the given amount", () => {
       store.damageBase(3);
-      expect(store.baseHealth).toBe(STARTING_BASE_HEALTH - 3);
+      expect(store.baseHealth).toBe(startingBaseHealth - 3);
     });
 
     it("can reduce lives below zero", () => {
-      store.damageBase(STARTING_BASE_HEALTH + 5);
+      store.damageBase(startingBaseHealth + 5);
       expect(store.baseHealth).toBe(-5);
     });
   });
@@ -262,12 +265,12 @@ describe("GameStore", () => {
     it("resets lives to 20", () => {
       store.baseHealth = 100;
       store.initMap(0, { regionId: 0 } as unknown as GeneratedMap, null);
-      expect(store.baseHealth).toBe(STARTING_BASE_HEALTH);
+      expect(store.baseHealth).toBe(startingBaseHealth);
     });
 
-    it("sets gold based on StartingGold for the region", () => {
+    it("sets gold based on startingGoldByRegion for the region", () => {
       store.initMap(0, { regionId: 0 } as unknown as GeneratedMap, null);
-      expect(store.gold).toBe(StartingGold[0]);
+      expect(store.gold).toBe(getGameContent().economy.startingGoldByRegion[0]);
     });
 
     it("resets currentWave to 0", () => {
@@ -453,7 +456,7 @@ describe("GameStore", () => {
       store.setGemBreakdown(nonZeroGemBreakdown());
       store.setHoverUpgradeBtn(true);
       store.resetToMenu();
-      expect(store.baseHealth).toBe(STARTING_BASE_HEALTH);
+      expect(store.baseHealth).toBe(startingBaseHealth);
       expect(store.gold).toBe(0);
       expect(store.currentWave).toBe(0);
       expect(store.timeScale).toBe(1);

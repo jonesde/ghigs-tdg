@@ -1,11 +1,11 @@
-import { TOWER_TYPE_LABELS, type TowerId, TowerIds } from "@/sim/ConstantsTower.js";
+import { type TowerId, TowerIds, towerTypeLabels } from "@/content/towerIds.js";
 import { mulberry32 } from "@/sim/grid/Map.js";
 import type { ActiveBuildingBonus } from "@/sim/mapSites.js";
 
 // Run-scoped rewards from a supply drop or a map cache. Persistent factors stack
 // by multiplication and reset when the run is initialized. Nothing here is written
 // to persist.
-export const BONUS_IDS = [
+const bonusIds = [
   "smallPurse",
   "largePurse",
   "sharpened",
@@ -22,12 +22,12 @@ export const BONUS_IDS = [
   "farSightType",
 ] as const;
 
-export type BonusId = (typeof BONUS_IDS)[number];
+export type BonusId = (typeof bonusIds)[number];
 
 // The four cards that buff one tower type instead of every tower. The type is drawn
 // when the picker opens, weighted by how many towers of each type are built.
-export const TYPED_BONUS_IDS = ["sharpenedType", "quickHandsType", "fortifyType", "farSightType"] as const;
-export type TypedBonusId = (typeof TYPED_BONUS_IDS)[number];
+const typedBonusIds = ["sharpenedType", "quickHandsType", "fortifyType", "farSightType"] as const;
+export type TypedBonusId = (typeof typedBonusIds)[number];
 
 export type BonusOffer = [BonusId, BonusId, BonusId];
 
@@ -42,7 +42,7 @@ export type GlobalMultField =
 
 export type TypedMultField = "typeDamageMult" | "typeFireRateMult" | "typeHealthMult" | "typeRangeMult";
 
-export const TYPED_MULT_FIELDS = ["typeDamageMult", "typeFireRateMult", "typeHealthMult", "typeRangeMult"] as const;
+const typedMultFieldsList = ["typeDamageMult", "typeFireRateMult", "typeHealthMult", "typeRangeMult"] as const;
 
 export interface RunBonuses {
   damageMult: number;
@@ -89,58 +89,47 @@ export interface OfferCurationContext {
   canApplySlow: boolean;
 }
 
-const PERSISTENT_FACTOR = 1.1;
+const persistentFactor = 1.1;
 // A card that buffs one tower type is worth more than one that buffs them all,
 // so the specialist draws pay 20% instead of 10%.
-const TYPED_PERSISTENT_FACTOR = 1.2;
-const ARMOR_FACTOR = 0.9;
-const SMALL_PURSE_BASE_GOLD = 50;
-const SMALL_PURSE_GOLD_PER_WAVE = 5;
-const FIELD_REPAIR_FRACTION = 0.25;
-const BONUS_OFFER_TAG = 0xb04e05;
-const SPECIALIST_ROLL_TAG = 0x5fec;
-const CURATION_ROLL_TAG = 0xc0de;
+const typedPersistentFactor = 1.2;
+const armorFactor = 0.9;
+const smallPurseBaseGold = 50;
+const smallPurseGoldPerWave = 5;
+const fieldRepairFraction = 0.25;
+const bonusOfferTag = 0xb04e05;
+const specialistRollTag = 0x5fec;
+const curationRollTag = 0xc0de;
 // Share of offers that carry a typed card. Without it the typed cards would only
 // appear by chance from the uniform pool and the specialist draw would rarely
 // surface in a run.
-const TYPED_CARD_WEIGHT = 0.6;
+const typedCardWeight = 0.6;
 
 type GlobalBonusId = Exclude<BonusId, TypedBonusId | "smallPurse" | "largePurse" | "fieldRepair">;
 
-const PERSISTENT_CARDS: Record<GlobalBonusId, { name: string; field: GlobalMultField; factor: number; noun: string }> =
-  {
-    sharpened: { name: "Sharpened", field: "damageMult", factor: PERSISTENT_FACTOR, noun: "tower damage" },
-    quickHands: { name: "Quick Hands", field: "fireRateMult", factor: PERSISTENT_FACTOR, noun: "tower fire rate" },
-    fortify: { name: "Fortify", field: "healthMult", factor: PERSISTENT_FACTOR, noun: "tower and base health" },
-    farSight: { name: "Far Sight", field: "rangeMult", factor: PERSISTENT_FACTOR, noun: "tower range" },
-    bounty: { name: "Bounty", field: "bountyMult", factor: PERSISTENT_FACTOR, noun: "kill gold" },
-    heavyFrost: {
-      name: "Heavy Frost",
-      field: "slowMult",
-      factor: PERSISTENT_FACTOR,
-      noun: "slow strength and duration",
-    },
-    armor: { name: "Armor", field: "armorMult", factor: ARMOR_FACTOR, noun: "enemy attack damage" },
-  };
+const persistentCards: Record<GlobalBonusId, { name: string; field: GlobalMultField; factor: number; noun: string }> = {
+  sharpened: { name: "Sharpened", field: "damageMult", factor: persistentFactor, noun: "tower damage" },
+  quickHands: { name: "Quick Hands", field: "fireRateMult", factor: persistentFactor, noun: "tower fire rate" },
+  fortify: { name: "Fortify", field: "healthMult", factor: persistentFactor, noun: "tower and base health" },
+  farSight: { name: "Far Sight", field: "rangeMult", factor: persistentFactor, noun: "tower range" },
+  bounty: { name: "Bounty", field: "bountyMult", factor: persistentFactor, noun: "kill gold" },
+  heavyFrost: { name: "Heavy Frost", field: "slowMult", factor: persistentFactor, noun: "slow strength and duration" },
+  armor: { name: "Armor", field: "armorMult", factor: armorFactor, noun: "enemy attack damage" },
+};
 
-const TYPED_CARDS: Record<TypedBonusId, { name: string; field: TypedMultField; factor: number; noun: string }> = {
-  sharpenedType: { name: "Sharpened", field: "typeDamageMult", factor: TYPED_PERSISTENT_FACTOR, noun: "damage" },
-  quickHandsType: {
-    name: "Quick Hands",
-    field: "typeFireRateMult",
-    factor: TYPED_PERSISTENT_FACTOR,
-    noun: "fire rate",
-  },
-  fortifyType: { name: "Fortify", field: "typeHealthMult", factor: TYPED_PERSISTENT_FACTOR, noun: "health" },
-  farSightType: { name: "Far Sight", field: "typeRangeMult", factor: TYPED_PERSISTENT_FACTOR, noun: "range" },
+const typedCards: Record<TypedBonusId, { name: string; field: TypedMultField; factor: number; noun: string }> = {
+  sharpenedType: { name: "Sharpened", field: "typeDamageMult", factor: typedPersistentFactor, noun: "damage" },
+  quickHandsType: { name: "Quick Hands", field: "typeFireRateMult", factor: typedPersistentFactor, noun: "fire rate" },
+  fortifyType: { name: "Fortify", field: "typeHealthMult", factor: typedPersistentFactor, noun: "health" },
+  farSightType: { name: "Far Sight", field: "typeRangeMult", factor: typedPersistentFactor, noun: "range" },
 };
 
 // Sturdy Wall has no damage, fire rate, or range, so three of the four typed cards
 // would be dead on it. It stays out of the specialist draw entirely: the global
 // Fortify card still buffs its health.
-const SPECIALIST_TOWER_IDS: TowerId[] = Object.values(TowerIds).filter((towerId) => towerId !== TowerIds.STURDY_WALL);
+const specialistTowerIds: TowerId[] = Object.values(TowerIds).filter((towerId) => towerId !== TowerIds.STURDY_WALL);
 
-const TYPED_SUMMARY_SHORT: Record<TypedMultField, string> = {
+const typedSummaryShort: Record<TypedMultField, string> = {
   typeDamageMult: "dmg",
   typeFireRateMult: "rate",
   typeHealthMult: "hp",
@@ -148,7 +137,11 @@ const TYPED_SUMMARY_SHORT: Record<TypedMultField, string> = {
 };
 
 export function isTypedBonusId(bonusId: BonusId): bonusId is TypedBonusId {
-  return (TYPED_BONUS_IDS as readonly BonusId[]).includes(bonusId);
+  return (typedBonusIds as readonly BonusId[]).includes(bonusId);
+}
+
+export function typedMultFields(): readonly TypedMultField[] {
+  return typedMultFieldsList;
 }
 
 export function freshRunBonuses(): RunBonuses {
@@ -178,10 +171,12 @@ export type BonusApplication =
 // its own worst card, so the no-reward outcome keeps its pressure late in a run.
 export function smallPurseGold(wave: number): number {
   const safeWave = Math.max(1, Math.floor(wave));
-  return SMALL_PURSE_BASE_GOLD + SMALL_PURSE_GOLD_PER_WAVE * (safeWave - 1);
+  return smallPurseBaseGold + smallPurseGoldPerWave * (safeWave - 1);
 }
 
 export function largePurseGold(wave: number): number {
+  // The large purse is defined as twice the small purse; no pack field carries the
+  // 2x factor yet, so do not hunt for a missing tunable.
   return smallPurseGold(wave) * 2;
 }
 
@@ -192,12 +187,12 @@ export function cacheOpenGold(wave: number): number {
 export function describeBonus(bonusId: BonusId, context: BonusContext): BonusApplication {
   if (bonusId === "smallPurse") return { kind: "gold", amount: smallPurseGold(context.wave) };
   if (bonusId === "largePurse") return { kind: "gold", amount: largePurseGold(context.wave) };
-  if (bonusId === "fieldRepair") return { kind: "repair", fraction: FIELD_REPAIR_FRACTION };
+  if (bonusId === "fieldRepair") return { kind: "repair", fraction: fieldRepairFraction };
   if (isTypedBonusId(bonusId)) {
-    const card = TYPED_CARDS[bonusId];
+    const card = typedCards[bonusId];
     return { kind: "typedMult", field: card.field, factor: card.factor, towerType: context.specialistType };
   }
-  const card = PERSISTENT_CARDS[bonusId as GlobalBonusId];
+  const card = persistentCards[bonusId as GlobalBonusId];
   return { kind: "mult", field: card.field, factor: card.factor };
 }
 
@@ -211,9 +206,9 @@ export function bonusCard(bonusId: BonusId, bonuses: RunBonuses, context: BonusC
   if (bonusId === "fieldRepair") {
     return { name: "Field Repair", detail: "Immediate restore 25% health", persistent: false };
   }
-  const label = TOWER_TYPE_LABELS[context.specialistType];
+  const label = towerTypeLabels[context.specialistType];
   if (isTypedBonusId(bonusId)) {
-    const card = TYPED_CARDS[bonusId];
+    const card = typedCards[bonusId];
     const current = bonuses[card.field][context.specialistType] ?? 1;
     const next = current * card.factor;
     // The theme's name leads, the base tower name follows in parentheses for
@@ -227,7 +222,7 @@ export function bonusCard(bonusId: BonusId, bonuses: RunBonuses, context: BonusC
       persistent: true,
     };
   }
-  const card = PERSISTENT_CARDS[bonusId as GlobalBonusId];
+  const card = persistentCards[bonusId as GlobalBonusId];
   const current = bonuses[card.field];
   const next = current * card.factor;
   return {
@@ -253,12 +248,12 @@ export function runBonusSummaryParts(bonuses: RunBonuses): string[] {
   if (bonuses.bountyMult !== 1) parts.push(`Gold ${formatMultiplier(bonuses.bountyMult)}`);
   if (bonuses.slowMult !== 1) parts.push(`Slow ${formatMultiplier(bonuses.slowMult)}`);
   if (bonuses.armorMult !== 1) parts.push(`Armor ${formatMultiplier(bonuses.armorMult)}`);
-  for (const field of TYPED_MULT_FIELDS) {
+  for (const field of typedMultFieldsList) {
     const record = bonuses[field];
     for (const towerId of Object.keys(record) as TowerId[]) {
       const value = record[towerId];
       if (value === undefined || value === 1) continue;
-      parts.push(`${TOWER_TYPE_LABELS[towerId]} ${TYPED_SUMMARY_SHORT[field]} ${formatMultiplier(value)}`);
+      parts.push(`${towerTypeLabels[towerId]} ${typedSummaryShort[field]} ${formatMultiplier(value)}`);
     }
   }
   return parts;
@@ -316,7 +311,7 @@ function pushProduct(parts: string[], label: string, value: number): void {
 // Three distinct cards. The draw is a pure function of the map seed and the
 // package id, so waiting on the package does not reroll the offer.
 export function bonusOfferSeed(mapSeed: number, packageId: number): number {
-  let mixed = Math.imul(mapSeed ^ BONUS_OFFER_TAG, 0x9e3779b1);
+  let mixed = Math.imul(mapSeed ^ bonusOfferTag, 0x9e3779b1);
   mixed ^= Math.imul(packageId + 1, 0x85ebca6b);
   return mixed >>> 0;
 }
@@ -324,13 +319,13 @@ export function bonusOfferSeed(mapSeed: number, packageId: number): number {
 // Separate stream from the offer draw: a card pool change must not move the
 // specialist type a package resolves to.
 export function specialistSeed(mapSeed: number, packageId: number): number {
-  let mixed = Math.imul(mapSeed ^ SPECIALIST_ROLL_TAG, 0x9e3779b1);
+  let mixed = Math.imul(mapSeed ^ specialistRollTag, 0x9e3779b1);
   mixed ^= Math.imul(packageId + 1, 0x85ebca6b);
   return mixed >>> 0;
 }
 
 function curationSeed(mapSeed: number, packageId: number): number {
-  let mixed = Math.imul(mapSeed ^ CURATION_ROLL_TAG, 0x9e3779b1);
+  let mixed = Math.imul(mapSeed ^ curationRollTag, 0x9e3779b1);
   mixed ^= Math.imul(packageId + 1, 0x85ebca6b);
   return mixed >>> 0;
 }
@@ -338,10 +333,10 @@ function curationSeed(mapSeed: number, packageId: number): number {
 // At most one typed card per offer, drawn into the first slot. The remaining slots
 // come from the global cards so an offer always mixes the two families.
 export function rollBonusOffer(rng: () => number): BonusOffer {
-  const pool: BonusId[] = BONUS_IDS.filter((bonusId) => !isTypedBonusId(bonusId));
+  const pool: BonusId[] = bonusIds.filter((bonusId) => !isTypedBonusId(bonusId));
   const offer: BonusId[] = [];
-  if (rng() < TYPED_CARD_WEIGHT) {
-    const typed = TYPED_BONUS_IDS[Math.floor(rng() * TYPED_BONUS_IDS.length)];
+  if (rng() < typedCardWeight) {
+    const typed = typedBonusIds[Math.floor(rng() * typedBonusIds.length)];
     if (typed) offer.push(typed);
   }
   while (offer.length < 3) {
@@ -366,14 +361,14 @@ export function rollSpecialistType(
   const rng = mulberry32(specialistSeed(mapSeed, packageId));
   const entries: { towerId: TowerId; weight: number }[] = [];
   let total = 0;
-  for (const towerId of SPECIALIST_TOWER_IDS) {
+  for (const towerId of specialistTowerIds) {
     const weight = Math.max(0, weights[towerId] ?? 0);
     if (weight <= 0) continue;
     total += weight;
     entries.push({ towerId, weight });
   }
   if (total <= 0) {
-    const uniform = SPECIALIST_TOWER_IDS[Math.floor(rng() * SPECIALIST_TOWER_IDS.length)];
+    const uniform = specialistTowerIds[Math.floor(rng() * specialistTowerIds.length)];
     return uniform ?? TowerIds.BASIC;
   }
   let roll = rng() * total;
@@ -397,7 +392,7 @@ export function curateBonusOffer(
   if (context.canApplySlow) return offer;
   if (!offer.includes("heavyFrost")) return offer;
   const rng = mulberry32(curationSeed(mapSeed, packageId));
-  const pool: BonusId[] = BONUS_IDS.filter((bonusId) => !offer.includes(bonusId) && !isTypedBonusId(bonusId));
+  const pool: BonusId[] = bonusIds.filter((bonusId) => !offer.includes(bonusId) && !isTypedBonusId(bonusId));
   const replacement = pool[Math.floor(rng() * pool.length)];
   if (!replacement) return offer;
   const curated = offer.map((bonusId) => (bonusId === "heavyFrost" ? replacement : bonusId));

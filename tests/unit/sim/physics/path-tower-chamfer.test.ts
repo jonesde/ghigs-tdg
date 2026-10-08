@@ -1,7 +1,6 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { FIXED_DT } from "@/sim/Constants.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import { resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
@@ -20,6 +19,7 @@ import {
   towerJutVertices,
 } from "@/sim/physics/corridorWalls.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
 
 // Region 1 Map 6 wall-block scenario: a 3-row corridor with a vertical wall pair
@@ -60,8 +60,8 @@ function fakeTower(tileX, tileY, health, world) {
   };
 }
 
-const SBEND_ROWS = ["####W##BBB", "S###W##BBB", "#######BBB"];
-const WALL_TILES = [
+const sbendRows = ["####W##BBB", "S###W##BBB", "#######BBB"];
+const sBendWallTiles = [
   { tileX: 4, tileY: 0 },
   { tileX: 4, tileY: 1 },
 ];
@@ -107,20 +107,20 @@ describe("path-tower corner chamfer (S-bend walk-around)", () => {
   }
 
   function setupScenario() {
-    grid = gridFromRows(SBEND_ROWS, { x: 0, y: 1 }, { x: 8, y: 1 });
-    wireScenario(WALL_TILES);
+    grid = gridFromRows(sbendRows, { x: 0, y: 1 }, { x: 8, y: 1 });
+    wireScenario(sBendWallTiles);
   }
 
   // Drives the production tick order and returns when the enemy center clears the
   // east face of the wall pair, or Infinity when it never does (the jam signature).
   function runCrossing(enemy: Enemy, crossWorldX: number, limitSeconds: number): number {
-    const maxSteps = Math.round(limitSeconds / FIXED_DT);
+    const maxSteps = Math.round(limitSeconds / fixedDeltaSeconds);
     for (let stepIndex = 0; stepIndex < maxSteps; stepIndex++) {
-      enemyManager.preStep(FIXED_DT);
-      crowd.update(FIXED_DT, enemyManager.enemies);
+      enemyManager.preStep(fixedDeltaSeconds);
+      crowd.update(fixedDeltaSeconds, enemyManager.enemies);
       physicsWorld.step();
-      enemyManager.postStep(FIXED_DT, null, null);
-      if (enemy.x > crossWorldX) return stepIndex * FIXED_DT;
+      enemyManager.postStep(fixedDeltaSeconds, null, null);
+      if (enemy.x > crossWorldX) return stepIndex * fixedDeltaSeconds;
       if (enemy.removed) break;
     }
     return Number.POSITIVE_INFINITY;
@@ -128,13 +128,13 @@ describe("path-tower corner chamfer (S-bend walk-around)", () => {
 
   // Westbound variant for the real map (the spawn sits east of the wall pair).
   function runCrossingWest(enemy: Enemy, crossWorldX: number, limitSeconds: number): number {
-    const maxSteps = Math.round(limitSeconds / FIXED_DT);
+    const maxSteps = Math.round(limitSeconds / fixedDeltaSeconds);
     for (let stepIndex = 0; stepIndex < maxSteps; stepIndex++) {
-      enemyManager.preStep(FIXED_DT);
-      crowd.update(FIXED_DT, enemyManager.enemies);
+      enemyManager.preStep(fixedDeltaSeconds);
+      crowd.update(fixedDeltaSeconds, enemyManager.enemies);
       physicsWorld.step();
-      enemyManager.postStep(FIXED_DT, null, null);
-      if (enemy.x < crossWorldX) return stepIndex * FIXED_DT;
+      enemyManager.postStep(fixedDeltaSeconds, null, null);
+      if (enemy.x < crossWorldX) return stepIndex * fixedDeltaSeconds;
       if (enemy.removed) break;
     }
     return Number.POSITIVE_INFINITY;
@@ -182,7 +182,7 @@ describe("path-tower corner chamfer (S-bend walk-around)", () => {
     const boss = enemyManager.spawn("boss", 1, 0, 1);
     expect(boss).not.toBeNull();
     for (let escortIndex = 0; escortIndex < 2; escortIndex++) enemyManager.spawn("minion", 1, 0, 1);
-    boss.computeIntent(FIXED_DT, enemyManager);
+    boss.computeIntent(fixedDeltaSeconds, enemyManager);
     expect(boss.routingMode).toBe("default");
     // East face of the pair column sits at x=5*36=180; the tile center at 198 is
     // unambiguous "past the block" for a 5.94-radius body.
@@ -235,7 +235,7 @@ function hasVertexNear(vertices: number[], x: number, y: number): boolean {
 
 describe("path-tower jut chamfer derivation", () => {
   it("cuts both channel corners of the lower wall tower and none on the pair's top tile", () => {
-    const grid = gridFromRows(SBEND_ROWS, { x: 0, y: 1 }, { x: 8, y: 1 });
+    const grid = gridFromRows(sbendRows, { x: 0, y: 1 }, { x: 8, y: 1 });
     const jutVertices = towerJutVertices(grid);
     expect(pathTowerCutCorners(grid, 4, 1, jutVertices)).toEqual(new Set(["southwest", "southeast"]));
     // The pair's top tile shares both lower vertices with its own tower tile
@@ -248,7 +248,7 @@ describe("path-tower jut chamfer derivation", () => {
   });
 
   it("chamfers the tower collider and drops the square corner vertices", () => {
-    const grid = gridFromRows(SBEND_ROWS, { x: 0, y: 1 }, { x: 8, y: 1 });
+    const grid = gridFromRows(sbendRows, { x: 0, y: 1 }, { x: 8, y: 1 });
     const cutCorners = pathTowerCutCorners(grid, 4, 1, towerJutVertices(grid));
     expect(cutCorners).not.toBeNull();
     const outline = terrainTowerLocalOutline(grid.tileSize, cutCorners!);
@@ -270,7 +270,7 @@ describe("path-tower jut chamfer derivation", () => {
     const navBuilder = new NavMeshBuilder(grid);
     const physicsWorld = new PhysicsWorld(grid);
     try {
-      const towers = WALL_TILES.map((tile) =>
+      const towers = sBendWallTiles.map((tile) =>
         fakeTower(tile.tileX, tile.tileY, 1e6, grid.tileToWorld(tile.tileX, tile.tileY)),
       );
       physicsWorld.rebuildTowers({ towers } as unknown as TowerManager);

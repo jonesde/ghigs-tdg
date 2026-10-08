@@ -3,7 +3,7 @@
 
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it } from "vitest";
-import { SELL_VALUE_RATIO } from "@/sim/Constants.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import { TowerManager } from "@/sim/towers/TowerManager.js";
@@ -187,7 +187,7 @@ describe("TowerManager", () => {
       const val = manager.sell(tower, makeSave());
       expect(val).toBeUndefined();
       // The authoritative sell value still lives on the tower.
-      expect(tower.sellValue()).toBe(Math.round(tower.totalInvested * SELL_VALUE_RATIO));
+      expect(tower.sellValue()).toBe(Math.round(tower.totalInvested * getGameContent().towers.tuning.sellValueRatio));
     });
 
     it("spawns sell particles", () => {

@@ -1,17 +1,16 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import type { TowerId } from "@/sim/ConstantsTower.js";
-import { TowerIds, targetsLabel, towerGroundOnly } from "@/sim/ConstantsTower.js";
+import { getGameContent } from "@/content/gameContent.js";
+import { type TowerId, TowerIds } from "@/content/towerIds.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import {
-  BASE_LEVEL_NODES,
+  baseLevelNodes,
   canRefund,
   canRefundBase,
   canRefundGeneral,
   countRefundableGems,
-  GENERAL_ADDON_CATEGORIES,
-  GENERAL_ADDON_DEFS,
+  generalAddonDefs,
   getGeneralAddonValue,
   isAvailable,
   isBaseAvailable,
@@ -21,8 +20,8 @@ import {
   isSellOptionPurchased,
   isUnlocked,
   refundAllGems,
-  SKILL_TREE,
   sellOptionMode,
+  skillTree,
   tryRefund,
   tryRefundBase,
   tryRefundGeneral,
@@ -30,6 +29,7 @@ import {
   tryUnlockBase,
   tryUnlockGeneral,
 } from "@/sim/towers/SkillTree.js";
+import { targetsLabel, towerGroundOnly } from "@/sim/towers/towerTargeting.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -149,7 +149,7 @@ function handleSellOptionClick(index: number, element: HTMLElement) {
 }
 
 function showBaseRefundConfirm(index: number, gems: number) {
-  const label = BASE_LEVEL_NODES[index]?.label ?? "Base";
+  const label = baseLevelNodes[index]?.label ?? "Base";
   uiStore.showConfirm({
     title: "Refund Unlock",
     message: `Revoke "${label}" and refund ${gems} 💎?`,
@@ -179,7 +179,7 @@ function showRefundConfirm(towerId: TowerId, tier: string, index: number, gems: 
 }
 
 function showGeneralRefundConfirm(key: string, index: number, gems: number) {
-  const def = GENERAL_ADDON_DEFS[key];
+  const def = generalAddonDefs[key];
   const label = def?.tiers[index]?.label || key;
   const verb = key === "sellOption" ? "Revoke" : "Downgrade";
   uiStore.showConfirm({
@@ -196,7 +196,7 @@ function showGeneralRefundConfirm(key: string, index: number, gems: number) {
 }
 
 function getNodeLabel(towerId: TowerId, tier: string, index: number) {
-  const towerDef = SKILL_TREE[towerId];
+  const towerDef = skillTree[towerId];
   if (!towerDef) return "";
   if (tier === "level") return `Level ${index + 1}`;
   if (tier === "variantA") return towerDef.variantA?.[index]?.label || "";
@@ -252,7 +252,7 @@ function showRefundAllConfirm() {
 
     <div class="skill-top">
       <div class="skill-top-col">
-      <template v-for="(cat, catKey) in GENERAL_ADDON_CATEGORIES" :key="catKey">
+      <template v-for="(cat, catKey) in getGameContent().skillTree.generalAddonCategories" :key="catKey">
         <div class="category-group" :class="'category-' + catKey">
           <div class="category-header">
             <span class="category-label">{{ cat.label }}</span>
@@ -263,7 +263,7 @@ function showRefundAllConfirm() {
             :key="key"
             class="general-card"
           >
-            <template v-for="def in [GENERAL_ADDON_DEFS[key]]">
+            <template v-for="def in [generalAddonDefs[key]]">
               <div class="general-label">{{ def.label }}</div>
               <div class="general-desc">{{ def.desc }}</div>
 
@@ -315,7 +315,7 @@ function showRefundAllConfirm() {
           <div class="base-columns">
             <div class="base-addon-cards">
               <div v-for="key in ['extraHealth', 'slowHealing']" :key="key" class="general-card">
-                <template v-for="def in [GENERAL_ADDON_DEFS[key]]" :key="def.key">
+                <template v-for="def in [generalAddonDefs[key]]" :key="def.key">
                   <div class="general-label">{{ def.label }}</div>
                   <div class="general-desc">{{ def.desc }}</div>
                   <button
@@ -337,7 +337,7 @@ function showRefundAllConfirm() {
             <div class="base-levels-card">
               <div class="skill-section">Levels</div>
               <div
-                v-for="node in BASE_LEVEL_NODES.filter((n) => n.index >= 2)"
+                v-for="node in baseLevelNodes.filter((n) => n.index >= 2)"
                 :key="'base-' + node.index"
                 class="skill-node"
                 :class="{
@@ -378,14 +378,14 @@ function showRefundAllConfirm() {
           class="skill-node"
           :class="{
             unlocked: isUnlocked(persistStore.$state, id, 'level', i),
-            unavailable: !isAvailable(persistStore.$state, id, 'level', i, SKILL_TREE[id].levels.find(l => l.index === i)?.cost),
+            unavailable: !isAvailable(persistStore.$state, id, 'level', i, skillTree[id].levels.find(l => l.index === i)?.cost),
           }"
           @click="handleTowerNodeClick(id, 'level', i, $event.currentTarget)"
         >
           <div class="node-header">
             <span>Level {{ i + 1 }}</span>
             <span class="node-cost">
-              {{ isUnlocked(persistStore.$state, id, 'level', i) ? '✓' : SKILL_TREE[id].levels.find(l => l.index === i)?.cost + ' 💎' }}
+              {{ isUnlocked(persistStore.$state, id, 'level', i) ? '✓' : skillTree[id].levels.find(l => l.index === i)?.cost + ' 💎' }}
             </span>
           </div>
         </div>
@@ -393,7 +393,7 @@ function showRefundAllConfirm() {
         <!-- Specialization A -->
         <div class="skill-section">Specialization A</div>
         <div
-          v-for="(node, i) in SKILL_TREE[id].variantA"
+          v-for="(node, i) in skillTree[id].variantA"
           :key="'variantA-' + i"
           class="skill-node"
           :class="{
@@ -414,7 +414,7 @@ function showRefundAllConfirm() {
         <!-- Specialization B -->
         <div class="skill-section">Specialization B</div>
         <div
-          v-for="(node, i) in SKILL_TREE[id].variantB"
+          v-for="(node, i) in skillTree[id].variantB"
           :key="'vb-' + i"
           class="skill-node"
           :class="{
@@ -435,7 +435,7 @@ function showRefundAllConfirm() {
         <!-- Add-ons -->
         <div class="skill-section">Add-ons</div>
         <div
-          v-for="(node, i) in SKILL_TREE[id].addons"
+          v-for="(node, i) in skillTree[id].addons"
           :key="'addon-' + i"
           class="skill-node"
           :class="{

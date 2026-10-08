@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { BOSS_CADENCE, MAP_GEM_MULTIPLIERS, Regions } from "@/sim/Constants.js";
+import { getGameContent } from "@/content/gameContent.js";
 
 type TileType = "terrain" | "path" | "base" | "spawn";
 
@@ -57,8 +57,8 @@ export function makeMapData(options: MakeMapDataOptions): MapData {
     regionId = 0,
     level = 1,
     style = "bastion",
-    gemReward = MAP_GEM_MULTIPLIERS[regionId] || 1,
-    bossCadence = BOSS_CADENCE[regionId],
+    gemReward = getGameContent().economy.mapGemMultipliers[regionId] || 1,
+    bossCadence = getGameContent().enemies.bossCadence[regionId],
     seed = 42,
   } = options;
 
@@ -103,7 +103,7 @@ export function makeMapData(options: MakeMapDataOptions): MapData {
     style,
     gemReward,
     bossCadence,
-    name: `${Regions[regionId]?.name ?? "Region"} ${level}`,
+    name: `Region ${level}`,
     seed,
   };
 }

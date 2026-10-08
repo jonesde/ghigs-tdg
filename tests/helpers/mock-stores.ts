@@ -1,8 +1,9 @@
 // @ts-nocheck
 import { createPinia, setActivePinia } from "pinia";
+import { getGameContent } from "@/content/gameContent.js";
 import type { MapThemeData } from "@/render/themes/index.js";
 import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
-import { type GameState, STARTING_BASE_HEALTH, StartingGold } from "@/sim/Constants.js";
+import type { GameStateValue } from "@/sim/GameRunState.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
 import type {
@@ -25,7 +26,6 @@ type GameStore = ReturnType<typeof useGameStore>;
 type PersistStore = ReturnType<typeof usePersistStore>;
 type UiStore = ReturnType<typeof useUiStore>;
 type MapThemeStore = ReturnType<typeof useMapThemeStore>;
-type GameStateValue = (typeof GameState)[keyof typeof GameState];
 
 export const mockDefaultTheme: MapThemeData = {
   id: DEFAULT_THEME_ID,
@@ -169,9 +169,9 @@ export function createTestStores(): { game: GameStore; persist: PersistStore; ui
       game.mapIndex = mapIndex;
       game.map = mapData;
       game.grid = grid;
-      game.baseHealth = STARTING_BASE_HEALTH;
+      game.baseHealth = getGameContent().economy.startingBaseHealth;
       game.maxBaseHealth = 100;
-      game.gold = StartingGold[mapData.regionId];
+      game.gold = getGameContent().economy.startingGoldByRegion[mapData.regionId];
       game.currentWave = 0;
       game.milestoneRewardsClaimed = {};
       game.selectedTower = null;

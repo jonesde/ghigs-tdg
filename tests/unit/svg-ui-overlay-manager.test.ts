@@ -1,11 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { HP_BAR_POOL_SIZE, SHIELD_BAR_POOL_SIZE, SVG_NS, TOWER_HP_BAR_POOL_SIZE } from "@/render/svg/types.js";
 import { UiOverlayManager } from "@/render/svg/UiOverlayManager.js";
-import {
-  WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN,
-  WAVE_GRAPH_COLOR_BASE_HEALTH_RED,
-  WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW,
-} from "@/sim/Constants.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import { buildTestTower, createTestEngine } from "../helpers/engine-snapshot.js";
 
@@ -316,10 +311,10 @@ describe("UiOverlayManager base health bar", () => {
 
   it("colors the bar green/yellow/red by health ratio", () => {
     manager.syncBaseHealthBar(fakeGrid, 80, 100);
-    expect(baseBarRects()[2]!.getAttribute("fill")).toBe(WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN);
+    expect(baseBarRects()[2]!.getAttribute("fill")).toBe("#5ec46a");
     manager.syncBaseHealthBar(fakeGrid, 30, 100);
-    expect(baseBarRects()[2]!.getAttribute("fill")).toBe(WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW);
+    expect(baseBarRects()[2]!.getAttribute("fill")).toBe("#ffd84d");
     manager.syncBaseHealthBar(fakeGrid, 10, 100);
-    expect(baseBarRects()[2]!.getAttribute("fill")).toBe(WAVE_GRAPH_COLOR_BASE_HEALTH_RED);
+    expect(baseBarRects()[2]!.getAttribute("fill")).toBe("#e05548");
   });
 });

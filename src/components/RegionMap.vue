@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { RegionMapNodeView } from "@/components/RegionMapNodeView.js";
-import { CLEARED_CROWN_GLYPH, medalGlyphsForBestWave } from "@/components/regionMapProgress.js";
+import { clearedCrownGlyph, medalGlyphsForBestWave } from "@/components/regionMapProgress.js";
 import type { RegionMapConnection } from "@/render/themes/index.js";
 
 const props = defineProps<{
@@ -22,7 +22,7 @@ function nodeRefKey(ref: { kind: "level" | "progressive"; level: number }): stri
 // appended on a cleared map (wave 100 already implies the gold milestone).
 function medalRowForNode(node: RegionMapNodeView): string {
   const glyphs = medalGlyphsForBestWave(node.bestWave);
-  return node.cleared ? [...glyphs, CLEARED_CROWN_GLYPH].join(" ") : glyphs.join(" ");
+  return node.cleared ? [...glyphs, clearedCrownGlyph()].join(" ") : glyphs.join(" ");
 }
 
 interface ResolvedConnection {

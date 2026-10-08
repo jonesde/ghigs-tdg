@@ -1,6 +1,6 @@
 import type { SiteArtMeta } from "@/render/themes/index.js";
 import { HASTE_AURA_RANGE_TILES, HEAL_AURA_RANGE_TILES } from "@/sim/bossAbilities.js";
-import { BUILDING_COLORS, BUILDING_ICONS, buildingBlurb, CACHE_ICON } from "@/sim/mapSites.js";
+import { buildingBlurb, buildingColors, buildingIcons, cacheIcon } from "@/sim/mapSites.js";
 import { cacheOpenGold } from "@/sim/runBonuses.js";
 import type {
   BombardShotSnapshot,
@@ -187,7 +187,7 @@ function cacheGlyph(cache: MapCacheSnapshot, currentWave: number, siteArt: SiteA
     ring +
     `<rect x="${left}" y="${top}" width="${GLYPH_SIZE}" height="${GLYPH_SIZE}" fill="${fill}" stroke="#4a3018" ` +
     `stroke-width="1" aria-label="${label}"></rect>` +
-    iconText(cache.worldX, cache.worldY, CACHE_ICON, ink) +
+    iconText(cache.worldX, cache.worldY, cacheIcon, ink) +
     bar
   );
 }
@@ -207,8 +207,8 @@ function proceduralBuildingGlyph(building: MapBuildingSnapshot, label: string): 
   const half = GLYPH_SIZE / 2;
   return (
     `<rect x="${building.worldX - half}" y="${building.worldY - half}" width="${GLYPH_SIZE}" height="${GLYPH_SIZE}" ` +
-    `fill="${BUILDING_COLORS[building.kind]}" stroke="#1a1a1a" stroke-width="1" aria-label="${label}"></rect>` +
-    iconText(building.worldX, building.worldY, BUILDING_ICONS[building.kind], "#141414")
+    `fill="${buildingColors[building.kind]}" stroke="#1a1a1a" stroke-width="1" aria-label="${label}"></rect>` +
+    iconText(building.worldX, building.worldY, buildingIcons[building.kind], "#141414")
   );
 }
 

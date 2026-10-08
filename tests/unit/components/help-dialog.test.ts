@@ -3,13 +3,14 @@ import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { nextTick } from "vue";
+import { enemyOrder } from "@/components/enemyOrder.js";
 import HelpDialog from "@/components/HelpDialog.vue";
 import { getGameContent } from "@/content/gameContent.js";
-import { ENEMY_ORDER } from "@/sim/ConstantsEnemy.js";
-import { TOWER_BASE } from "@/sim/ConstantsTower.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { useUiStore } from "@/stores/ui.js";
 import { mockDefaultTheme } from "../../helpers/mock-stores";
+
+const towerBase = getGameContent().towers.base;
 
 function mountHelpDialog() {
   const pinia = createPinia();
@@ -180,10 +181,10 @@ describe("HelpDialog", () => {
       await nextTick();
       expect(document.querySelector("#help-tower-level")).not.toBeNull();
       expect(document.querySelector(".help-table")).toBeNull();
-      expect(statRows().length).toBe(Object.keys(TOWER_BASE).length);
+      expect(statRows().length).toBe(Object.keys(towerBase).length);
       const basicRow = statRows()[0];
       expect(cellText(basicRow, 1)).toContain("Rifle Tower");
-      expect(cellText(basicRow, 4)).toBe(String(Number(TOWER_BASE.basic.damage.toFixed(1))));
+      expect(cellText(basicRow, 4)).toBe(String(Number(towerBase.basic.damage.toFixed(1))));
       expect(basicRow.querySelector(".sprite svg")).not.toBeNull();
     });
 
@@ -193,7 +194,7 @@ describe("HelpDialog", () => {
       await nextTick();
       setSlider("#help-tower-level", 7);
       await nextTick();
-      expect(statRows().length).toBe(Object.keys(TOWER_BASE).length * 2);
+      expect(statRows().length).toBe(Object.keys(towerBase).length * 2);
       const basicRows = statRows().slice(0, 2);
       expect(basicRows[0].querySelector(".variant-badge").textContent.trim()).toBe("Rapid");
       expect(basicRows[1].querySelector(".variant-badge").textContent.trim()).toBe("Heavy");
@@ -205,7 +206,7 @@ describe("HelpDialog", () => {
       clickTab(2);
       await nextTick();
       expect(document.querySelector("#help-enemy-wave")).not.toBeNull();
-      expect(statRows().length).toBe(ENEMY_ORDER.length);
+      expect(statRows().length).toBe(enemyOrder.length);
       const context = document.querySelector(".wave-context").textContent;
       expect(context).toContain("Enemy level 1");
       expect(context).toContain("No boss");

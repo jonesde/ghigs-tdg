@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { clearBuildAndTowerForProgressive } from "@/composables/progressivePlacement.js";
-import { progressiveRerollGoldPerWave } from "@/sim/Constants.js";
+import { themeProgressiveRerollGoldPerWave } from "@/content/themeMaps.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { generateProgressiveCatalog, progressiveConfigFromMap } from "@/sim/grid/ProgressiveMap.js";
 import { useGameStore } from "@/stores/game.js";
@@ -24,7 +24,7 @@ const catalog = computed(() => {
 // Must match the engine's rerollProgressiveOffer, which reads the active
 // world's per-wave cost (theme override or the content-pack default).
 const rerollCost = computed(() => {
-  return progressiveRerollGoldPerWave(themeStore.activeTheme?.maps) * gameStore.currentWave;
+  return themeProgressiveRerollGoldPerWave(themeStore.activeTheme?.maps) * gameStore.currentWave;
 });
 const rerollDisabled = computed(() => gameStore.gold < rerollCost.value);
 

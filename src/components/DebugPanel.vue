@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { usePanelDrag } from "@/composables/usePanelDrag.js";
-import { TIME_SCALES } from "@/sim/Constants.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
+import { nextTimeScale } from "@/sim/GameRunState.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
@@ -49,15 +50,13 @@ function dbgWave() {
 
 function dbgUnlockAll() {
   // Unlock applies to the selected world's progress bucket.
-  persistStore.setHighestUnlockedMap(persistStore.lastSelectedThemeId, 35);
+  persistStore.setHighestUnlockedMap(persistStore.lastSelectedThemeId, getGameContent().maps.levels.length - 1);
 }
 
 function dbgSpeed() {
-  // Cycle within the worker-accepted setTimeScale whitelist. Anything outside
-  // TIME_SCALES is rejected by intake validation and would leave the speed
-  // unchanged, so the same list is the only legal source for the next value.
-  const currentIndex = TIME_SCALES.indexOf(gameStore.timeScale as (typeof TIME_SCALES)[number]);
-  const nextSpeed = TIME_SCALES[(currentIndex + 1 + TIME_SCALES.length) % TIME_SCALES.length]!;
+  // nextTimeScale only walks the worker-accepted time scales, so the debug
+  // setTimeScale amount can never be rejected by intake validation.
+  const nextSpeed = nextTimeScale(gameStore.timeScale, 1);
   dispatchCommand({ commandId: 0, type: "action:debug", kind: "setTimeScale", amount: nextSpeed });
 }
 </script>

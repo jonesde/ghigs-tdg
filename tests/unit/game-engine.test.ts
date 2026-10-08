@@ -1,24 +1,11 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it } from "vitest";
+import { getGameContent } from "@/content/gameContent.js";
 import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
-import {
-  BOSS_SPEED_LIMIT,
-  BOUNTY_BLOCKED_RATIO,
-  DIFFICULTY_MULT_GEM_BASE,
-  ENEMY_WOUND_DAMAGE_REDUCTION_PCT,
-  FIRST_TIME_MILESTONE_MULT,
-  GameState,
-  MAP_GEM_MULTIPLIERS,
-  MILESTONE_GEMS,
-  STARTING_BASE_HEALTH,
-  STARTING_HEALTH_BONUS,
-  StartingGold,
-  VICTORY_WAVE,
-} from "@/sim/Constants.js";
-import { CANCEL_BUILD_WINDOW_MS, SELL_VALUE_RATIO } from "@/sim/ConstantsTower.js";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { GameEngine } from "@/sim/GameEngine.js";
+import { GameState } from "@/sim/GameRunState.js";
 import { createDefaultPersistState, difficultyMultiplier as getDifficultyMultiplier } from "@/sim/PersistState.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import {
@@ -27,6 +14,13 @@ import {
   createTestThemeBundle,
   MockHostBindings,
 } from "../helpers/mock-stores";
+
+const sellValueRatio = getGameContent().towers.tuning.sellValueRatio;
+const mapGemMultipliers = getGameContent().economy.mapGemMultipliers;
+const startingGoldByRegion = getGameContent().economy.startingGoldByRegion;
+const victoryWave = getGameContent().economy.victoryWave;
+const startingBaseHealth = getGameContent().economy.startingBaseHealth;
+const difficultyMultGemBase = getGameContent().economy.difficultyMultGemBase;
 
 describe("GameEngine", () => {
   let engine: GameEngine;
@@ -73,14 +67,14 @@ describe("GameEngine", () => {
     it("sets starting gold based on region", () => {
       const persistState = createTestPersistState();
       initEngine(0, persistState);
-      expect(engine.runState.gold).toBe(StartingGold[0]);
+      expect(engine.runState.gold).toBe(startingGoldByRegion[0]);
     });
 
     it("adds progressive gold per entry beyond the first", () => {
       const persistState = createTestPersistState();
       engine = new GameEngine(persistState, createTestThemeBundle(), mockHost, -2);
       engine.loadProgressiveMap({ regionId: 0, level: 12, entryCount: 4, seed: 1 });
-      expect(engine.runState.gold).toBe(StartingGold[0] + 150);
+      expect(engine.runState.gold).toBe(startingGoldByRegion[0] + 150);
     });
 
     it("resets lives to 20", () => {
@@ -88,7 +82,7 @@ describe("GameEngine", () => {
       initEngine(0, persistState);
       engine.runState.baseHealth = 100;
       initEngine(0, persistState);
-      expect(engine.runState.baseHealth).toBe(STARTING_BASE_HEALTH);
+      expect(engine.runState.baseHealth).toBe(startingBaseHealth);
     });
 
     it("sets currentWave to 0", () => {
@@ -134,7 +128,7 @@ describe("GameEngine", () => {
       const persistState = createTestPersistState();
       persistState.generalAddons.startingGold = 0;
       initEngine(0, persistState);
-      const expected = StartingGold[0] + 50;
+      const expected = startingGoldByRegion[0] + 50;
       expect(engine.runState.gold).toBe(expected);
     });
 
@@ -142,7 +136,7 @@ describe("GameEngine", () => {
       const persistState = createTestPersistState();
       persistState.generalAddons.extraHealth = 0;
       initEngine(0, persistState);
-      expect(engine.runState.baseHealth).toBe(STARTING_BASE_HEALTH + STARTING_HEALTH_BONUS[0]);
+      expect(engine.runState.baseHealth).toBe(startingBaseHealth + getGameContent().economy.startingHealthBonus[0]);
     });
   });
 
@@ -157,8 +151,8 @@ describe("GameEngine", () => {
       engine.onBossKilled();
       const base = 1;
       const diffMult = getDifficultyMultiplier(engine.persistState);
-      const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
-      const mapMult = MAP_GEM_MULTIPLIERS[engine.runState.mapIndex];
+      const gemMult = 1 + difficultyMultGemBase * (diffMult - 1);
+      const mapMult = mapGemMultipliers[engine.runState.mapIndex];
       const expected = Math.ceil(Math.ceil(base * gemMult) * mapMult);
       expect(engine.persistState.gems).toBe(gemsBefore + expected);
     });
@@ -194,10 +188,10 @@ describe("GameEngine", () => {
       const wave = 15;
       if (!engine.runState.milestoneRewardsClaimed[wave]) {
         engine.runState.milestoneRewardsClaimed[wave] = true;
-        const base = MILESTONE_GEMS[wave];
+        const base = getGameContent().economy.milestoneGems[wave];
         const diffMult = getDifficultyMultiplier(engine.persistState);
-        const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
-        const regionMult = MAP_GEM_MULTIPLIERS[engine.runState.mapIndex];
+        const gemMult = 1 + difficultyMultGemBase * (diffMult - 1);
+        const regionMult = mapGemMultipliers[engine.runState.mapIndex];
         const afterDiff = Math.ceil(base * gemMult);
         const afterRegion = Math.ceil(afterDiff * regionMult);
         engine.persistState.gems += afterRegion;
@@ -210,12 +204,12 @@ describe("GameEngine", () => {
       const persistState = createTestPersistState();
       initEngine(0, persistState);
       const wave = 15;
-      const base = MILESTONE_GEMS[wave];
+      const base = getGameContent().economy.milestoneGems[wave];
       const diffMult = getDifficultyMultiplier(engine.persistState);
-      const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
-      const regionMult = MAP_GEM_MULTIPLIERS[engine.runState.mapIndex];
+      const gemMult = 1 + difficultyMultGemBase * (diffMult - 1);
+      const regionMult = mapGemMultipliers[engine.runState.mapIndex];
       const afterRegion = Math.ceil(Math.ceil(base * gemMult) * regionMult);
-      const firstTimeBonus = afterRegion * FIRST_TIME_MILESTONE_MULT;
+      const firstTimeBonus = afterRegion * getGameContent().economy.firstTimeMilestoneMult;
 
       const gemsBefore = engine.persistState.gems;
       engine.persistState.gems += firstTimeBonus;
@@ -231,7 +225,7 @@ describe("GameEngine", () => {
 
     it("addGold increases gold", () => {
       engine.earnGold(10);
-      expect(engine.runState.gold).toBe(StartingGold[0] + 10);
+      expect(engine.runState.gold).toBe(startingGoldByRegion[0] + 10);
     });
 
     it("setGold sets gold to exact value", () => {
@@ -241,7 +235,7 @@ describe("GameEngine", () => {
 
     it("loseLives decreases lives", () => {
       engine.runState.baseHealth -= 3;
-      expect(engine.runState.baseHealth).toBe(STARTING_BASE_HEALTH - 3);
+      expect(engine.runState.baseHealth).toBe(startingBaseHealth - 3);
     });
 
     it("boss attacking the base reduces engine baseHealth via attackDamage and is not removed", () => {
@@ -281,12 +275,6 @@ describe("GameEngine", () => {
       expect(engine.runState.baseHealth).toBeLessThan(healthBefore);
       expect(enemy.removed).toBe(false);
     });
-
-    it("blocked enemy gives half bounty", () => {
-      const bounty = Math.ceil(2 * BOUNTY_BLOCKED_RATIO);
-      engine.earnGold(bounty);
-      expect(engine.runState.gold).toBe(StartingGold[0] + bounty);
-    });
   });
 
   describe("tower actions", () => {
@@ -298,7 +286,7 @@ describe("GameEngine", () => {
     it("builds a tower via click on valid terrain", () => {
       const tower = engine.towerManager?.build("basic", 0, 0, engine.persistState, engine.grid!);
       expect(tower).not.toBeNull();
-      expect(engine.runState.gold).toBe(StartingGold[0]);
+      expect(engine.runState.gold).toBe(startingGoldByRegion[0]);
     });
 
     it("does not build when cannot afford", () => {
@@ -362,7 +350,7 @@ describe("GameEngine", () => {
     it("sellSelected shows confirm dialog", () => {
       const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
       // Outside the cancel window so the confirm/sell path is exercised.
-      tower._gameSeconds = (CANCEL_BUILD_WINDOW_MS + 1000) / 1000;
+      tower._gameSeconds = (getGameContent().towers.tuning.cancelBuildWindowMs + 1000) / 1000;
       engine.runState.selectedTowerId = String(tower.id);
       engine.sellSelected();
       expect(engine.towerManager?.towers).toContain(tower);
@@ -370,14 +358,14 @@ describe("GameEngine", () => {
 
     it("executeSell sells the selected tower", async () => {
       const tower = engine.towerManager!.build("basic", 0, 0, engine.persistState, engine.grid!);
-      tower._gameSeconds = (CANCEL_BUILD_WINDOW_MS + 1000) / 1000;
+      tower._gameSeconds = (getGameContent().towers.tuning.cancelBuildWindowMs + 1000) / 1000;
       const goldBefore = engine.runState.gold;
       engine.runState.selectedTowerId = String(tower.id);
       engine.sellSelected();
       // The mock host grants the confirm on a microtask; flush it before selling.
       await Promise.resolve();
       engine.executeSell();
-      const expectedRefund = Math.round(tower!.totalInvested * SELL_VALUE_RATIO);
+      const expectedRefund = Math.round(tower!.totalInvested * sellValueRatio);
       expect(engine.runState.gold).toBe(goldBefore + expectedRefund);
       expect(engine.runState.selectedTowerId).toBeNull();
     });
@@ -428,7 +416,7 @@ describe("GameEngine", () => {
       const cost = engine.getUpgradeCost(tower!);
       engine.runState.gold -= cost;
       tower.doUpgrade(engine.persistState, cost);
-      const expectedRefund = Math.round(tower.upgradeCost(2) * SELL_VALUE_RATIO);
+      const expectedRefund = Math.round(tower.upgradeCost(2) * sellValueRatio);
       const goldBefore = engine.runState.gold;
       engine.runState.selectedTowerId = String(tower.id);
       engine.executeDowngrade();
@@ -486,7 +474,7 @@ describe("GameEngine", () => {
       engine.executeDowngrade();
       expect(tower.level).toBe(4);
       expect(tower.variant).toBeNull();
-      const expectedRefund = Math.round(specCost * SELL_VALUE_RATIO);
+      const expectedRefund = Math.round(specCost * sellValueRatio);
       expect(engine.runState.gold).toBe(goldBefore + expectedRefund);
     });
 
@@ -621,7 +609,9 @@ describe("GameEngine", () => {
       const syncedAddons = createDefaultPersistState().generalAddons;
       syncedAddons.enemyWoundDamageReduction = 2;
       engine.syncPersist(engine.persistState.unlocked, syncedAddons);
-      expect(engine.enemyManager!.woundDamageReductionPct).toBe(ENEMY_WOUND_DAMAGE_REDUCTION_PCT[2]);
+      expect(engine.enemyManager!.woundDamageReductionPct).toBe(
+        getGameContent().economy.enemyWoundDamageReductionPct[2],
+      );
       expect(enemy.effectiveAttackDamage / enemy.attackDamage).toBeCloseTo(0.5, 6);
     });
 
@@ -629,7 +619,9 @@ describe("GameEngine", () => {
       const persistState = createTestPersistState();
       persistState.generalAddons.enemyWoundDamageReduction = 1;
       initEngine(0, persistState);
-      expect(engine.enemyManager!.woundDamageReductionPct).toBe(ENEMY_WOUND_DAMAGE_REDUCTION_PCT[1]);
+      expect(engine.enemyManager!.woundDamageReductionPct).toBe(
+        getGameContent().economy.enemyWoundDamageReductionPct[1],
+      );
     });
 
     it("debug mutates the authoritative runState/persistState", () => {
@@ -705,7 +697,7 @@ describe("GameEngine", () => {
       initEngine(0, persistState);
       engine.runState.timeScale = 8;
       engine.enemyManager?.spawn("boss", 1, 0, 1);
-      expect(engine.runState.timeScale).toBe(BOSS_SPEED_LIMIT);
+      expect(engine.runState.timeScale).toBe(2);
     });
 
     it("leaves the speed alone when a boss emerges at or below 2x", () => {
@@ -884,7 +876,7 @@ describe("GameEngine", () => {
     it("does not stamp the medals on the victory-wave clear", () => {
       initEngine(0, createTestPersistState());
       buildDamagedTower(40);
-      engine.onWaveCleared(VICTORY_WAVE);
+      engine.onWaveCleared(victoryWave);
       expect(engine.waveTopTowers).toBeNull();
     });
 
@@ -892,8 +884,8 @@ describe("GameEngine", () => {
       const persistState = createTestPersistState();
       initEngine(0, persistState);
       buildDamagedTower(40);
-      engine.onWaveExpired(VICTORY_WAVE);
-      expect(persistState.themeProgress[DEFAULT_THEME_ID]?.bestWaves.best_0).toBe(VICTORY_WAVE);
+      engine.onWaveExpired(victoryWave);
+      expect(persistState.themeProgress[DEFAULT_THEME_ID]?.bestWaves.best_0).toBe(victoryWave);
       expect(engine.waveTopTowers).toBeNull();
     });
   });

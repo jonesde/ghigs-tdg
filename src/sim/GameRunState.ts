@@ -1,9 +1,55 @@
-import type { GameStateValue } from "@/sim/Constants.js";
-import { STARTING_BASE_HEALTH, StartingGold, TIME_SCALES } from "@/sim/Constants.js";
-import type { TowerId } from "@/sim/ConstantsTower.js";
+import { getGameContent } from "@/content/gameContent.js";
+import type { TowerId } from "@/content/towerIds.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
 import { type BonusPickerState, freshRunBonuses, type RunBonuses } from "@/sim/runBonuses.js";
+
+export const GameState = {
+  MENU: "menu",
+  MAP_SELECT: "map_select",
+  PLAYING: "playing",
+  PAUSED: "paused",
+  GAME_OVER: "game_over",
+  VICTORY: "victory",
+  SKILL_TREE: "skill_tree",
+} as const;
+
+export type GameStateValue = (typeof GameState)[keyof typeof GameState];
+
+// Custom generated maps (mapIndex -1 + randomMapParams) and custom progressive
+// maps (mapIndex -2 + progressiveMapParams) sit outside the catalog indexes, so
+// map-progress persistence (best waves, unlocks, first clears) never keys on them.
+export const customRandomMapIndex = -1;
+export const customProgressiveMapIndex = -2;
+
+export function isCustomMapIndex(mapIndex: number): boolean {
+  return mapIndex === customRandomMapIndex || mapIndex === customProgressiveMapIndex;
+}
+
+// The only time scales the game will accept, in cycle order. The engine cycles
+// through it, validateCommand whitelists it for the debug setTimeScale command,
+// and the UI reads it to render the speed control, so it lives in one place.
+const timeScales = [1, 2, 4, 8] as const;
+
+export function isValidTimeScale(value: number): boolean {
+  return (timeScales as readonly number[]).includes(value);
+}
+
+export function nextTimeScale(current: number, direction: 1 | -1): number {
+  let speedIndex = timeScales.indexOf(current as (typeof timeScales)[number]);
+  if (speedIndex < 0) {
+    speedIndex = 0;
+    let nearestDistance = Math.abs(timeScales[0]! - current);
+    for (let candidateIndex = 1; candidateIndex < timeScales.length; candidateIndex++) {
+      const candidateDistance = Math.abs(timeScales[candidateIndex]! - current);
+      if (candidateDistance < nearestDistance) {
+        nearestDistance = candidateDistance;
+        speedIndex = candidateIndex;
+      }
+    }
+  }
+  return timeScales[(speedIndex + direction + timeScales.length) % timeScales.length]!;
+}
 
 // Authoritative run state for the simulation. Formerly the Pinia gameStore's
 // GameStateShape. In Phase 1 this replaces the Pinia store on the engine —
@@ -95,20 +141,7 @@ export function setWave(state: GameRunState, wave: number): void {
 }
 
 export function cycleTimeScale(state: GameRunState, direction: 1 | -1): number {
-  const speeds = TIME_SCALES;
-  let speedIndex = speeds.indexOf(state.timeScale as (typeof speeds)[number]);
-  if (speedIndex < 0) {
-    speedIndex = 0;
-    let nearestDistance = Math.abs(speeds[0]! - state.timeScale);
-    for (let candidateIndex = 1; candidateIndex < speeds.length; candidateIndex++) {
-      const candidateDistance = Math.abs(speeds[candidateIndex]! - state.timeScale);
-      if (candidateDistance < nearestDistance) {
-        nearestDistance = candidateDistance;
-        speedIndex = candidateIndex;
-      }
-    }
-  }
-  const next = speeds[(speedIndex + direction + speeds.length) % speeds.length]!;
+  const next = nextTimeScale(state.timeScale, direction);
   state.timeScale = next;
   return next;
 }
@@ -156,11 +189,12 @@ export function initRunState(state: GameRunState, mapIndex: number, mapData: Gen
   state.mapIndex = mapIndex;
   state.map = mapData;
   state.grid = grid;
-  state.baseHealth = STARTING_BASE_HEALTH;
-  state.maxBaseHealth = STARTING_BASE_HEALTH;
-  // Reject unknown region ids loudly: the old `StartingGold[regionId]!` threw an
-  // obscure undefined-gold bug downstream instead of naming the bad input.
-  const startingGold = StartingGold[mapData.regionId];
+  state.baseHealth = getGameContent().economy.startingBaseHealth;
+  state.maxBaseHealth = getGameContent().economy.startingBaseHealth;
+  // Reject unknown region ids loudly: the old indexed lookup with a non-null
+  // assertion threw an obscure undefined-gold bug downstream instead of naming
+  // the bad input.
+  const startingGold = getGameContent().economy.startingGoldByRegion[mapData.regionId];
   if (startingGold === undefined) {
     throw new RangeError(`initRunState rejected unknown regionId ${mapData.regionId}`);
   }

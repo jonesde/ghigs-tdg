@@ -1,5 +1,5 @@
 import type { Command } from "@/sim/Command.js";
-import { GameState } from "@/sim/Constants.js";
+import { GameState } from "@/sim/GameRunState.js";
 import type { CommanderBrain, CommanderMemory } from "./brain.js";
 import { createBrain } from "./brain.js";
 import { createLlmBrain } from "./llm/brain.js";
@@ -63,7 +63,7 @@ let activeLlmConfig: LlmCommanderConfig | null = null;
 let latestObservation: CommanderObservation | null = null;
 
 // Slack past the fetch abort timer after which a posted hold is force-released.
-const HOLD_CAP_SLACK_MS = 5000;
+const holdCapSlackMs = 5000;
 
 function postToMain(message: CommanderToMainMessage): void {
   self.postMessage(message);
@@ -118,7 +118,7 @@ async function decideLlm(): Promise<void> {
       // Posted after the backoff wait so the clock keeps running while waiting.
       postToMain({ type: "hold", hold: true });
       holdPosted = true;
-      const holdCapMs = (activeLlmConfig?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS) + HOLD_CAP_SLACK_MS;
+      const holdCapMs = (activeLlmConfig?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS) + holdCapSlackMs;
       holdCapTimer = setTimeout(() => {
         // Crosses the worker boundary: force-releases a hold the bounded fetch did not release.
         if (holdPosted) {

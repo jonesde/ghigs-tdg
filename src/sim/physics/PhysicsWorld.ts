@@ -1,9 +1,9 @@
 import type RAPIER from "@dimforge/rapier2d-compat";
 import { ActiveEvents, EventQueue } from "@dimforge/rapier2d-compat";
-import { FIXED_DT } from "@/sim/Constants.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import { corridorWallHalfThicknessWorld } from "@/sim/navmesh/navmeshConfig.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
 import type { ColliderTag } from "./ColliderUserData.js";
@@ -26,13 +26,13 @@ import { getRapier } from "./rapierContext.js";
 // Static world membership is explicit so a flyer filter can include the base and
 // exclude towers and corridor walls. Ground filters stay all-groups (or all
 // except enemies), which still match the new membership bits.
-const ENEMY_GROUP = 0x0001;
-const PROJECTILE_GROUP = 0x0002;
-const SENSOR_GROUP = 0x0004;
-const BASE_GROUP = 0x0008;
-const TOWER_GROUP = 0x0010;
-const CORRIDOR_GROUP = 0x0020;
-const ALL_GROUPS = 0xffff;
+const enemyGroup = 0x0001;
+const projectileGroup = 0x0002;
+const sensorGroup = 0x0004;
+const baseGroup = 0x0008;
+const towerGroup = 0x0010;
+const corridorGroup = 0x0020;
+const allGroups = 0xffff;
 
 // Query scratch Balls: one shared Ball per PhysicsWorld is reused across every
 // range/cast query (radius reassigned per call) so per-tick query allocation stays
@@ -85,7 +85,7 @@ export class PhysicsWorld {
     const RAPIER = getRapier();
     this.grid = grid;
     this.world = new RAPIER.World({ x: 0, y: 0 });
-    this.world.timestep = FIXED_DT;
+    this.world.timestep = fixedDeltaSeconds;
     // Pixel-space world: typical enemy diameter is a fraction of a tile. Rapier
     // scales solver slop / CCD / sleep thresholds by lengthUnit.
     this.world.lengthUnit = grid.tileSize * 0.25;
@@ -129,7 +129,7 @@ export class PhysicsWorld {
     this.baseBody = this.world.createRigidBody(bodyDesc);
     const colliderDesc = RAPIER.ColliderDesc.cuboid(half, half)
       .setActiveEvents(ActiveEvents.COLLISION_EVENTS)
-      .setCollisionGroups((BASE_GROUP << 16) | ALL_GROUPS);
+      .setCollisionGroups((baseGroup << 16) | allGroups);
     this.world.createCollider(colliderDesc, this.baseBody);
   }
 
@@ -167,7 +167,7 @@ export class PhysicsWorld {
         : null;
       const colliderDesc = (chamfered ?? RAPIER.ColliderDesc.cuboid(half, half))
         .setActiveEvents(ActiveEvents.COLLISION_EVENTS)
-        .setCollisionGroups((TOWER_GROUP << 16) | ALL_GROUPS);
+        .setCollisionGroups((towerGroup << 16) | allGroups);
       this.world.createCollider(colliderDesc, body);
       this.towerBodies.push(body);
     }
@@ -194,7 +194,7 @@ export class PhysicsWorld {
       // ContactProcessor; they never park or damage (see Enemy.postPhysics drift resync).
       const corridorCollider = RAPIER.ColliderDesc.cuboid(length / 2, halfThickness)
         .setActiveEvents(ActiveEvents.COLLISION_EVENTS)
-        .setCollisionGroups((CORRIDOR_GROUP << 16) | ALL_GROUPS);
+        .setCollisionGroups((corridorGroup << 16) | allGroups);
       this.world.createCollider(corridorCollider, body);
       this.corridorBodies.push(body);
     }
@@ -232,7 +232,7 @@ export class PhysicsWorld {
       // (Rapier2d reports sensor intersections through the collision-event drain).
       const colliderDesc = RAPIER.ColliderDesc.ball(spec.radius)
         .setSensor(true)
-        .setCollisionGroups((SENSOR_GROUP << 16) | ENEMY_GROUP)
+        .setCollisionGroups((sensorGroup << 16) | enemyGroup)
         .setActiveEvents(ActiveEvents.COLLISION_EVENTS);
       this.world.createCollider(colliderDesc, body);
       this.auraSensors.set(spec.sensorId, { body, radius: spec.radius });
@@ -266,7 +266,7 @@ export class PhysicsWorld {
     // CCD in per-step displacement units: enable when one step moves the body more
     // than half its radius, so fast runners cannot tunnel. (The old `speed >= 2.0`
     // tiles/sec check mixed up units and over/under-enabled by tile size.)
-    const stepDisplacement = enemy.speed * this.grid.tileSize * FIXED_DT;
+    const stepDisplacement = enemy.speed * this.grid.tileSize * fixedDeltaSeconds;
     const enableCcd = stepDisplacement >= enemy.radius * 0.5;
     const tag: ColliderTag = { kind: "enemy", enemyId: enemy.id };
     const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
@@ -299,14 +299,14 @@ export class PhysicsWorld {
   // those cuboids cannot push it. A later toggle must not stamp the ground mask
   // back onto a flyer.
   private collisionGroupsForEnemy(enemy: Enemy): number {
-    const flyerFilter = BASE_GROUP | PROJECTILE_GROUP | SENSOR_GROUP;
+    const flyerFilter = baseGroup | projectileGroup | sensorGroup;
     const filter =
       enemy.flyingHeight > 0
-        ? flyerFilter | (this.enemyEnemyCollisions ? ENEMY_GROUP : 0)
+        ? flyerFilter | (this.enemyEnemyCollisions ? enemyGroup : 0)
         : this.enemyEnemyCollisions
-          ? ALL_GROUPS
-          : ALL_GROUPS & ~ENEMY_GROUP;
-    return (ENEMY_GROUP << 16) | filter;
+          ? allGroups
+          : allGroups & ~enemyGroup;
+    return (enemyGroup << 16) | filter;
   }
 
   removeEnemy(enemy: Enemy): void {
@@ -349,10 +349,10 @@ export class PhysicsWorld {
     if (options.isSensor) colliderDesc.setSensor(true);
     if (options.collidesWithWalls) {
       // Hit everything including walls.
-      colliderDesc.setCollisionGroups((PROJECTILE_GROUP << 16) | ALL_GROUPS);
+      colliderDesc.setCollisionGroups((projectileGroup << 16) | allGroups);
     } else {
       // Only collide with enemies (group 1).
-      colliderDesc.setCollisionGroups((PROJECTILE_GROUP << 16) | ENEMY_GROUP);
+      colliderDesc.setCollisionGroups((projectileGroup << 16) | enemyGroup);
     }
     this.world.createCollider(colliderDesc, body);
     this.projectileBodies.set(options.projectileId, body);
@@ -530,12 +530,12 @@ export class PhysicsWorld {
     return enemy.body ? enemy.body.translation() : null;
   }
 
-  step(fixedDt: number = FIXED_DT): void {
+  step(fixedDt: number = fixedDeltaSeconds): void {
     // The sim runs on a fixed timestep: every production step must carry exactly
-    // FIXED_DT (GameEngine.update passes it explicitly). The default keeps
+    // fixedDeltaSeconds (GameEngine.update passes it explicitly). The default keeps
     // variable-dt-free test call sites green; anything else is a caller bug.
-    if (fixedDt !== FIXED_DT) {
-      throw new Error(`PhysicsWorld.step expects FIXED_DT (${FIXED_DT}), got ${fixedDt}`);
+    if (fixedDt !== fixedDeltaSeconds) {
+      throw new Error(`PhysicsWorld.step expects fixedDeltaSeconds (${fixedDeltaSeconds}), got ${fixedDt}`);
     }
     this.world.timestep = fixedDt;
     this.world.step(this.eventQueue);

@@ -1,9 +1,8 @@
 // Procedural map definitions for 3 regions × 12 maps each = 36 maps.
 
+import { getGameContent } from "@/content/gameContent.js";
 import type { MapsContent } from "@/content/schemas/maps.js";
 import type { MapThemeData } from "@/render/themes/index.js";
-import { MAPS_CONTENT } from "@/sim/Constants.js";
-import { BOSS_CADENCE } from "@/sim/ConstantsEnemy.js";
 
 export function progressiveMapDisplayName(regionId: number, entryCount: number, theme: MapThemeData | null): string {
   const region = theme?.regions.find((regionEntry) => regionEntry.id === regionId);
@@ -851,8 +850,8 @@ function carveBastion(tiles: Tile[][], spawns: Point[], base: Point, rng: () => 
 
 // Generated maps are cached per (catalog, index) pair. Each catalog is frozen
 // immutable content resolved once per theme world, so entries never go stale in
-// a normal run. The outer key is the catalog object identity: the default
-// MAPS_CONTENT and each theme's resolved maps get their own inner cache, so two
+// a normal run. The outer key is the catalog object identity: the default maps
+// pack and each theme's resolved maps get their own inner cache, so two
 // worlds sharing an index keep distinct layouts. Tests that remap an index (or
 // swap map content) call invalidateMapCache() to drop prior layouts.
 const mapCache = new Map<MapsContent, Map<number, GeneratedMap>>();
@@ -861,7 +860,7 @@ export function invalidateMapCache(): void {
   mapCache.clear();
 }
 
-export function getMap(index: number, maps: MapsContent = MAPS_CONTENT): GeneratedMap {
+export function getMap(index: number, maps: MapsContent = getGameContent().maps): GeneratedMap {
   let perCatalog = mapCache.get(maps);
   if (!perCatalog) {
     perCatalog = new Map<number, GeneratedMap>();
@@ -909,7 +908,7 @@ export function generateRandomMap(
   regionId: number,
   level: number,
   seed: number,
-  maps: MapsContent = MAPS_CONTENT,
+  maps: MapsContent = getGameContent().maps,
 ): GeneratedMap {
   const rng = mulberry32(seed);
 
@@ -1019,7 +1018,7 @@ export function generateRandomMap(
     spawns,
     base,
     name: level > 0 ? `Region ${regionId + 1} Map ${level}` : "Generated Map",
-    bossCadence: BOSS_CADENCE[regionId]!,
+    bossCadence: getGameContent().enemies.bossCadence[regionId]!,
     seed,
   };
 }

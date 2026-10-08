@@ -9,7 +9,7 @@ import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { mockDefaultTheme } from "../../helpers/mock-stores";
 
-const OFFER = ["sharpenedType", "smallPurse", "largePurse"];
+const offer = ["sharpenedType", "smallPurse", "largePurse"];
 
 function mountPicker() {
   const pinia = createPinia();
@@ -21,9 +21,9 @@ function mountPicker() {
   const commands = [];
   setCommandDispatcher({ dispatch: (command) => commands.push(command) });
   gameStore.currentWave = 0;
-  gameStore.bonusPicker = { source: "cache", id: 3, offer: [...OFFER], wasPlaying: false, specialistType: "basic" };
+  gameStore.bonusPicker = { source: "cache", id: 3, offer: [...offer], wasPlaying: false, specialistType: "basic" };
   gameStore.mapCaches = [
-    { id: 3, tileX: 0, tileY: 0, worldX: 0, worldY: 0, hp: 60, maxHp: 60, offer: [...OFFER], unlocked: false },
+    { id: 3, tileX: 0, tileY: 0, worldX: 0, worldY: 0, hp: 60, maxHp: 60, offer: [...offer], unlocked: false },
   ];
   const wrapper = mount(BonusPicker, { global: { plugins: [pinia] } });
   return { pinia, gameStore, commands, wrapper };

@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { TOWER_BASE, TOWER_META, TOWER_VARIANTS, type TowerId, TowerIds, targetsLabel } from "@/sim/ConstantsTower.js";
+import { getGameContent } from "@/content/gameContent.js";
+import { type TowerId, TowerIds } from "@/content/towerIds.js";
 import {
   computeTowerCoreStats,
   computeTowerMaxHealth,
   type TowerBaseConfig,
   type TowerCoreStats,
 } from "@/sim/towers/towerCoreStats.js";
+import { targetsLabel } from "@/sim/towers/towerTargeting.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 
 const themeStore = useMapThemeStore();
 
-const TOWER_ID_LIST = Object.values(TowerIds);
+const towerIdList = Object.values(TowerIds);
 
 const towerLevel = ref(1);
 
@@ -62,8 +64,8 @@ const towerRows = computed<TowerHelpRow[]>(() => {
   const level = towerLevel.value;
   const variants: Array<"A" | "B" | null> = level >= 5 ? ["A", "B"] : [null];
   const rows: TowerHelpRow[] = [];
-  for (const towerId of TOWER_ID_LIST) {
-    const base = TOWER_BASE[towerId] as TowerBaseConfig;
+  for (const towerId of towerIdList) {
+    const base = getGameContent().towers.base[towerId] as TowerBaseConfig;
     const visual = themeStore.getTowerVisual(towerId);
     for (const [variantIndex, variant] of variants.entries()) {
       const core = computeTowerCoreStats(base, towerId, level, variant);
@@ -72,9 +74,9 @@ const towerRows = computed<TowerHelpRow[]>(() => {
         name: visual?.name ?? towerId,
         color: visual?.color ?? "",
         sprite: visual?.animation?.referenceImages[0]?.svg ?? null,
-        variantLabel: variant ? (TOWER_VARIANTS[towerId]?.[variant]?.name ?? variant) : null,
+        variantLabel: variant ? (getGameContent().towers.variants[towerId]?.[variant]?.name ?? variant) : null,
         startsGroup: variantIndex === 0,
-        cost: TOWER_META[towerId]?.cost ?? 0,
+        cost: getGameContent().towers.meta[towerId]?.cost ?? 0,
         health: computeTowerMaxHealth(base, towerId, level, variant, core.healthMult),
         damage: core.damage,
         attackSpeed: core.fireRate,

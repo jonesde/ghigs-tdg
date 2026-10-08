@@ -3,15 +3,14 @@
 // We construct a PhysicsWorld + CrowdManager, addAgent so enemy.agent is non-null,
 // then drive the enemy via computeIntent / crowd.update / step / postPhysics.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { STUN_CAP_PER_SECOND } from "@/sim/ConstantsEnemy.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
 import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
-
-const FIXED_DT = 1 / 60;
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 
 function baseCenterOf(grid) {
   const base = grid.getBase();
@@ -46,10 +45,10 @@ describe("Enemy ON branches (body set) driven manually", () => {
 
   function drive(enemy: Enemy, frames: number): void {
     for (let i = 0; i < frames; i++) {
-      enemy.computeIntent(FIXED_DT, null);
-      crowdManager.update(FIXED_DT, [enemy]);
+      enemy.computeIntent(fixedDeltaSeconds, null);
+      crowdManager.update(fixedDeltaSeconds, [enemy]);
       physicsWorld.step();
-      enemy.postPhysics(FIXED_DT);
+      enemy.postPhysics(fixedDeltaSeconds);
     }
   }
 
@@ -71,10 +70,10 @@ describe("Enemy ON branches (body set) driven manually", () => {
     // Continue until it reaches the base (generous budget; loop breaks early).
     let reached = enemy.attackingBase;
     for (let i = 0; i < 12000 && !reached; i++) {
-      enemy.computeIntent(FIXED_DT, null);
-      crowdManager.update(FIXED_DT, [enemy]);
+      enemy.computeIntent(fixedDeltaSeconds, null);
+      crowdManager.update(fixedDeltaSeconds, [enemy]);
       physicsWorld.step();
-      enemy.postPhysics(FIXED_DT);
+      enemy.postPhysics(fixedDeltaSeconds);
       reached = enemy.attackingBase;
     }
     expect(reached).toBe(true);
@@ -93,9 +92,9 @@ describe("Enemy ON branches (body set) driven manually", () => {
     enemy.applyKnockback(2 * grid.tileSize);
     expect(enemy.ballisticTimer).toBeGreaterThan(0);
     // During ballistic, crowd must not overwrite linvel.
-    crowdManager.update(FIXED_DT, [enemy]);
+    crowdManager.update(fixedDeltaSeconds, [enemy]);
     physicsWorld.step();
-    enemy.postPhysics(FIXED_DT);
+    enemy.postPhysics(fixedDeltaSeconds);
 
     const after = Math.hypot(enemy.centerX - baseCenter.x, enemy.centerY - baseCenter.y);
     expect(after).toBeGreaterThan(before);
@@ -105,19 +104,19 @@ describe("Enemy ON branches (body set) driven manually", () => {
     // Drive to the base and pin there so the body's linvel is near zero.
     let reached = false;
     for (let i = 0; i < 12000 && !reached; i++) {
-      enemy.computeIntent(FIXED_DT, null);
-      crowdManager.update(FIXED_DT, [enemy]);
+      enemy.computeIntent(fixedDeltaSeconds, null);
+      crowdManager.update(fixedDeltaSeconds, [enemy]);
       physicsWorld.step();
-      enemy.postPhysics(FIXED_DT);
+      enemy.postPhysics(fixedDeltaSeconds);
       reached = enemy.attackingBase;
     }
     expect(reached).toBe(true);
 
     const beforeAngle = enemy.moveAngle;
-    enemy.computeIntent(FIXED_DT, null);
-    crowdManager.update(FIXED_DT, [enemy]);
+    enemy.computeIntent(fixedDeltaSeconds, null);
+    crowdManager.update(fixedDeltaSeconds, [enemy]);
     physicsWorld.step();
-    enemy.postPhysics(FIXED_DT);
+    enemy.postPhysics(fixedDeltaSeconds);
 
     expect(Number.isFinite(enemy.moveAngle)).toBe(true);
     expect(Math.abs(enemy.moveAngle - beforeAngle)).toBeLessThan(0.05);
@@ -138,20 +137,20 @@ describe("Enemy ON branches (body set) driven manually", () => {
     // Drive until it is in contact with the base.
     let reached = false;
     for (let i = 0; i < 12000 && !reached; i++) {
-      enemy.computeIntent(FIXED_DT, null);
-      crowdManager.update(FIXED_DT, [enemy]);
+      enemy.computeIntent(fixedDeltaSeconds, null);
+      crowdManager.update(fixedDeltaSeconds, [enemy]);
       physicsWorld.step();
-      enemy.postPhysics(FIXED_DT);
+      enemy.postPhysics(fixedDeltaSeconds);
       reached = enemy.attackingBase;
     }
     expect(reached).toBe(true);
 
     // Two seconds of contact — an unthrottled tick would call takeDamage ~120×.
     for (let i = 0; i < 120; i++) {
-      enemy.computeIntent(FIXED_DT, null);
-      crowdManager.update(FIXED_DT, [enemy]);
+      enemy.computeIntent(fixedDeltaSeconds, null);
+      crowdManager.update(fixedDeltaSeconds, [enemy]);
       physicsWorld.step();
-      enemy.postPhysics(FIXED_DT);
+      enemy.postPhysics(fixedDeltaSeconds);
     }
 
     expect(hits).toBeGreaterThan(0);
@@ -165,9 +164,9 @@ describe("Enemy ON branches (body set) driven manually", () => {
 
     enemy.applyStun(1.0);
     drive(enemy, 30);
-    // Stun credit caps at STUN_CAP_PER_SECOND per window, so 1.0s credits the
+    // Stun credit caps at getGameContent().enemies.stunCapPerSecond per window, so 1.0s credits the
     // cap; 30 frames * (1/60)s = 0.5s elapsed, so cap minus 0.5s remains.
-    expect(enemy.stunTimer).toBeCloseTo(STUN_CAP_PER_SECOND - 30 * FIXED_DT, 6);
+    expect(enemy.stunTimer).toBeCloseTo(getGameContent().enemies.stunCapPerSecond - 30 * fixedDeltaSeconds, 6);
     expect(enemy.stunTimer).toBeGreaterThan(0.1);
   });
 
@@ -177,10 +176,10 @@ describe("Enemy ON branches (body set) driven manually", () => {
     const beforeY = enemy.centerY;
 
     enemy.applyStun(1.0);
-    enemy.computeIntent(FIXED_DT, null);
-    crowdManager.update(FIXED_DT, [enemy]);
+    enemy.computeIntent(fixedDeltaSeconds, null);
+    crowdManager.update(fixedDeltaSeconds, [enemy]);
     physicsWorld.step();
-    enemy.postPhysics(FIXED_DT);
+    enemy.postPhysics(fixedDeltaSeconds);
 
     const linvel = enemy.body.linvel();
     expect(Math.hypot(linvel.x, linvel.y)).toBeLessThan(1e-3);

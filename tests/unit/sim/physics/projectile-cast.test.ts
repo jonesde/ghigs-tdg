@@ -3,20 +3,20 @@
 
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { FIXED_DT, PROJECTILE_HIT_SLOP } from "@/sim/Constants.js";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
-import { ProjectileManager } from "@/sim/ProjectileManager.js";
+import { ProjectileManager, projectileHitSlop } from "@/sim/ProjectileManager.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../../../helpers/mock-grid.js";
 import { makeParticleSystem } from "../../../helpers/mock-managers.js";
 import { mockDefaultTheme } from "../../../helpers/mock-stores.js";
 
 // Explicit sweep ball for these query tests. Gameplay hits use the glyph radius plus slop.
-const BALL = 11;
+const ball = 11;
 
 describe("PhysicsWorld swept casts", () => {
   let grid: Grid;
@@ -53,7 +53,7 @@ describe("PhysicsWorld swept casts", () => {
     addAt(200, 200);
     pw.step();
     // Origin (100,200), dir +x, sweep covers 300px -> passes through (200,200).
-    const hit = pw.castShapeFirstEnemy(100, 200, 1, 0, BALL, 300);
+    const hit = pw.castShapeFirstEnemy(100, 200, 1, 0, ball, 300);
     expect(hit).not.toBeNull();
     expect(hit!.enemy.x).toBeCloseTo(200);
   });
@@ -64,7 +64,7 @@ describe("PhysicsWorld swept casts", () => {
     addAt(250, 200);
     pw.step();
     const hits: number[] = [];
-    pw.castShapePierce(100, 200, 1, 0, BALL, 300, 3, (e) => {
+    pw.castShapePierce(100, 200, 1, 0, ball, 300, 3, (e) => {
       hits.push(e.x);
       return true;
     });
@@ -75,16 +75,16 @@ describe("PhysicsWorld swept casts", () => {
     // Only a tower on the line: no enemy -> must be ignored (null).
     pw.rebuildTowers({ towers: [{ tileX: 0, tileY: 0, isGhost: false, x: 150, y: 200 }] });
     pw.step();
-    expect(pw.castShapeFirstEnemy(100, 200, 1, 0, BALL, 300)).toBeNull();
+    expect(pw.castShapeFirstEnemy(100, 200, 1, 0, ball, 300)).toBeNull();
 
     // An enemy behind the tower: cast must return it (tower excluded).
     const e = addAt(200, 200);
     pw.step();
-    const hit = pw.castShapeFirstEnemy(100, 200, 1, 0, BALL, 300);
+    const hit = pw.castShapeFirstEnemy(100, 200, 1, 0, ball, 300);
     expect(hit).not.toBeNull();
     expect(hit!.enemy).toBe(e);
     // Excluding the enemy's collider leaves only the ignored tower -> null.
-    expect(pw.castShapeFirstEnemy(100, 200, 1, 0, BALL, 300, hit!.collider)).toBeNull();
+    expect(pw.castShapeFirstEnemy(100, 200, 1, 0, ball, 300, hit!.collider)).toBeNull();
   });
 
   it("ground-only casts pass over a flyer without consuming a pierce slot", () => {
@@ -97,7 +97,7 @@ describe("PhysicsWorld swept casts", () => {
       200,
       1,
       0,
-      BALL,
+      ball,
       300,
       1,
       (enemy) => {
@@ -114,7 +114,7 @@ describe("PhysicsWorld swept casts", () => {
     addAt(250, 200);
     pw.step();
     const hits: number[] = [];
-    pw.castShapePierce(100, 200, 1, 0, BALL, 300, 1, (enemy) => {
+    pw.castShapePierce(100, 200, 1, 0, ball, 300, 1, (enemy) => {
       hits.push(enemy.id);
       return false;
     });
@@ -155,7 +155,7 @@ describe("EnemyManager cast delegate", () => {
     }
     pw.step();
     const hits: number[] = [];
-    manager.castShapePierce(100, 200, 1, 0, BALL, 300, 3, (en) => {
+    manager.castShapePierce(100, 200, 1, 0, ball, 300, 3, (en) => {
       hits.push(en.x);
       return true;
     });
@@ -181,7 +181,7 @@ describe("EnemyManager cast delegate", () => {
       200,
       1,
       0,
-      BALL,
+      ball,
       300,
       1,
       (enemy) => {
@@ -242,35 +242,35 @@ describe("projectile hit radius", () => {
       targetId: enemy.id,
       critChance: 0,
     });
-    projectileManager.prePhysics(FIXED_DT);
+    projectileManager.prePhysics(fixedDeltaSeconds);
     const projectileId = projectileManager.getRenderData()[0].id;
     const sensorRadius = physicsWorld.projectileSensorRadius(projectileId);
     physicsWorld.step();
     const contactHits = physicsWorld.getContactProcessor().drainProjectileHits();
-    projectileManager.postPhysics(FIXED_DT, contactHits);
+    projectileManager.postPhysics(fixedDeltaSeconds, contactHits);
     return { hpBefore, sensorRadius, renderData: projectileManager.getRenderData() };
   }
 
   it("sensor is the glyph plus slop, and one step hits a minion on that reach", () => {
     const enemy = placeMinion(200, 200);
-    const moveDist = 60 * FIXED_DT;
-    const reach = 3 + PROJECTILE_HIT_SLOP + enemy.radius + moveDist;
+    const moveDist = 60 * fixedDeltaSeconds;
+    const reach = 3 + projectileHitSlop + enemy.radius + moveDist;
     const result = tickToward(enemy, enemy.x - (reach - 0.5));
-    expect(result.sensorRadius).toBeCloseTo(3 + PROJECTILE_HIT_SLOP);
+    expect(result.sensorRadius).toBeCloseTo(3 + projectileHitSlop);
     expect(enemy.hp).toBeLessThan(result.hpBefore);
     expect(result.renderData).toHaveLength(1);
     expect(result.renderData[0].x).toBeCloseTo(enemy.x - enemy.radius, 0);
-    projectileManager.prePhysics(FIXED_DT);
+    projectileManager.prePhysics(fixedDeltaSeconds);
     expect(projectileManager.getRenderData()).toHaveLength(0);
   });
 
   it("misses a minion a boss-radius farther than that step", () => {
     const enemy = placeMinion(200, 200);
-    const moveDist = 60 * FIXED_DT;
+    const moveDist = 60 * fixedDeltaSeconds;
     const bossRadius = 0.33 * grid.tileSize * 0.5;
-    const reach = 3 + PROJECTILE_HIT_SLOP + enemy.radius + moveDist;
+    const reach = 3 + projectileHitSlop + enemy.radius + moveDist;
     const result = tickToward(enemy, enemy.x - (reach + bossRadius));
-    expect(result.sensorRadius).toBeCloseTo(3 + PROJECTILE_HIT_SLOP);
+    expect(result.sensorRadius).toBeCloseTo(3 + projectileHitSlop);
     expect(enemy.hp).toBe(result.hpBefore);
     expect(result.renderData).toHaveLength(1);
   });

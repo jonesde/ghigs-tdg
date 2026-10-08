@@ -13,8 +13,8 @@ import {
   rollBossAbilities,
   trickleSpawnCount,
 } from "@/sim/bossAbilities.js";
-import { FIXED_DT } from "@/sim/Constants.js";
-import { enemyLevelForWave, waveBossCount } from "@/sim/ConstantsEnemy.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
+import { enemyLevelForWave, waveBossCount } from "@/sim/waves/waveComposition.js";
 import { buildBasic, firstTile, freshEngine, pinEnemy, waveManagerOf } from "../../helpers/simFixtures";
 
 describe("boss abilities", () => {
@@ -89,7 +89,7 @@ describe("boss abilities", () => {
       let healthDropped = false;
       for (let frame = 0; frame < 600 && !healthDropped; frame++) {
         pinEnemy(boss, beside.x + grid.tileSize * 3, beside.y);
-        engine.update(FIXED_DT);
+        engine.update(fixedDeltaSeconds);
         healthDropped = tower.health < healthBefore;
       }
       expect(healthDropped).toBe(true);
@@ -117,11 +117,11 @@ describe("boss abilities", () => {
     engine.waveManager.currentWave = 10;
     configureBossAbility(boss, "spawnMinions", grid.tileSize);
     expect(boss.minionTimer).toBe(MINION_FIRST_DELAY_SECONDS);
-    engine.update(FIXED_DT);
+    engine.update(fixedDeltaSeconds);
     expect(
       (engine.enemyManager?.enemies ?? []).filter((enemy) => enemy !== boss && enemy.type === "minion"),
     ).toHaveLength(0);
-    boss.minionTimer = FIXED_DT;
+    boss.minionTimer = fixedDeltaSeconds;
     const farPath = firstTile(grid, (tileX, tileY) => {
       if (!grid.isPath(tileX, tileY)) return false;
       const world = grid.tileToWorld(tileX, tileY);
@@ -132,7 +132,7 @@ describe("boss abilities", () => {
     boss.x = destination.x;
     boss.y = destination.y;
     const pendingBefore = engine.enemyManager?.getTotalPendingCount() ?? 0;
-    engine.update(FIXED_DT);
+    engine.update(fixedDeltaSeconds);
     const minions = (engine.enemyManager?.enemies ?? []).filter((enemy) => enemy !== boss && enemy.type === "minion");
     expect(minions).toHaveLength(1);
     for (const minion of minions) {
@@ -156,7 +156,7 @@ describe("boss abilities", () => {
     broodwing.minionTimer = 0;
     for (let pulse = 0; pulse < 6; pulse++) {
       broodwing.minionTimer = 0;
-      engine.update(FIXED_DT);
+      engine.update(fixedDeltaSeconds);
     }
     const children = (engine.enemyManager.enemies ?? []).filter(
       (enemy) => enemy !== broodwing && enemy.summonedBy === broodwing.id,
@@ -196,7 +196,7 @@ describe("boss abilities", () => {
     const hover = grid.tileToWorld(hoverTile.x, hoverTile.y);
     pinEnemy(broodwing, hover.x, hover.y);
     broodwing.minionTimer = 0;
-    engine.update(FIXED_DT);
+    engine.update(fixedDeltaSeconds);
     const children = (engine.enemyManager.enemies ?? []).filter(
       (enemy) => enemy !== broodwing && enemy.summonedBy === broodwing.id,
     );
@@ -221,12 +221,12 @@ describe("boss abilities", () => {
     boss.mendSuppresses = (mendSource, mendAlly) =>
       nearerMendBlocksIn(collectMendSources(engine.enemyManager?.enemies ?? []), mendSource, mendAlly);
     boss.hp = boss.maxHp * 0.5;
-    engine.update(FIXED_DT);
-    engine.update(FIXED_DT);
+    engine.update(fixedDeltaSeconds);
+    engine.update(fixedDeltaSeconds);
     expect(boss.hp).toBeGreaterThan(boss.maxHp * 0.5);
     const healed = boss.hp;
     boss.antiHealTimer = 5;
-    engine.update(FIXED_DT);
+    engine.update(fixedDeltaSeconds);
     expect(boss.hp).toBeCloseTo(healed, 5);
   });
 
@@ -262,7 +262,7 @@ describe("boss abilities", () => {
     near.y = boss.y;
     far.x = boss.x + grid.tileSize * 10;
     far.y = boss.y;
-    engine.update(FIXED_DT);
+    engine.update(fixedDeltaSeconds);
     expect(boss.hasteFactor).toBeCloseTo(1.2, 5);
     expect(near.hasteFactor).toBeCloseTo(1.5, 5);
     expect(far.hasteFactor).toBe(1);
@@ -275,12 +275,12 @@ describe("boss abilities", () => {
     if (!grid || !boss || !engine.waveManager) throw new Error("no boss");
     engine.waveManager.currentWave = 10;
     configureBossAbility(boss, "spawnMinions", grid.tileSize);
-    boss.minionTimer = FIXED_DT; // would pulse on the next tick if the boss were free
+    boss.minionTimer = fixedDeltaSeconds; // would pulse on the next tick if the boss were free
     boss.stunTimer = 10;
-    engine.update(FIXED_DT);
+    engine.update(fixedDeltaSeconds);
     const minions = (engine.enemyManager?.enemies ?? []).filter((enemy) => enemy !== boss && enemy.type === "minion");
     expect(minions).toHaveLength(0);
-    expect(boss.minionTimer).toBeCloseTo(FIXED_DT, 5);
+    expect(boss.minionTimer).toBeCloseTo(fixedDeltaSeconds, 5);
   });
 
   it("holds the shield pulse while the boss is stunned", () => {
@@ -292,12 +292,12 @@ describe("boss abilities", () => {
     configureBossAbility(boss, "shieldPulse", grid.tileSize);
     ally.x = boss.x;
     ally.y = boss.y;
-    boss.shieldTimer = FIXED_DT; // would pulse on the next tick if the boss were free
+    boss.shieldTimer = fixedDeltaSeconds; // would pulse on the next tick if the boss were free
     boss.stunTimer = 10;
-    engine.update(FIXED_DT);
+    engine.update(fixedDeltaSeconds);
     expect(boss.shield).toBe(0);
     expect(ally.shield).toBe(0);
-    expect(boss.shieldTimer).toBeCloseTo(FIXED_DT, 5);
+    expect(boss.shieldTimer).toBeCloseTo(fixedDeltaSeconds, 5);
   });
 
   it("drops the haste aura, its own included, while the boss is stunned", () => {
@@ -309,11 +309,11 @@ describe("boss abilities", () => {
     configureBossAbility(boss, "speedAura", grid.tileSize);
     near.x = boss.x;
     near.y = boss.y;
-    engine.update(FIXED_DT);
+    engine.update(fixedDeltaSeconds);
     expect(boss.hasteFactor).toBeCloseTo(1.2, 5);
     expect(near.hasteFactor).toBeCloseTo(1.5, 5);
     boss.stunTimer = 10;
-    engine.update(FIXED_DT);
+    engine.update(fixedDeltaSeconds);
     expect(boss.hasteFactor).toBe(1);
     expect(near.hasteFactor).toBe(1);
   });
@@ -326,8 +326,8 @@ describe("boss abilities", () => {
     configureBossAbility(boss, "healAura", grid.tileSize);
     boss.hp = boss.maxHp * 0.5;
     boss.stunTimer = 10;
-    engine.update(FIXED_DT);
-    engine.update(FIXED_DT);
+    engine.update(fixedDeltaSeconds);
+    engine.update(fixedDeltaSeconds);
     expect(boss.hp).toBeCloseTo(boss.maxHp * 0.5, 5);
   });
 
@@ -347,7 +347,7 @@ describe("boss abilities", () => {
     boss.bombardTelegraphRemaining = BOMBARD_TELEGRAPH_SECONDS;
     boss.stunTimer = 10;
     const healthBefore = tower.health;
-    engine.update(FIXED_DT);
+    engine.update(fixedDeltaSeconds);
     expect(tower.health).toBe(healthBefore);
     expect(boss.bombardTelegraphRemaining).toBeCloseTo(BOMBARD_TELEGRAPH_SECONDS, 5);
   });

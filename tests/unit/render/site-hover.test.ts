@@ -5,7 +5,7 @@ import type { BonusOffer } from "@/sim/runBonuses.js";
 import type { MapBuildingSnapshot, MapCacheSnapshot, SupplyDropSnapshot } from "@/sim/SimulationSnapshot.js";
 
 const TILE_SIZE = 36;
-const OFFER: BonusOffer = ["sharpened", "smallPurse", "largePurse"];
+const offer: BonusOffer = ["sharpened", "smallPurse", "largePurse"];
 
 function makeDrop(
   id: number,
@@ -13,7 +13,7 @@ function makeDrop(
   worldY: number,
   fields: Partial<SupplyDropSnapshot> = {},
 ): SupplyDropSnapshot {
-  return { id, tileX: 0, tileY: 0, worldX, worldY, offer: OFFER, ...fields };
+  return { id, tileX: 0, tileY: 0, worldX, worldY, offer: offer, ...fields };
 }
 
 function makeCache(
@@ -22,7 +22,7 @@ function makeCache(
   worldY: number,
   fields: Partial<MapCacheSnapshot> = {},
 ): MapCacheSnapshot {
-  return { id, tileX: 1, tileY: 1, worldX, worldY, hp: 60, maxHp: 60, offer: OFFER, unlocked: false, ...fields };
+  return { id, tileX: 1, tileY: 1, worldX, worldY, hp: 60, maxHp: 60, offer: offer, unlocked: false, ...fields };
 }
 
 function makeBuilding(

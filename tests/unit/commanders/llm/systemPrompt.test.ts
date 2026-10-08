@@ -6,13 +6,7 @@ import {
   DEFAULT_TEMPERATURE_REASONING_ON,
   type LlmCommanderConfig,
 } from "@/commanders/llm/types.js";
-import { ENEMY_WAVE_DAMAGE_MULT, ENEMY_WAVE_HP_MULT, VICTORY_WAVE } from "@/sim/Constants.js";
-import {
-  TOWER_LEVEL_DMG_MULT,
-  TOWER_LEVEL_HEALTH_MULT,
-  TOWER_LEVEL_RANGE_MULT,
-  TOWER_LEVEL_RATE_MULT,
-} from "@/sim/ConstantsTower.js";
+import { getGameContent } from "@/content/gameContent.js";
 
 function makeConfig(): LlmCommanderConfig {
   return {
@@ -34,17 +28,17 @@ function makeConfig(): LlmCommanderConfig {
 }
 
 describe("buildSystemPrompt", () => {
-  it("fills victory, tower scaling, navmesh, and the engagement commands from live constants", () => {
+  it("fills victory, tower scaling, navmesh, and the engagement commands from live content", () => {
     const prompt = buildSystemPrompt(makeConfig());
-    expect(prompt).toContain(`wave ${VICTORY_WAVE}`);
-    expect(prompt).toContain(`damage * ${TOWER_LEVEL_DMG_MULT}^(level-1)`);
-    expect(prompt).toContain(`fireRate * ${TOWER_LEVEL_RATE_MULT}^(level-1)`);
-    expect(prompt).toContain(`range * ${TOWER_LEVEL_RANGE_MULT}^(level-1)`);
-    expect(prompt).toContain(`health * ${TOWER_LEVEL_HEALTH_MULT}^(level-1)`);
+    expect(prompt).toContain(`wave ${getGameContent().economy.victoryWave}`);
+    expect(prompt).toContain(`damage * ${getGameContent().towers.tuning.levelDmgMult}^(level-1)`);
+    expect(prompt).toContain(`fireRate * ${getGameContent().towers.tuning.levelRateMult}^(level-1)`);
+    expect(prompt).toContain(`range * ${getGameContent().towers.tuning.levelRangeMult}^(level-1)`);
+    expect(prompt).toContain(`health * ${getGameContent().towers.tuning.levelHealthMult}^(level-1)`);
     expect(prompt).toContain("hp = baseHp * (");
-    expect(prompt).toContain(`(1 + ${ENEMY_WAVE_HP_MULT} * (wave - 1))`);
+    expect(prompt).toContain(`(1 + ${getGameContent().enemies.waveHpMult} * (wave - 1))`);
     expect(prompt).toContain("damage = attackDamage * (");
-    expect(prompt).toContain(`(1 + ${ENEMY_WAVE_DAMAGE_MULT} * (wave - 1))`);
+    expect(prompt).toContain(`(1 + ${getGameContent().enemies.waveDamageMult} * (wave - 1))`);
     expect(prompt).toContain("Recast navmesh");
     expect(prompt).toContain("DetourCrowd");
     expect(prompt).not.toContain("BFS");

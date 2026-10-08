@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
-import { CUSTOM_PROGRESSIVE_MAP_INDEX, CUSTOM_RANDOM_MAP_INDEX } from "@/sim/Constants.js";
+import { customProgressiveMapIndex, customRandomMapIndex } from "@/sim/GameRunState.js";
 import { generateRandomMap, getMapDisplayName, progressiveMapDisplayName } from "@/sim/grid/Map.js";
 import { generateProgressiveMap, type ProgressiveConfig, resolveGeneratedMap } from "@/sim/grid/ProgressiveMap.js";
 import { useGameStore } from "@/stores/game.js";
@@ -22,12 +22,12 @@ const regionNames = computed(() => {
   return names;
 });
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function formatDate(timestamp: number) {
   const dateObj = new Date(timestamp);
   const day = String(dateObj.getDate()).padStart(2, "0");
-  const month = MONTHS[dateObj.getMonth()];
+  const month = months[dateObj.getMonth()];
   const year = dateObj.getFullYear();
   const hour = String(dateObj.getHours()).padStart(2, "0");
   const min = String(dateObj.getMinutes()).padStart(2, "0");
@@ -79,7 +79,7 @@ function getMapInfo(entry: Record<string, unknown>): MapInfo | null {
   const theme = entryTheme(entry);
   const world = entryWorldLabel(entry);
   const mapIndex = entry.mapIndex as number;
-  if (mapIndex === CUSTOM_PROGRESSIVE_MAP_INDEX && entry.progressiveMapParams) {
+  if (mapIndex === customProgressiveMapIndex && entry.progressiveMapParams) {
     const params = entry.progressiveMapParams as ProgressiveConfig;
     return {
       name: progressiveMapDisplayName(params.regionId, params.entryCount, theme),
@@ -110,7 +110,7 @@ async function replayRun(entry: Record<string, unknown>) {
   persistStore.save();
   const theme = await themeStore.loadActive(themeId).catch(() => themeStore.defaultTheme);
 
-  if (entry.mapIndex === CUSTOM_RANDOM_MAP_INDEX && entry.randomMapParams) {
+  if (entry.mapIndex === customRandomMapIndex && entry.randomMapParams) {
     const p = entry.randomMapParams as {
       width: number;
       height: number;
@@ -120,12 +120,12 @@ async function replayRun(entry: Record<string, unknown>) {
       seed: number;
     };
     const mapData = generateRandomMap(p.width, p.height, p.style, p.regionId, p.level, p.seed, theme?.maps);
-    gameStore.mapIndex = CUSTOM_RANDOM_MAP_INDEX;
+    gameStore.mapIndex = customRandomMapIndex;
     gameStore.map = mapData;
     gameStore.randomMapParams = p;
-  } else if (entry.mapIndex === CUSTOM_PROGRESSIVE_MAP_INDEX && entry.progressiveMapParams) {
+  } else if (entry.mapIndex === customProgressiveMapIndex && entry.progressiveMapParams) {
     const p = entry.progressiveMapParams as ProgressiveConfig;
-    gameStore.mapIndex = CUSTOM_PROGRESSIVE_MAP_INDEX;
+    gameStore.mapIndex = customProgressiveMapIndex;
     gameStore.map = generateProgressiveMap(p);
   } else {
     const mapData = resolveGeneratedMap(entry.mapIndex as number, theme?.maps);

@@ -111,4 +111,4 @@ export const EnemiesContentSchema = z
   });
 
 export type EnemiesContent = z.infer<typeof EnemiesContentSchema>;
-export type EnemyMetaData = z.infer<typeof EnemyMetaSchema>;
+export type EnemyMeta = z.infer<typeof EnemyMetaSchema>;

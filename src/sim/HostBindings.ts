@@ -1,5 +1,5 @@
+import type { TowerId } from "@/content/towerIds.js";
 import type { EnemyVisualMeta, MapThemeData, TowerVisualMeta } from "@/render/themes/index.js";
-import type { TowerId } from "@/sim/ConstantsTower.js";
 import type { EndScreenPayload } from "./GameRunState.js";
 import type { PersistState } from "./PersistState.js";
 

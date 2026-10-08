@@ -1,7 +1,7 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
-import { SELL_OPTION_GEM_COST } from "@/sim/Constants.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { migrateToCurrent } from "@/stores/persist.js";
 
 describe("PersistStore save migration v2 -> v3", () => {
@@ -316,7 +316,7 @@ describe("PersistStore save migration v6 -> v7", () => {
       v6ShapedSave({ sellRefundUnlocked: true, sellDiscountUnlocked: true, sellActive: "discount" }),
     );
     expect(result.generalAddons.sellActive).toBe("discount");
-    expect(result.gems).toBe(200 + SELL_OPTION_GEM_COST);
+    expect(result.gems).toBe(200 + getGameContent().economy.sellOptionGemCost);
   });
 
   it("keeps the purchase on Full Refund when v6 recorded a flag but no active mode", () => {

@@ -2,7 +2,7 @@
 import { computed, ref } from "vue";
 import { usePanelDrag } from "@/composables/usePanelDrag.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
-import { BASE_SELECTION_ID } from "@/sim/towers/BaseDefense.js";
+import { baseSelectionId } from "@/sim/towers/BaseDefense.js";
 import { useGameStore } from "@/stores/game.js";
 
 const gameStore = useGameStore();
@@ -18,7 +18,7 @@ const { onHeaderMouseDown, onHeaderTouchStart } = usePanelDrag({
   clampToViewport: true,
 });
 
-const defense = computed(() => (gameStore.selectedTowerId === BASE_SELECTION_ID ? gameStore.baseDefense : null));
+const defense = computed(() => (gameStore.selectedTowerId === baseSelectionId ? gameStore.baseDefense : null));
 
 function fireRateLabel(fireRate: number): string {
   if (!(fireRate > 0)) return "—";

@@ -1,21 +1,12 @@
-import { DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
-import {
-  ENEMY_LEVEL_DAMAGE_MULT,
-  ENEMY_LEVEL_HP_MULT,
-  ENEMY_WAVE_DAMAGE_MULT,
-  ENEMY_WAVE_HP_MULT,
-  enemyLevelBounty,
-  LATE_WAVE_DAMAGE_GROWTH,
-  LATE_WAVE_HP_GROWTH,
-  LATE_WAVE_START_WAVE,
-} from "@/sim/ConstantsEnemy.js";
+import { enemyBounty, enemyLevelMult } from "@/content/formulas.js";
+import { getGameContent } from "@/content/gameContent.js";
 
 interface EnemyCombatMeta {
   baseHp: number;
   bounty: number;
   attackDamage: number;
   attackSpeed: number;
-  shield?: number;
+  shield?: number | undefined;
 }
 
 export interface EnemyWaveStats {
@@ -26,22 +17,36 @@ export interface EnemyWaveStats {
   shield: number;
 }
 
+// Level growth keeps higher-level maps paid. laterWaveBountyMult applies only
+// after bountyFullThroughWave, so the walk from the first boss to the second
+// does not fund another level-2 army.
+export function enemyLevelBounty(baseBounty: number, level: number, wave: number): number {
+  return enemyBounty(
+    baseBounty,
+    level,
+    wave,
+    getGameContent().enemies.bountyLevelGrowth,
+    getGameContent().enemies.bountyFullThroughWave,
+    getGameContent().enemies.laterWaveBountyMult,
+  );
+}
+
 // HP and damage scale independently: each has its own level coefficients
 // (linear in level) and its own wave coefficient (linear in wave), plus a late
-// exponential steepening that starts at LATE_WAVE_START_WAVE and leaves
+// exponential steepening that starts at enemies.lateWaveStartWave and leaves
 // earlier waves bit-identical. Difficulty is a single shared multiplier over both.
-// HP = baseHp * ENEMY_LEVEL_HP_MULT(level) * (1 + ENEMY_WAVE_HP_MULT*(wave-1)) * lateHpMult(wave) * diffMult
-// Damage = attackDamage * ENEMY_LEVEL_DAMAGE_MULT(level) * (1 + ENEMY_WAVE_DAMAGE_MULT*(wave-1)) * lateDamageMult(wave) * diffMult
+// HP = baseHp * enemyLevelMult(level, enemies.levelHpMult) * (1 + enemies.waveHpMult*(wave-1)) * lateHpMult(wave) * diffMult
+// Damage = attackDamage * enemyLevelMult(level, enemies.levelDamageMult) * (1 + enemies.waveDamageMult*(wave-1)) * lateDamageMult(wave) * diffMult
 // Shield scales with exactly the same HP factors: shielded types carry a shield
 // instead of health, so the shield:HP ratio is constant across the run.
 export function lateHpMult(wave: number): number {
-  const pastStart = Math.max(0, wave - LATE_WAVE_START_WAVE);
-  return (1 + LATE_WAVE_HP_GROWTH) ** pastStart;
+  const pastStart = Math.max(0, wave - getGameContent().enemies.lateWaveStartWave);
+  return (1 + getGameContent().enemies.lateWaveHpGrowth) ** pastStart;
 }
 
 export function lateDamageMult(wave: number): number {
-  const pastStart = Math.max(0, wave - LATE_WAVE_START_WAVE);
-  return (1 + LATE_WAVE_DAMAGE_GROWTH) ** pastStart;
+  const pastStart = Math.max(0, wave - getGameContent().enemies.lateWaveStartWave);
+  return (1 + getGameContent().enemies.lateWaveDamageGrowth) ** pastStart;
 }
 
 export function computeEnemyWaveStats(
@@ -51,12 +56,17 @@ export function computeEnemyWaveStats(
   difficultyTick: number,
   regionFactor = 1,
 ): EnemyWaveStats {
-  const waveHpMult = 1 + ENEMY_WAVE_HP_MULT * (wave - 1);
-  const waveDamageMult = 1 + ENEMY_WAVE_DAMAGE_MULT * (wave - 1);
-  const diffMult = ((difficultyTick || 0) * DIFFICULTY_MULT_TICK + 1) * (regionFactor || 1);
-  const hpMult = ENEMY_LEVEL_HP_MULT(level) * waveHpMult * lateHpMult(wave) * diffMult;
+  const waveHpMult = 1 + getGameContent().enemies.waveHpMult * (wave - 1);
+  const waveDamageMult = 1 + getGameContent().enemies.waveDamageMult * (wave - 1);
+  const diffMult = ((difficultyTick || 0) * getGameContent().economy.difficultyMultTick + 1) * (regionFactor || 1);
+  const levelHpMult = enemyLevelMult(level, getGameContent().enemies.levelHpMult);
+  const hpMult = levelHpMult * waveHpMult * lateHpMult(wave) * diffMult;
   const attackDamage =
-    meta.attackDamage * ENEMY_LEVEL_DAMAGE_MULT(level) * waveDamageMult * lateDamageMult(wave) * diffMult;
+    meta.attackDamage *
+    enemyLevelMult(level, getGameContent().enemies.levelDamageMult) *
+    waveDamageMult *
+    lateDamageMult(wave) *
+    diffMult;
   return {
     maxHp: meta.baseHp * hpMult,
     attackDamage,

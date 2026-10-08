@@ -15,7 +15,30 @@ import type { BonusOffer, BonusPickerState, RunBonuses } from "./runBonuses.js";
 // damage unlock.
 // 4: MapBuildingSnapshot gained active and meta gained activeBuildingEffects, so a
 // render/HMR pairing can never show an unpowered building at full strength.
-export const SNAPSHOT_SCHEMA_VERSION = 4;
+export const snapshotSchemaVersion = 4;
+
+// Sim seconds one wave-graph dot covers. The worker flushes a dot on this cadence
+// and stamps the dots array with a generation so it ships only on the ticks where
+// the array's shape changed.
+export const waveGraphIntervalSeconds = 5;
+// Nominal dot-grid width the worker's retained window and the main-thread
+// accumulation cap are both sized from. The worker has no DOM, so this is a
+// stand-in container width, not a measured one.
+export const waveGraphDotWidth = 2000;
+// Dot-grid pitch. The renderer maps a dot index to its x position and hit-tests
+// the pointer with it, so it has to be the same number waveGraphDotCapacity
+// divides the container width by.
+export const waveGraphDotSpacing = 8;
+// Dots shipped per posted snapshot when the dots generation changed; the main
+// thread merges each window into its accumulation.
+export const waveGraphMaxDotsPerPost = 8;
+
+// How many dots fit across a container at the dot spacing. Every dot-window cap
+// (the worker's retained window, the main thread's accumulation, and the Vue
+// graph's visible slice) derives from this, so the three cannot disagree.
+export function waveGraphDotCapacity(containerWidth: number): number {
+  return Math.ceil(containerWidth / waveGraphDotSpacing);
+}
 
 export interface LightningEffectSnapshot {
   x1: number;
@@ -33,7 +56,7 @@ export interface StunEffectSnapshot {
 }
 
 export interface SimulationSnapshot {
-  schemaVersion: number; // SNAPSHOT_SCHEMA_VERSION; consumers reject mismatches
+  schemaVersion: number; // snapshotSchemaVersion; consumers reject mismatches
   frameId: number; // monotonic per-tick counter
   lastAppliedCommandId: number; // host uses this to confirm command application
   lastFailedCommandId: number; // last rejected command (validation or apply failure)
@@ -55,7 +78,7 @@ export interface SimulationSnapshot {
   navField: NavFieldSnapshotData | null;
   // Per-interval wave-graph dots (damage/gold/gems/peak enemy HP). The full
   // array is shipped ONLY when `waveGraphDotsGeneration` changed since the last
-  // posted snapshot (a dot is flushed roughly every WAVE_GRAPH_INTERVAL_SECONDS,
+  // posted snapshot (a dot is flushed roughly every waveGraphIntervalSeconds,
   // so most posted frames omit it); the main thread keeps its cached copy on
   // frames where it is omitted. Typed `| undefined` (not `?`) so it can be
   // assigned undefined under exactOptionalPropertyTypes — the main thread treats
@@ -99,7 +122,7 @@ export interface SimulationSnapshot {
 }
 
 // Per-interval wave-graph data point (damage/gold/gems/peak enemy HP for a
-// WAVE_GRAPH_INTERVAL_SECONDS window). Produced by WaveGraphTracker in the
+// waveGraphIntervalSeconds window). Produced by WaveGraphTracker in the
 // worker; serialized into the snapshot so the main-thread WaveGraph.vue can
 // render without reaching into the engine. Kept here (not in game/) so the sim
 // layer stays free of a sim→game dependency.

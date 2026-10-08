@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import GeneratedMapDialog from "@/components/GeneratedMapDialog.vue";
 import ProgressiveMapDialog from "@/components/ProgressiveMapDialog.vue";
-import { DIFFICULTY_MULT_GEM_BASE, DIFFICULTY_MULT_TICK, MAPS_PER_REGION } from "@/sim/Constants.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -14,8 +14,14 @@ const persistStore = usePersistStore();
 const themeStore = useMapThemeStore();
 
 const diffTick = computed(() => persistStore.difficulty?.multiplierTick || 0);
-const diffMult = computed(() => diffTick.value * DIFFICULTY_MULT_TICK + 1);
-const gemMult = computed(() => 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult.value - 1));
+const diffMult = computed(() => diffTick.value * getGameContent().economy.difficultyMultTick + 1);
+const gemMult = computed(() => 1 + getGameContent().economy.difficultyMultGemBase * (diffMult.value - 1));
+// Slider upper bound is the tick index the pack's difficulty ladder reaches.
+const maxDifficultyTick = computed(
+  () =>
+    (getGameContent().economy.difficultyMultMax - getGameContent().economy.difficultyMultMin) /
+    getGameContent().economy.difficultyMultTick,
+);
 
 const menuBackgroundSvg = computed(() => themeStore.activeTheme?.menuBackground);
 
@@ -43,14 +49,16 @@ function selectTheme(themeId: string) {
 
 function highestUnlockedIndex(themeId: string): number {
   const progress = persistStore.getThemeProgress(themeId);
-  return Math.min(Math.max(progress.highestUnlockedMap, 0), MAPS_PER_REGION * 3 - 1);
+  const mapsPerRegion = getGameContent().maps.mapsPerRegion;
+  return Math.min(Math.max(progress.highestUnlockedMap, 0), mapsPerRegion * 3 - 1);
 }
 
 // Farthest unlocked campaign map in a world's progress bucket, shown as
 // "Region N · Map M" on the world card play button.
 function worldProgressLabel(themeId: string): string {
   const index = highestUnlockedIndex(themeId);
-  return `Region ${Math.floor(index / MAPS_PER_REGION) + 1} · Map ${(index % MAPS_PER_REGION) + 1}`;
+  const mapsPerRegion = getGameContent().maps.mapsPerRegion;
+  return `Region ${Math.floor(index / mapsPerRegion) + 1} · Map ${(index % mapsPerRegion) + 1}`;
 }
 
 function selectThemeFromKeyboard(event: KeyboardEvent, themeId: string) {
@@ -144,7 +152,7 @@ function openSkillTree() {
                 id="home-difficulty"
                 type="range"
                 min="0"
-                max="12"
+                :max="maxDifficultyTick"
                 :value="diffTick"
                 @input="onDiffSliderInput"
                 class="diff-slider"

@@ -1,10 +1,11 @@
-import type { TowerId } from "@/sim/ConstantsTower.js";
+import { getGameContent } from "@/content/gameContent.js";
+import type { TowerId } from "@/content/towerIds.js";
 import { mulberry32 } from "@/sim/grid/Map.js";
 import { blockCoordinateForTile } from "@/sim/grid/ProgressiveMap.js";
 import type { BonusOffer } from "@/sim/runBonuses.js";
 
-export const BUILDING_KINDS = ["armory", "magazine", "beacon", "foundry", "clocktower", "aviary"] as const;
-export type BuildingKind = (typeof BUILDING_KINDS)[number];
+const buildingKinds = ["armory", "magazine", "beacon", "foundry", "clocktower", "aviary"] as const;
+export type BuildingKind = (typeof buildingKinds)[number];
 
 // Which tower stat a kind multiplies. Adjacent towers take `adjacentMult` per
 // building they touch. A building that has a live tower beside it is powered, and
@@ -29,7 +30,7 @@ export interface BuildingEffect {
   boardRampMult: number;
 }
 
-export const BUILDING_EFFECTS: Record<BuildingKind, BuildingEffect> = {
+export const buildingEffects: Record<BuildingKind, BuildingEffect> = {
   armory: { field: "damageMult", adjacentMult: 1.2, activeMult: 1.1, boardRampMult: 1 },
   magazine: { field: "fireRateMult", adjacentMult: 1.2, activeMult: 1.1, boardRampMult: 1 },
   beacon: { field: "rangeMult", adjacentMult: 1.15, activeMult: 1.075, boardRampMult: 1 },
@@ -39,23 +40,23 @@ export const BUILDING_EFFECTS: Record<BuildingKind, BuildingEffect> = {
 };
 
 // Chebyshev gap so two buildings' 8-neighborhoods do not share a tile.
-const BUILDING_CLEARANCE = 3;
-const BUILDING_NEIGHBOR_MINIMUM = 3;
+const buildingClearance = 3;
+const buildingNeighborMinimum = 3;
 // One ring serves both rules on purpose: a tower is adjacent to a building exactly
 // when it is on one of the 8 tiles that can power it, so widening one widens both.
-export const BUILDING_NEIGHBOR_RING = 1;
-export const PACKAGE_CLICK_RADIUS_TILES = 0.75;
+export const buildingNeighborRing = 1;
+export const packageClickRadiusTiles = 0.75;
 
 // Spacing a board is asked for, best first, and how far it may give way when the
 // board cannot fit its quota at that spacing. The measured capacity of the
 // smallest catalog boards (15x10, 10x15) is 2 caches at 6 tiles apart, so without
 // the ladder those boards finish a third of their cache quota unfilled.
-const CACHE_CLEARANCE_LADDER = [6, 5, 4, 3, 2];
+const cacheClearanceLadder = [6, 5, 4, 3, 2];
 // Outer rung of the two, because cache-to-cache spacing gives up first: two caches
 // close together only costs spread, while a cache beside a building takes one of
 // the eight tower slots the building buffs.
-const CACHE_BUILDING_CLEARANCE_LADDER = [2, 1];
-const CACHE_BUILDING_CLEARANCE = CACHE_BUILDING_CLEARANCE_LADDER[0]!;
+const cacheBuildingClearanceLadder = [2, 1];
+const cacheBuildingClearance = cacheBuildingClearanceLadder[0]!;
 
 interface SiteClearances {
   // Tiles between a cache tile and the nearest path tile. 0 puts a cache directly
@@ -68,7 +69,7 @@ interface SiteClearances {
   buildingSpawn: number;
 }
 
-const GENERATED_CLEARANCES: SiteClearances = {
+const generatedClearances: SiteClearances = {
   cachePathGap: 2,
   // Capped so the base ring and the spawn ring leave at least one clear column on
   // the smallest catalog boards (15x10, 10x15).
@@ -84,7 +85,7 @@ const GENERATED_CLEARANCES: SiteClearances = {
 // pushes a site away from the corridor, the base, or a spawn drops to 0 here.
 // Building clearance and the building neighbor minimum stay put, so a building
 // still needs room for the tower that powers it.
-const PROGRESSIVE_CLEARANCES: SiteClearances = {
+const progressiveClearances: SiteClearances = {
   cachePathGap: 0,
   cacheBase: 0,
   cacheSpawn: 0,
@@ -93,18 +94,17 @@ const PROGRESSIVE_CLEARANCES: SiteClearances = {
 };
 
 function siteClearancesFor(mapStyle: string | undefined): SiteClearances {
-  return mapStyle === "progressive" ? PROGRESSIVE_CLEARANCES : GENERATED_CLEARANCES;
+  return mapStyle === "progressive" ? progressiveClearances : generatedClearances;
 }
 
-const SITE_RANK_TAG = 0xc0de;
-const BUILDING_STAMP_TAG = 0xb1d;
-const CACHE_STAMP_TAG = 0xcace;
-const REGION_COUNT = 3;
-const MAPS_PER_REGION = 12;
-const MAX_BUILDINGS = 20;
-const MAX_CACHES = 10;
+const siteRankTag = 0xc0de;
+const buildingStampTag = 0xb1d;
+const cacheStampTag = 0xcace;
+const mapsPerRegion = getGameContent().maps.mapsPerRegion;
+const maxBuildings = 20;
+const maxCaches = 10;
 
-export const BUILDING_LABELS: Record<BuildingKind, string> = {
+export const buildingLabels: Record<BuildingKind, string> = {
   armory: "Armory",
   magazine: "Magazine",
   beacon: "Beacon",
@@ -113,7 +113,7 @@ export const BUILDING_LABELS: Record<BuildingKind, string> = {
   aviary: "Aviary",
 };
 
-export const BUILDING_COLORS: Record<BuildingKind, string> = {
+export const buildingColors: Record<BuildingKind, string> = {
   armory: "#e07040",
   magazine: "#d0a040",
   beacon: "#70a0e0",
@@ -124,7 +124,7 @@ export const BUILDING_COLORS: Record<BuildingKind, string> = {
 
 // Text-presentation-default code points so an SVG <text> draws them monochrome
 // instead of as color emoji. Theme JSON stays untouched: these are procedural marks.
-export const BUILDING_ICONS: Record<BuildingKind, string> = {
+export const buildingIcons: Record<BuildingKind, string> = {
   armory: "⚔",
   magazine: "✸",
   beacon: "✦",
@@ -133,11 +133,11 @@ export const BUILDING_ICONS: Record<BuildingKind, string> = {
   aviary: "⟁",
 };
 
-export const CACHE_ICON = "▣";
+export const cacheIcon = "▣";
 
 // What the kind does to the towers touching it, then what it does to the whole
 // board while powered. A tethered kind states only the powered half.
-export const BUILDING_DETAILS: Record<BuildingKind, { adjacent: string; active: string }> = {
+export const buildingDetails: Record<BuildingKind, { adjacent: string; active: string }> = {
   armory: { adjacent: "adjacent towers deal ×1.20 damage", active: "×1.10 damage to every tower while active" },
   magazine: { adjacent: "adjacent towers fire ×1.20 faster", active: "×1.10 fire rate to every tower while active" },
   beacon: { adjacent: "adjacent towers have ×1.15 range", active: "×1.075 range to every tower while active" },
@@ -152,7 +152,7 @@ export const BUILDING_DETAILS: Record<BuildingKind, { adjacent: string; active: 
   },
 };
 
-export const BUILDING_INACTIVE_DETAIL = "inactive — no tower beside it";
+export const buildingInactiveDetail = "inactive — no tower beside it";
 
 function capitalize(detail: string): string {
   return `${detail.charAt(0).toUpperCase()}${detail.slice(1)}`;
@@ -161,16 +161,16 @@ function capitalize(detail: string): string {
 // One line per half, then the powered state. This is the whole copy source for the
 // hover tooltip and the glyph aria-label, so they cannot drift apart.
 export function buildingDetailLines(kind: BuildingKind, active: boolean): string[] {
-  const details = BUILDING_DETAILS[kind];
+  const details = buildingDetails[kind];
   const lines: string[] = [];
   if (details.adjacent) lines.push(`${capitalize(details.adjacent)}.`);
   if (details.active) lines.push(`${capitalize(details.active)}.`);
-  if (!active) lines.push(`${capitalize(BUILDING_INACTIVE_DETAIL)}.`);
+  if (!active) lines.push(`${capitalize(buildingInactiveDetail)}.`);
   return lines;
 }
 
 export function buildingBlurb(kind: BuildingKind, active: boolean): string {
-  return `${BUILDING_LABELS[kind]}: ${buildingDetailLines(kind, active).join(" ")}`;
+  return `${buildingLabels[kind]}: ${buildingDetailLines(kind, active).join(" ")}`;
 }
 
 export interface MapBuildingSite {
@@ -247,11 +247,11 @@ export function freshActiveBuildingBonus(): ActiveBuildingBonus {
 }
 
 export function buildingCountFor(regionId: number, level: number): number {
-  return clamp(1 + Math.round((MAX_BUILDINGS - 1) * regionLevelProgress(regionId, level)), 1, MAX_BUILDINGS);
+  return clamp(1 + Math.round((maxBuildings - 1) * regionLevelProgress(regionId, level)), 1, maxBuildings);
 }
 
 export function cacheCountFor(regionId: number, level: number): number {
-  return clamp(1 + Math.round((MAX_CACHES - 1) * regionLevelProgress(regionId, level)), 1, MAX_CACHES);
+  return clamp(1 + Math.round((maxCaches - 1) * regionLevelProgress(regionId, level)), 1, maxCaches);
 }
 
 export function cacheMaxHealth(mapLevel: number): number {
@@ -279,10 +279,11 @@ export function playerPlacedBlockCount(stamps: readonly { fill: boolean }[]): nu
 }
 
 function regionLevelProgress(regionId: number, level: number): number {
-  const region = clamp(Math.floor(regionId), 0, REGION_COUNT - 1);
-  const mapLevel = clamp(Math.floor(level), 1, MAPS_PER_REGION);
-  const index = region * MAPS_PER_REGION + (mapLevel - 1);
-  return index / (REGION_COUNT * MAPS_PER_REGION - 1);
+  const regionCount = getGameContent().maps.levels.length / mapsPerRegion;
+  const region = clamp(Math.floor(regionId), 0, regionCount - 1);
+  const mapLevel = clamp(Math.floor(level), 1, mapsPerRegion);
+  const index = region * mapsPerRegion + (mapLevel - 1);
+  return index / (regionCount * mapsPerRegion - 1);
 }
 
 // A building is powered while a live tower stands within the 8-tile ring. A ghost
@@ -302,8 +303,8 @@ export function buildingIsActive(
   building: MapBuildingSite,
   hasLiveTowerAt: (tileX: number, tileY: number) => boolean,
 ): boolean {
-  for (let deltaY = -BUILDING_NEIGHBOR_RING; deltaY <= BUILDING_NEIGHBOR_RING; deltaY++) {
-    for (let deltaX = -BUILDING_NEIGHBOR_RING; deltaX <= BUILDING_NEIGHBOR_RING; deltaX++) {
+  for (let deltaY = -buildingNeighborRing; deltaY <= buildingNeighborRing; deltaY++) {
+    for (let deltaX = -buildingNeighborRing; deltaX <= buildingNeighborRing; deltaX++) {
       if (deltaX === 0 && deltaY === 0) continue;
       if (hasLiveTowerAt(building.tileX + deltaX, building.tileY + deltaY)) return true;
     }
@@ -320,7 +321,7 @@ export function activeBuildingBonus(buildings: readonly MapBuildingSite[]): Acti
   for (const building of buildings) {
     if (!building.active) continue;
     bonus.activeCount++;
-    const effect = BUILDING_EFFECTS[building.kind];
+    const effect = buildingEffects[building.kind];
     if (effect.boardRampMult !== 1) rampMults.set(effect.field, effect.boardRampMult);
     if (effect.activeMult !== 1) bonus[effect.field] *= effect.activeMult;
   }
@@ -330,7 +331,7 @@ export function activeBuildingBonus(buildings: readonly MapBuildingSite[]): Acti
   return bonus;
 }
 
-// The adjacent half, on top of the whole-board half. BUILDING_CLEARANCE keeps two
+// The adjacent half, on top of the whole-board half. buildingClearance keeps two
 // buildings' rings from overlapping, so a tower tile can sit next to at most one
 // building and this loop never stacks two factors for the same stat.
 export function neighborBonus(
@@ -341,8 +342,8 @@ export function neighborBonus(
 ): NeighborBonus {
   const bonus: NeighborBonus = { ...global };
   for (const building of buildings) {
-    if (chebyshev(tileX, tileY, building.tileX, building.tileY) !== BUILDING_NEIGHBOR_RING) continue;
-    const effect = BUILDING_EFFECTS[building.kind];
+    if (chebyshev(tileX, tileY, building.tileX, building.tileY) !== buildingNeighborRing) continue;
+    const effect = buildingEffects[building.kind];
     bonus[effect.field] *= effect.adjacentMult;
   }
   return bonus;
@@ -546,12 +547,12 @@ function buildingCandidates(input: ReconcileSitesInput, occupied: Set<string>): 
       if (!tileOnStamp(input, tileX, tileY)) continue;
       if (!clearOfPoint(tileX, tileY, grid.base, clearances.buildingBase)) continue;
       if (!clearOfPoints(tileX, tileY, grid.spawns, clearances.buildingSpawn)) continue;
-      if (!clearOf(tileX, tileY, input.buildings, BUILDING_CLEARANCE)) continue;
+      if (!clearOf(tileX, tileY, input.buildings, buildingClearance)) continue;
       // The widest rung of the ladder, so a stamped building never lands inside a
       // cache's ring any closer than a generated board would allow. planCacheAdditions
       // re-tests this per rung when the board is short on room.
-      if (!clearOf(tileX, tileY, input.caches, CACHE_BUILDING_CLEARANCE)) continue;
-      if (buildableNeighborCount(grid, tileX, tileY, occupied) < BUILDING_NEIGHBOR_MINIMUM) continue;
+      if (!clearOf(tileX, tileY, input.caches, cacheBuildingClearance)) continue;
+      if (buildableNeighborCount(grid, tileX, tileY, occupied) < buildingNeighborMinimum) continue;
       const rolled = rollSite(input.seed, grid, tileX, tileY);
       candidates.push({ tileX, tileY, rank: rolled.rank, kind: rolled.kind });
     }
@@ -659,10 +660,10 @@ function rollStampSites(input: ReconcileSitesInput, occupied: Set<string>): void
   const chance = progressiveSiteChance(input.placedBlocks);
   if (chance <= 0) return;
   const cacheTarget = cacheCountFor(input.regionId, input.mapLevel);
-  if (stampRoll(input.seed, input.placedBlocks, BUILDING_STAMP_TAG) < chance) {
+  if (stampRoll(input.seed, input.placedBlocks, buildingStampTag) < chance) {
     placeBuildings(input, occupied, input.buildings.length + 1);
   }
-  if (input.caches.length < cacheTarget && stampRoll(input.seed, input.placedBlocks, CACHE_STAMP_TAG) < chance) {
+  if (input.caches.length < cacheTarget && stampRoll(input.seed, input.placedBlocks, cacheStampTag) < chance) {
     placeCaches(input, occupied, input.caches.length + 1);
   }
 }
@@ -672,7 +673,7 @@ function placeBuildings(input: ReconcileSitesInput, occupied: Set<string>, targe
   const candidates = buildingCandidates(input, occupied);
   for (const candidate of candidates) {
     if (input.buildings.length >= target) break;
-    if (!clearOf(candidate.tileX, candidate.tileY, input.buildings, BUILDING_CLEARANCE)) continue;
+    if (!clearOf(candidate.tileX, candidate.tileY, input.buildings, buildingClearance)) continue;
     const id = input.allocateId();
     // Active is the engine's to compute: a site placed on a tile with a tower
     // beside it is only discovered powered once the next bonus refresh runs.
@@ -707,9 +708,9 @@ function planCacheAdditions(input: ReconcileSitesInput, occupied: Set<string>, n
   if (needed <= 0) return [];
   const candidates = cacheCandidates(input, occupied);
   let best: RankedTile[] = [];
-  for (const buildingClearance of CACHE_BUILDING_CLEARANCE_LADDER) {
-    for (const cacheClearance of CACHE_CLEARANCE_LADDER) {
-      const plan = planCacheAdditionsAt(candidates, input, cacheClearance, buildingClearance, needed);
+  for (const buildingClearanceRung of cacheBuildingClearanceLadder) {
+    for (const cacheClearance of cacheClearanceLadder) {
+      const plan = planCacheAdditionsAt(candidates, input, cacheClearance, buildingClearanceRung, needed);
       if (plan.length > best.length) best = plan;
       if (best.length >= needed) return best;
     }
@@ -748,12 +749,12 @@ function stampRoll(seed: number, placedBlocks: number, kindTag: number): number 
 
 function rollSite(seed: number, grid: SiteGrid, tileX: number, tileY: number): { rank: number; kind: BuildingKind } {
   const world = grid.tileToWorld(tileX, tileY);
-  let mixed = Math.imul(seed ^ SITE_RANK_TAG, 0x9e3779b1);
+  let mixed = Math.imul(seed ^ siteRankTag, 0x9e3779b1);
   mixed ^= Math.imul(Math.round(world.x), 0x85ebca6b);
   mixed = Math.imul(mixed, 0xc2b2ae35) ^ Math.imul(Math.round(world.y), 0x27d4eb2f);
   const rng = mulberry32(mixed >>> 0);
   const rank = rng();
-  const kind = BUILDING_KINDS[Math.floor(rng() * BUILDING_KINDS.length)] ?? "armory";
+  const kind = buildingKinds[Math.floor(rng() * buildingKinds.length)] ?? "armory";
   return { rank, kind };
 }
 

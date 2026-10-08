@@ -1,20 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FIXED_DT } from "@/sim/Constants.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import { Enemy as EnemyEntity } from "@/sim/enemies/Enemy.js";
 import type { GameEngine } from "@/sim/GameEngine.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import {
   activeBuildingBonus,
-  BUILDING_EFFECTS,
   type BuildingBonusField,
   type BuildingKind,
   buildingDetailLines,
+  buildingEffects,
   type MapBuildingSite,
   neighborBonus,
   refreshBuildingActivity,
 } from "@/sim/mapSites.js";
 import { ProjectileManager } from "@/sim/ProjectileManager.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import { Tower as TowerEntity } from "@/sim/towers/Tower.js";
 import { makeMapData } from "../../helpers/mock-grid";
@@ -33,7 +33,7 @@ function towerAt(tiles: readonly { x: number; y: number }[]): (tileX: number, ti
 
 // The per-tower field a kind writes, so a test can assert against whichever kind
 // the board rolled instead of assuming one.
-const SITE_FIELD_ON_TOWER: Record<BuildingBonusField, (tower: Tower) => number> = {
+const siteFieldOnTower: Record<BuildingBonusField, (tower: Tower) => number> = {
   damageMult: (tower) => tower.siteDamageMult,
   fireRateMult: (tower) => tower.siteFireRateMult,
   rangeMult: (tower) => tower.siteRangeMult,
@@ -43,7 +43,7 @@ const SITE_FIELD_ON_TOWER: Record<BuildingBonusField, (tower: Tower) => number> 
 // What one powered building of a kind pays the whole board, given how many buildings
 // are powered. A ramp kind counts the whole board; the rest pay their own constant.
 function wholeBoardMult(kind: BuildingKind, activeCount: number): number {
-  const effect = BUILDING_EFFECTS[kind];
+  const effect = buildingEffects[kind];
   return effect.activeMult !== 1 ? effect.activeMult : effect.boardRampMult ** activeCount;
 }
 
@@ -93,9 +93,9 @@ describe("activeBuildingBonus", () => {
     const beacon = site("beacon", 20, 20, true);
     const bonus = activeBuildingBonus([armory, magazine, beacon]);
     expect(bonus.activeCount).toBe(3);
-    expect(bonus.damageMult).toBeCloseTo(BUILDING_EFFECTS.armory.activeMult, 10);
-    expect(bonus.fireRateMult).toBeCloseTo(BUILDING_EFFECTS.magazine.activeMult, 10);
-    expect(bonus.rangeMult).toBeCloseTo(BUILDING_EFFECTS.beacon.activeMult, 10);
+    expect(bonus.damageMult).toBeCloseTo(buildingEffects.armory.activeMult, 10);
+    expect(bonus.fireRateMult).toBeCloseTo(buildingEffects.magazine.activeMult, 10);
+    expect(bonus.rangeMult).toBeCloseTo(buildingEffects.beacon.activeMult, 10);
     expect(bonus.flyingDamageMult).toBe(1);
   });
 
@@ -112,17 +112,17 @@ describe("activeBuildingBonus", () => {
       site("clocktower", 20, 5, true),
       site("aviary", 20, 20, true),
     ]);
-    const ramp = BUILDING_EFFECTS.foundry.boardRampMult;
+    const ramp = buildingEffects.foundry.boardRampMult;
     expect(bonus.damageMult).toBeCloseTo(ramp ** 3, 10);
     expect(bonus.fireRateMult).toBeCloseTo(ramp ** 3, 10);
-    expect(bonus.flyingDamageMult).toBeCloseTo(BUILDING_EFFECTS.aviary.activeMult, 10);
+    expect(bonus.flyingDamageMult).toBeCloseTo(buildingEffects.aviary.activeMult, 10);
     expect(bonus.rangeMult).toBe(1);
   });
 
   it("counts every powered building toward a ramp, whatever its kind", () => {
     const foundryPlusArmory = activeBuildingBonus([site("foundry", 5, 5, true), site("armory", 20, 5, true)]);
-    expect(BUILDING_EFFECTS.armory.activeMult).toBe(1.1);
-    expect(BUILDING_EFFECTS.foundry.boardRampMult).toBe(1.01);
+    expect(buildingEffects.armory.activeMult).toBe(1.1);
+    expect(buildingEffects.foundry.boardRampMult).toBe(1.01);
     // The armory pays its own whole-board half; the foundry pays one ramp over both
     // powered buildings, itself included.
     expect(foundryPlusArmory.damageMult).toBeCloseTo(1.1 * 1.01 * 1.01, 10);
@@ -135,7 +135,7 @@ describe("activeBuildingBonus", () => {
 
   it("pays no ramp when the only ramp building is unpowered", () => {
     const sleepingFoundry = activeBuildingBonus([site("foundry", 5, 5, false), site("armory", 20, 5, true)]);
-    expect(sleepingFoundry.damageMult).toBeCloseTo(BUILDING_EFFECTS.armory.activeMult, 10);
+    expect(sleepingFoundry.damageMult).toBeCloseTo(buildingEffects.armory.activeMult, 10);
   });
 });
 
@@ -145,11 +145,11 @@ describe("neighborBonus", () => {
     const global = activeBuildingBonus([armory]);
     const adjacent = neighborBonus(6, 5, [armory], global);
     expect(adjacent.damageMult).toBeCloseTo(
-      BUILDING_EFFECTS.armory.activeMult * BUILDING_EFFECTS.armory.adjacentMult,
+      buildingEffects.armory.activeMult * buildingEffects.armory.adjacentMult,
       10,
     );
     const distant = neighborBonus(30, 30, [armory], global);
-    expect(distant.damageMult).toBeCloseTo(BUILDING_EFFECTS.armory.activeMult, 10);
+    expect(distant.damageMult).toBeCloseTo(buildingEffects.armory.activeMult, 10);
   });
 
   it("gives an adjacent tower nothing from a tethered kind", () => {
@@ -161,7 +161,7 @@ describe("neighborBonus", () => {
   it("sends the aviary's adjacent bonus to flying damage only", () => {
     const aviary = site("aviary", 5, 5, false);
     const bonus = neighborBonus(6, 5, [aviary]);
-    expect(bonus.flyingDamageMult).toBeCloseTo(BUILDING_EFFECTS.aviary.adjacentMult, 10);
+    expect(bonus.flyingDamageMult).toBeCloseTo(buildingEffects.aviary.adjacentMult, 10);
     expect(bonus.damageMult).toBe(1);
   });
 
@@ -237,17 +237,17 @@ describe("engine building wiring", () => {
     const { building, towerTile } = buildingWithRoom();
     const bystanderTile = clearOfEveryBuilding();
     const bystander = buildAt(bystanderTile.x, bystanderTile.y);
-    const bystanderField = SITE_FIELD_ON_TOWER[BUILDING_EFFECTS[building.kind].field];
+    const bystanderField = siteFieldOnTower[buildingEffects[building.kind].field];
     expect(bystanderField(bystander)).toBe(1);
 
     const adjacent = buildAt(towerTile.x, towerTile.y);
 
     expect(building.active).toBe(true);
     expect(engine.activeBuildings.activeCount).toBe(1);
-    const effect = BUILDING_EFFECTS[building.kind];
+    const effect = buildingEffects[building.kind];
     const wholeBoard = wholeBoardMult(building.kind, engine.activeBuildings.activeCount);
     expect(engine.activeBuildings[effect.field]).toBeCloseTo(wholeBoard, 10);
-    expect(SITE_FIELD_ON_TOWER[effect.field](adjacent)).toBeCloseTo(effect.adjacentMult * wholeBoard, 10);
+    expect(siteFieldOnTower[effect.field](adjacent)).toBeCloseTo(effect.adjacentMult * wholeBoard, 10);
     // The whole-board half reaches a tower standing nowhere near the building.
     expect(bystanderField(bystander)).toBeCloseTo(wholeBoard, 10);
     expect(engine.baseDefense?.buildingDamageMult).toBe(engine.activeBuildings.damageMult);
@@ -262,7 +262,7 @@ describe("engine building wiring", () => {
     // that reaches it, so that is how a terrain tower dies.
     adjacent.takeAbilityDamage(adjacent.health + 1);
     expect(adjacent.isGhost).toBe(true);
-    engine.update(FIXED_DT);
+    engine.update(fixedDeltaSeconds);
 
     expect(building.active).toBe(false);
     expect(engine.activeBuildings.activeCount).toBe(0);
@@ -273,33 +273,33 @@ describe("engine building wiring", () => {
 
   it("restores the whole-board half when the ghosted tower beside the building recovers", () => {
     const { building, towerTile } = buildingWithRoom();
-    const effect = BUILDING_EFFECTS[building.kind];
+    const effect = buildingEffects[building.kind];
     const bystanderTile = clearOfEveryBuilding();
     const bystander = buildAt(bystanderTile.x, bystanderTile.y);
-    const bystanderField = SITE_FIELD_ON_TOWER[effect.field];
+    const bystanderField = siteFieldOnTower[effect.field];
     expect(bystanderField(bystander)).toBe(1);
 
     const adjacent = buildAt(towerTile.x, towerTile.y);
     const wholeBoard = wholeBoardMult(building.kind, 1);
     expect(building.active).toBe(true);
     expect(bystanderField(bystander)).toBeCloseTo(wholeBoard, 10);
-    expect(SITE_FIELD_ON_TOWER[effect.field](adjacent)).toBeCloseTo(effect.adjacentMult * wholeBoard, 10);
+    expect(siteFieldOnTower[effect.field](adjacent)).toBeCloseTo(effect.adjacentMult * wholeBoard, 10);
 
     adjacent.takeAbilityDamage(adjacent.health + 1);
-    engine.update(FIXED_DT);
+    engine.update(fixedDeltaSeconds);
     expect(building.active).toBe(false);
     expect(bystanderField(bystander)).toBe(1);
 
     // Fast-forward the restore timer so Tower.update calls restore() on this tick.
     adjacent.ghostTimer = 1000;
-    engine.update(FIXED_DT);
+    engine.update(fixedDeltaSeconds);
 
     expect(adjacent.isGhost).toBe(false);
     expect(building.active).toBe(true);
     expect(engine.activeBuildings.activeCount).toBe(1);
     expect(engine.activeBuildings[effect.field]).toBeCloseTo(wholeBoard, 10);
     // The refresh reaches the tower that powered the building again...
-    expect(SITE_FIELD_ON_TOWER[effect.field](adjacent)).toBeCloseTo(effect.adjacentMult * wholeBoard, 10);
+    expect(siteFieldOnTower[effect.field](adjacent)).toBeCloseTo(effect.adjacentMult * wholeBoard, 10);
     // ...and every other tower that only ever sees the whole-board half.
     expect(bystanderField(bystander)).toBeCloseTo(wholeBoard, 10);
     expect(engine.baseDefense?.buildingDamageMult).toBe(engine.activeBuildings.damageMult);
@@ -336,14 +336,14 @@ describe("engine building wiring", () => {
 });
 
 describe("flying damage", () => {
-  const FLYING_ENEMY_TYPE = "jet";
+  const flyingEnemyType = "jet";
 
   function laneGrid(): Grid {
     return new Grid(makeMapData({ width: 6, height: 3, spawns: [{ x: 0, y: 1 }], base: { x: 5, y: 1 } }));
   }
 
   function flyingEnemy(grid: Grid): Enemy {
-    const enemy = new EnemyEntity(FLYING_ENEMY_TYPE, 1, 0, grid, 1);
+    const enemy = new EnemyEntity(flyingEnemyType, 1, 0, grid, 1);
     const world = grid.tileToWorld(1, 1);
     enemy.x = world.x;
     enemy.y = world.y;
@@ -421,7 +421,7 @@ describe("flying damage", () => {
 
   it("hits a flying target for more and a ground target for the base damage", () => {
     const grid = laneGrid();
-    const aviaryMult = BUILDING_EFFECTS.aviary.activeMult;
+    const aviaryMult = buildingEffects.aviary.activeMult;
     expect(projectileHitting(flyingEnemy(grid), { flyingDamageMult: aviaryMult })).toBeCloseTo(100 * aviaryMult, 6);
     expect(projectileHitting(groundEnemy(grid), { flyingDamageMult: aviaryMult })).toBeCloseTo(100, 6);
   });
@@ -437,7 +437,7 @@ describe("flying damage", () => {
     const baseDamage = tower.stats.damage;
     expect(tower.stats.flyingDamageMult).toBe(1);
 
-    const aviaryMult = BUILDING_EFFECTS.aviary.adjacentMult;
+    const aviaryMult = buildingEffects.aviary.adjacentMult;
     tower.siteFlyingDamageMult = aviaryMult;
     tower.clearStatsCache();
     expect(tower.stats.damage).toBe(baseDamage);

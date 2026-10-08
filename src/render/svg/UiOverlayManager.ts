@@ -1,10 +1,6 @@
+import { getGameContent } from "@/content/gameContent.js";
 import { bossAbilityLabel } from "@/sim/bossAbilities.js";
-import {
-  BETWEEN_WAVES_TIMER,
-  WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN,
-  WAVE_GRAPH_COLOR_BASE_HEALTH_RED,
-  WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW,
-} from "@/sim/Constants.js";
+import { baseHealthFillColor } from "@/sim/WaveGraphTracker.js";
 import type { Grid } from "../../sim/grid/Grid.js";
 import type {
   EnemySnapshot,
@@ -23,8 +19,7 @@ import {
 
 // The medals are stamped when a wave ends, so they cover the whole between-waves
 // countdown rather than a copy of its length that could drift from the pack.
-const WAVE_TOP_DISPLAY_SECONDS = BETWEEN_WAVES_TIMER;
-const WAVE_TOP_MEDALS = ["🥇", "🥈", "🥉"];
+const waveTopMedals = ["🥇", "🥈", "🥉"];
 
 export class UiOverlayManager {
   private hpBarPool: SVGRectElement[] = [];
@@ -153,7 +148,7 @@ export class UiOverlayManager {
     baseFg.style.visibility = "hidden";
     baseFg.setAttribute("width", "108");
     baseFg.setAttribute("height", "5");
-    baseFg.setAttribute("fill", WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN);
+    baseFg.setAttribute("fill", baseHealthFillColor(1));
     layer.appendChild(baseFg);
 
     this.baseHealthBarPool = [baseBg, baseBorder, baseFg];
@@ -189,7 +184,7 @@ export class UiOverlayManager {
       this.towerHpLastFill.push("");
     }
 
-    for (let i = 0; i < WAVE_TOP_MEDALS.length; i++) {
+    for (let i = 0; i < waveTopMedals.length; i++) {
       const text = document.createElementNS(SVG_NS, "text");
       text.style.visibility = "hidden";
       text.setAttribute("fill", "var(--color-gold)");
@@ -367,13 +362,13 @@ export class UiOverlayManager {
     if (waveTopTowers) {
       for (const entry of waveTopTowers) {
         if (medalIndex >= this.waveTopMedalPool.length) break;
-        if (simSeconds - entry.simSeconds > WAVE_TOP_DISPLAY_SECONDS) continue;
+        if (simSeconds - entry.simSeconds > getGameContent().economy.betweenWavesTimer) continue;
         const tower = entry.towerId === "base" ? null : towerById.get(entry.towerId);
         const medalX = tower?.x ?? (entry.towerId === "base" ? baseCenter?.x : undefined);
         const medalY = tower?.y ?? (entry.towerId === "base" ? baseCenter?.y : undefined);
         if (medalX === undefined || medalY === undefined) continue;
         const medal = this.waveTopMedalPool[medalIndex]!;
-        const medalText = WAVE_TOP_MEDALS[entry.rank - 1] ?? String(entry.rank);
+        const medalText = waveTopMedals[entry.rank - 1] ?? String(entry.rank);
         medal.style.visibility = "visible";
         medal.textContent = medalText;
         medal.setAttribute("transform", `translate(${medalX}, ${medalY - TOWER_SCALED_SIZE / 2 - 12})`);
@@ -458,12 +453,7 @@ export class UiOverlayManager {
       fg.setAttribute("width", fgWidth);
       this.baseHealthLastWidth = fgWidth;
     }
-    const fgFill =
-      ratio > 0.5
-        ? WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN
-        : ratio > 0.25
-          ? WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW
-          : WAVE_GRAPH_COLOR_BASE_HEALTH_RED;
+    const fgFill = baseHealthFillColor(ratio);
     if (this.baseHealthLastFill !== fgFill) {
       fg.setAttribute("fill", fgFill);
       this.baseHealthLastFill = fgFill;

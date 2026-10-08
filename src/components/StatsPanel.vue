@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { ENEMY_ORDER, ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
+import { enemyOrder } from "@/components/enemyOrder.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
@@ -23,7 +23,7 @@ const waveComposition = computed(() => {
   const comp = snapshot.value?.meta.waveComposition || {};
   const entries = Object.entries(comp)
     .filter(([, count]) => count > 0)
-    .sort((entryA, entryB) => ENEMY_ORDER.indexOf(entryA[0]) - ENEMY_ORDER.indexOf(entryB[0]));
+    .sort((entryA, entryB) => enemyOrder.indexOf(entryA[0]) - enemyOrder.indexOf(entryB[0]));
   return entries;
 });
 
@@ -45,7 +45,7 @@ const activeEnemies = computed<EnemyStat[]>(() => {
     .map((enemy) => ({
       id: String(enemy.id),
       type: enemy.type,
-      name: themeStore.getEnemyVisual(enemy.type)?.name || ENEMY_TYPES[enemy.type]?.name || enemy.type,
+      name: themeStore.getEnemyVisual(enemy.type)?.name || enemy.type,
       level: enemy.level,
       hp: enemy.hp,
       maxHp: enemy.maxHp,
@@ -97,8 +97,8 @@ function hpPercent(enemy: EnemyStat) {
           <div v-if="waveComposition.length > 0" class="wave-composition">
             <div class="comp-grid">
               <div v-for="[type, count] in waveComposition" :key="type" class="comp-item">
-                <span class="comp-dot" :style="{ background: themeStore.getEnemyVisual(type)?.color || ENEMY_TYPES[type]?.color }"></span>
-                <span class="comp-name">{{ themeStore.getEnemyVisual(type)?.name || ENEMY_TYPES[type]?.name || type }}</span>
+                <span class="comp-dot" :style="{ background: themeStore.getEnemyVisual(type)?.color }"></span>
+                <span class="comp-name">{{ themeStore.getEnemyVisual(type)?.name || type }}</span>
                 <span class="comp-count">x{{ count }}</span>
               </div>
             </div>

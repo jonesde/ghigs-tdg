@@ -4,10 +4,10 @@ import {
   type ClickEffectInput,
   clickHasEffect,
   decideRightClickAction,
-  RIGHT_CLICK_MAX_DRAG_PX,
+  rightClickMaxDragPx,
   rightPressIsClick,
 } from "@/render/svg/clickHasEffect.js";
-import { BASE_SELECTION_ID } from "@/sim/towers/BaseDefense.js";
+import { baseSelectionId } from "@/sim/towers/BaseDefense.js";
 
 function input(overrides: Partial<ClickEffectInput> = {}): ClickEffectInput {
   return {
@@ -91,25 +91,25 @@ describe("baseSelectionStale", () => {
   });
 
   it("is false for a base selection outside build mode", () => {
-    expect(baseSelectionStale(BASE_SELECTION_ID, null, null, baseTile)).toBe(false);
-    expect(baseSelectionStale(BASE_SELECTION_ID, null, { tileX: 9, tileY: 9 }, baseTile)).toBe(false);
+    expect(baseSelectionStale(baseSelectionId, null, null, baseTile)).toBe(false);
+    expect(baseSelectionStale(baseSelectionId, null, { tileX: 9, tileY: 9 }, baseTile)).toBe(false);
   });
 
   it("is false while the hover tile is the base tile", () => {
-    expect(baseSelectionStale(BASE_SELECTION_ID, "basic", { tileX: 5, tileY: 5 }, baseTile)).toBe(false);
+    expect(baseSelectionStale(baseSelectionId, "basic", { tileX: 5, tileY: 5 }, baseTile)).toBe(false);
   });
 
   it("is true when the hover tile has moved off the base tile", () => {
-    expect(baseSelectionStale(BASE_SELECTION_ID, "basic", { tileX: 6, tileY: 5 }, baseTile)).toBe(true);
-    expect(baseSelectionStale(BASE_SELECTION_ID, "basic", { tileX: 5, tileY: 6 }, baseTile)).toBe(true);
+    expect(baseSelectionStale(baseSelectionId, "basic", { tileX: 6, tileY: 5 }, baseTile)).toBe(true);
+    expect(baseSelectionStale(baseSelectionId, "basic", { tileX: 5, tileY: 6 }, baseTile)).toBe(true);
   });
 
   it("is true when the hover tile is null (pointer off the grid)", () => {
-    expect(baseSelectionStale(BASE_SELECTION_ID, "basic", null, baseTile)).toBe(true);
+    expect(baseSelectionStale(baseSelectionId, "basic", null, baseTile)).toBe(true);
   });
 
   it("is false when the base tile is unknown", () => {
-    expect(baseSelectionStale(BASE_SELECTION_ID, "basic", null, null)).toBe(false);
+    expect(baseSelectionStale(baseSelectionId, "basic", null, null)).toBe(false);
   });
 });
 
@@ -119,8 +119,8 @@ describe("rightPressIsClick", () => {
   });
 
   it("treats sub-threshold motion as a click and past-threshold motion as a drag", () => {
-    expect(rightPressIsClick(0, 0, RIGHT_CLICK_MAX_DRAG_PX, 0)).toBe(true);
-    expect(rightPressIsClick(0, 0, RIGHT_CLICK_MAX_DRAG_PX + 1, 0)).toBe(false);
+    expect(rightPressIsClick(0, 0, rightClickMaxDragPx, 0)).toBe(true);
+    expect(rightPressIsClick(0, 0, rightClickMaxDragPx + 1, 0)).toBe(false);
     expect(rightPressIsClick(0, 0, 3, 4)).toBe(true);
     expect(rightPressIsClick(0, 0, 4, 4)).toBe(false);
   });

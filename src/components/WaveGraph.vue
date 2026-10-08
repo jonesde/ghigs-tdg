@@ -1,21 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
-  WAVE_GRAPH_COLOR_DAMAGE,
-  WAVE_GRAPH_COLOR_GEMS_EARNED,
-  WAVE_GRAPH_COLOR_GOLD_EARNED,
-  WAVE_GRAPH_COLOR_MAX_ENEMY_HEALTH,
-  WAVE_GRAPH_DOT_OPACITY,
-  WAVE_GRAPH_DOT_OPACITY_WAVE_START,
-  WAVE_GRAPH_DOT_SIZE,
-  WAVE_GRAPH_DOT_SPACING,
-  WAVE_GRAPH_HEIGHT,
-  WAVE_GRAPH_INTERVAL_SECONDS,
-} from "@/sim/Constants.js";
-import type { WaveGraphDot } from "@/sim/SimulationSnapshot.js";
+  type WaveGraphDot,
+  waveGraphDotCapacity,
+  waveGraphDotSpacing,
+  waveGraphIntervalSeconds,
+} from "@/sim/SimulationSnapshot.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 import { useGameStore } from "@/stores/game.js";
 import { useUiStore } from "@/stores/ui.js";
+
+const waveGraphHeight = 60;
+const dotSize = 2;
+const dotOpacity = 0.2;
+const dotOpacityWaveStart = 0.5;
 
 const gameStore = useGameStore();
 const uiStore = useUiStore();
@@ -49,7 +47,7 @@ const timeAgo = computed(() => {
   if (dots.length === 0 || hoveredDotIndex.value === null) return "";
 
   const intervalsAgo = dots.length - 1 - hoveredDotIndex.value;
-  const totalSeconds = intervalsAgo * WAVE_GRAPH_INTERVAL_SECONDS;
+  const totalSeconds = intervalsAgo * waveGraphIntervalSeconds;
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   const mm = String(minutes).padStart(2, "0");
@@ -65,12 +63,12 @@ interface PathData {
 
 const paths = ref<PathData[]>(Array(5).fill({ d: "", opacity: 0, stroke: "" }));
 
-const METRIC_COLORS: string[] = [
-  WAVE_GRAPH_COLOR_DAMAGE,
-  WAVE_GRAPH_COLOR_MAX_ENEMY_HEALTH,
-  WAVE_GRAPH_COLOR_GOLD_EARNED,
-  WAVE_GRAPH_COLOR_GEMS_EARNED,
-];
+const metricColors = {
+  damage: "#e8dcc0",
+  maxEnemyHealth: "#e05548",
+  goldEarned: "#ffd84d",
+  gemsEarned: "#9be7ff",
+} as const;
 
 let resizeObserver: ResizeObserver | null = null;
 
@@ -102,10 +100,16 @@ function getMetricValue(dot: WaveGraphDot, metricIndex: number): number {
 }
 
 function getMetricColor(metricIndex: number): string {
-  if (metricIndex >= 0 && metricIndex < METRIC_COLORS.length) {
-    return METRIC_COLORS[metricIndex]!;
+  switch (metricIndex) {
+    case 1:
+      return metricColors.maxEnemyHealth;
+    case 2:
+      return metricColors.goldEarned;
+    case 3:
+      return metricColors.gemsEarned;
+    default:
+      return metricColors.damage;
   }
-  return METRIC_COLORS[0] ?? "";
 }
 
 function computeMaxForMetric(dots: WaveGraphDot[], metricIndex: number): number {
@@ -125,14 +129,14 @@ function buildPathD(dots: WaveGraphDot[], metricIndex: number, maxVal: number): 
   for (let i = 0; i < dots.length; i++) {
     const dot = dots[i];
     if (!dot) continue;
-    const x = i * WAVE_GRAPH_DOT_SPACING;
+    const x = i * waveGraphDotSpacing;
     const value = getMetricValue(dot, metricIndex);
     let y: number;
     if (value <= 0 || maxVal <= 0) {
-      y = WAVE_GRAPH_HEIGHT;
+      y = waveGraphHeight;
     } else {
       const normalized = value / maxVal;
-      y = WAVE_GRAPH_HEIGHT - normalized * WAVE_GRAPH_HEIGHT;
+      y = waveGraphHeight - normalized * waveGraphHeight;
     }
     parts.push(`${i === 0 ? "M" : "L"} ${x} ${y}`);
   }
@@ -141,7 +145,7 @@ function buildPathD(dots: WaveGraphDot[], metricIndex: number, maxVal: number): 
 
 function updatePaths(): void {
   const dots = getDots();
-  const maxDots = Math.ceil(containerWidth.value / WAVE_GRAPH_DOT_SPACING);
+  const maxDots = waveGraphDotCapacity(containerWidth.value);
   if (maxDots <= 0) return;
 
   const visibleStart = Math.max(0, dots.length - maxDots);
@@ -171,7 +175,7 @@ function updatePaths(): void {
 
     if (maxVal > 0) {
       const anyWaveStart = visibleDots.some((dot) => dot.waveStart);
-      opacity = anyWaveStart ? WAVE_GRAPH_DOT_OPACITY_WAVE_START : WAVE_GRAPH_DOT_OPACITY;
+      opacity = anyWaveStart ? dotOpacityWaveStart : dotOpacity;
 
       if (m === 4) {
         const lastDot = visibleDots[visibleDots.length - 1];
@@ -188,10 +192,10 @@ function onMouseMove(event: MouseEvent): void {
 
   const rect = overlayRef.value.getBoundingClientRect();
   const relativeX = event.clientX - rect.left;
-  const dotIndex = Math.floor(relativeX / WAVE_GRAPH_DOT_SPACING);
+  const dotIndex = Math.floor(relativeX / waveGraphDotSpacing);
 
   const dots = getDots();
-  const maxDots = Math.ceil(containerWidth.value / WAVE_GRAPH_DOT_SPACING);
+  const maxDots = waveGraphDotCapacity(containerWidth.value);
   const visibleStart = Math.max(0, dots.length - maxDots);
   const actualIndex = dotIndex + visibleStart;
 
@@ -269,7 +273,7 @@ onUnmounted(() => {
     <div class="wave-graph-separator"></div>
     <svg
       class="wave-graph-svg"
-      :viewBox="`0 0 ${containerWidth} ${WAVE_GRAPH_HEIGHT}`"
+      :viewBox="`0 0 ${containerWidth} ${waveGraphHeight}`"
       xmlns="http://www.w3.org/2000/svg"
       pointer-events="none"
     >
@@ -280,7 +284,7 @@ onUnmounted(() => {
         :stroke="p.stroke"
         :style="{ opacity: p.opacity }"
         fill="none"
-        :stroke-width="WAVE_GRAPH_DOT_SIZE"
+        :stroke-width="dotSize"
         stroke-linejoin="round"
         stroke-linecap="round"
       />
@@ -293,16 +297,16 @@ onUnmounted(() => {
       <div class="wg-row wg-title">
         <span class="wg-title-label">{{ timeAgo }}</span>
       </div>
-      <div class="wg-row" :style="{ color: WAVE_GRAPH_COLOR_DAMAGE }">
+      <div class="wg-row" :style="{ color: metricColors.damage }">
         <span class="wg-label">Damage</span><span class="wg-value">{{ tooltipDot.damage }}</span>
       </div>
-      <div class="wg-row" :style="{ color: WAVE_GRAPH_COLOR_MAX_ENEMY_HEALTH }">
+      <div class="wg-row" :style="{ color: metricColors.maxEnemyHealth }">
         <span class="wg-label">Peak HP</span><span class="wg-value">{{ tooltipDot.peakEnemyHp }}</span>
       </div>
-      <div class="wg-row" :style="{ color: WAVE_GRAPH_COLOR_GOLD_EARNED }">
+      <div class="wg-row" :style="{ color: metricColors.goldEarned }">
         <span class="wg-label">Gold</span><span class="wg-value">{{ tooltipDot.gold }}</span>
       </div>
-      <div class="wg-row" :style="{ color: WAVE_GRAPH_COLOR_GEMS_EARNED }">
+      <div class="wg-row" :style="{ color: metricColors.gemsEarned }">
         <span class="wg-label">Gems</span><span class="wg-value">{{ tooltipDot.gems }}</span>
       </div>
       <div class="wg-row" :style="{ color: tooltipDot?.baseHealthColor }">

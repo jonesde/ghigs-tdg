@@ -1,4 +1,4 @@
-import { BUILDING_LABELS, buildingDetailLines, PACKAGE_CLICK_RADIUS_TILES } from "@/sim/mapSites.js";
+import { buildingDetailLines, buildingLabels, packageClickRadiusTiles } from "@/sim/mapSites.js";
 import { cacheOpenGold } from "@/sim/runBonuses.js";
 import type { MapBuildingSnapshot, MapCacheSnapshot, SupplyDropSnapshot } from "@/sim/SimulationSnapshot.js";
 
@@ -32,7 +32,7 @@ export function siteHoverAt(
   worldX: number,
   worldY: number,
 ): SiteHoverRef | null {
-  const radius = tileSize * PACKAGE_CLICK_RADIUS_TILES;
+  const radius = tileSize * packageClickRadiusTiles;
   const radiusSquared = radius * radius;
   let bestDistance = radiusSquared;
   let best: SiteHoverRef | null = null;
@@ -96,5 +96,5 @@ export function siteHoverText(ref: SiteHoverRef, sites: SiteHoverSites, currentW
   }
   const building = sites.buildings.find((site) => site.id === ref.id);
   if (!building) return null;
-  return { title: BUILDING_LABELS[building.kind], lines: buildingDetailLines(building.kind, building.active) };
+  return { title: buildingLabels[building.kind], lines: buildingDetailLines(building.kind, building.active) };
 }

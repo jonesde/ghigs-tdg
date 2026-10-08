@@ -9,14 +9,14 @@ import {
   normalizeDecisionIntervalMs,
   normalizeTemperature,
 } from "@/commanders/llm/types.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { PersistStateSchema } from "@/content/schemas/persist.js";
 import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
-import { SELL_OPTION_GEM_COST } from "@/sim/Constants.js";
 import { useUiStore } from "@/stores/ui.js";
 
-const LEGACY_STORAGE_KEYS = ["gempath_save_v1", "lol_ya_tdg_save_1"];
-export const STORAGE_KEY = "ghigs_save_1";
-const CURRENT_SAVE_VERSION = 7;
+const legacyStorageKeys = ["gempath_save_v1", "lol_ya_tdg_save_1"];
+export const storageKey = "ghigs_save_1";
+const currentSaveVersion = 7;
 
 export interface TowerUnlocks {
   levels: boolean[];
@@ -160,7 +160,7 @@ function blankThemeProgress(): ThemeProgress {
 
 function defaultState(): PersistStateShape {
   return {
-    saveVersion: CURRENT_SAVE_VERSION,
+    saveVersion: currentSaveVersion,
     gems: 0,
     themeProgress: {},
     activeWaves: {},
@@ -288,7 +288,7 @@ function stripLegacyProgressFields(shape: PersistStateShape): void {
 
 function migrateV1ToV2(parsed: Record<string, unknown>): PersistStateShape {
   const defaults = defaultState();
-  const result: PersistStateShape = { ...defaults, ...parsed, saveVersion: CURRENT_SAVE_VERSION };
+  const result: PersistStateShape = { ...defaults, ...parsed, saveVersion: currentSaveVersion };
   result.difficulty = mergeWithDefaults(defaults.difficulty, parsed.difficulty);
   result.generalAddons = mergeWithDefaults(defaults.generalAddons, parsed.generalAddons);
   result.themeProgress = mergedThemeProgress(parsed);
@@ -343,13 +343,13 @@ function migrateV2ToV3(parsed: Record<string, unknown>): PersistStateShape {
   }
   result.llmCommanders = fillCommanderTimeouts(parsed.llmCommanders);
   result.baseUnlocks = mergeBaseUnlocks(result.baseUnlocks);
-  result.saveVersion = CURRENT_SAVE_VERSION;
+  result.saveVersion = currentSaveVersion;
   return result;
 }
 
 function migrateV3ToV4(parsed: Record<string, unknown>): PersistStateShape {
   const result = migrateCurrentVersion(parsed);
-  result.saveVersion = CURRENT_SAVE_VERSION;
+  result.saveVersion = currentSaveVersion;
   return result;
 }
 
@@ -357,7 +357,7 @@ function migrateV3ToV4(parsed: Record<string, unknown>): PersistStateShape {
 // (see legacyThemeProgress) and stamps the new version.
 function migrateV4ToV5(parsed: Record<string, unknown>): PersistStateShape {
   const result = migrateCurrentVersion(parsed);
-  result.saveVersion = CURRENT_SAVE_VERSION;
+  result.saveVersion = currentSaveVersion;
   return result;
 }
 
@@ -366,7 +366,7 @@ function migrateV4ToV5(parsed: Record<string, unknown>): PersistStateShape {
 // check, which would otherwise keep saveVersion 5 from the spread.
 function migrateV5ToV6(parsed: Record<string, unknown>): PersistStateShape {
   const result = migrateCurrentVersion(parsed);
-  result.saveVersion = CURRENT_SAVE_VERSION;
+  result.saveVersion = currentSaveVersion;
   return result;
 }
 
@@ -389,10 +389,10 @@ function migrateV6ToV7(parsed: Record<string, unknown>): PersistStateShape {
     // Owned but with no mode recorded (or hand-edited): keep the purchase on Full Refund.
     generalAddons.sellActive = purchasesHeld > 0 ? "refund" : null;
   }
-  result.gems += SELL_OPTION_GEM_COST * Math.max(0, purchasesHeld - 1);
+  result.gems += getGameContent().economy.sellOptionGemCost * Math.max(0, purchasesHeld - 1);
   delete generalAddons.sellRefundUnlocked;
   delete generalAddons.sellDiscountUnlocked;
-  result.saveVersion = CURRENT_SAVE_VERSION;
+  result.saveVersion = currentSaveVersion;
   return result;
 }
 
@@ -419,7 +419,7 @@ export function migrateToCurrent(parsed: Record<string, unknown>): PersistStateS
   if (version === 6) {
     return migrateV6ToV7(parsed);
   }
-  if (version === CURRENT_SAVE_VERSION) {
+  if (version === currentSaveVersion) {
     return migrateCurrentVersion(parsed);
   }
   console.warn(`Unknown save version ${version}, best-effort migrating to current`);
@@ -441,7 +441,7 @@ export const usePersistStore = defineStore("persist", {
   actions: {
     save() {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.$state));
+        localStorage.setItem(storageKey, JSON.stringify(this.$state));
       } catch {
         const uiStore = useUiStore();
         uiStore.showNotification("Save failed - progress may not be persisted.");
@@ -450,22 +450,22 @@ export const usePersistStore = defineStore("persist", {
 
     load() {
       try {
-        // Both legacy keys migrate into STORAGE_KEY; if both are present the
+        // Both legacy keys migrate into storageKey; if both are present the
         // later entry (the more recent name) overwrites the earlier migration.
-        for (const legacyKey of LEGACY_STORAGE_KEYS) {
+        for (const legacyKey of legacyStorageKeys) {
           const legacyRawData = localStorage.getItem(legacyKey);
           if (legacyRawData) {
             try {
               const parsed = JSON.parse(legacyRawData);
               const migrated = migrateToCurrent(parsed);
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+              localStorage.setItem(storageKey, JSON.stringify(migrated));
               localStorage.removeItem(legacyKey);
             } catch {
               // Corrupted legacy save - ignore, proceed with fresh load
             }
           }
         }
-        const rawData = localStorage.getItem(STORAGE_KEY);
+        const rawData = localStorage.getItem(storageKey);
         if (rawData) {
           try {
             const parsed = JSON.parse(rawData);
@@ -528,7 +528,7 @@ export const usePersistStore = defineStore("persist", {
 
     setHighestUnlockedMap(themeId: string, index: number) {
       const progress = this.ensureThemeProgress(themeId);
-      progress.highestUnlockedMap = Math.max(0, Math.min(index, 35));
+      progress.highestUnlockedMap = Math.max(0, Math.min(index, getGameContent().maps.levels.length - 1));
       this.save();
     },
 
@@ -543,7 +543,7 @@ export const usePersistStore = defineStore("persist", {
     },
 
     maybeUnlockNextMap(themeId: string, mapIndex: number) {
-      if (mapIndex >= 0 && mapIndex + 1 < 36) {
+      if (mapIndex >= 0 && mapIndex + 1 < getGameContent().maps.levels.length) {
         const progress = this.ensureThemeProgress(themeId);
         progress.highestUnlockedMap = Math.max(progress.highestUnlockedMap, mapIndex + 1);
         this.save();

@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { FIXED_DT } from "@/sim/Constants.js";
 import type { AttackTarget } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { NoopParticleSpawner } from "@/sim/ParticleSystem.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
 import { makeBastionMap } from "../../../helpers/mock-grid.js";
@@ -24,7 +24,7 @@ function drive(enemyManager: EnemyManager, physicsWorld: PhysicsWorld, steps: nu
   for (let step = 0; step < steps; step++) {
     physicsWorld.step();
     for (const enemy of enemyManager.enemies) {
-      enemy.postPhysics(FIXED_DT);
+      enemy.postPhysics(fixedDeltaSeconds);
     }
   }
 }

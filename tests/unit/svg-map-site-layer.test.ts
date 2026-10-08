@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MapSiteLayer, siteGlyphMarkup } from "@/render/svg/MapSiteLayer.js";
 import type { SiteArtMeta } from "@/render/themes/index.js";
-import { BUILDING_COLORS, BUILDING_ICONS, BUILDING_LABELS, CACHE_ICON } from "@/sim/mapSites.js";
+import { buildingColors, buildingIcons, buildingLabels, cacheIcon } from "@/sim/mapSites.js";
 import type { BonusOffer } from "@/sim/runBonuses.js";
 import { cacheOpenGold } from "@/sim/runBonuses.js";
 import type { MapCacheSnapshot, SupplyDropSnapshot } from "@/sim/SimulationSnapshot.js";
@@ -81,11 +81,11 @@ describe("map site layer", () => {
     expect(first).toContain('stroke="#c98aff"');
     expect(first.indexOf('class="site-pulse"')).toBeLessThan(first.indexOf('stroke="#c98aff"'));
     // Icon characters, so a cache and each building kind read without color.
-    expect(first).toContain(`>${CACHE_ICON}</text>`);
+    expect(first).toContain(`>${cacheIcon}</text>`);
     for (const building of snapshot.meta.mapBuildings ?? []) {
-      expect(first).toContain(`aria-label="${BUILDING_LABELS[building.kind]}:`);
-      expect(first).toContain(`>${BUILDING_ICONS[building.kind]}</text>`);
-      expect(first).toContain(`fill="${BUILDING_COLORS[building.kind]}"`);
+      expect(first).toContain(`aria-label="${buildingLabels[building.kind]}:`);
+      expect(first).toContain(`>${buildingIcons[building.kind]}</text>`);
+      expect(first).toContain(`fill="${buildingColors[building.kind]}"`);
     }
     expect(first).not.toContain("<title>");
 
@@ -131,7 +131,7 @@ describe("map site layer", () => {
     );
     for (const building of snapshot.meta.mapBuildings ?? []) {
       expect(markup).toContain(`<use href="#site-building-${building.kind}"`);
-      expect(markup).toContain(`aria-label="${BUILDING_LABELS[building.kind]}:`);
+      expect(markup).toContain(`aria-label="${buildingLabels[building.kind]}:`);
     }
     expect(markup).toContain('<use href="#site-supply-drop"');
     // The pulse ring stays a stroked element of its own: its CSS animation
@@ -140,7 +140,7 @@ describe("map site layer", () => {
     expect(markup).toContain('class="site-pulse"');
     expect(markup).not.toContain("</text>");
     for (const building of snapshot.meta.mapBuildings ?? []) {
-      expect(markup).not.toContain(`fill="${BUILDING_COLORS[building.kind]}"`);
+      expect(markup).not.toContain(`fill="${buildingColors[building.kind]}"`);
     }
   });
 
@@ -210,8 +210,8 @@ describe("siteGlyphMarkup", () => {
     expect(withArt).toContain('<use href="#site-supply-drop" x="77" y="113" width="26" height="26"');
     expect(withArt).toContain('<use href="#site-building-beacon" x="185" y="221"');
     expect(withoutArt).toContain("<polygon points=");
-    expect(withoutArt).toContain(`>${CACHE_ICON}</text>`);
-    expect(withoutArt).toContain(`>${BUILDING_ICONS.beacon}</text>`);
+    expect(withoutArt).toContain(`>${cacheIcon}</text>`);
+    expect(withoutArt).toContain(`>${buildingIcons.beacon}</text>`);
     for (const markup of [withArt, withoutArt]) {
       expect(markup).toContain('aria-label="Boss package');
       expect(markup).toContain('aria-label="Beacon: Adjacent towers have');
@@ -227,9 +227,9 @@ describe("siteGlyphMarkup", () => {
 
     const withoutArt = siteGlyphMarkup([], [], [unpoweredBuilding], 3, null);
     expect(withoutArt).toContain(
-      `<g opacity="0.45"><rect x="185" y="221" width="26" height="26" fill="${BUILDING_COLORS.beacon}"`,
+      `<g opacity="0.45"><rect x="185" y="221" width="26" height="26" fill="${buildingColors.beacon}"`,
     );
-    expect(withoutArt).toContain(`>${BUILDING_ICONS.beacon}</text></g>`);
+    expect(withoutArt).toContain(`>${buildingIcons.beacon}</text></g>`);
 
     for (const markup of [withArt, withoutArt]) {
       expect(markup).toContain("Inactive — no tower beside it.");

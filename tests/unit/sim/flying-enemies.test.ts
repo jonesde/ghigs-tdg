@@ -9,8 +9,8 @@ import {
 } from "@/commanders/llm/types.js";
 import type { CommanderObservation } from "@/commanders/observation.js";
 import enemiesContent from "@/content/data/enemies.json";
+import { getGameContent } from "@/content/gameContent.js";
 import { EnemiesContentSchema, EnemyMetaSchema } from "@/content/schemas/enemies.js";
-import { ENEMY_TYPES, FIXED_DT } from "@/sim/Constants.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import { Enemy as EnemyEntity, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
@@ -28,6 +28,7 @@ import { generateProgressiveMap, progressiveConfigForIndex } from "@/sim/grid/Pr
 import { getCrowdAgentProfile } from "@/sim/navmesh/CrowdManager.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import { Tower as TowerEntity } from "@/sim/towers/Tower.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
@@ -36,12 +37,14 @@ import { createTestEngine } from "../../helpers/engine-snapshot";
 import { makeBastionMap, makeMapData } from "../../helpers/mock-grid";
 import { makeParticleSystem } from "../../helpers/mock-managers";
 
-const ENEMY_GROUP = 0x0001;
-const PROJECTILE_GROUP = 0x0002;
-const SENSOR_GROUP = 0x0004;
-const BASE_GROUP = 0x0008;
-const FLYER_GROUPS_SOLO = (ENEMY_GROUP << 16) | (BASE_GROUP | PROJECTILE_GROUP | SENSOR_GROUP);
-const FLYER_GROUPS_WITH_ENEMIES = FLYER_GROUPS_SOLO | ENEMY_GROUP;
+const enemyTypes = getGameContent().enemies.types;
+
+const enemyGroup = 0x0001;
+const projectileGroup = 0x0002;
+const sensorGroup = 0x0004;
+const baseGroup = 0x0008;
+const flyerGroupsSolo = (enemyGroup << 16) | (baseGroup | projectileGroup | sensorGroup);
+const flyerGroupsWithEnemies = flyerGroupsSolo | enemyGroup;
 
 function laneGrid(): Grid {
   return new Grid(makeMapData({ width: 6, height: 3, spawns: [{ x: 0, y: 1 }], base: { x: 5, y: 1 } }));
@@ -97,18 +100,18 @@ describe("flying enemy content", () => {
     ]);
     for (const typeName of ["minion", "runner", "tank", "shielded", "healer", "mender", "boss"]) {
       expect(types[typeName as keyof typeof types].flyingHeight).toBe(0);
-      expect(ENEMY_TYPES[typeName]?.flyingHeight).toBe(0);
+      expect(enemyTypes[typeName]?.flyingHeight).toBe(0);
     }
     expect(types.broodwing.flyingHeight).toBe(1);
     expect(types.flyer.flyingHeight).toBe(2);
     expect(types.aegis.flyingHeight).toBe(3);
     expect(types.skyhold.flyingHeight).toBe(4);
     expect(types.jet.flyingHeight).toBe(5);
-    expect(ENEMY_TYPES.broodwing?.flyingHeight).toBe(1);
-    expect(ENEMY_TYPES.flyer?.flyingHeight).toBe(2);
-    expect(ENEMY_TYPES.aegis?.flyingHeight).toBe(3);
-    expect(ENEMY_TYPES.skyhold?.flyingHeight).toBe(4);
-    expect(ENEMY_TYPES.jet?.flyingHeight).toBe(5);
+    expect(enemyTypes.broodwing?.flyingHeight).toBe(1);
+    expect(enemyTypes.flyer?.flyingHeight).toBe(2);
+    expect(enemyTypes.aegis?.flyingHeight).toBe(3);
+    expect(enemyTypes.skyhold?.flyingHeight).toBe(4);
+    expect(enemyTypes.jet?.flyingHeight).toBe(5);
     expect(readFlyingHeight({})).toBe(0);
     expect(readFlyingHeight(undefined)).toBe(0);
   });
@@ -237,7 +240,7 @@ describe("flight routes", () => {
     const towerAt = (tileX: number, tileY: number) => tileX === 2 && tileY === 1;
     const jet = new EnemyEntity("jet", 1, 0, grid, 1);
     jet.liveTowerAt = towerAt;
-    jet.computeIntent(FIXED_DT, null);
+    jet.computeIntent(fixedDeltaSeconds, null);
     expect(jet.agent).toBeNull();
     expect(jet.flightPoints).toHaveLength(2);
     const base = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
@@ -246,19 +249,19 @@ describe("flight routes", () => {
     grid.tiles[1]![2]!.height = 2;
     const flyer = new EnemyEntity("flyer", 1, 0, grid, 1);
     flyer.liveTowerAt = () => false;
-    flyer.computeIntent(FIXED_DT, null);
+    flyer.computeIntent(fixedDeltaSeconds, null);
     expect(flyer.flightPoints).toHaveLength(2);
 
     flyer.liveTowerAt = towerAt;
     grid.pathVersion += 1;
     flyer.clearFlightPolyline();
-    flyer.computeIntent(FIXED_DT, null);
+    flyer.computeIntent(fixedDeltaSeconds, null);
     expect(flyer.flightPoints.length).toBeGreaterThan(2);
 
     flyer.liveTowerAt = () => false;
     grid.pathVersion += 1;
     flyer.clearFlightPolyline();
-    flyer.computeIntent(FIXED_DT, null);
+    flyer.computeIntent(fixedDeltaSeconds, null);
     expect(flyer.flightPoints).toHaveLength(2);
   });
 
@@ -301,7 +304,7 @@ describe("flight routes", () => {
 
     const flyer = new EnemyEntity("flyer", 1, 0, grid, 1);
     placeEnemy(flyer, 0, 1);
-    flyer.computeIntent(FIXED_DT, null);
+    flyer.computeIntent(fixedDeltaSeconds, null);
     expect(flyer.flightPoints.length).toBeGreaterThan(2);
     let usedCorridor = false;
     for (const point of flyer.flightPoints) {
@@ -314,7 +317,7 @@ describe("flight routes", () => {
 
     placeEnemy(flyer, 3, 0);
     flyer.lastMoveTargetWorld = null;
-    flyer.postPhysics(FIXED_DT);
+    flyer.postPhysics(fixedDeltaSeconds);
     const landed = flyer.currentTile();
     expect(grid.isVoid(landed.x, landed.y)).toBe(false);
     expect(canTraverseTile(grid, landed.x, landed.y, flyer.flyingHeight, flyer.liveTowerAt)).toBe(true);
@@ -329,7 +332,7 @@ describe("flight routes", () => {
     expect(grid.worldOriginX).not.toBe(0);
     const flyer = new EnemyEntity("flyer", 1, 0, grid, 1);
     placeEnemy(flyer, spawn.x, spawn.y);
-    flyer.computeIntent(FIXED_DT, null);
+    flyer.computeIntent(fixedDeltaSeconds, null);
     expect(flyer.flightPoints.length).toBeGreaterThan(1);
     for (const point of flyer.flightPoints) {
       const tile = grid.worldToTile(point.x, point.y);
@@ -368,7 +371,7 @@ describe("flight routes", () => {
     flyer.liveTowerAt = (tileX, tileY) => tileX === 2 && tileY === 1;
     const beforeX = flyer.x;
     const beforeY = flyer.y;
-    flyer.computeIntent(FIXED_DT, null);
+    flyer.computeIntent(fixedDeltaSeconds, null);
     expect(flyer.x).toBe(beforeX);
     expect(flyer.y).toBe(beforeY);
     expect(flyer.currentTile()).toEqual({ x: 2, y: 1 });
@@ -388,7 +391,7 @@ describe("flight attacks", () => {
     const tower = damageTower(2, 1);
     bindTower(flyer, tower);
     placeEnemy(flyer, 2, 1);
-    flyer.postPhysics(FIXED_DT);
+    flyer.postPhysics(fixedDeltaSeconds);
     expect(tower.health).toBe(100 - flyer.attackDamage);
     const afterEntry = tower.health;
     flyer.postPhysics(1 / flyer.attackSpeed - 0.05);
@@ -403,14 +406,14 @@ describe("flight attacks", () => {
     const immune = damageTower(2, 1, true);
     bindTower(flyer, immune);
     placeEnemy(flyer, 2, 1);
-    flyer.postPhysics(FIXED_DT);
+    flyer.postPhysics(fixedDeltaSeconds);
     expect(immune.health).toBe(100);
 
     const aside = new EnemyEntity("flyer", 1, 0, grid, 1);
     const tower = damageTower(2, 1);
     bindTower(aside, tower);
     placeEnemy(aside, 1, 1);
-    aside.postPhysics(FIXED_DT);
+    aside.postPhysics(fixedDeltaSeconds);
     expect(tower.health).toBe(100);
   });
 
@@ -426,9 +429,9 @@ describe("flight attacks", () => {
       bindTower(flyer, openTower);
       placeEnemy(flyer, 2, 1);
       flyer.applySiege(openTower);
-      writeFlightVelocities([flyer], grid, FIXED_DT, null);
+      writeFlightVelocities([flyer], grid, fixedDeltaSeconds, null);
       expect(flyer.motionLock).toBe("park");
-      flyer.postPhysics(FIXED_DT);
+      flyer.postPhysics(fixedDeltaSeconds);
       expect(openTower.health).toBeLessThan(100);
 
       const closed = new EnemyEntity("flyer", 1, 0, grid, 1);
@@ -440,14 +443,14 @@ describe("flight attacks", () => {
       bindTower(closed, tallTower);
       placeEnemy(closed, 3, 0);
       closed.applySiege(tallTower);
-      writeFlightVelocities([closed], grid, FIXED_DT, null);
+      writeFlightVelocities([closed], grid, fixedDeltaSeconds, null);
       expect(closed.motionLock).toBe("park");
       expect(closed.currentTile()).toEqual({ x: 3, y: 0 });
-      closed.postPhysics(FIXED_DT);
+      closed.postPhysics(fixedDeltaSeconds);
       expect(tallTower.health).toBeLessThan(100);
 
       tallTower.isGhost = true;
-      closed.computeIntent(FIXED_DT, null);
+      closed.computeIntent(fixedDeltaSeconds, null);
       expect(closed.routingMode).toBe("default");
       const base = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
       expect(closed.flightPoints[closed.flightPoints.length - 1]).toEqual(base);
@@ -466,7 +469,7 @@ describe("flight attacks", () => {
     placeEnemy(flyer, 2, 1);
     flyer.applySiege(tower);
     expect(flyer.motionLock).toBe("none");
-    flyer.postPhysics(FIXED_DT);
+    flyer.postPhysics(fixedDeltaSeconds);
     expect(tower.health).toBe(100);
   });
 });
@@ -514,7 +517,7 @@ describe("flight physics", () => {
       expect(flyer.motionLock).toBe("park");
       const parked = flyer.body!.translation();
       flyer.body!.setLinvel({ x: 80, y: 0 }, true);
-      writeFlightVelocities([flyer], grid, FIXED_DT, null);
+      writeFlightVelocities([flyer], grid, fixedDeltaSeconds, null);
       physics.step();
       const held = flyer.body!.translation();
       expect(Math.hypot(held.x - parked.x, held.y - parked.y)).toBeLessThan(grid.tileSize * 0.25);
@@ -537,15 +540,15 @@ describe("flight physics", () => {
       expect(minion!.agent).not.toBeNull();
       const physics = enemyManager.physicsWorld!;
       physics.setEnemyEnemyCollisions(true);
-      expect(jet!.body!.collider(0).collisionGroups()).toBe(FLYER_GROUPS_WITH_ENEMIES);
+      expect(jet!.body!.collider(0).collisionGroups()).toBe(flyerGroupsWithEnemies);
       physics.setEnemyEnemyCollisions(false);
-      expect(jet!.body!.collider(0).collisionGroups()).toBe(FLYER_GROUPS_SOLO);
+      expect(jet!.body!.collider(0).collisionGroups()).toBe(flyerGroupsSolo);
 
       const grid = engine.grid!;
       const corner = grid.tileToWorld(0, 0);
       placeEnemy(jet!, 0, 0);
       jet!.ballisticTimer = 1;
-      engine.update(FIXED_DT);
+      engine.update(fixedDeltaSeconds);
       expect(Math.abs(jet!.x - corner.x)).toBeLessThan(1);
       expect(Math.abs(jet!.y - corner.y)).toBeLessThan(1);
       expect(jet!.ballisticTimer).toBeGreaterThan(0);
@@ -621,7 +624,7 @@ describe("flight distance", () => {
       if (!enemyManager) throw new Error("engine has no enemy manager");
       const flyer = enemyManager.spawn("flyer", 1, 0, 1);
       expect(flyer).not.toBeNull();
-      engine.update(FIXED_DT);
+      engine.update(fixedDeltaSeconds);
       const openSnapshot = buildSnapshot(engine, 0);
       const openEnemy = openSnapshot.enemies.find((enemy) => enemy.id === flyer!.id);
       const openTile = flyer!.currentTile();
@@ -636,7 +639,7 @@ describe("flight distance", () => {
 
       const tower = engine.towerManager!.build("basic", bridge.x, bridge.y, engine.persistState, grid);
       expect(tower).not.toBeNull();
-      engine.update(FIXED_DT);
+      engine.update(fixedDeltaSeconds);
       const sealedSnapshot = buildSnapshot(engine, 0);
       const sealedEnemy = sealedSnapshot.enemies.find((enemy) => enemy.id === flyer!.id);
       const sealedTile = flyer!.currentTile();
@@ -684,13 +687,13 @@ describe("flying wave rolls", () => {
       for (let waveNumber = 1; waveNumber <= 6; waveNumber++) {
         for (const entry of generate(seed, waveNumber)) {
           expect(entry.type === "flyer" || entry.type === "jet" || entry.type === "aegis").toBe(false);
-          expect(ENEMY_TYPES[entry.type]).toBeDefined();
+          expect(enemyTypes[entry.type]).toBeDefined();
         }
       }
       const wave12 = generate(seed, 12);
       const wave22 = generate(seed, 22);
       const wave32 = generate(seed, 32);
-      for (const entry of [...wave12, ...wave22, ...wave32]) expect(ENEMY_TYPES[entry.type]).toBeDefined();
+      for (const entry of [...wave12, ...wave22, ...wave32]) expect(enemyTypes[entry.type]).toBeDefined();
       expect(wave12.some((entry) => entry.type === "jet" || entry.type === "aegis")).toBe(false);
       expect(wave22.some((entry) => entry.type === "aegis")).toBe(false);
       if (wave12.some((entry) => entry.type === "flyer")) sawFlyer = true;
@@ -716,10 +719,10 @@ describe("flight recovery", () => {
     stopWhenParked: boolean,
   ): void {
     for (let tick = 0; tick < maxTicks; tick++) {
-      flyer.computeIntent(FIXED_DT, null);
-      writeFlightVelocities([flyer], grid, FIXED_DT, null);
+      flyer.computeIntent(fixedDeltaSeconds, null);
+      writeFlightVelocities([flyer], grid, fixedDeltaSeconds, null);
       physics.step();
-      flyer.postPhysics(FIXED_DT);
+      flyer.postPhysics(fixedDeltaSeconds);
       if (stopWhenParked && flyer.motionLock === "park") return;
     }
   }
@@ -817,26 +820,26 @@ describe("flight recovery", () => {
       sealHeights();
       const flyer = new EnemyEntity("flyer", 1, 0, grid, 1);
       placeEnemy(flyer, 0, 1);
-      flyer.computeIntent(FIXED_DT, null);
+      flyer.computeIntent(fixedDeltaSeconds, null);
       expect(flyer.flightPoints).toHaveLength(1);
       expect(flyer.flightBuiltPathVersion).toBe(grid.pathVersion);
       expect(unreachableWarnings(warnSpy)).toHaveLength(1);
 
       // Same pathVersion: no replan, no repeat warning.
-      flyer.computeIntent(FIXED_DT, null);
-      flyer.computeIntent(FIXED_DT, null);
+      flyer.computeIntent(fixedDeltaSeconds, null);
+      flyer.computeIntent(fixedDeltaSeconds, null);
       expect(unreachableWarnings(warnSpy)).toHaveLength(1);
 
       openHeights();
       grid.pathVersion += 1;
-      flyer.computeIntent(FIXED_DT, null);
+      flyer.computeIntent(fixedDeltaSeconds, null);
       expect(flyer.flightPoints.length).toBeGreaterThan(1);
       expect(unreachableWarnings(warnSpy)).toHaveLength(1);
 
       // Blocked again after a success: the id was un-warned, so a fresh warning fires.
       sealHeights();
       grid.pathVersion += 1;
-      flyer.computeIntent(FIXED_DT, null);
+      flyer.computeIntent(fixedDeltaSeconds, null);
       expect(flyer.flightPoints).toHaveLength(1);
       expect(unreachableWarnings(warnSpy)).toHaveLength(2);
     } finally {
@@ -852,7 +855,7 @@ describe("flight recovery", () => {
       const flyer = new EnemyEntity("flyer", 1, 0, grid, 1);
       placeEnemy(flyer, 2, 1);
       flyer.applyRoute([{ x: 2, y: 1 }], "hold");
-      flyer.computeIntent(FIXED_DT, null);
+      flyer.computeIntent(fixedDeltaSeconds, null);
       expect(flyer.flightPoints).toHaveLength(1);
       expect(unreachableWarnings(warnSpy)).toHaveLength(0);
     } finally {
@@ -869,22 +872,22 @@ describe("flight recovery", () => {
       const flyer = new EnemyEntity("flyer", 1, 0, grid, 1);
       physics.addEnemy(flyer);
       placeEnemy(flyer, 2, 1);
-      flyer.computeIntent(FIXED_DT, null);
+      flyer.computeIntent(fixedDeltaSeconds, null);
       expect(flyer.flightPoints.length).toBeGreaterThan(1);
 
       for (let row = 0; row < grid.height; row++) {
         for (let column = 0; column < grid.width; column++) grid.tiles[row]![column]!.height = 4;
       }
       grid.pathVersion += 1;
-      flyer.postPhysics(FIXED_DT);
+      flyer.postPhysics(fixedDeltaSeconds);
       expect(flyer.flightPoints).toHaveLength(0);
       expect(flyer.flightBuiltPathVersion).toBe(grid.pathVersion);
       expect(unreachableWarnings(warnSpy)).toHaveLength(1);
 
       for (let tick = 0; tick < 10; tick++) {
-        flyer.computeIntent(FIXED_DT, null);
-        writeFlightVelocities([flyer], grid, FIXED_DT, null);
-        flyer.postPhysics(FIXED_DT);
+        flyer.computeIntent(fixedDeltaSeconds, null);
+        writeFlightVelocities([flyer], grid, fixedDeltaSeconds, null);
+        flyer.postPhysics(fixedDeltaSeconds);
       }
       expect(unreachableWarnings(warnSpy)).toHaveLength(1);
       expect(flyer.flightPoints).toHaveLength(0);

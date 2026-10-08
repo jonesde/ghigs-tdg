@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getGameContent } from "@/content/gameContent.js";
 import { applyCommand } from "@/sim/applyCommand.js";
 import type { Command } from "@/sim/Command.js";
 import type { CommandDispatcher } from "@/sim/CommandDispatcher.js";
-import { BETWEEN_WAVES_TIMER, GameState, MILESTONE_WAVES } from "@/sim/Constants.js";
-import { CANCEL_BUILD_WINDOW_MS } from "@/sim/ConstantsTower.js";
 import { dispatchCommand, setCommandDispatcher } from "@/sim/commandBus.js";
 import { createCommandQueueReceipt, drainCommandQueue } from "@/sim/commandDrain.js";
 import { GameEngine } from "@/sim/GameEngine.js";
+import { GameState } from "@/sim/GameRunState.js";
 import { cacheOpenGold } from "@/sim/runBonuses.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import { type CommandGridInfo, validateCommand } from "@/sim/validateCommand.js";
@@ -18,7 +18,7 @@ import {
   MockHostBindings,
 } from "../../helpers/mock-stores.js";
 
-const TEST_GRID: CommandGridInfo = { width: 20, height: 15, tileSize: 36 };
+const testGrid: CommandGridInfo = { width: 20, height: 15, tileSize: 36 };
 
 describe("validateCommand (pure)", () => {
   it("rejects an unknown towerType for selectBuildType", () => {
@@ -43,33 +43,33 @@ describe("validateCommand (pure)", () => {
   });
 
   it("rejects NaN and out-of-bounds clicks", () => {
-    expect(validateCommand({ commandId: 1, type: "input:click", worldX: Number.NaN, worldY: 10 }, TEST_GRID)).toMatch(
+    expect(validateCommand({ commandId: 1, type: "input:click", worldX: Number.NaN, worldY: 10 }, testGrid)).toMatch(
       /finite/,
     );
     expect(
       validateCommand(
-        { commandId: 1, type: "input:click", worldX: TEST_GRID.width * TEST_GRID.tileSize + 5, worldY: 10 },
-        TEST_GRID,
+        { commandId: 1, type: "input:click", worldX: testGrid.width * testGrid.tileSize + 5, worldY: 10 },
+        testGrid,
       ),
     ).toMatch(/bounds/);
-    expect(validateCommand({ commandId: 1, type: "input:click", worldX: -5, worldY: 10 }, TEST_GRID)).toMatch(/bounds/);
+    expect(validateCommand({ commandId: 1, type: "input:click", worldX: -5, worldY: 10 }, testGrid)).toMatch(/bounds/);
   });
 
   it("accepts an in-bounds click", () => {
-    expect(validateCommand({ commandId: 1, type: "input:click", worldX: 40, worldY: 40 }, TEST_GRID)).toBeNull();
+    expect(validateCommand({ commandId: 1, type: "input:click", worldX: 40, worldY: 40 }, testGrid)).toBeNull();
   });
 
   it("accepts undoProgressivePlacement", () => {
-    expect(validateCommand({ commandId: 1, type: "action:undoProgressivePlacement" }, TEST_GRID)).toBeNull();
+    expect(validateCommand({ commandId: 1, type: "action:undoProgressivePlacement" }, testGrid)).toBeNull();
   });
 
   it("bounds the progressive block template index at the catalog size", () => {
     const base = { commandId: 1, rotation: 0, blockX: 1, blockY: 1 } as const;
-    expect(validateCommand({ ...base, type: "action:placeProgressiveBlock", templateIndex: 11 }, TEST_GRID)).toBeNull();
-    expect(validateCommand({ ...base, type: "action:placeProgressiveBlock", templateIndex: 12 }, TEST_GRID)).toMatch(
+    expect(validateCommand({ ...base, type: "action:placeProgressiveBlock", templateIndex: 11 }, testGrid)).toBeNull();
+    expect(validateCommand({ ...base, type: "action:placeProgressiveBlock", templateIndex: 12 }, testGrid)).toMatch(
       /0-11/,
     );
-    expect(validateCommand({ ...base, type: "action:placeProgressiveBlock", templateIndex: -1 }, TEST_GRID)).toMatch(
+    expect(validateCommand({ ...base, type: "action:placeProgressiveBlock", templateIndex: -1 }, testGrid)).toMatch(
       /0-11/,
     );
   });
@@ -93,11 +93,11 @@ describe("validateCommand (pure)", () => {
   it("caps enemyIds and waypoints at 256 entries", () => {
     const manyIds = Array.from({ length: 257 }, (_, index) => index + 1);
     expect(
-      validateCommand({ commandId: 1, type: "llm:routeGroup", enemyIds: manyIds, waypoints: [] }, TEST_GRID),
+      validateCommand({ commandId: 1, type: "llm:routeGroup", enemyIds: manyIds, waypoints: [] }, testGrid),
     ).toMatch(/256/);
     const manyWaypoints = Array.from({ length: 257 }, () => ({ x: 0, y: 0 }));
     expect(
-      validateCommand({ commandId: 1, type: "llm:routeGroup", enemyIds: [1], waypoints: manyWaypoints }, TEST_GRID),
+      validateCommand({ commandId: 1, type: "llm:routeGroup", enemyIds: [1], waypoints: manyWaypoints }, testGrid),
     ).toMatch(/256/);
   });
 
@@ -105,14 +105,14 @@ describe("validateCommand (pure)", () => {
     expect(
       validateCommand(
         { commandId: 1, type: "llm:routeGroup", enemyIds: [1], hold: true, holdTile: { x: 1.5, y: 2 }, waypoints: [] },
-        TEST_GRID,
+        testGrid,
       ),
     ).toMatch(/finite integer/);
     expect(
-      validateCommand({ commandId: 1, type: "llm:routeGroup", enemyIds: [1], waypoints: [{ x: 99, y: 0 }] }, TEST_GRID),
+      validateCommand({ commandId: 1, type: "llm:routeGroup", enemyIds: [1], waypoints: [{ x: 99, y: 0 }] }, testGrid),
     ).toMatch(/bounds/);
     expect(
-      validateCommand({ commandId: 1, type: "llm:siegeTower", enemyIds: [1], towerTile: { x: 0, y: -1 } }, TEST_GRID),
+      validateCommand({ commandId: 1, type: "llm:siegeTower", enemyIds: [1], towerTile: { x: 0, y: -1 } }, testGrid),
     ).toMatch(/bounds/);
   });
 
@@ -159,7 +159,7 @@ describe("command intake through applyCommand", () => {
         if (engine.towerManager!.towerAt(tileX, tileY)) continue;
         const tower = engine.towerManager!.build("basic", tileX, tileY, persistState, grid);
         if (!tower) continue;
-        tower._gameSeconds = (CANCEL_BUILD_WINDOW_MS + 1000) / 1000;
+        tower._gameSeconds = (getGameContent().towers.tuning.cancelBuildWindowMs + 1000) / 1000;
         return tower;
       }
     }
@@ -319,13 +319,14 @@ describe("command intake through applyCommand", () => {
     expect(waveManager.currentWave).toBe(50);
     expect(waveManager.betweenWaves).toBe(true);
     expect(waveManager.countdownActive).toBe(true);
-    expect(waveManager.countdownTimer).toBe(BETWEEN_WAVES_TIMER);
+    const betweenWavesTimer = getGameContent().economy.betweenWavesTimer;
+    expect(waveManager.countdownTimer).toBe(betweenWavesTimer);
     expect(waveManager.active).toBe(false);
-    expect(engine.runState.waveCountdown).toEqual({ remaining: Math.ceil(BETWEEN_WAVES_TIMER), nextWave: 51 });
+    expect(engine.runState.waveCountdown).toEqual({ remaining: Math.ceil(betweenWavesTimer), nextWave: 51 });
     for (const spawnState of waveManager.spawnStates) {
       expect(spawnState.visualState).toBe("closed");
     }
-    for (const milestoneWave of MILESTONE_WAVES) {
+    for (const milestoneWave of getGameContent().economy.milestoneWaves) {
       if (milestoneWave <= 50) expect(engine.runState.milestoneRewardsClaimed[milestoneWave]).toBe(true);
     }
     expect(persistState.themeProgress.default?.bestWaves.best_0).toBe(50);

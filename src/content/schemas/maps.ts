@@ -26,14 +26,12 @@ export const PlacementIntervalStepSchema = z.object({
   interval: z.number().int().min(1),
 });
 
-export const MapsContentSchema = z.object({
-  mapBaseSize: z.number(),
-  mapSizeScale: z.number(),
-  maxMapDim: z.number(),
+// The unrefined shape, so ThemeMapsOverrideSchema below can be built with
+// .partial(); Zod forbids .partial() on an object that already carries a
+// refinement.
+const MapsContentShapeSchema = z.object({
   heightNoiseFreq: z.number(),
   heightNoiseDivisor: z.number(),
-  serpentineStep: z.number(),
-  serpentineDownCap: z.number(),
   mapsPerRegion: z.number(),
   levels: z.array(MapLevelConfigSchema).length(36),
   progressive: z.object({
@@ -44,15 +42,27 @@ export const MapsContentSchema = z.object({
   }),
 });
 
+export const MapsContentSchema = MapsContentShapeSchema.superRefine((content, context) => {
+  // src/sim/mapSites.ts derives the region count from exactly this quotient, so a
+  // pack that does not divide evenly would produce a fractional region count.
+  if (content.levels.length % content.mapsPerRegion !== 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `levels.length / mapsPerRegion must be a whole number (found ${content.levels.length} / ${content.mapsPerRegion})`,
+      path: ["levels"],
+    });
+  }
+});
+
 // A theme's optional `maps` entry: a one-level-deep override of the default
 // maps content. Each top-level field is optional; when present it replaces the
 // default field wholesale (so a partial `progressive` object is rejected — the
 // nested schema keeps every progressive field required).
-export const ThemeMapsOverrideSchema = MapsContentSchema.partial();
+export const ThemeMapsOverrideSchema = MapsContentShapeSchema.partial();
 
 export type MapsContent = z.infer<typeof MapsContentSchema>;
-export type MapLevelConfigData = z.infer<typeof MapLevelConfigSchema>;
-export type MapStyleData = z.infer<typeof MapStyleSchema>;
+export type MapLevelConfig = z.infer<typeof MapLevelConfigSchema>;
+export type MapStyle = z.infer<typeof MapStyleSchema>;
 export type ProgressiveVariantData = z.infer<typeof ProgressiveVariantSchema>;
 export type PlacementIntervalStepData = z.infer<typeof PlacementIntervalStepSchema>;
 export type ThemeMapsOverride = z.infer<typeof ThemeMapsOverrideSchema>;

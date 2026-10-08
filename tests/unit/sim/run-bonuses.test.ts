@@ -1,7 +1,8 @@
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
-import { FIXED_DT, GameState, STARTING_BASE_HEALTH } from "@/sim/Constants.js";
+import { getGameContent } from "@/content/gameContent.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
+import { GameState } from "@/sim/GameRunState.js";
 import {
   type BonusOffer,
   cacheOpenGold,
@@ -12,6 +13,7 @@ import {
   rollSpecialistType,
   smallPurseGold,
 } from "@/sim/runBonuses.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import type { MockHostBindings } from "../../helpers/mock-stores";
 import {
   buildableTileNear,
@@ -48,7 +50,7 @@ describe("bonus offers", () => {
     pick(engine, "fortify");
     expect(engine.runState.maxBaseHealth / maxBefore).toBeCloseTo(1.1, 5);
     expect(engine.runState.baseHealth / engine.runState.maxBaseHealth).toBeCloseTo(healthBefore / maxBefore, 5);
-    expect(engine.runState.maxBaseHealth).toBeCloseTo(STARTING_BASE_HEALTH * 1.1, 5);
+    expect(engine.runState.maxBaseHealth).toBeCloseTo(getGameContent().economy.startingBaseHealth * 1.1, 5);
   });
 
   it("draws at most one typed card per offer, into the first slot", () => {
@@ -468,7 +470,7 @@ describe("cache claims", () => {
     // the minion keeps it inside range, so the tower keeps firing at the minion.
     for (let frame = 0; frame < 90; frame++) {
       pinEnemy(minion, besideX, beside.y);
-      engine.update(FIXED_DT);
+      engine.update(fixedDeltaSeconds);
     }
     expect(cache.hp).toBe(healthAtStart);
     expect(engine.runState.gold).toBe(goldAtStart);
@@ -483,7 +485,7 @@ describe("cache claims", () => {
     let healthDropped = false;
     for (let frame = 0; frame < 120 && !healthDropped; frame++) {
       pinEnemy(minion, farWorld.x, farWorld.y);
-      engine.update(FIXED_DT);
+      engine.update(fixedDeltaSeconds);
       if (cache.hp < healthAtStart) healthDropped = true;
     }
     expect(healthDropped).toBe(true);
@@ -495,7 +497,7 @@ describe("cache claims", () => {
     const stateBeforeBreak = engine.runState.state;
     for (let frame = 0; frame < 120 && cache.hp > 0; frame++) {
       pinEnemy(minion, farWorld.x, farWorld.y);
-      engine.update(FIXED_DT);
+      engine.update(fixedDeltaSeconds);
     }
     // A broken cache keeps its tile and offer: towers stop targeting hp<=0, the
     // tile stays reserved, and the break itself neither pauses the run nor opens
@@ -560,7 +562,7 @@ describe("cache claims", () => {
     secondTower.cooldown = 0;
     for (let frame = 0; frame < 400 && (firstCache.hp > 0 || secondCache.hp > 0); frame++) {
       pinEnemy(minion, outsideWorld.x, outsideWorld.y);
-      engine.update(FIXED_DT);
+      engine.update(fixedDeltaSeconds);
     }
     expect(firstCache.hp).toBe(0);
     expect(secondCache.hp).toBe(0);

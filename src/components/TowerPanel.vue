@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { usePanelDrag } from "@/composables/usePanelDrag.js";
-import { CANCEL_BUILD_WINDOW_MS, TOWER_META, targetsLabel, towerGroundOnly } from "@/sim/ConstantsTower.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import type { TowerSnapshot } from "@/sim/SimulationSnapshot.js";
-import { VARIANT_INFO } from "@/sim/towers/SkillTree.js";
+import { targetsLabel, towerGroundOnly } from "@/sim/towers/towerTargeting.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -52,9 +52,9 @@ const damageStats = computed(() => {
 const specName = computed(() => {
   const selectedTower = tower.value;
   if (!selectedTower?.variant) return null;
-  const info = VARIANT_INFO[selectedTower.type];
+  const info = getGameContent().skillTree.variantInfo[selectedTower.type];
   if (!info) {
-    console.warn(`[TowerPanel] No VARIANT_INFO for tower type "${selectedTower.type}"`);
+    console.warn(`[TowerPanel] No variantInfo for tower type "${selectedTower.type}"`);
     return null;
   }
   return info[selectedTower.variant]?.name || null;
@@ -120,7 +120,7 @@ const sellDisabled = computed(
 const downgradeRefund = computed(() => tower.value?.downgradeRefund ?? 0);
 
 const variantInfo = computed(() => {
-  if (tower.value) return VARIANT_INFO[tower.value.type];
+  if (tower.value) return getGameContent().skillTree.variantInfo[tower.value.type];
   return null;
 });
 
@@ -153,12 +153,12 @@ const blockedReason = computed(() => {
 // (Tower._gameSeconds), so pause freezes the window and timeScale scales it.
 const canCancel = computed(() => {
   if (!tower.value) return false;
-  return tower.value.placedAt < CANCEL_BUILD_WINDOW_MS && tower.value.level === 1;
+  return tower.value.placedAt < getGameContent().towers.tuning.cancelBuildWindowMs && tower.value.level === 1;
 });
 
 const cancelRemaining = computed(() => {
   if (!tower.value) return 0;
-  return Math.ceil(Math.max(0, CANCEL_BUILD_WINDOW_MS - tower.value.placedAt) / 1000);
+  return Math.ceil(Math.max(0, getGameContent().towers.tuning.cancelBuildWindowMs - tower.value.placedAt) / 1000);
 });
 
 // Phase 6: Fixed aim for railgun

@@ -1,14 +1,13 @@
 import { Crowd, type CrowdAgent, Detour, type NavMesh, type Vector3 } from "recast-navigation";
-import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { ForceFieldSystem } from "@/sim/physics/ForceFieldSystem.js";
 import { toRecast } from "./coords.js";
 import { getRecast } from "./recastContext.js";
 
-const CROWD_MAX_ACCEL_FACTOR_DEFAULT = 8;
+const crowdMaxAccelFactorDefault = 8;
 // A FAILED or still-invalid retarget waits this long. Detour admits 8 path
 // requests per crowd update, so a dead target must not take a slot every tick.
-const CROWD_RETARGET_COOLDOWN_SECONDS = 0.5;
+const crowdRetargetCooldownSeconds = 0.5;
 
 export interface CrowdAgentProfile {
   maxAccelFactor: number;
@@ -18,8 +17,8 @@ export interface CrowdAgentProfile {
   pathOptimizationRangeFactor: number;
 }
 
-const DEFAULT_PROFILE: CrowdAgentProfile = {
-  maxAccelFactor: CROWD_MAX_ACCEL_FACTOR_DEFAULT,
+const defaultProfile: CrowdAgentProfile = {
+  maxAccelFactor: crowdMaxAccelFactorDefault,
   separationWeight: 1,
   collisionQueryRangeFactor: 2.5,
   pathOptimizationRangeFactor: 0,
@@ -30,8 +29,8 @@ const DEFAULT_PROFILE: CrowdAgentProfile = {
 // the avoidance field from queueing escorts shoved bosses into wall-block corners
 // and pinned them there. Airborne types (flyer, jet, aegis, skyhold, broodwing)
 // intentionally have no row: EnemyManager skips the crowd agent for
-// flyingHeight > 0, so they resolve to DEFAULT_PROFILE below.
-export const CROWD_AGENT_PROFILES: Record<string, CrowdAgentProfile> = {
+// flyingHeight > 0, so they resolve to defaultProfile below.
+export const crowdAgentProfiles: Record<string, CrowdAgentProfile> = {
   runner: { maxAccelFactor: 12, separationWeight: 0.4, collisionQueryRangeFactor: 1.5, pathOptimizationRangeFactor: 2 },
   tank: { maxAccelFactor: 5, separationWeight: 1.8, collisionQueryRangeFactor: 3.5, pathOptimizationRangeFactor: 0 },
   boss: { maxAccelFactor: 6, separationWeight: 1.2, collisionQueryRangeFactor: 2.8, pathOptimizationRangeFactor: 0 },
@@ -47,7 +46,7 @@ export const CROWD_AGENT_PROFILES: Record<string, CrowdAgentProfile> = {
 };
 
 export function getCrowdAgentProfile(enemyType: string): CrowdAgentProfile {
-  return CROWD_AGENT_PROFILES[enemyType] ?? DEFAULT_PROFILE;
+  return crowdAgentProfiles[enemyType] ?? defaultProfile;
 }
 
 // Wraps one DetourCrowd. Writes desired velocity into Rapier bodies unless the
@@ -241,14 +240,14 @@ export class CrowdManager {
     if (invalid) {
       agent.teleport(toRecast({ x: enemy.x, y: enemy.y }));
       if (agent.state() === Detour.DT_CROWDAGENT_STATE_INVALID) {
-        enemy.crowdRetargetCooldown = CROWD_RETARGET_COOLDOWN_SECONDS;
+        enemy.crowdRetargetCooldown = crowdRetargetCooldownSeconds;
         return;
       }
     }
 
     const accepted = agent.requestMoveTarget(toRecast(moveTarget));
     if (!accepted || targetFailed) {
-      enemy.crowdRetargetCooldown = CROWD_RETARGET_COOLDOWN_SECONDS;
+      enemy.crowdRetargetCooldown = crowdRetargetCooldownSeconds;
     }
   }
 }
@@ -273,6 +272,3 @@ function zeroCrowdAgentVelocity(agent: CrowdAgent): void {
   agent.raw.set_dvel(1, 0);
   agent.raw.set_dvel(2, 0);
 }
-
-// Silence unused import when ENEMY_TYPES only used for documentation alignment.
-void ENEMY_TYPES;

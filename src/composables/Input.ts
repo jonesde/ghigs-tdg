@@ -6,15 +6,15 @@ import {
 } from "@/composables/bonusPicker.js";
 import { currentBuildTile } from "@/composables/buildTile.js";
 import { clearBuildAndTowerForProgressive } from "@/composables/progressivePlacement.js";
+import { type TowerId, TowerIds } from "@/content/towerIds.js";
 import { ARROW_PAN_FRACTION, ZOOM_STEP } from "@/render/svg/cameraFrame.js";
 import type { Command } from "@/sim/Command.js";
 import type { CommandDispatcher } from "@/sim/CommandDispatcher.js";
-import { GameState } from "@/sim/Constants.js";
-import { type TowerId, TowerIds } from "@/sim/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
-import { PROGRESSIVE_BLOCK_SIZE, progressiveBlockWorldCorner } from "@/sim/grid/ProgressiveMap.js";
+import { GameState } from "@/sim/GameRunState.js";
+import { progressiveBlockSize, progressiveBlockWorldCorner } from "@/sim/grid/ProgressiveMap.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
-import { BASE_SELECTION_ID } from "@/sim/towers/BaseDefense.js";
+import { baseSelectionId } from "@/sim/towers/BaseDefense.js";
 import type { GameStoreLike } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 import type { UiStoreLike } from "@/stores/ui.js";
@@ -69,7 +69,7 @@ function applyCameraFollow(gameStore: GameStoreLike, uiStore: UiStoreLike, revea
 function placementSiteCenter(gameStore: GameStoreLike, blockX: number, blockY: number): { x: number; y: number } {
   const tileSize = tileSizeOf(gameStore);
   const corner = progressiveBlockWorldCorner(blockX, blockY, tileSize);
-  const halfBlock = (PROGRESSIVE_BLOCK_SIZE * tileSize) / 2;
+  const halfBlock = (progressiveBlockSize * tileSize) / 2;
   return { x: corner.x + halfBlock, y: corner.y + halfBlock };
 }
 
@@ -78,7 +78,7 @@ function keyboardZoomFocus(gameStore: GameStoreLike): { x: number; y: number } |
     const site = gameStore.progressiveSelectedSite;
     return placementSiteCenter(gameStore, site.blockX, site.blockY);
   }
-  if (gameStore.selectedTowerId === BASE_SELECTION_ID && !gameStore.selectedTowerType) {
+  if (gameStore.selectedTowerId === baseSelectionId && !gameStore.selectedTowerType) {
     const baseTile = baseNavTile(gameStore);
     if (baseTile) return tileCenter(gameStore, baseTile.tileX, baseTile.tileY);
   }
@@ -105,7 +105,7 @@ function selectBuildType(gameStore: GameStoreLike, type: TowerId | null): void {
  * Dispatches actions to Pinia datastores (host-authoritative UI state) and to
  * the simulation via the CommandDispatcher seam.
  */
-const KEY_REPEAT_INTERVAL = 500;
+const keyRepeatInterval = 500;
 let nextInputCommandId = 1;
 
 export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher, uiStore: UiStoreLike): void {
@@ -118,7 +118,7 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
   function canActNow(key: string): boolean {
     const now = performance.now();
     const lastTime = lastActionByKey.get(key) ?? 0;
-    if (now - lastTime >= KEY_REPEAT_INTERVAL) {
+    if (now - lastTime >= keyRepeatInterval) {
       lastActionByKey.set(key, now);
       return true;
     }
@@ -288,7 +288,7 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
           uiStore.closeAllDialogs();
         } else if (gs.selectedTowerType) {
           dispatch({ commandId: nextInputCommandId++, type: "action:cancelBuildMode" });
-        } else if (gs.selectedTower || gs.selectedTowerId === BASE_SELECTION_ID) {
+        } else if (gs.selectedTower || gs.selectedTowerId === baseSelectionId) {
           dispatchCommand({ commandId: nextInputCommandId++, type: "action:selectTower", towerId: null });
         } else {
           uiStore.openPauseMenu();
@@ -382,7 +382,7 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
         break;
       case "s":
         if (canActNow(event.key) && selectionActive(gs)) {
-          if (gs.selectedTowerId === BASE_SELECTION_ID) {
+          if (gs.selectedTowerId === baseSelectionId) {
             dispatch({ commandId: nextInputCommandId++, type: "action:downgradeSelected" });
           } else if (gs.selectedTower && gs.selectedTower.level > 1) {
             dispatch({ commandId: nextInputCommandId++, type: "action:downgradeSelected" });
@@ -399,7 +399,7 @@ export function useInput(gameStore: GameStoreLike, dispatcher: CommandDispatcher
       case "f":
         if (canActNow(event.key) && selectionActive(gs)) {
           const currentMode =
-            gs.selectedTowerId === BASE_SELECTION_ID
+            gs.selectedTowerId === baseSelectionId
               ? gs.baseDefense?.targeting || "first"
               : gs.selectedTower?.targeting || "first";
           const currentIndex = targetingModes.indexOf(currentMode as (typeof targetingModes)[number]);
@@ -581,14 +581,14 @@ type TowerLite = { id: string; tileX: number; tileY: number };
 // worker build (the live manager is null on the main thread). Fall back to the
 // live manager when no snapshot is available (legacy / test path). Fix #5.
 function selectionActive(gameStore: GameStoreLike): boolean {
-  return gameStore.selectedTower != null || gameStore.selectedTowerId === BASE_SELECTION_ID;
+  return gameStore.selectedTower != null || gameStore.selectedTowerId === baseSelectionId;
 }
 
 function baseNavTile(gameStore: GameStoreLike): TowerLite | null {
   const grid = inputGrid(gameStore) as (InputGrid & { getBase?: () => { x: number; y: number } }) | null;
   const base = grid?.getBase?.();
   if (!base) return null;
-  return { id: BASE_SELECTION_ID, tileX: base.x, tileY: base.y };
+  return { id: baseSelectionId, tileX: base.x, tileY: base.y };
 }
 
 function getNavigableTowers(gameStore: GameStoreLike): TowerLite[] {

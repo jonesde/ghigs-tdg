@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { FIXED_DT } from "@/sim/Constants.js";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { generateRandomMap } from "@/sim/grid/Map.js";
@@ -12,6 +11,7 @@ import {
   terrainTowerLocalOutline,
 } from "@/sim/physics/corridorWalls.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
 
 function towerOn(grid: Grid, tileX: number, tileY: number) {
@@ -80,16 +80,16 @@ function walkBend(
     enemy.lastMoveTargetWorld = null;
     enemy.lastMoveTargetMode = null;
     let pulse = 0;
-    const maxSteps = Math.round(limitSeconds / FIXED_DT);
+    const maxSteps = Math.round(limitSeconds / fixedDeltaSeconds);
     for (let stepIndex = 0; stepIndex < maxSteps; stepIndex++) {
-      enemy.computeIntent(FIXED_DT, null);
-      crowd.update(FIXED_DT, [enemy]);
+      enemy.computeIntent(fixedDeltaSeconds, null);
+      crowd.update(fixedDeltaSeconds, [enemy]);
       physicsWorld.step();
-      enemy.postPhysics(FIXED_DT);
-      if (enemy.x > vertexX + grid.tileSize) return { seconds: stepIndex * FIXED_DT, x: enemy.x, y: enemy.y };
+      enemy.postPhysics(fixedDeltaSeconds);
+      if (enemy.x > vertexX + grid.tileSize) return { seconds: stepIndex * fixedDeltaSeconds, x: enemy.x, y: enemy.y };
       if (!stun) continue;
       if (Math.hypot(enemy.x - vertexX, enemy.y - vertexY) >= 48) continue;
-      pulse += FIXED_DT;
+      pulse += fixedDeltaSeconds;
       if (pulse < 0.2) continue;
       pulse = 0;
       enemy.applyStun(0.1);
@@ -222,15 +222,15 @@ function walkBendStunned(
     enemy.lastMoveTargetWorld = null;
     enemy.lastMoveTargetMode = null;
     let pulse = 0;
-    const maxSteps = Math.round(limitSeconds / FIXED_DT);
+    const maxSteps = Math.round(limitSeconds / fixedDeltaSeconds);
     for (let stepIndex = 0; stepIndex < maxSteps; stepIndex++) {
-      enemy.computeIntent(FIXED_DT, null);
-      crowd.update(FIXED_DT, [enemy]);
+      enemy.computeIntent(fixedDeltaSeconds, null);
+      crowd.update(fixedDeltaSeconds, [enemy]);
       physicsWorld.step();
-      enemy.postPhysics(FIXED_DT);
-      if (enemy.x > vertexX) return { seconds: stepIndex * FIXED_DT, x: enemy.x, y: enemy.y };
+      enemy.postPhysics(fixedDeltaSeconds);
+      if (enemy.x > vertexX) return { seconds: stepIndex * fixedDeltaSeconds, x: enemy.x, y: enemy.y };
       if (Math.hypot(enemy.x - vertexX, enemy.y - vertexY) >= 48) continue;
-      pulse += FIXED_DT;
+      pulse += fixedDeltaSeconds;
       if (pulse < 0.2) continue;
       pulse = 0;
       enemy.applyStun(0.1);

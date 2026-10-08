@@ -1,8 +1,7 @@
-import { GameState } from "@/sim/Constants.js";
-import type { TowerId } from "@/sim/ConstantsTower.js";
+import type { TowerId } from "@/content/towerIds.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { GameEngine } from "@/sim/GameEngine.js";
-import { setGameState } from "@/sim/GameRunState.js";
+import { GameState, setGameState } from "@/sim/GameRunState.js";
 import type { Command } from "./Command.js";
 import type { SpawnOrder } from "./enemies/EnemyManager.js";
 import { validateCommand } from "./validateCommand.js";

@@ -1,14 +1,23 @@
 import type { GameRunState } from "@/sim/GameRunState.js";
 import type { PersistState } from "@/sim/PersistState.js";
-import type { WaveGraphDot } from "@/sim/SimulationSnapshot.js";
 import {
-  WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN,
-  WAVE_GRAPH_COLOR_BASE_HEALTH_RED,
-  WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW,
-  WAVE_GRAPH_DOT_SPACING,
-  WAVE_GRAPH_INTERVAL_SECONDS,
-  WAVE_GRAPH_WIDTH,
-} from "./Constants.js";
+  type WaveGraphDot,
+  waveGraphDotCapacity,
+  waveGraphDotWidth,
+  waveGraphIntervalSeconds,
+} from "./SimulationSnapshot.js";
+
+const baseHealthColorGreen = "#5ec46a";
+const baseHealthColorYellow = "#ffd84d";
+const baseHealthColorRed = "#e05548";
+
+// The wave-graph base-health ramp: above half health reads green, above a quarter
+// yellow, below that red.
+export function baseHealthFillColor(healthRatio: number): string {
+  if (healthRatio > 0.5) return baseHealthColorGreen;
+  if (healthRatio > 0.25) return baseHealthColorYellow;
+  return baseHealthColorRed;
+}
 
 interface TowerManagerRef {
   towers: { totalDamageDealt: number }[];
@@ -55,8 +64,8 @@ export class WaveGraphTracker {
     this.towerManager = towerManager;
     this.enemyManager = enemyManager;
 
-    this._containerWidth = WAVE_GRAPH_WIDTH;
-    this._maxDots = Math.ceil(this._containerWidth / WAVE_GRAPH_DOT_SPACING);
+    this._containerWidth = waveGraphDotWidth;
+    this._maxDots = waveGraphDotCapacity(this._containerWidth);
     this._prevTotalDamage = this._sumTotalDamage();
     this._prevGems = persistState.gems;
     this._intervalMinBaseHealth = runState.baseHealth;
@@ -76,7 +85,7 @@ export class WaveGraphTracker {
       this._intervalMinBaseHealth = this.runState.baseHealth;
     }
 
-    if (this._gameTimeAccum >= WAVE_GRAPH_INTERVAL_SECONDS) {
+    if (this._gameTimeAccum >= waveGraphIntervalSeconds) {
       this._flushInterval();
     }
   }
@@ -94,7 +103,7 @@ export class WaveGraphTracker {
 
   setContainerWidth(width: number): void {
     this._containerWidth = width;
-    const newMaxDots = Math.ceil(width / WAVE_GRAPH_DOT_SPACING);
+    const newMaxDots = waveGraphDotCapacity(width);
     if (newMaxDots < this._maxDots) {
       this._dots.splice(0, this._dots.length - newMaxDots);
       // Trim changed the dot array shape; without a bump the delta serializer
@@ -146,7 +155,7 @@ export class WaveGraphTracker {
     this._generation++;
     // Subtract one interval (not reset) so the leftover fraction keeps the dot
     // grid anchored to elapsed sim time instead of drifting by the flush frame.
-    this._gameTimeAccum -= WAVE_GRAPH_INTERVAL_SECONDS;
+    this._gameTimeAccum -= waveGraphIntervalSeconds;
     this._intervalDamage = 0;
     this._intervalGold = 0;
     this._intervalGems = 0;
@@ -156,10 +165,7 @@ export class WaveGraphTracker {
 
   private _computeBaseHealthColor(baseHealth: number): string {
     const maxBase = this.runState.maxBaseHealth || 1;
-    const ratio = maxBase > 0 ? baseHealth / maxBase : 0;
-    if (ratio > 0.5) return WAVE_GRAPH_COLOR_BASE_HEALTH_GREEN;
-    if (ratio > 0.25) return WAVE_GRAPH_COLOR_BASE_HEALTH_YELLOW;
-    return WAVE_GRAPH_COLOR_BASE_HEALTH_RED;
+    return baseHealthFillColor(maxBase > 0 ? baseHealth / maxBase : 0);
   }
 
   private _sumTotalDamage(): number {

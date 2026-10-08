@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
+import { getGameContent } from "@/content/gameContent.js";
 import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
-import { CUSTOM_PROGRESSIVE_MAP_INDEX, CUSTOM_RANDOM_MAP_INDEX, TOTAL_MAPS } from "@/sim/Constants.js";
+import { customProgressiveMapIndex, customRandomMapIndex } from "@/sim/GameRunState.js";
 import { generateRandomMap, getMap, getMapDisplayName } from "@/sim/grid/Map.js";
 import { generateProgressiveMap, type ProgressiveConfig, resolveGeneratedMap } from "@/sim/grid/ProgressiveMap.js";
 import { useGameStore } from "@/stores/game.js";
@@ -26,13 +27,13 @@ const deadBosses = computed(() => gameStore.bossesKilledThisRun);
 const basedBosses = computed(() => gameStore.bossesReachedBaseThisRun);
 
 // Campaign progression only. The custom run indexes (-1, -2) are excluded by the
-// >= 0 test and the progressive catalog range (36+) by the TOTAL_MAPS ceiling, which
+// >= 0 test and the progressive catalog range (36+) by the map-count ceiling, which
 // is the same one maybeUnlockNextMap enforces when it raises highestUnlockedMap. So
 // the button appears exactly when mapIndex + 1 names a campaign map the player has
 // reached.
 const nextMapIndex = computed<number | null>(() => {
   const currentIndex = gameStore.mapIndex;
-  if (currentIndex < 0 || currentIndex + 1 >= TOTAL_MAPS) return null;
+  if (currentIndex < 0 || currentIndex + 1 >= getGameContent().maps.levels.length) return null;
   const progress = persistStore.getThemeProgress(persistStore.lastSelectedThemeId);
   return currentIndex + 1 <= progress.highestUnlockedMap ? currentIndex + 1 : null;
 });
@@ -80,7 +81,7 @@ async function replay() {
   persistStore.save();
   const theme = await themeStore.loadActive(themeId).catch(() => themeStore.defaultTheme);
 
-  if (latest.mapIndex === CUSTOM_RANDOM_MAP_INDEX && latest.randomMapParams) {
+  if (latest.mapIndex === customRandomMapIndex && latest.randomMapParams) {
     const p = latest.randomMapParams as {
       width: number;
       height: number;
@@ -90,12 +91,12 @@ async function replay() {
       seed: number;
     };
     const mapData = generateRandomMap(p.width, p.height, p.style, p.regionId, p.level, p.seed, theme?.maps);
-    gameStore.mapIndex = CUSTOM_RANDOM_MAP_INDEX;
+    gameStore.mapIndex = customRandomMapIndex;
     gameStore.map = mapData;
     gameStore.randomMapParams = p;
-  } else if (latest.mapIndex === CUSTOM_PROGRESSIVE_MAP_INDEX && latest.progressiveMapParams) {
+  } else if (latest.mapIndex === customProgressiveMapIndex && latest.progressiveMapParams) {
     const p = latest.progressiveMapParams as ProgressiveConfig;
-    gameStore.mapIndex = CUSTOM_PROGRESSIVE_MAP_INDEX;
+    gameStore.mapIndex = customProgressiveMapIndex;
     gameStore.map = generateProgressiveMap(p);
   } else {
     const mapData = resolveGeneratedMap(latest.mapIndex as number, theme?.maps);

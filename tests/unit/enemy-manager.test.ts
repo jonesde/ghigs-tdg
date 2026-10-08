@@ -3,7 +3,7 @@
 
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
@@ -182,7 +182,7 @@ describe("EnemyManager", () => {
       // Motion is crowd + physics driven: the crowd sets the agent's velocity and
       // the world steps the body, so stepPhysics must be driven with the crowd.
       for (let i = 0; i < 120; i++) stepPhysics(manager, physicsWorld, 1 / 60, null, null, crowdManager);
-      const _expectedDist = ENEMY_TYPES.runner.speed * grid.tileSize;
+      const _expectedDist = getGameContent().enemies.types.runner.speed * grid.tileSize;
       const _actualDist = Math.hypot(enemy.x - startX, enemy.y - startY);
       expect(enemy.x).not.toBe(startX);
     });

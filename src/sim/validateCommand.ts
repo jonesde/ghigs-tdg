@@ -1,6 +1,6 @@
+import { getGameContent } from "@/content/gameContent.js";
 import type { Command } from "./Command.js";
-import { TIME_SCALES } from "./Constants.js";
-import { TOWER_META } from "./ConstantsTower.js";
+import { isValidTimeScale } from "./GameRunState.js";
 
 export interface CommandGridInfo {
   width: number;
@@ -15,16 +15,15 @@ export interface CommandTile {
   y: number;
 }
 
-const MAX_ID_LIST_LENGTH = 256;
-const MAX_WAYPOINT_COUNT = 256;
-const WORLD_SANE_EXTENT = 100000;
-const TILE_SANE_EXTENT = 4096;
-const MAX_MODE_TEXT_LENGTH = 64;
-const FALLBACK_TILE_SIZE = 36;
+const maxIdListLength = 256;
+const maxWaypointCount = 256;
+const worldSaneExtent = 100000;
+const tileSaneExtent = 4096;
+const maxModeTextLength = 64;
+const fallbackTileSize = 36;
 
-const TOWER_TARGETING_MODES: ReadonlySet<string> = new Set(["first", "last", "closest", "strong", "furthest"]);
-const FIXED_AIM_DIRECTIONS: ReadonlySet<string> = new Set(["N", "E", "S", "W"]);
-const DEBUG_TIME_SCALES: ReadonlySet<number> = new Set(TIME_SCALES);
+const towerTargetingModes: ReadonlySet<string> = new Set(["first", "last", "closest", "strong", "furthest"]);
+const fixedAimDirections: ReadonlySet<string> = new Set(["N", "E", "S", "W"]);
 
 function tileReason(tile: CommandTile, grid: CommandGridInfo | null, label: string): string | null {
   const axes = ["x", "y"] as const;
@@ -34,7 +33,7 @@ function tileReason(tile: CommandTile, grid: CommandGridInfo | null, label: stri
     if (grid) {
       const extent = axis === "x" ? grid.width : grid.height;
       if (value < 0 || value >= extent) return `${label}.${axis} out of grid bounds`;
-    } else if (value < -TILE_SANE_EXTENT || value > TILE_SANE_EXTENT) {
+    } else if (value < -tileSaneExtent || value > tileSaneExtent) {
       return `${label}.${axis} outside sane range`;
     }
   }
@@ -62,7 +61,7 @@ function tileListReason(
 
 function enemyIdsReason(enemyIds: number[], label: string): string | null {
   if (!Array.isArray(enemyIds)) return `${label}.enemyIds must be an array`;
-  if (enemyIds.length > MAX_ID_LIST_LENGTH) return `${label}.enemyIds exceeds ${MAX_ID_LIST_LENGTH} entries`;
+  if (enemyIds.length > maxIdListLength) return `${label}.enemyIds exceeds ${maxIdListLength} entries`;
   for (let index = 0; index < enemyIds.length; index++) {
     const enemyId = enemyIds[index];
     if (!Number.isInteger(enemyId)) return `${label}.enemyIds[${index}] must be an integer`;
@@ -73,7 +72,7 @@ function enemyIdsReason(enemyIds: number[], label: string): string | null {
 function clickReason(worldX: number, worldY: number, grid: CommandGridInfo | null): string | null {
   if (!Number.isFinite(worldX) || !Number.isFinite(worldY)) return "input:click worldX/worldY must be finite";
   if (grid) {
-    const tileSize = grid.tileSize > 0 ? grid.tileSize : FALLBACK_TILE_SIZE;
+    const tileSize = grid.tileSize > 0 ? grid.tileSize : fallbackTileSize;
     const tileX = Math.floor((worldX - (grid.worldOriginX ?? 0)) / tileSize);
     const tileY = Math.floor((worldY - (grid.worldOriginY ?? 0)) / tileSize);
     if (tileX < 0 || tileY < 0 || tileX >= grid.width || tileY >= grid.height) {
@@ -81,7 +80,7 @@ function clickReason(worldX: number, worldY: number, grid: CommandGridInfo | nul
     }
     return null;
   }
-  if (Math.abs(worldX) > WORLD_SANE_EXTENT || Math.abs(worldY) > WORLD_SANE_EXTENT) {
+  if (Math.abs(worldX) > worldSaneExtent || Math.abs(worldY) > worldSaneExtent) {
     return "input:click outside sane world range";
   }
   return null;
@@ -113,7 +112,7 @@ function debugReason(kind: string, amount: number | undefined): string | null {
       }
       return null;
     case "setTimeScale":
-      if (amount !== undefined && !DEBUG_TIME_SCALES.has(amount)) {
+      if (amount !== undefined && !isValidTimeScale(amount)) {
         return "action:debug setTimeScale amount must be one of 1, 2, 4, 8";
       }
       return null;
@@ -162,17 +161,17 @@ export function validateCommand(command: Command, grid?: CommandGridInfo | null)
       if (command.variant !== "A" && command.variant !== "B") return "action:specialize variant must be A or B";
       return null;
     case "action:setTargeting":
-      if (!TOWER_TARGETING_MODES.has(command.mode)) {
+      if (!towerTargetingModes.has(command.mode)) {
         return "action:setTargeting mode must be one of first, last, closest, strong, furthest";
       }
       return null;
     case "action:setFixedAimDir":
-      if (command.dir !== null && !FIXED_AIM_DIRECTIONS.has(command.dir)) {
+      if (command.dir !== null && !fixedAimDirections.has(command.dir)) {
         return "action:setFixedAimDir dir must be one of N, E, S, W, or null";
       }
       return null;
     case "action:selectBuildType":
-      if (command.towerType !== null && !Object.keys(TOWER_META).includes(command.towerType)) {
+      if (command.towerType !== null && !Object.keys(getGameContent().towers.meta).includes(command.towerType)) {
         return `action:selectBuildType unknown towerType ${command.towerType}`;
       }
       return null;
@@ -242,7 +241,7 @@ export function validateCommand(command: Command, grid?: CommandGridInfo | null)
         const holdReason = tileReason(command.holdTile, gridInfo, "llm:routeGroup.holdTile");
         if (holdReason) return holdReason;
       }
-      return tileListReason(command.waypoints, gridInfo, "llm:routeGroup.waypoints", MAX_WAYPOINT_COUNT);
+      return tileListReason(command.waypoints, gridInfo, "llm:routeGroup.waypoints", maxWaypointCount);
     }
     case "llm:siegeTower": {
       const idsReason = enemyIdsReason(command.enemyIds, "llm:siegeTower");
@@ -252,7 +251,7 @@ export function validateCommand(command: Command, grid?: CommandGridInfo | null)
     case "llm:setTargeting": {
       const idsReason = enemyIdsReason(command.enemyIds, "llm:setTargeting");
       if (idsReason) return idsReason;
-      if (typeof command.mode !== "string" || command.mode.length === 0 || command.mode.length > MAX_MODE_TEXT_LENGTH) {
+      if (typeof command.mode !== "string" || command.mode.length === 0 || command.mode.length > maxModeTextLength) {
         return "llm:setTargeting mode must be a non-empty string";
       }
       return null;
@@ -270,7 +269,7 @@ export function validateCommand(command: Command, grid?: CommandGridInfo | null)
           command.waypoints,
           gridInfo,
           "llm:setSpawnOrder.waypoints",
-          MAX_WAYPOINT_COUNT,
+          maxWaypointCount,
         );
         if (waypointsReason) return waypointsReason;
       }

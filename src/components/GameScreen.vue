@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
-import { GameState } from "@/sim/Constants.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
+import { GameState } from "@/sim/GameRunState.js";
 import { useGameStore } from "@/stores/game.js";
 import { useUiStore } from "@/stores/ui.js";
 import BasePanel from "./BasePanel.vue";

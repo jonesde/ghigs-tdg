@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { FIXED_DT } from "@/sim/Constants.js";
 import type { AttackTarget } from "@/sim/enemies/Enemy.js";
 import { Enemy } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
 import { makeBastionMap } from "../../../helpers/mock-grid.js";
@@ -133,7 +133,7 @@ describe("Rapier contact attack flags", () => {
     enemy.applySiege(tower);
     enemy.body!.setTranslation({ x: towerCenter.x, y: towerCenter.y }, true);
     physicsWorld.step();
-    enemy.postPhysics(FIXED_DT);
+    enemy.postPhysics(fixedDeltaSeconds);
     expect(enemy.blockedByTower).toBeNull();
     expect(enemy.motionLock).toBe("none");
     expect(damage.value).toBe(0);
@@ -193,7 +193,7 @@ describe("Rapier contact attack flags", () => {
     enemy.applySiege(tower);
     enemy.body!.setTranslation({ x: towerCenter.x, y: towerCenter.y }, true);
     physicsWorld.step();
-    enemy.postPhysics(FIXED_DT);
+    enemy.postPhysics(fixedDeltaSeconds);
     expect(damage.value).toBeGreaterThan(0);
   });
 
@@ -218,7 +218,7 @@ describe("Rapier contact attack flags", () => {
     enemy.body!.setTranslation({ x: towerCenter.x, y: towerCenter.y }, true);
     physicsWorld.step();
     expect(enemy.blockedByTower).toBe(tower);
-    enemy.postPhysics(FIXED_DT);
+    enemy.postPhysics(fixedDeltaSeconds);
     expect(damage.value).toBe(0);
   });
 });

@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { usePanelDrag } from "@/composables/usePanelDrag.js";
-import { SELL_DISCOUNT_PCT } from "@/sim/Constants.js";
-import type { TowerId } from "@/sim/ConstantsTower.js";
-import { TOWER_META, TowerIds } from "@/sim/ConstantsTower.js";
+import { getGameContent } from "@/content/gameContent.js";
+import { type TowerId, TowerIds } from "@/content/towerIds.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
@@ -14,7 +13,7 @@ const persistStore = usePersistStore();
 const themeStore = useMapThemeStore();
 
 const discount = computed(() => {
-  return persistStore.generalAddons?.sellActive === "discount" ? 1 - SELL_DISCOUNT_PCT : 1;
+  return persistStore.generalAddons?.sellActive === "discount" ? 1 - getGameContent().economy.sellDiscountPct : 1;
 });
 
 const towerList = Object.values(TowerIds) as TowerId[];
@@ -27,7 +26,7 @@ function toggleBuild(type: TowerId) {
 }
 
 function getCost(type: TowerId) {
-  return Math.floor(TOWER_META[type].cost * discount.value);
+  return Math.floor(getGameContent().towers.meta[type].cost * discount.value);
 }
 
 function getTowerDisplayName(type: TowerId): string {

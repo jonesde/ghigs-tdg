@@ -10,17 +10,16 @@ import {
 } from "@/commanders/llm/types.js";
 import type { CommanderObservation } from "@/commanders/observation.js";
 import type { CommanderSnapshotSlice, CommanderToMainMessage } from "@/commanders/protocol.js";
-import { GameState } from "@/sim/Constants.js";
 import { GameEngine } from "@/sim/GameEngine.js";
+import { GameState } from "@/sim/GameRunState.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import {
   createTestMapThemeStore,
   createTestPersistState,
   createTestThemeBundle,
   MockHostBindings,
 } from "../helpers/mock-stores.js";
-
-const FIXED_DT = 1 / 60;
 
 function makeConfig(): LlmCommanderConfig {
   return {
@@ -151,7 +150,7 @@ describe("Integration: LLM commander worker pause + relay", () => {
     engine = new GameEngine(persistState, createTestThemeBundle(), mockHost, 0);
     engine.loadMap(0);
     engine.waveManager?.startNextWave();
-    for (let tick = 0; tick < 5; tick++) engine.update(FIXED_DT);
+    for (let tick = 0; tick < 5; tick++) engine.update(fixedDeltaSeconds);
   }
 
   async function deliver(data: unknown): Promise<void> {

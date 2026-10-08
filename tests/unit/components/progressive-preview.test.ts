@@ -8,8 +8,8 @@ import {
   progressivePreviewFill,
 } from "@/components/progressivePreview.js";
 import type { MapThemeData, RegionVisualMeta } from "@/render/themes/index.js";
-import { GameState } from "@/sim/Constants.js";
 import * as commandBus from "@/sim/commandBus.js";
+import { GameState } from "@/sim/GameRunState.js";
 import {
   type BlockTemplate,
   generateProgressiveCatalog,
@@ -20,8 +20,8 @@ import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { mockDefaultTheme } from "../../helpers/mock-stores.js";
 
-const KNOWN_PATH_FILL = "#a01020";
-const KNOWN_TERRAIN_FILLS = ["#b03040", "#c05060", "#d07080", "#e090a0"];
+const knownPathFill = "#a01020";
+const knownTerrainFills = ["#b03040", "#c05060", "#d07080", "#e090a0"];
 
 function tileSvgWithFill(fill: string): string {
   return `<svg viewBox="0 0 36 36"><rect width="36" height="36" fill="${fill}"/></svg>`;
@@ -32,11 +32,11 @@ function mockRegionVisualWithKnownFills(regionId: number): RegionVisualMeta {
     id: regionId,
     name: "Known Region",
     tiles: {
-      path: [tileSvgWithFill(KNOWN_PATH_FILL), tileSvgWithFill("#551122")],
-      terrain1: [tileSvgWithFill(KNOWN_TERRAIN_FILLS[0]!)],
-      terrain2: [tileSvgWithFill(KNOWN_TERRAIN_FILLS[1]!)],
-      terrain3: [tileSvgWithFill(KNOWN_TERRAIN_FILLS[2]!)],
-      terrain4: [tileSvgWithFill(KNOWN_TERRAIN_FILLS[3]!)],
+      path: [tileSvgWithFill(knownPathFill), tileSvgWithFill("#551122")],
+      terrain1: [tileSvgWithFill(knownTerrainFills[0]!)],
+      terrain2: [tileSvgWithFill(knownTerrainFills[1]!)],
+      terrain3: [tileSvgWithFill(knownTerrainFills[2]!)],
+      terrain4: [tileSvgWithFill(knownTerrainFills[3]!)],
     },
     base: "",
     mapImage: "",
@@ -61,13 +61,13 @@ describe("progressivePreviewFill", () => {
 
   it("returns the theme's field fills for the region's tiles", () => {
     const regionVisual = mockRegionVisualWithKnownFills(0);
-    expect(progressivePreviewFill({ type: "path", height: 1 }, regionVisual)).toBe(KNOWN_PATH_FILL);
-    expect(progressivePreviewFill({ type: "terrain", height: 1 }, regionVisual)).toBe(KNOWN_TERRAIN_FILLS[0]);
-    expect(progressivePreviewFill({ type: "terrain", height: 2 }, regionVisual)).toBe(KNOWN_TERRAIN_FILLS[1]);
-    expect(progressivePreviewFill({ type: "terrain", height: 3 }, regionVisual)).toBe(KNOWN_TERRAIN_FILLS[2]);
-    expect(progressivePreviewFill({ type: "terrain", height: 4 }, regionVisual)).toBe(KNOWN_TERRAIN_FILLS[3]);
-    expect(progressivePreviewFill({ type: "terrain", height: 0 }, regionVisual)).toBe(KNOWN_TERRAIN_FILLS[0]);
-    expect(progressivePreviewFill({ type: "terrain", height: 5 }, regionVisual)).toBe(KNOWN_TERRAIN_FILLS[3]);
+    expect(progressivePreviewFill({ type: "path", height: 1 }, regionVisual)).toBe(knownPathFill);
+    expect(progressivePreviewFill({ type: "terrain", height: 1 }, regionVisual)).toBe(knownTerrainFills[0]);
+    expect(progressivePreviewFill({ type: "terrain", height: 2 }, regionVisual)).toBe(knownTerrainFills[1]);
+    expect(progressivePreviewFill({ type: "terrain", height: 3 }, regionVisual)).toBe(knownTerrainFills[2]);
+    expect(progressivePreviewFill({ type: "terrain", height: 4 }, regionVisual)).toBe(knownTerrainFills[3]);
+    expect(progressivePreviewFill({ type: "terrain", height: 0 }, regionVisual)).toBe(knownTerrainFills[0]);
+    expect(progressivePreviewFill({ type: "terrain", height: 5 }, regionVisual)).toBe(knownTerrainFills[3]);
   });
 });
 
@@ -103,8 +103,8 @@ describe("ProgressivePlacement offer cards", () => {
     const fills = new Set(
       [...wrapper.find("svg").element.querySelectorAll("rect")].map((rect) => rect.getAttribute("fill")),
     );
-    expect(fills.has(KNOWN_PATH_FILL)).toBe(true);
-    const terrainFills = [...fills].filter((fill) => fill !== KNOWN_PATH_FILL);
+    expect(fills.has(knownPathFill)).toBe(true);
+    const terrainFills = [...fills].filter((fill) => fill !== knownPathFill);
     expect(terrainFills.length).toBeGreaterThanOrEqual(2);
     expect(wrapper.find("svg").element.querySelector('path[data-edge="path-contour"]')).not.toBeNull();
   });
@@ -330,13 +330,13 @@ describe("progressivePatternMarkup", () => {
     expect(selected).toContain('x="72"');
     expect(selected).toContain('y="108"');
     expect(selected).toContain('width="36"');
-    expect(selected).toContain(`fill="${KNOWN_PATH_FILL}"`);
+    expect(selected).toContain(`fill="${knownPathFill}"`);
     expect(selected).toContain('opacity="0.75"');
     expect(selected).toContain('stroke="var(--color-accent)"');
     expect(selected).not.toContain("rgba(95,208,255,0.22)");
     const fills = new Set([...selected.matchAll(/fill="(#[0-9a-f]{6})"/g)].map((match) => match[1]));
-    expect(fills.has(KNOWN_PATH_FILL)).toBe(true);
-    expect([...fills].filter((fill) => fill !== KNOWN_PATH_FILL).length).toBeGreaterThanOrEqual(2);
+    expect(fills.has(knownPathFill)).toBe(true);
+    expect([...fills].filter((fill) => fill !== knownPathFill).length).toBeGreaterThanOrEqual(2);
     const plain = progressivePatternMarkup(catalog, templateIndex, 1, 0, 0, 36, false, regionVisual);
     expect(plain).toContain('opacity="0.45"');
     expect(plain).not.toContain('stroke="var(--color-accent)"');

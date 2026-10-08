@@ -1,4 +1,6 @@
 import { defineStore } from "pinia";
+import { getGameContent } from "@/content/gameContent.js";
+import type { TowerId } from "@/content/towerIds.js";
 import {
   EDGE_BUFFER_FRACTION,
   fitFrame,
@@ -12,7 +14,7 @@ import {
   zoomFrame,
 } from "@/render/svg/cameraFrame.js";
 import type { ViewRect } from "@/render/svg/viewBoxTween.js";
-import { GameState, STARTING_BASE_HEALTH, StartingGold } from "@/sim/Constants.js";
+import { GameState, type GameStateValue } from "@/sim/GameRunState.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import type { GeneratedMap } from "@/sim/grid/Map.js";
 import {
@@ -39,9 +41,6 @@ import type {
 import type { Tower } from "@/sim/towers/Tower.js";
 
 export type BasePanelState = Omit<BaseDefenseSnapshot, "sentries">;
-
-type GameStateValue = (typeof GameState)[keyof typeof GameState];
-type TowerId = typeof import("@/sim/ConstantsTower").TowerIds[keyof typeof import("@/sim/ConstantsTower").TowerIds];
 
 interface BreakdownEntry {
   base: number;
@@ -282,8 +281,8 @@ export const useGameStore = defineStore("game", {
     mapIndex: -1,
     map: null,
     grid: null,
-    baseHealth: STARTING_BASE_HEALTH,
-    maxBaseHealth: STARTING_BASE_HEALTH,
+    baseHealth: getGameContent().economy.startingBaseHealth,
+    maxBaseHealth: getGameContent().economy.startingBaseHealth,
     gold: 0,
     currentWave: 0,
     waveCountdown: null,
@@ -440,9 +439,10 @@ export const useGameStore = defineStore("game", {
       this.map = mapData;
       this.grid = grid;
       this.state = GameState.PLAYING;
-      this.baseHealth = STARTING_BASE_HEALTH;
-      this.maxBaseHealth = STARTING_BASE_HEALTH;
-      const regionGold = StartingGold[mapData.regionId] ?? StartingGold[0] ?? 0;
+      this.baseHealth = getGameContent().economy.startingBaseHealth;
+      this.maxBaseHealth = getGameContent().economy.startingBaseHealth;
+      const startingGoldByRegion = getGameContent().economy.startingGoldByRegion;
+      const regionGold = startingGoldByRegion[mapData.regionId] ?? startingGoldByRegion[0] ?? 0;
       const entryGold =
         mapData.style === "progressive" && mapData.entryCount !== undefined
           ? progressiveEntryGold(mapData.entryCount)
@@ -646,8 +646,8 @@ export const useGameStore = defineStore("game", {
       this.mapIndex = -1;
       this.map = null;
       this.grid = null;
-      this.baseHealth = STARTING_BASE_HEALTH;
-      this.maxBaseHealth = STARTING_BASE_HEALTH;
+      this.baseHealth = getGameContent().economy.startingBaseHealth;
+      this.maxBaseHealth = getGameContent().economy.startingBaseHealth;
       this.gold = 0;
       this.currentWave = 0;
       this.timeScale = 1;

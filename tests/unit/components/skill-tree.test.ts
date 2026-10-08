@@ -5,11 +5,13 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { RouteRecordRaw } from "vue-router";
 import { createMemoryHistory, createRouter } from "vue-router";
 import SkillTree from "@/components/SkillTree.vue";
-import { SELL_OPTION_GEM_COST } from "@/sim/Constants.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { resetCommandBusForTests } from "@/sim/commandBus.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
+
+const sellOptionGemCost = getGameContent().economy.sellOptionGemCost;
 
 interface MountResult {
   pinia: ReturnType<typeof createPinia>;
@@ -149,13 +151,13 @@ describe("SkillTree", () => {
   // Sell Flexibility is ONE purchase with two mutually exclusive positions. Every row of
   // this table is one step of the click table: state before the click, mode clicked, the gem
   // delta that click must cause, and the sellActive value after it.
-  const SELL_CLICK_TABLE = [
-    { startMode: null, clickIndex: 0, delta: -SELL_OPTION_GEM_COST, endMode: "refund", confirms: false },
-    { startMode: null, clickIndex: 1, delta: -SELL_OPTION_GEM_COST, endMode: "discount", confirms: false },
-    { startMode: "refund", clickIndex: 0, delta: SELL_OPTION_GEM_COST, endMode: null, confirms: true },
+  const sellClickTable = [
+    { startMode: null, clickIndex: 0, delta: -sellOptionGemCost, endMode: "refund", confirms: false },
+    { startMode: null, clickIndex: 1, delta: -sellOptionGemCost, endMode: "discount", confirms: false },
+    { startMode: "refund", clickIndex: 0, delta: sellOptionGemCost, endMode: null, confirms: true },
     { startMode: "refund", clickIndex: 1, delta: 0, endMode: "discount", confirms: false },
     { startMode: "discount", clickIndex: 0, delta: 0, endMode: "refund", confirms: false },
-    { startMode: "discount", clickIndex: 1, delta: SELL_OPTION_GEM_COST, endMode: null, confirms: true },
+    { startMode: "discount", clickIndex: 1, delta: sellOptionGemCost, endMode: null, confirms: true },
   ];
 
   describe("Sell Flexibility: one purchase, two mutually exclusive modes", () => {
@@ -179,9 +181,7 @@ describe("SkillTree", () => {
       return sellModeButtons(wrapper).map((button) => button.text());
     }
 
-    it.each(
-      SELL_CLICK_TABLE,
-    )("from $startMode, clicking mode $clickIndex costs $delta gems and leaves $endMode", async ({
+    it.each(sellClickTable)("from $startMode, clicking mode $clickIndex costs $delta gems and leaves $endMode", async ({
       startMode,
       clickIndex,
       delta,
@@ -207,8 +207,8 @@ describe("SkillTree", () => {
     it("shows the gem cost on both buttons while the purchase is not owned", () => {
       const { wrapper } = mountWithGems(100);
       expect(modesShown(wrapper)).toEqual([
-        `Full Refund · ${SELL_OPTION_GEM_COST} 💎`,
-        `Discounted · ${SELL_OPTION_GEM_COST} 💎`,
+        `Full Refund · ${sellOptionGemCost} 💎`,
+        `Discounted · ${sellOptionGemCost} 💎`,
       ]);
       expect(wrapper.text()).not.toContain("Unlock Sell Flexibility");
     });
@@ -231,8 +231,8 @@ describe("SkillTree", () => {
       expect(persistStore.generalAddons.sellActive).toBeNull();
       await wrapper.vm.$nextTick();
       expect(modesShown(wrapper)).toEqual([
-        `Full Refund · ${SELL_OPTION_GEM_COST} 💎`,
-        `Discounted · ${SELL_OPTION_GEM_COST} 💎`,
+        `Full Refund · ${sellOptionGemCost} 💎`,
+        `Discounted · ${sellOptionGemCost} 💎`,
       ]);
     });
 
@@ -257,7 +257,7 @@ describe("SkillTree", () => {
     });
 
     it("keeps both modes clickable when owned and out of gems", async () => {
-      const { wrapper, persistStore } = mountWithGems(SELL_OPTION_GEM_COST);
+      const { wrapper, persistStore } = mountWithGems(sellOptionGemCost);
       await sellModeButtons(wrapper)[0].trigger("click");
       persistStore.gems = 0;
       const owned = sellModeButtons(wrapper);
@@ -268,11 +268,11 @@ describe("SkillTree", () => {
     });
 
     it("charges exactly one purchase across repeated switching", async () => {
-      const { wrapper, persistStore } = mountWithGems(SELL_OPTION_GEM_COST * 3);
+      const { wrapper, persistStore } = mountWithGems(sellOptionGemCost * 3);
       for (let click = 0; click < 6; click++) {
         await sellModeButtons(wrapper)[click % 2].trigger("click");
       }
-      expect(persistStore.gems).toBe(SELL_OPTION_GEM_COST * 2);
+      expect(persistStore.gems).toBe(sellOptionGemCost * 2);
       expect(["refund", "discount"]).toContain(persistStore.generalAddons.sellActive);
     });
   });

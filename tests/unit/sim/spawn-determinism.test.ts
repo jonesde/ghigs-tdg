@@ -1,15 +1,9 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
-import {
-  FIXED_DT,
-  GAMEPLAY_ENEMY_CAP,
-  MAX_PENDING_PER_SPAWN,
-  PRE_EMPTIVE_WAVE_TIMER,
-  StartingGold,
-} from "@/sim/Constants.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { resetEnemyId } from "@/sim/enemies/Enemy.js";
-import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
+import { EnemyManager, gameplayEnemyCap, maxPendingPerSpawn } from "@/sim/enemies/EnemyManager.js";
 import { GameEngine } from "@/sim/GameEngine.js";
 import { initRunState } from "@/sim/GameRunState.js";
 import { Grid } from "@/sim/grid/Grid.js";
@@ -19,11 +13,11 @@ import {
   createDefaultPersistState,
   difficultyMultiplier,
   stampRunHistoryDate,
-  WORKER_RUN_DATE_SENTINEL,
+  workerRunDateSentinel,
 } from "@/sim/PersistState.js";
 import { ProjectileManager } from "@/sim/ProjectileManager.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
-import { computeStepBudget } from "@/sim/stepBudget.js";
+import { computeStepBudget, fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import { WaveManager } from "@/sim/waves/WaveManager.js";
 import { makeBastionMap, makeSplitMap } from "../../helpers/mock-grid";
 import { makeParticleSystem } from "../../helpers/mock-managers";
@@ -55,28 +49,28 @@ function makeEngine() {
 describe("Block C spawn queues and determinism", () => {
   it("bounds pending queues no matter how much overflow piles up", () => {
     const enemyManager = makeEnemyManager(makeBastionMap());
-    for (let index = 0; index < GAMEPLAY_ENEMY_CAP; index++) {
+    for (let index = 0; index < gameplayEnemyCap; index++) {
       enemyManager.spawn("minion", 1, 0, 1);
     }
-    for (let index = 0; index < MAX_PENDING_PER_SPAWN * 3; index++) {
+    for (let index = 0; index < maxPendingPerSpawn * 3; index++) {
       enemyManager.enqueueOrSpawn("minion", 1, 0, 1);
     }
-    expect(enemyManager.getTotalPendingCount()).toBeLessThanOrEqual(MAX_PENDING_PER_SPAWN);
+    expect(enemyManager.getTotalPendingCount()).toBeLessThanOrEqual(maxPendingPerSpawn);
     expect(enemyManager.getPendingOverflowDroppedCount()).toBeGreaterThan(0);
   });
 
   it("drains per tick from the most-backlogged spawn so immortal base-attackers never pin freed slots", () => {
     const enemyManager = makeEnemyManager(makeSplitMap());
-    for (let index = 0; index < GAMEPLAY_ENEMY_CAP / 2; index++) {
+    for (let index = 0; index < gameplayEnemyCap / 2; index++) {
       const attacker = enemyManager.spawn("minion", 1, 0, 1);
       attacker.attackingBase = true;
       attacker.hp = 1e9;
       attacker.maxHp = 1e9;
     }
-    for (let index = 0; index < GAMEPLAY_ENEMY_CAP / 2; index++) {
+    for (let index = 0; index < gameplayEnemyCap / 2; index++) {
       enemyManager.spawn("minion", 1, 1, 1);
     }
-    expect(enemyManager.enemies.length).toBe(GAMEPLAY_ENEMY_CAP);
+    expect(enemyManager.enemies.length).toBe(gameplayEnemyCap);
     for (let index = 0; index < 60; index++) {
       enemyManager.enqueueOrSpawn("minion", 1, 0, 1);
     }
@@ -84,9 +78,9 @@ describe("Block C spawn queues and determinism", () => {
     for (let index = enemyManager.enemies.length - 1; index >= 0; index--) {
       if (enemyManager.enemies[index].spawnIndex === 1) enemyManager.removeDeadEnemy(index);
     }
-    expect(enemyManager.enemies.length).toBe(GAMEPLAY_ENEMY_CAP / 2);
+    expect(enemyManager.enemies.length).toBe(gameplayEnemyCap / 2);
     enemyManager.drainPendingQueues();
-    expect(enemyManager.enemies.length).toBe(GAMEPLAY_ENEMY_CAP);
+    expect(enemyManager.enemies.length).toBe(gameplayEnemyCap);
     expect(enemyManager.getPendingCountForSpawn(0)).toBe(10);
   });
 
@@ -94,7 +88,7 @@ describe("Block C spawn queues and determinism", () => {
     const mapData = makeBastionMap();
     const enemyManager = makeEnemyManager(mapData);
     const waveManager = new WaveManager(mapData, enemyManager);
-    for (let index = 0; index < GAMEPLAY_ENEMY_CAP; index++) {
+    for (let index = 0; index < gameplayEnemyCap; index++) {
       enemyManager.spawn("minion", 1, 0, 1);
     }
     waveManager.startNextWave();
@@ -116,7 +110,7 @@ describe("Block C spawn queues and determinism", () => {
     let expiredWave: number | null = null;
     let clearedWave: number | null = null;
     firstWaves.update(
-      PRE_EMPTIVE_WAVE_TIMER + 1,
+      getGameContent().economy.preEmptiveWaveTimer + 1,
       (wave) => {
         clearedWave = wave;
       },
@@ -136,7 +130,7 @@ describe("Block C spawn queues and determinism", () => {
     secondWaves.queue = [];
     let fallbackWave: number | null = null;
     secondWaves.update(
-      PRE_EMPTIVE_WAVE_TIMER + 1,
+      getGameContent().economy.preEmptiveWaveTimer + 1,
       (wave) => {
         fallbackWave = wave;
       },
@@ -237,15 +231,15 @@ describe("Block C spawn queues and determinism", () => {
   });
 
   it("budgets fixed steps without dropping under steady load and counts drops under overload", () => {
-    const steady = computeStepBudget(0, FIXED_DT, 1);
+    const steady = computeStepBudget(0, fixedDeltaSeconds, 1);
     expect(steady.steps).toBe(1);
     expect(steady.droppedSeconds).toBe(0);
     expect(steady.accumulator).toBeCloseTo(0, 10);
 
     const overload = computeStepBudget(0, 10, 8);
     expect(overload.steps).toBe(64);
-    expect(overload.droppedSeconds).toBeCloseTo(10 - 64 * FIXED_DT, 10);
-    expect(overload.accumulator).toBeLessThan(FIXED_DT);
+    expect(overload.droppedSeconds).toBeCloseTo(10 - 64 * fixedDeltaSeconds, 10);
+    expect(overload.accumulator).toBeLessThan(fixedDeltaSeconds);
   });
 
   it("stores a date sentinel in worker runHistory until the host stamps it", () => {
@@ -253,7 +247,7 @@ describe("Block C spawn queues and determinism", () => {
     engine.endGame(false);
     const history = engine.persistState.runHistory;
     const lastEntry = history[history.length - 1];
-    expect(lastEntry.date).toBe(WORKER_RUN_DATE_SENTINEL);
+    expect(lastEntry.date).toBe(workerRunDateSentinel);
     expect(lastEntry.date).toBe(0);
     stampRunHistoryDate(lastEntry, 123456789);
     expect(lastEntry.date).toBe(123456789);
@@ -308,7 +302,7 @@ describe("Block C spawn queues and determinism", () => {
     }
     expect(enemyManager.getTotalPendingCount()).toBe(5);
     const drainSpy = vi.spyOn(enemyManager, "drainPendingQueues");
-    engine.update(FIXED_DT);
+    engine.update(fixedDeltaSeconds);
     expect(drainSpy).toHaveBeenCalledTimes(1);
     expect(enemyManager.getTotalPendingCount()).toBe(0);
     expect(enemyManager.enemies).toHaveLength(5);
@@ -318,7 +312,7 @@ describe("Block C spawn queues and determinism", () => {
     const engine = makeEngine();
     expect(buildSnapshot(engine, 0).meta.pendingOverflowDropped).toBe(0);
     const enemyManager = engine.enemyManager!;
-    for (let index = 0; index < MAX_PENDING_PER_SPAWN + 1; index++) {
+    for (let index = 0; index < maxPendingPerSpawn + 1; index++) {
       enemyManager.enqueuePending("minion", 1, 0, 1);
     }
     expect(enemyManager.getPendingOverflowDroppedCount()).toBe(1);
@@ -328,7 +322,7 @@ describe("Block C spawn queues and determinism", () => {
   it("preserves pending overflow drops across enemy clear (endGame/killAll)", () => {
     const engine = makeEngine();
     const enemyManager = engine.enemyManager!;
-    for (let index = 0; index < MAX_PENDING_PER_SPAWN + 1; index++) {
+    for (let index = 0; index < maxPendingPerSpawn + 1; index++) {
       enemyManager.enqueuePending("minion", 1, 0, 1);
     }
     expect(enemyManager.getPendingOverflowDroppedCount()).toBe(1);
@@ -346,7 +340,7 @@ describe("Block C spawn queues and determinism", () => {
     expect(() => initRunState({}, 0, { ...makeBastionMap(), regionId: 99 }, null)).toThrow(RangeError);
     const validState = {};
     initRunState(validState, 0, makeBastionMap(), null);
-    expect(validState.gold).toBe(StartingGold[0]);
+    expect(validState.gold).toBe(getGameContent().economy.startingGoldByRegion[0]);
   });
 
   it("clamps difficultyMultiplier at 1x for corrupt ticks", () => {

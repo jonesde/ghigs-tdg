@@ -3,24 +3,20 @@
 
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-  TOWER_BASE,
-  TOWER_LEVEL_DMG_MULT,
-  TOWER_LEVEL_HEALTH_MULT,
-  TOWER_LEVEL_RANGE_MULT,
-  TOWER_LEVEL_RATE_MULT,
-  TOWER_META,
-  TowerIds,
-} from "@/sim/ConstantsTower.js";
+import { getGameContent } from "@/content/gameContent.js";
+import { TowerIds } from "@/content/towerIds.js";
 import { Tower } from "@/sim/towers/Tower.js";
 import { computeTowerCoreStats, computeTowerMaxHealth } from "@/sim/towers/towerCoreStats.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../helpers/mock-grid";
 import { mockDefaultTheme } from "../helpers/mock-stores.js";
 
+const towerBase = getGameContent().towers.base;
+const levelDmgMult = getGameContent().towers.tuning.levelDmgMult;
+
 function makeSave(addons = [false, false, false]) {
   const unlocked = {};
-  for (const id of Object.keys(TOWER_META)) {
+  for (const id of Object.keys(getGameContent().towers.meta)) {
     unlocked[id] = {
       levels: [true, true, true, true, true, true, true],
       variantA: [true, true, true],
@@ -57,7 +53,7 @@ function makeMockGrid() {
   };
 }
 
-const NUMBER_FIELDS = [
+const numberFields = [
   "range",
   "damage",
   "fireRate",
@@ -75,7 +71,7 @@ const NUMBER_FIELDS = [
   "fenceStun",
 ];
 
-const FLAG_FIELDS = ["marksman", "napalm", "stormcall", "armorPiercing", "groundOnly"];
+const flagFields = ["marksman", "napalm", "stormcall", "armorPiercing", "groundOnly"];
 
 beforeEach(() => {
   const pinia = createPinia();
@@ -98,17 +94,17 @@ describe("computeTowerCoreStats", () => {
             if (variant) tower.variant = variant;
             tower.recomputeMaxHealth();
 
-            const core = computeTowerCoreStats(TOWER_BASE[towerId], towerId, level, variant);
+            const core = computeTowerCoreStats(towerBase[towerId], towerId, level, variant);
             const towerStats = tower.stats;
-            for (const field of NUMBER_FIELDS) {
+            for (const field of numberFields) {
               expect(towerStats[field], `${label}.${field}`).toBeCloseTo(core[field], 10);
             }
-            for (const field of FLAG_FIELDS) {
+            for (const field of flagFields) {
               expect(towerStats[field], `${label}.${field}`).toBe(core[field]);
             }
             expect(towerStats.healthMult, `${label}.healthMult`).toBeCloseTo(core.healthMult, 10);
 
-            const expectedHealth = computeTowerMaxHealth(TOWER_BASE[towerId], towerId, level, variant, core.healthMult);
+            const expectedHealth = computeTowerMaxHealth(towerBase[towerId], towerId, level, variant, core.healthMult);
             expect(tower.maxHealth, `${label}.maxHealth`).toBeCloseTo(expectedHealth, 8);
           }
         }
@@ -119,7 +115,7 @@ describe("computeTowerCoreStats", () => {
       const tower = new Tower("cannon", 0, 0, makeSave(), makeMockGrid());
       tower.level = 6;
       tower.variant = "B";
-      const core = computeTowerCoreStats(TOWER_BASE.cannon, "cannon", 6, "B");
+      const core = computeTowerCoreStats(towerBase.cannon, "cannon", 6, "B");
       expect(tower.stats.damage).toBe(core.damage);
       expect(tower.stats.range).toBe(core.range);
       expect(tower.stats.splash).toBe(core.splash);
@@ -129,38 +125,46 @@ describe("computeTowerCoreStats", () => {
   describe("closed-form progression", () => {
     it("scales basic damage, fire rate, and range by the level multipliers", () => {
       for (let level = 1; level <= 7; level++) {
-        const core = computeTowerCoreStats(TOWER_BASE.basic, "basic", level, null);
-        expect(core.damage).toBeCloseTo(TOWER_BASE.basic.damage * TOWER_LEVEL_DMG_MULT ** (level - 1), 10);
-        expect(core.fireRate).toBeCloseTo(TOWER_BASE.basic.fireRate * TOWER_LEVEL_RATE_MULT ** (level - 1), 10);
-        expect(core.range).toBeCloseTo(TOWER_BASE.basic.range * TOWER_LEVEL_RANGE_MULT ** (level - 1), 10);
+        const core = computeTowerCoreStats(towerBase.basic, "basic", level, null);
+        expect(core.damage).toBeCloseTo(towerBase.basic.damage * levelDmgMult ** (level - 1), 10);
+        const levelRateMult = getGameContent().towers.tuning.levelRateMult;
+        expect(core.fireRate).toBeCloseTo(towerBase.basic.fireRate * levelRateMult ** (level - 1), 10);
+        expect(core.range).toBeCloseTo(
+          towerBase.basic.range * getGameContent().towers.tuning.levelRangeMult ** (level - 1),
+          10,
+        );
       }
     });
 
     it("applies the Rapid specialization ops at level 5 and above only", () => {
-      const baseDamage = TOWER_BASE.basic.damage;
-      const level4 = computeTowerCoreStats(TOWER_BASE.basic, "basic", 4, "A");
-      expect(level4.damage).toBeCloseTo(baseDamage * TOWER_LEVEL_DMG_MULT ** 3, 10);
-      const level5 = computeTowerCoreStats(TOWER_BASE.basic, "basic", 5, "A");
-      expect(level5.damage).toBeCloseTo(baseDamage * TOWER_LEVEL_DMG_MULT ** 4 * 0.6, 10);
-      expect(level5.fireRate).toBeCloseTo(TOWER_BASE.basic.fireRate * TOWER_LEVEL_RATE_MULT ** 4 * 2, 10);
-      const level7 = computeTowerCoreStats(TOWER_BASE.basic, "basic", 7, "A");
-      expect(level7.damage).toBeCloseTo(baseDamage * TOWER_LEVEL_DMG_MULT ** 6 * 0.6, 10);
+      const baseDamage = towerBase.basic.damage;
+      const level4 = computeTowerCoreStats(towerBase.basic, "basic", 4, "A");
+      expect(level4.damage).toBeCloseTo(baseDamage * levelDmgMult ** 3, 10);
+      const level5 = computeTowerCoreStats(towerBase.basic, "basic", 5, "A");
+      expect(level5.damage).toBeCloseTo(baseDamage * levelDmgMult ** 4 * 0.6, 10);
+      expect(level5.fireRate).toBeCloseTo(
+        towerBase.basic.fireRate * getGameContent().towers.tuning.levelRateMult ** 4 * 2,
+        10,
+      );
+      const level7 = computeTowerCoreStats(towerBase.basic, "basic", 7, "A");
+      expect(level7.damage).toBeCloseTo(baseDamage * levelDmgMult ** 6 * 0.6, 10);
     });
 
     it("grows max health by the health multiplier independently of damage", () => {
       for (let level = 1; level <= 7; level++) {
-        expect(computeTowerMaxHealth(TOWER_BASE.ice, "ice", level, null, 1)).toBeCloseTo(
-          TOWER_BASE.ice.health * TOWER_LEVEL_HEALTH_MULT ** (level - 1),
+        expect(computeTowerMaxHealth(towerBase.ice, "ice", level, null, 1)).toBeCloseTo(
+          towerBase.ice.health * getGameContent().towers.tuning.levelHealthMult ** (level - 1),
           10,
         );
       }
     });
 
     it("carries the variant health multiplier for Reinforced shotgun tanks", () => {
-      const level7 = computeTowerCoreStats(TOWER_BASE.shotgunTank, "shotgunTank", 7, "A");
+      const level7 = computeTowerCoreStats(towerBase.shotgunTank, "shotgunTank", 7, "A");
       expect(level7.healthMult).toBeGreaterThan(1);
-      const health = computeTowerMaxHealth(TOWER_BASE.shotgunTank, "shotgunTank", 7, "A", level7.healthMult);
-      expect(health).toBeCloseTo(TOWER_BASE.shotgunTank.health * TOWER_LEVEL_HEALTH_MULT ** 6 * level7.healthMult, 8);
+      const health = computeTowerMaxHealth(towerBase.shotgunTank, "shotgunTank", 7, "A", level7.healthMult);
+      const healthGrowth = getGameContent().towers.tuning.levelHealthMult ** 6;
+      expect(health).toBeCloseTo(towerBase.shotgunTank.health * healthGrowth * level7.healthMult, 8);
     });
   });
 });

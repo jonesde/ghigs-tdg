@@ -6,7 +6,7 @@ import type { Command } from "@/sim/Command.js";
 import type { CommandDispatcher } from "@/sim/CommandDispatcher.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
 import type { BaseGunStatsSnapshot } from "@/sim/SimulationSnapshot.js";
-import { BASE_SELECTION_ID } from "@/sim/towers/BaseDefense.js";
+import { baseSelectionId } from "@/sim/towers/BaseDefense.js";
 import { useGameStore } from "@/stores/game.js";
 import { usePersistStore } from "@/stores/persist.js";
 
@@ -56,7 +56,7 @@ function setup(overrides: Partial<MockBaseDefense> = {}): Harness {
   setActivePinia(pinia);
   usePersistStore();
   const gameStore = useGameStore();
-  gameStore.selectedTowerId = BASE_SELECTION_ID;
+  gameStore.selectedTowerId = baseSelectionId;
   gameStore.gold = 1000;
   gameStore.baseDefense = makeBaseDefense(overrides) as never;
   // The bus stamps its own commandId, so assertions match on the fields the

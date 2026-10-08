@@ -1,3 +1,6 @@
+import { getGameContent } from "@/content/gameContent.js";
+import { themeProgressivePlacementInterval, themeProgressiveRerollGoldPerWave } from "@/content/themeMaps.js";
+import type { TowerId } from "@/content/towerIds.js";
 import type { MapThemeData } from "@/render/themes/index.js";
 import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
 import {
@@ -13,19 +16,21 @@ import {
   trickleSpawnCount,
 } from "@/sim/bossAbilities.js";
 import type { DebugKind } from "@/sim/Command.js";
-import { enemyLevelForWave, waveBossCount } from "@/sim/ConstantsEnemy.js";
-import { ICE_AURA_RANGE, STATIC_FIELD_RANGE } from "@/sim/ConstantsTower.js";
 import type { AttackTarget, Enemy } from "@/sim/enemies/Enemy.js";
 import { invalidateNearestWalkableCache, resetEnemyId } from "@/sim/enemies/Enemy.js";
-import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
+import { EnemyManager, gameplayEnemyCap } from "@/sim/enemies/EnemyManager.js";
 import { writeFlightVelocities } from "@/sim/enemies/flyingSteer.js";
 import type { GameRunState } from "@/sim/GameRunState.js";
 import {
   addGold,
   createFreshGemBreakdown,
+  customProgressiveMapIndex,
+  customRandomMapIndex,
   cycleTimeScale,
   damageBase,
+  GameState,
   hasClaimedMilestoneRun,
+  isCustomMapIndex,
   setGameState,
   setGold,
   setHoverTile,
@@ -86,7 +91,7 @@ import {
   markFirstTimeMilestone as persistMarkFirstTimeMilestone,
   maybeUnlockNextMap as persistMaybeUnlockNextMap,
   updateBestWave as persistUpdateBestWave,
-  WORKER_RUN_DATE_SENTINEL,
+  workerRunDateSentinel,
 } from "@/sim/PersistState.js";
 import { ProjectileManager } from "@/sim/ProjectileManager.js";
 import { ContactProcessor } from "@/sim/physics/ContactProcessor.js";
@@ -102,39 +107,25 @@ import {
   rollSpecialistType,
 } from "@/sim/runBonuses.js";
 import type { BaseDefenseSnapshot } from "@/sim/SimulationSnapshot.js";
-import { BASE_SELECTION_ID, BaseDefense } from "@/sim/towers/BaseDefense.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
+import { BaseDefense, baseSelectionId } from "@/sim/towers/BaseDefense.js";
 import { maxLevelForBase } from "@/sim/towers/SkillTree.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import { TowerManager } from "@/sim/towers/TowerManager.js";
 import { WaveGraphTracker } from "@/sim/WaveGraphTracker.js";
 import { type WaveEntry, WaveManager } from "@/sim/waves/WaveManager.js";
-import {
-  applyUpgradeCostReduction,
-  BETWEEN_WAVES_TIMER,
-  BONUS_GEM_BASE,
-  BOSS_SPEED_LIMIT,
-  CUSTOM_PROGRESSIVE_MAP_INDEX,
-  CUSTOM_RANDOM_MAP_INDEX,
-  cashOutAmount,
-  DIFFICULTY_MULT_GEM_BASE,
-  ENEMY_WOUND_DAMAGE_REDUCTION_PCT,
-  FIXED_DT,
-  GAMEPLAY_ENEMY_CAP,
-  GameState,
-  MILESTONE_GEMS,
-  MILESTONE_WAVES,
-  progressivePlacementInterval,
-  progressiveRerollGoldPerWave,
-  REGION_DIFFICULTY_MULT,
-  SELL_DISCOUNT_PCT,
-  SLOW_HEALING_PER_ROUND,
-  STARTING_BASE_HEALTH,
-  STARTING_GOLD_BONUS,
-  STARTING_HEALTH_BONUS,
-  StartingGold,
-  VICTORY_WAVE,
-} from "./Constants.js";
-import { GHOST_PARTICLE_COUNT, GHOST_PARTICLE_DURATION, TOWER_META, type TowerId } from "./ConstantsTower.js";
+import { enemyLevelForWave, waveBossCount } from "@/sim/waves/waveComposition.js";
+import { applyUpgradeCostReduction, cashOutAmount } from "./towers/towerEconomy.js";
+
+// Ceiling the engine enforces on itself when a boss enters the world. A member of
+// GameRunState's timeScales, so the debug whitelist and cycleTimeScale still
+// recognize the value and no restore path is needed.
+const bossSpeedLimit = 2;
+
+const victoryWave = getGameContent().economy.victoryWave;
+const startingBaseHealth = getGameContent().economy.startingBaseHealth;
+const betweenWavesTimer = getGameContent().economy.betweenWavesTimer;
+const difficultyMultGemBase = getGameContent().economy.difficultyMultGemBase;
 
 export class GameEngine {
   runState!: GameRunState;
@@ -289,7 +280,7 @@ export class GameEngine {
 
     this.totalGoldEarned = 0;
     this.totalHealingReceived = 0;
-    this.maxBaseHealth = STARTING_BASE_HEALTH;
+    this.maxBaseHealth = startingBaseHealth;
     this.simSeconds = 0;
     this.waveTopTowers = null;
     this.debugPhysicsEnabled = false;
@@ -312,12 +303,12 @@ export class GameEngine {
     // Custom generated maps are not catalog entries, but they still take the
     // active world's terrain noise scalars so a world's character holds.
     const mapData = generateRandomMap(width, height, style, regionId, level, seed, this.theme?.maps);
-    this._initMap(CUSTOM_RANDOM_MAP_INDEX, mapData, this.persistState);
+    this._initMap(customRandomMapIndex, mapData, this.persistState);
   }
 
   loadProgressiveMap(config: ProgressiveConfig): void {
     const mapData = generateProgressiveMap(config);
-    this._initMap(CUSTOM_PROGRESSIVE_MAP_INDEX, mapData, this.persistState);
+    this._initMap(customProgressiveMapIndex, mapData, this.persistState);
   }
 
   _initMap(mapIndex: number, mapData: GeneratedMap, persistState: PersistState): void {
@@ -349,8 +340,8 @@ export class GameEngine {
       mapIndex,
       map: mapData,
       grid: null,
-      baseHealth: STARTING_BASE_HEALTH,
-      maxBaseHealth: STARTING_BASE_HEALTH,
+      baseHealth: startingBaseHealth,
+      maxBaseHealth: startingBaseHealth,
       gold: 0,
       currentWave: 0,
       waveCountdown: null,
@@ -391,7 +382,7 @@ export class GameEngine {
     this.enemyManager.setWoundDamageReductionPct(this.woundDamageReductionPct());
     // Region bump on enemy HP & damage so higher regions feel like Region 0's late maps.
     // Region 0 -> factor 1, byte-identical to prior behavior.
-    this.enemyManager.regionFactor = 1 + REGION_DIFFICULTY_MULT * mapData.regionId;
+    this.enemyManager.regionFactor = 1 + getGameContent().economy.regionDifficultyMult * mapData.regionId;
     // Runs inside spawn, after the ability field is set and before the crowd agent.
     this.enemyManager.onSpawned = (enemy) => this.onEnemySpawned(enemy);
     this.projectileManager = new ProjectileManager(this.enemyManager, this.particleSpawner, null, this.grid);
@@ -410,7 +401,7 @@ export class GameEngine {
       this.maxBaseHealth = maxHealth;
     });
     this.projectileManager.setTowerLookup((towerId) => {
-      if (towerId === BASE_SELECTION_ID) return this.baseDefense;
+      if (towerId === baseSelectionId) return this.baseDefense;
       return this.towerManager?.getTowerById(towerId) ?? null;
     });
     // Burn ticks run inside Enemy.updateStatusTimers; route their dealt damage
@@ -460,7 +451,7 @@ export class GameEngine {
       this.navMeshBuilder = null;
       throw new Error(`Navmesh build failed: ${buildError}`);
     }
-    this.crowdManager = new CrowdManager(navBuilder.getNavMesh()!, this.grid.tileSize, GAMEPLAY_ENEMY_CAP);
+    this.crowdManager = new CrowdManager(navBuilder.getNavMesh()!, this.grid.tileSize, gameplayEnemyCap);
     this.crowdManager.setForceFieldSystem(this.forceFieldSystem);
     this.enemyManager.setCrowdManager(this.crowdManager);
     this.physicsWorld.setEnemyEnemyCollisions(false);
@@ -523,21 +514,22 @@ export class GameEngine {
 
     const map = this.runState.map;
     const regionId = map?.regionId ?? 0;
-    this.runState.gold = StartingGold[regionId] ?? StartingGold[0];
+    this.runState.gold =
+      getGameContent().economy.startingGoldByRegion[regionId] ?? getGameContent().economy.startingGoldByRegion[0];
     if (map?.style === "progressive" && map.entryCount !== undefined) {
       this.runState.gold += progressiveEntryGold(map.entryCount);
     }
 
     const ehTier = generalAddons.extraHealth;
-    let levelOneHealth = STARTING_BASE_HEALTH;
+    let levelOneHealth = startingBaseHealth;
     if (ehTier !== null && ehTier !== undefined) {
-      levelOneHealth += STARTING_HEALTH_BONUS[ehTier] || 0;
+      levelOneHealth += getGameContent().economy.startingHealthBonus[ehTier] || 0;
     }
     this.baseDefense?.applyStartingHealth(levelOneHealth);
 
     const sgTier = generalAddons.startingGold;
     if (sgTier !== null && sgTier !== undefined) {
-      this.runState.gold += STARTING_GOLD_BONUS[sgTier] || 0;
+      this.runState.gold += getGameContent().economy.startingGoldBonus[sgTier] || 0;
     }
   }
 
@@ -546,7 +538,7 @@ export class GameEngine {
   private woundDamageReductionPct(): number {
     const tier = this.persistState.generalAddons.enemyWoundDamageReduction;
     if (typeof tier !== "number") return 0;
-    return ENEMY_WOUND_DAMAGE_REDUCTION_PCT[tier] || 0;
+    return getGameContent().economy.enemyWoundDamageReductionPct[tier] || 0;
   }
 
   private corridorTilesForSpawn(spawnIndex: number): number {
@@ -571,7 +563,7 @@ export class GameEngine {
 
     const base = 1;
     const diffMult = getDifficultyMultiplier(this.persistState);
-    const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
+    const gemMult = 1 + difficultyMultGemBase * (diffMult - 1);
     const mapMult = this.runGemMapMultiplier();
 
     const afterDiff = Math.ceil(base * gemMult);
@@ -695,9 +687,9 @@ export class GameEngine {
     this.forceFieldSystem.apply(dt, this.enemyManager.enemies, this.physicsWorld);
     // Homing projectiles set kinematic velocities before the physics step.
     this.projectileManager?.prePhysics(dt);
-    // FIXED_DT is passed explicitly: PhysicsWorld.step asserts it, so a variable-dt
-    // caller fails loudly instead of silently desyncing the fixed-step sim.
-    this.physicsWorld!.step(FIXED_DT);
+    // fixedDeltaSeconds is passed explicitly: PhysicsWorld.step asserts it, so a
+    // variable-dt caller fails loudly instead of silently desyncing the fixed-step sim.
+    this.physicsWorld!.step(fixedDeltaSeconds);
     // PhysicsWorld.step already projected contact flags onto enemies; drain the
     // projectile hit queue for postPhysics resolution.
     const projectileHits = this.contactProcessor?.drainProjectileHits() ?? [];
@@ -726,10 +718,13 @@ export class GameEngine {
     if (this.grid) {
       for (const tower of this.towerManager.towers) {
         if (tower.pendingGhostEffect) {
-          this.particleSpawner?.spawn(tower.x, tower.y, tower.color, GHOST_PARTICLE_COUNT, {
-            life: GHOST_PARTICLE_DURATION,
-            speed: 80,
-          });
+          this.particleSpawner?.spawn(
+            tower.x,
+            tower.y,
+            tower.color,
+            getGameContent().towers.tuning.ghostParticleCount,
+            { life: getGameContent().towers.tuning.ghostParticleDuration, speed: 80 },
+          );
           tower.pendingGhostEffect = false;
           this.grid.setTowerGhost(tower.tileX, tower.tileY);
           ghostedTower = true;
@@ -754,7 +749,7 @@ export class GameEngine {
     }
 
     if (
-      this.waveManager.currentWave >= VICTORY_WAVE &&
+      this.waveManager.currentWave >= victoryWave &&
       this.waveManager.betweenWaves &&
       this.enemyManager.enemies.length === 0 &&
       !this.enemyManager.hasPendingEnemies()
@@ -773,10 +768,20 @@ export class GameEngine {
     for (const tower of this.towerManager.towers) {
       if (tower.isGhost) continue;
       if (tower.stats.frostAura) {
-        specs.push({ sensorId: `${tower.id}:frost`, x: tower.x, y: tower.y, radius: ICE_AURA_RANGE * tileSize });
+        specs.push({
+          sensorId: `${tower.id}:frost`,
+          x: tower.x,
+          y: tower.y,
+          radius: getGameContent().towers.tuning.iceAuraRange * tileSize,
+        });
       }
       if (tower.stats.staticField) {
-        specs.push({ sensorId: `${tower.id}:static`, x: tower.x, y: tower.y, radius: STATIC_FIELD_RANGE * tileSize });
+        specs.push({
+          sensorId: `${tower.id}:static`,
+          x: tower.x,
+          y: tower.y,
+          radius: getGameContent().towers.tuning.staticFieldRange * tileSize,
+        });
       }
     }
     for (const enemy of this.enemyManager.enemies) {
@@ -828,9 +833,9 @@ export class GameEngine {
     setWave(this.runState, wave);
     this.applyWaveProgressRewards(wave);
     // Stamped at the end of the wave, not onWaveStart, so the medals are already
-    // up when the between-waves countdown overlay appears. The VICTORY_WAVE clear
+    // up when the between-waves countdown overlay appears. The victoryWave clear
     // ends the run in this same tick and never opens a countdown.
-    if (wave < VICTORY_WAVE) this.stampWaveTopTowers();
+    if (wave < victoryWave) this.stampWaveTopTowers();
     if (this.isProgressiveHoldWave(wave)) this.armPlacementHold("countdown");
   }
 
@@ -843,7 +848,7 @@ export class GameEngine {
     this.applyWaveProgressRewards(wave);
     // Expiry goes straight into the next wave with no countdown, so this is the
     // same "the wave just ended" moment the medals are stamped on.
-    if (wave < VICTORY_WAVE) this.stampWaveTopTowers();
+    if (wave < victoryWave) this.stampWaveTopTowers();
     if (this.isProgressiveHoldWave(wave)) this.armPlacementHold("expire-advance");
   }
 
@@ -851,16 +856,16 @@ export class GameEngine {
   // on debug setWave jumps, so gem breakdowns, best waves, and map unlocks stay
   // consistent no matter how the wave counter moved.
   private applyWaveProgressRewards(wave: number): void {
-    for (const milestoneWave of MILESTONE_WAVES) {
+    for (const milestoneWave of getGameContent().economy.milestoneWaves) {
       if (wave >= milestoneWave && !hasClaimedMilestoneRun(this.runState, milestoneWave)) {
         this.runState.milestoneRewardsClaimed[milestoneWave] = true;
 
         const hasClaimed =
-          this.runState.mapIndex >= 0 &&
+          !isCustomMapIndex(this.runState.mapIndex) &&
           persistHasClaimedMilestone(this.persistState, this.themeId, this.runState.mapIndex, milestoneWave);
-        const base = MILESTONE_GEMS[milestoneWave] ?? 0;
+        const base = getGameContent().economy.milestoneGems[String(milestoneWave)] ?? 0;
         const diffMult = getDifficultyMultiplier(this.persistState);
-        const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
+        const gemMult = 1 + difficultyMultGemBase * (diffMult - 1);
         const mapMult = this.runGemMapMultiplier();
 
         const afterDiff = Math.ceil(base * gemMult);
@@ -868,7 +873,7 @@ export class GameEngine {
         let afterFirstTime = afterRegion;
 
         if (!hasClaimed) {
-          afterFirstTime = afterRegion * 2;
+          afterFirstTime = afterRegion * getGameContent().economy.firstTimeMilestoneMult;
         }
 
         const breakdown = this.runState.gemBreakdown.milestones;
@@ -879,7 +884,7 @@ export class GameEngine {
 
         // Record the first-time 2x marker BEFORE crediting the gems, so the reward
         // can never be granted without the claim flag being persisted.
-        if (!hasClaimed && this.runState.mapIndex >= 0) {
+        if (!hasClaimed && !isCustomMapIndex(this.runState.mapIndex)) {
           persistMarkFirstTimeMilestone(this.persistState, this.themeId, this.runState.mapIndex, milestoneWave);
         }
 
@@ -888,9 +893,10 @@ export class GameEngine {
       }
     }
 
-    if (this.runState.mapIndex >= 0) {
+    if (!isCustomMapIndex(this.runState.mapIndex)) {
       persistUpdateBestWave(this.persistState, this.themeId, this.runState.mapIndex, wave);
-      if (wave >= 15) {
+      if (wave >= getGameContent().economy.milestoneWaves[0]) {
+        // First milestone wave: past it the next campaign map is open.
         persistMaybeUnlockNextMap(this.persistState, this.themeId, this.runState.mapIndex);
       }
     }
@@ -928,7 +934,7 @@ export class GameEngine {
     const generalAddons = this.persistState.generalAddons;
     const healTier = generalAddons.slowHealing;
     if (healTier !== null && healTier !== undefined) {
-      const healAmount = SLOW_HEALING_PER_ROUND[healTier] || 0;
+      const healAmount = getGameContent().economy.slowHealingPerRound[healTier] || 0;
       if (this.runState.baseHealth < this.maxBaseHealth) {
         const before = this.runState.baseHealth;
         this.runState.baseHealth = Math.min(this.runState.baseHealth + healAmount, this.maxBaseHealth);
@@ -973,12 +979,12 @@ export class GameEngine {
 
     const finalWave = this.waveManager!.currentWave;
     const lastLevel = Math.floor(finalWave / 10);
-    const perWaveRate = Math.floor(BONUS_GEM_BASE ** lastLevel);
+    const perWaveRate = Math.floor(getGameContent().economy.bonusGemBase ** lastLevel);
     const totalBonus = Math.floor((finalWave * perWaveRate) / 10);
 
     if (totalBonus > 0) {
       const diffMult = getDifficultyMultiplier(this.persistState);
-      const gemMult = 1 + DIFFICULTY_MULT_GEM_BASE * (diffMult - 1);
+      const gemMult = 1 + difficultyMultGemBase * (diffMult - 1);
       const mapMult = this.runGemMapMultiplier();
       const afterDiff = Math.ceil(totalBonus * gemMult);
       const afterRegion = Math.ceil(afterDiff * mapMult);
@@ -993,14 +999,15 @@ export class GameEngine {
       this.runState.runGemsEarned += afterRegion;
     }
 
-    if (victory && this.waveManager!.currentWave >= VICTORY_WAVE && this.runState.mapIndex >= 0) {
+    const catalogRun = !isCustomMapIndex(this.runState.mapIndex);
+    if (victory && this.waveManager!.currentWave >= victoryWave && catalogRun) {
       if (!persistHasCleared(this.persistState, this.themeId, this.runState.mapIndex)) {
         const breakdown = this.runState.gemBreakdown;
         const subtotal =
           breakdown.bossKills.afterFirstTime +
           breakdown.milestones.afterFirstTime +
           breakdown.waveCompletion.afterFirstTime;
-        const bonus = subtotal * 2;
+        const bonus = subtotal * getGameContent().economy.firstFullClearMult;
         this.runState.gemBreakdown.firstClearBonus = bonus;
         this.persistState.gems += bonus;
         this.runState.runGemsEarned += bonus;
@@ -1024,16 +1031,16 @@ export class GameEngine {
       // Sentinel: the worker never calls Date.now() (wall-clock would poison
       // deterministic replay). The host stamps the real date on receipt in
       // MainThreadHostBindings.schedulePersistSave via stampRunHistoryDate.
-      date: WORKER_RUN_DATE_SENTINEL,
+      date: workerRunDateSentinel,
     };
 
-    if (this.runState.mapIndex === CUSTOM_RANDOM_MAP_INDEX && this.runState.randomMapParams) {
+    if (this.runState.mapIndex === customRandomMapIndex && this.runState.randomMapParams) {
       historyEntry.randomMapParams = this.runState.randomMapParams;
     }
     // Custom progressive runs replay from their config; the board growth rewrites
     // the map every placement but never touches these four fields.
     const progressiveParams = progressiveConfigFromMap(this.runState.map);
-    if (this.runState.mapIndex === CUSTOM_PROGRESSIVE_MAP_INDEX && progressiveParams) {
+    if (this.runState.mapIndex === customProgressiveMapIndex && progressiveParams) {
       historyEntry.progressiveMapParams = progressiveParams;
     }
 
@@ -1048,7 +1055,7 @@ export class GameEngine {
   }
 
   private selectedAnchorTile(): { tileX: number; tileY: number } | null {
-    if (this.runState.selectedTowerId === BASE_SELECTION_ID) {
+    if (this.runState.selectedTowerId === baseSelectionId) {
       const base = this.grid?.getBase();
       if (!base) return null;
       return { tileX: base.x, tileY: base.y };
@@ -1133,7 +1140,7 @@ export class GameEngine {
     if (this.grid.isBase(tx, ty)) {
       // The base is a selection target, not a build site: selecting it keeps
       // build mode on so the player can inspect or upgrade it mid-placement.
-      this.runState.selectedTowerId = BASE_SELECTION_ID;
+      this.runState.selectedTowerId = baseSelectionId;
       return;
     }
 
@@ -1144,8 +1151,9 @@ export class GameEngine {
         this.runState.selectedTowerId = String(existing.id);
       } else {
         const towerType = this.runState.selectedTowerType;
-        const meta = TOWER_META[towerType]!;
-        const discount = this.persistState.generalAddons?.sellActive === "discount" ? 1 - SELL_DISCOUNT_PCT : 1;
+        const meta = getGameContent().towers.meta[towerType]!;
+        const discount =
+          this.persistState.generalAddons?.sellActive === "discount" ? 1 - getGameContent().economy.sellDiscountPct : 1;
         const cost = Math.floor(meta.cost * discount);
         if (this.runState.gold >= cost && this.grid.canBuild(tx, ty)) {
           // Path-blocking placements are allowed: towers have HP and enemies attack
@@ -1241,7 +1249,7 @@ export class GameEngine {
   }
 
   upgradeSelected(): void {
-    if (this.runState.selectedTowerId === BASE_SELECTION_ID) {
+    if (this.runState.selectedTowerId === baseSelectionId) {
       this.upgradeBase();
       return;
     }
@@ -1390,7 +1398,7 @@ export class GameEngine {
     setWave(this.runState, wave);
     this.waveManager?.debugJumpToWave(wave);
     this.runState.waveCountdown =
-      this.waveManager === null ? null : { remaining: Math.ceil(BETWEEN_WAVES_TIMER), nextWave: wave + 1 };
+      this.waveManager === null ? null : { remaining: Math.ceil(betweenWavesTimer), nextWave: wave + 1 };
     this.refreshBossPreview();
     this.applyWaveProgressRewards(wave);
     // Only the destination wave holds. Missed intervals are not replayed, and wave 100 is victory.
@@ -1405,7 +1413,7 @@ export class GameEngine {
   }
 
   sellSelected(): void {
-    if (this.runState.selectedTowerId === BASE_SELECTION_ID) return;
+    if (this.runState.selectedTowerId === baseSelectionId) return;
     const tower = this.getSelectedTower();
     if (!tower) return;
 
@@ -1485,10 +1493,10 @@ export class GameEngine {
       this.runState.selectedTowerId = null;
       return;
     }
-    if (towerId === BASE_SELECTION_ID) {
+    if (towerId === baseSelectionId) {
       // Same contract as handleClick: selecting the base keeps any active
       // build type (arrow-key build-tile navigation lands here in build mode).
-      this.runState.selectedTowerId = BASE_SELECTION_ID;
+      this.runState.selectedTowerId = baseSelectionId;
       return;
     }
     const tower = this.towerManager?.getTowerById(towerId);
@@ -1503,7 +1511,7 @@ export class GameEngine {
   }
 
   cancelSelected(): void {
-    if (this.runState.selectedTowerId === BASE_SELECTION_ID) return;
+    if (this.runState.selectedTowerId === baseSelectionId) return;
     const tower = this.getSelectedTower();
     if (!tower) return;
     if (this.persistState.generalAddons.sellActive === "discount") return;
@@ -1525,7 +1533,7 @@ export class GameEngine {
   }
 
   downgradeSelected(): void {
-    if (this.runState.selectedTowerId === BASE_SELECTION_ID) {
+    if (this.runState.selectedTowerId === baseSelectionId) {
       this.downgradeBase();
       return;
     }
@@ -1546,7 +1554,7 @@ export class GameEngine {
   }
 
   setTargeting(mode: string): void {
-    if (this.runState.selectedTowerId === BASE_SELECTION_ID) {
+    if (this.runState.selectedTowerId === baseSelectionId) {
       this.baseDefense?.setTargeting(mode);
       return;
     }
@@ -1709,8 +1717,8 @@ export class GameEngine {
 
   private isProgressiveHoldWave(wave: number): boolean {
     if (this.runState.map?.style !== "progressive") return false;
-    const placementInterval = progressivePlacementInterval(this.theme?.maps, wave);
-    return wave % placementInterval === 0 && wave > 0 && wave < VICTORY_WAVE;
+    const placementInterval = themeProgressivePlacementInterval(this.theme?.maps, wave);
+    return wave % placementInterval === 0 && wave > 0 && wave < victoryWave;
   }
 
   private progressiveChoiceCount(): number {
@@ -1754,7 +1762,7 @@ export class GameEngine {
     const catalog = this.progressiveCatalog;
     const rng = this.progressiveRng;
     if (!board || !catalog || !rng) return false;
-    const cost = progressiveRerollGoldPerWave(this.theme?.maps) * this.runState.currentWave;
+    const cost = themeProgressiveRerollGoldPerWave(this.theme?.maps) * this.runState.currentWave;
     if (this.runState.gold < cost) {
       this.host.notifyUi({ type: "showNotification", message: "Not enough gold to re-roll." });
       return false;
@@ -1801,11 +1809,11 @@ export class GameEngine {
     }
     this.waveManager.betweenWaves = true;
     this.waveManager.countdownActive = true;
-    this.waveManager.countdownTimer = BETWEEN_WAVES_TIMER;
-    this.waveManager.betweenTimer = BETWEEN_WAVES_TIMER;
+    this.waveManager.countdownTimer = betweenWavesTimer;
+    this.waveManager.betweenTimer = betweenWavesTimer;
     this.waveManager.active = false;
     this.runState.waveCountdown = {
-      remaining: Math.ceil(BETWEEN_WAVES_TIMER),
+      remaining: Math.ceil(betweenWavesTimer),
       nextWave: this.waveManager.currentWave + 1,
     };
     this.refreshBossPreview();
@@ -1898,7 +1906,7 @@ export class GameEngine {
     this.crowdManager?.destroy();
     this.navMeshBuilder?.destroy();
     this.navMeshBuilder = builder;
-    this.crowdManager = new CrowdManager(navMesh, grid.tileSize, GAMEPLAY_ENEMY_CAP);
+    this.crowdManager = new CrowdManager(navMesh, grid.tileSize, gameplayEnemyCap);
     this.crowdManager.setForceFieldSystem(this.forceFieldSystem);
     enemyManager.setCrowdManager(this.crowdManager);
     const base = grid.getBase();
@@ -1927,10 +1935,10 @@ export class GameEngine {
   private onEnemySpawned(enemy: Enemy): void {
     if (enemy.type !== "boss" || !this.grid) return;
     this.runState.bossesSpawned += 1;
-    // A boss is unreadable above BOSS_SPEED_LIMIT. The worker owns timeScale, so
+    // A boss is unreadable above bossSpeedLimit. The worker owns timeScale, so
     // the HUD label follows on the next snapshot; a multi-boss wave re-checks per
     // boss and is a no-op once already at the limit.
-    if (this.runState.timeScale > BOSS_SPEED_LIMIT) this.runState.timeScale = BOSS_SPEED_LIMIT;
+    if (this.runState.timeScale > bossSpeedLimit) this.runState.timeScale = bossSpeedLimit;
     configureBossAbility(enemy, enemy.bossAbility, this.grid.tileSize);
     if (enemy.bossAbility !== "healAura") return;
     enemy.mendSuppresses = (source, ally) => nearerMendBlocksIn(this.mendSources, source, ally);
@@ -1948,7 +1956,7 @@ export class GameEngine {
     }
     if (this.baseDefense && this.baseDefense.waveDamage > 0) {
       ranked.push({
-        towerId: BASE_SELECTION_ID,
+        towerId: baseSelectionId,
         damage: this.baseDefense.waveDamage,
         totalDamage: this.baseDefense.totalDamageDealt,
       });
@@ -2023,13 +2031,13 @@ export class GameEngine {
     const grid = this.grid;
     const map = this.runState.map;
     if (!enemyManager || !grid || !map) return;
-    if (enemyManager.enemies.length >= GAMEPLAY_ENEMY_CAP) return;
+    if (enemyManager.enemies.length >= gameplayEnemyCap) return;
     const spawnCap = host.type === "boss" ? MINION_CAP : host.spawnCap;
     let liveChildren = 0;
     for (const other of enemyManager.enemies) {
       if (!other.removed && other.summonedBy === host.id) liveChildren++;
     }
-    if (trickleSpawnCount(spawnCap, liveChildren, enemyManager.enemies.length, GAMEPLAY_ENEMY_CAP) <= 0) return;
+    if (trickleSpawnCount(spawnCap, liveChildren, enemyManager.enemies.length, gameplayEnemyCap) <= 0) return;
     const waveNumber = this.waveManager?.currentWave ?? host.wave;
     const level = enemyLevelForWave(waveNumber, map.level);
     const spawnType = host.type === "boss" ? "minion" : host.spawnTypeName;

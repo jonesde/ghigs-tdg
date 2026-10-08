@@ -5,13 +5,8 @@ import GeneratedMapDialog from "@/components/GeneratedMapDialog.vue";
 import ProgressiveMapDialog from "@/components/ProgressiveMapDialog.vue";
 import RegionMap from "@/components/RegionMap.vue";
 import type { RegionMapNodeView } from "@/components/RegionMapNodeView.js";
-import { CLEARED_CROWN_GLYPH, isClearedBestWave } from "@/components/regionMapProgress.js";
-import {
-  MAP_GEM_MULTIPLIERS,
-  MAPS_PER_REGION,
-  PROGRESSIVE_MAP_COUNT,
-  PROGRESSIVE_MAP_INDEX_BASE,
-} from "@/sim/Constants.js";
+import { clearedCrownGlyph, isClearedBestWave } from "@/components/regionMapProgress.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { getMap, getMapDisplayName } from "@/sim/grid/Map.js";
 import {
   gemMultiplierForRegionLevel,
@@ -28,6 +23,8 @@ const router = useRouter();
 const gameStore = useGameStore();
 const persistStore = usePersistStore();
 const themeStore = useMapThemeStore();
+
+const mapsPerRegion = getGameContent().maps.mapsPerRegion;
 
 // Map progress is per-world; follow the selected world from the header dropdown,
 // which startMap also resolves before launching a run.
@@ -80,13 +77,13 @@ const mapEntries = computed<Record<number, MapEntry>>(() => {
   const theme = themeStore.activeTheme ?? themeStore.defaultTheme;
   const maps = themeStore.resolvedMaps;
   const progress = selectedThemeProgress.value;
-  for (let i = 0; i < 36; i++) {
+  for (let i = 0; i < getGameContent().maps.levels.length; i++) {
     const map = getMap(i, maps);
     entries[i] = {
       name: getMapDisplayName(map, theme),
       region: themeStore.regionNames[map.regionId],
       style: map.style,
-      gemReward: MAP_GEM_MULTIPLIERS[i],
+      gemReward: getGameContent().economy.mapGemMultipliers[i],
       width: map.width,
       height: map.height,
       locked: i > progress.highestUnlockedMap,
@@ -120,16 +117,16 @@ function getFullEntry(index: number) {
 }
 
 function regionIdForMapIndex(mapIndex: number): number | null {
-  if (mapIndex < PROGRESSIVE_MAP_INDEX_BASE) return Math.floor(mapIndex / MAPS_PER_REGION);
+  if (mapIndex < getGameContent().maps.levels.length) return Math.floor(mapIndex / mapsPerRegion);
   return progressiveConfigForIndex(mapIndex, themeStore.resolvedMaps)?.regionId ?? null;
 }
 
 function firstMapIndexForRegion(regionId: number): number {
-  return regionId * MAPS_PER_REGION;
+  return regionId * mapsPerRegion;
 }
 
 function defaultRegionTab(): number {
-  return Math.min(Math.floor(selectedThemeProgress.value.highestUnlockedMap / MAPS_PER_REGION), 2);
+  return Math.min(Math.floor(selectedThemeProgress.value.highestUnlockedMap / mapsPerRegion), 2);
 }
 
 function savedMapIndexIsValid(mapIndex: number | null): mapIndex is number {
@@ -137,7 +134,7 @@ function savedMapIndexIsValid(mapIndex: number | null): mapIndex is number {
     typeof mapIndex === "number" &&
     Number.isInteger(mapIndex) &&
     mapIndex >= 0 &&
-    mapIndex < PROGRESSIVE_MAP_INDEX_BASE + PROGRESSIVE_MAP_COUNT
+    mapIndex < getGameContent().maps.levels.length + getGameContent().maps.progressive.variants.length
   );
 }
 
@@ -182,7 +179,7 @@ const activeRegionNodes = computed<RegionMapNodeView[]>(() => {
   for (const node of layout.nodes) {
     const mapIndex =
       node.kind === "level"
-        ? regionId * MAPS_PER_REGION + (node.level - 1)
+        ? regionId * mapsPerRegion + (node.level - 1)
         : progressiveMapIndexForLevel(regionId, node.level);
     if (mapIndex === null) {
       console.warn(`Region ${regionId} map layout has no progressive variant at level ${node.level}`);
@@ -196,7 +193,7 @@ const activeRegionNodes = computed<RegionMapNodeView[]>(() => {
       label = config ? `P${config.entryCount}` : "P";
     }
     // firstClears is the authoritative clear record (GameEngine.endGame writes it on
-    // any victory). The best-wave test only covers a debug setWave(VICTORY_WAVE)
+    // any victory). The best-wave test only covers a debug setWave(victoryWave)
     // jump, which records a best wave but no first clear.
     const cleared = !!selectedThemeProgress.value.firstClears[String(mapIndex)] || isClearedBestWave(entry.bestWave);
     nodeViews.push({
@@ -205,7 +202,7 @@ const activeRegionNodes = computed<RegionMapNodeView[]>(() => {
       x: node.x,
       y: node.y,
       label,
-      tooltip: `${entry.name} • ${entry.style} • 💎 x${entry.gemReward} • Best Wave: ${entry.bestWave} • ${entry.width}×${entry.height}${cleared ? ` • ${CLEARED_CROWN_GLYPH} Cleared` : ""}`,
+      tooltip: `${entry.name} • ${entry.style} • 💎 x${entry.gemReward} • Best Wave: ${entry.bestWave} • ${entry.width}×${entry.height}${cleared ? ` • ${clearedCrownGlyph()} Cleared` : ""}`,
       locked: entry.locked,
       mapIndex,
       bestWave: entry.bestWave,

@@ -29,6 +29,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { currentBuildTile } from "@/composables/buildTile.js";
 import { useInput } from "@/composables/Input.js";
 import { progressivePlacementCommand, rotateProgressiveBlockAt } from "@/composables/progressivePlacement.js";
+import { getGameContent } from "@/content/gameContent.js";
+import { type TowerId, TowerIds } from "@/content/towerIds.js";
 import { fitFrame, frameFromCenter, TILE_SIZE, wheelZoomFactor } from "@/render/svg/cameraFrame.js";
 import {
   baseSelectionStale,
@@ -62,15 +64,8 @@ import {
   type ViewRect,
 } from "@/render/svg/viewBoxTween.js";
 import type { EnemyVisualMeta, TowerVisualMeta } from "@/render/themes/index.js";
-import {
-  CUSTOM_PROGRESSIVE_MAP_INDEX,
-  GameState,
-  SELL_DISCOUNT_PCT,
-  TERRAIN_HEIGHT_RANGE_BONUS,
-} from "@/sim/Constants.js";
-import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
-import { TOWER_BASE, TOWER_META, type TowerId, TowerIds } from "@/sim/ConstantsTower.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
+import { customProgressiveMapIndex } from "@/sim/GameRunState.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import {
   boardToGeneratedMap,
@@ -83,7 +78,7 @@ import {
 import type { ThemeBundle } from "@/sim/HostBindings.js";
 import {
   collectWorldKeys,
-  PACKAGE_CLICK_RADIUS_TILES,
+  packageClickRadiusTiles,
   planSitesForStampedBoard,
   playerPlacedBlockCount,
   progressiveStampIndex,
@@ -93,7 +88,7 @@ import { ParticleSystem } from "@/sim/ParticleSystem.js";
 import type { PersistState } from "@/sim/PersistState.js";
 import type { BonusOffer } from "@/sim/runBonuses.js";
 import { SnapshotStore } from "@/sim/SnapshotStore.js";
-import { BASE_SELECTION_ID } from "@/sim/towers/BaseDefense.js";
+import { baseSelectionId } from "@/sim/towers/BaseDefense.js";
 import { WorkerCommandDispatcher } from "@/sim/WorkerCommandDispatcher.js";
 import GameWorker from "@/sim/WorkerEntry.ts?worker";
 import type { WorkerToMainMessage } from "@/sim/WorkerProtocol.js";
@@ -172,9 +167,10 @@ const buildPreviewTilePos = computed(() =>
 );
 
 function buildCost(towerType: TowerId): number {
-  const meta = TOWER_META[towerType];
+  const meta = getGameContent().towers.meta[towerType];
   if (!meta) return Number.POSITIVE_INFINITY;
-  const discount = persistStore.generalAddons?.sellActive === "discount" ? 1 - SELL_DISCOUNT_PCT : 1;
+  const discount =
+    persistStore.generalAddons?.sellActive === "discount" ? 1 - getGameContent().economy.sellDiscountPct : 1;
   return Math.floor(meta.cost * discount);
 }
 
@@ -194,18 +190,18 @@ const buildRangeTiles = computed((): number | null => {
   const towerType = gameStore.selectedTowerType;
   const tile = buildPreviewTilePos.value;
   if (!towerType || !tile) return null;
-  const baseRange = TOWER_BASE[towerType]?.range ?? 3.5;
+  const baseRange = getGameContent().towers.base[towerType]?.range ?? 3.5;
   const rangeTier = persistStore.generalAddons?.terrainHeightRangeBonus;
   if (typeof rangeTier !== "number") return baseRange;
   const terrainHeight = gameStore.grid?.getHeight(tile.tileX, tile.tileY) || 1;
-  const bonusPerHeight = TERRAIN_HEIGHT_RANGE_BONUS[rangeTier] || 0;
+  const bonusPerHeight = getGameContent().economy.terrainHeightRangeBonus[rangeTier] || 0;
   return baseRange + bonusPerHeight * terrainHeight;
 });
 
 const displayedViewBox = ref<string | undefined>(undefined);
 const panActive = ref(false);
 
-const GHOST_OFFER: BonusOffer = ["smallPurse", "largePurse", "sharpened"];
+const ghostOffer: BonusOffer = ["smallPurse", "largePurse", "sharpened"];
 
 const progressiveGhost = computed(() => {
   if (!gameStore.progressivePlacementHold || !gameStore.map) return "";
@@ -283,7 +279,7 @@ function previewNewSites(
     previousWorldKeys,
     placedBlocks: progressiveStampIndex(config.entryCount, playerPlacedBlockCount(gameStore.progressivePlacements) + 1),
     stampWorldKeys: stampWorldKeysForBlock(nextGrid, selected.blockX, selected.blockY),
-    rollOffer: () => GHOST_OFFER,
+    rollOffer: () => ghostOffer,
   });
   return siteGlyphMarkup([], plan.caches, plan.buildings, gameStore.currentWave, activeSiteArt.value);
 }
@@ -691,7 +687,7 @@ const computeHoverUpgradeBtn = (worldX: number, worldY: number): boolean => {
   if (!grid) return false;
   let tileX: number;
   let tileY: number;
-  if (gameStore.selectedTowerId === BASE_SELECTION_ID) {
+  if (gameStore.selectedTowerId === baseSelectionId) {
     const base = grid.getBase();
     tileX = base.x;
     tileY = base.y;
@@ -744,7 +740,7 @@ function clickHasEffectAt(worldX: number, worldY: number): boolean {
 function packageHitAt(worldX: number, worldY: number, tileSize: number): boolean {
   const snapshot = snapshotStore.get();
   if (!snapshot) return false;
-  const radius = (snapshot.meta.tileSize ?? tileSize) * PACKAGE_CLICK_RADIUS_TILES;
+  const radius = (snapshot.meta.tileSize ?? tileSize) * packageClickRadiusTiles;
   const radiusSquared = radius * radius;
   const sites = [...(snapshot.meta.supplyDrops ?? []), ...(snapshot.meta.mapCaches ?? [])];
   for (const site of sites) {
@@ -946,7 +942,7 @@ function buildThemeBundle(): ThemeBundle {
     if (visual) defaultTowerVisuals[id] = visual;
   }
   const defaultEnemyVisuals: Record<string, EnemyVisualMeta> = {};
-  for (const type of Object.keys(ENEMY_TYPES)) {
+  for (const type of Object.keys(getGameContent().enemies.types)) {
     const visual = themeStore.getDefaultEnemyVisual(type);
     if (visual) defaultEnemyVisuals[type] = visual;
   }
@@ -1098,7 +1094,7 @@ function renderLoop(): void {
   );
   effectManager.syncBaseSelection(
     baseDefense,
-    snapshot.meta.selectedTowerId === BASE_SELECTION_ID,
+    snapshot.meta.selectedTowerId === baseSelectionId,
     baseCenter && baseTile
       ? {
           x: baseCenter.x,
@@ -1225,7 +1221,7 @@ onMounted(async () => {
     // Custom progressive runs carry no catalog index; the worker rebuilds the
     // start board from these params, so they must ride the init message.
     progressiveMapParams:
-      gameStore.mapIndex === CUSTOM_PROGRESSIVE_MAP_INDEX
+      gameStore.mapIndex === customProgressiveMapIndex
         ? (progressiveConfigFromMap(gameStore.map) ?? undefined)
         : undefined,
   });

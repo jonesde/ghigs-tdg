@@ -15,9 +15,9 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { computed, nextTick, watch } from "vue";
-import { GameState } from "@/sim/Constants.js";
+import { GameState } from "@/sim/GameRunState.js";
 import type { TowerSnapshot } from "@/sim/SimulationSnapshot.js";
-import { SNAPSHOT_SCHEMA_VERSION } from "@/sim/SimulationSnapshot.js";
+import { snapshotSchemaVersion } from "@/sim/SimulationSnapshot.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
 import { SnapshotStore } from "@/sim/SnapshotStore.js";
 import { buildTestTower, createTestEngine, selectTestTower } from "../helpers/engine-snapshot";
@@ -140,7 +140,7 @@ describe("SnapshotStore selectedTower mirroring", () => {
 
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      const mismatched = { ...buildSnapshot(engine, nextCommandId++), schemaVersion: SNAPSHOT_SCHEMA_VERSION + 1 };
+      const mismatched = { ...buildSnapshot(engine, nextCommandId++), schemaVersion: snapshotSchemaVersion + 1 };
       store.apply(mismatched);
       store.apply(mismatched);
       expect(store.get()).toBe(valid);

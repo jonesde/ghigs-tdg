@@ -1,7 +1,6 @@
+import { getGameContent } from "@/content/gameContent.js";
 import type { EnemyVisualMeta, MapThemeData } from "@/render/themes/index.js";
 import type { BossAbilityId } from "@/sim/bossAbilities.js";
-import { GAMEPLAY_ENEMY_CAP, MAX_PENDING_PER_SPAWN } from "@/sim/Constants.js";
-import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
 import type { Grid } from "@/sim/grid/Grid.js";
 import type { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
 import type { BlockedApproach } from "@/sim/navmesh/NavDistanceField.js";
@@ -12,6 +11,16 @@ import type { Tower } from "@/sim/towers/Tower.js";
 import type { TowerManager } from "@/sim/towers/TowerManager.js";
 import type { AttackTarget } from "./Enemy.js";
 import { Enemy, forgetUnreachableFlightWarning, resetEnemyId } from "./Enemy.js";
+
+// Gameplay live-enemy cap, owned by the sim. Deliberately NOT the render
+// ENEMY_POOL_SIZE from render/svg/types.js: the render pool sizes a DOM pool
+// and must never throttle gameplay (coupling them let immortal base-attackers
+// pin an unbounded pending queue while the sim thought it was "full").
+export const gameplayEnemyCap = 100;
+// Per-spawn pending-queue bound. Overflow spills to the least-pending spawn
+// first and only then evicts (see EnemyManager.enqueueOrSpawn), so memory stays
+// bounded no matter how far the pre-emptive wave timer piles waves up.
+export const maxPendingPerSpawn = 200;
 
 interface PendingEnemyEntry {
   type: string;
@@ -374,7 +383,7 @@ export class EnemyManager {
   }
 
   spawn(type: string, level: number, spawnIndex: number, wave: number, bossAbility?: BossAbilityId): Enemy | null {
-    if (!(type in ENEMY_TYPES)) {
+    if (!(type in getGameContent().enemies.types)) {
       console.warn(`EnemyManager.spawn dropped unknown enemy type "${type}"`);
       return null;
     }
@@ -415,7 +424,7 @@ export class EnemyManager {
   }
 
   enqueueOrSpawn(type: string, level: number, spawnIndex: number, wave: number, bossAbility?: BossAbilityId): void {
-    if (this.enemies.length < GAMEPLAY_ENEMY_CAP) {
+    if (this.enemies.length < gameplayEnemyCap) {
       this.spawn(type, level, spawnIndex, wave, bossAbility);
       return;
     }
@@ -435,7 +444,7 @@ export class EnemyManager {
   ): void {
     let targetIndex = spawnIndex;
     const targetQueue = this.pendingQueues.get(spawnIndex);
-    if (targetQueue && targetQueue.length >= MAX_PENDING_PER_SPAWN) {
+    if (targetQueue && targetQueue.length >= maxPendingPerSpawn) {
       targetIndex = this.findLeastPendingSpawn(spawnIndex);
     }
     let queue = this.pendingQueues.get(targetIndex);
@@ -443,7 +452,7 @@ export class EnemyManager {
       queue = [];
       this.pendingQueues.set(targetIndex, queue);
     }
-    if (queue.length >= MAX_PENDING_PER_SPAWN) {
+    if (queue.length >= maxPendingPerSpawn) {
       if (!this.evictOverflowEntry(targetIndex)) {
         this.pendingOverflowDropped++;
         return;
@@ -488,7 +497,7 @@ export class EnemyManager {
   releaseOnePending(spawnIndex: number): void {
     const queue = this.pendingQueues.get(spawnIndex);
     if (!queue || queue.length === 0) return;
-    if (this.enemies.length >= GAMEPLAY_ENEMY_CAP) return;
+    if (this.enemies.length >= gameplayEnemyCap) return;
     const entry = queue.shift()!;
     this.spawn(entry.type, entry.level, spawnIndex, entry.wave, entry.bossAbility);
   }
@@ -498,7 +507,7 @@ export class EnemyManager {
   // base-attackers pin the queue forever (nothing ever died on their spawn);
   // GameEngine.update calls this every tick so the queue always makes progress.
   drainPendingQueues(): void {
-    while (this.enemies.length < GAMEPLAY_ENEMY_CAP) {
+    while (this.enemies.length < gameplayEnemyCap) {
       let bestIndex = -1;
       let bestCount = 0;
       for (const [spawnIndex, queue] of this.pendingQueues) {

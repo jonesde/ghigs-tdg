@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { FIXED_DT } from "@/sim/Constants.js";
 import type { AttackTarget } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
 import { Grid } from "@/sim/grid/Grid.js";
@@ -7,6 +6,7 @@ import { CrowdManager, restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdMana
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { NoopParticleSpawner } from "@/sim/ParticleSystem.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import { makeBastionMap, makeMapData, makeOneWideCornerMap } from "../../../helpers/mock-grid.js";
 
 // A minimal base attack target so Enemy.postPhysics can run its base-attack
@@ -57,10 +57,10 @@ function runCrowdLoop(
   onEnemyBeginAttackBase: () => void,
 ): void {
   for (let step = 0; step < stepCount; step++) {
-    enemyManager.preStep(FIXED_DT);
-    crowdManager.update(FIXED_DT, enemyManager.enemies);
+    enemyManager.preStep(fixedDeltaSeconds);
+    crowdManager.update(fixedDeltaSeconds, enemyManager.enemies);
     physicsWorld.step();
-    enemyManager.postStep(FIXED_DT, onEnemyKill, onEnemyBeginAttackBase);
+    enemyManager.postStep(fixedDeltaSeconds, onEnemyKill, onEnemyBeginAttackBase);
   }
 }
 
@@ -125,10 +125,10 @@ describe("CrowdManager motion", () => {
     // postPhysics reads the stepped body back and re-syncs the crowd agent to
     // it so the two stay aligned, exactly as the engine does on the ON path.
     for (let step = 0; step < 200; step++) {
-      crowdManager.update(FIXED_DT, enemyManager.enemies);
+      crowdManager.update(fixedDeltaSeconds, enemyManager.enemies);
       physicsWorld.step();
       for (const enemy of enemyManager.enemies) {
-        enemy.postPhysics(FIXED_DT);
+        enemy.postPhysics(fixedDeltaSeconds);
       }
     }
 
@@ -161,10 +161,10 @@ describe("CrowdManager motion", () => {
     let maxBacktrack = 0;
     let reached = false;
     for (let step = 0; step < 12000 && !reached; step++) {
-      enemyManager.preStep(FIXED_DT);
-      crowdManager.update(FIXED_DT, enemyManager.enemies);
+      enemyManager.preStep(fixedDeltaSeconds);
+      crowdManager.update(fixedDeltaSeconds, enemyManager.enemies);
       physicsWorld.step();
-      enemyManager.postStep(FIXED_DT, onEnemyKill, onEnemyBeginAttackBase);
+      enemyManager.postStep(fixedDeltaSeconds, onEnemyKill, onEnemyBeginAttackBase);
       const currentDistance = distanceToBase(enemy, baseWorld);
       if (currentDistance - previousDistance > maxBacktrack) maxBacktrack = currentDistance - previousDistance;
       previousDistance = currentDistance;
@@ -251,7 +251,7 @@ describe("CrowdManager motion", () => {
     const enemy = enemyManager.spawn("runner", 1, 0, 1)!;
     crowdManager.addAgent(enemy);
     crowdManager.setBaseTarget(enemy, grid.tileToWorld(grid.getBase().x, grid.getBase().y));
-    crowdManager.update(FIXED_DT, [enemy]);
+    crowdManager.update(fixedDeltaSeconds, [enemy]);
     const before = enemy.agent!.velocity();
     expect(Math.hypot(before.x, before.z)).toBeGreaterThan(0);
     enemy.agent!.teleport(enemy.agent!.position());

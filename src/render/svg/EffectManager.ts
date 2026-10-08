@@ -1,5 +1,7 @@
-import { TOWER_BASE, TOWER_LEVEL_RANGE_MULT } from "@/sim/ConstantsTower.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { LIGHTNING_POOL_SIZE, STUN_POOL_SIZE, SVG_NS, GRID_TILE_SIZE as TILE_SIZE } from "./types.js";
+
+const towerBase = getGameContent().towers.base;
 
 interface LightningEffect {
   startX: number;
@@ -68,25 +70,25 @@ interface SelectedTowerView {
   stats?: { range?: number; splash?: number };
 }
 
-const LIGHTNING_SEGMENTS = 5;
-const LIGHTNING_STROKE_WIDTH = 2;
-const LIGHTNING_LIFE_SECONDS = 1 / 3;
-const LIGHTNING_PERP_OFFSET = 6;
-const LIGHTNING_COLOR_PRIMARY = "#40a0ff";
+const lightningSegments = 5;
+const lightningStrokeWidth = 2;
+const lightningLifeSeconds = 1 / 3;
+const lightningPerpOffset = 6;
+const lightningColorPrimary = "#40a0ff";
 
-const STUN_ARC_SEGMENTS = 8;
-const STUN_ARC_RADIUS = 14;
-const STUN_WIGGLE_RANGE = 4;
-const STUN_FLASH_HZ = 9;
-const STUN_PULSE_HZ = 2;
-const STUN_COLOR_OUTER = "#40a0ff";
-const STUN_COLOR_INNER = "#ffffff";
-const STUN_STROKE_OUTER = 2.5;
-const STUN_STROKE_INNER = 1.5;
-const STUN_STROKE_OPACITY_SCALE = 0.5;
+const stunArcSegments = 8;
+const stunArcRadius = 14;
+const stunWiggleRange = 4;
+const stunFlashHz = 9;
+const stunPulseHz = 2;
+const stunColorOuter = "#40a0ff";
+const stunColorInner = "#ffffff";
+const stunStrokeOuter = 2.5;
+const stunStrokeInner = 1.5;
+const stunStrokeOpacityScale = 0.5;
 // How long a stun mark reads for once it lands. Independent of the sim stun
 // duration, which is budgeted per enemy and can be far shorter than the flash.
-const STUN_MARK_SECONDS = 0.3;
+const stunMarkSeconds = 0.3;
 
 export class EffectManager {
   private lightningPool: SVGPolylineElement[] = [];
@@ -130,8 +132,8 @@ export class EffectManager {
     for (let i = 0; i < LIGHTNING_POOL_SIZE; i++) {
       const polyline = document.createElementNS(SVG_NS, "polyline");
       polyline.setAttribute("fill", "none");
-      polyline.setAttribute("stroke", LIGHTNING_COLOR_PRIMARY);
-      polyline.setAttribute("stroke-width", String(LIGHTNING_STROKE_WIDTH));
+      polyline.setAttribute("stroke", lightningColorPrimary);
+      polyline.setAttribute("stroke-width", String(lightningStrokeWidth));
       polyline.setAttribute("stroke-linecap", "round");
       polyline.setAttribute("stroke-linejoin", "round");
       polyline.setAttribute("filter", "url(#glow)");
@@ -247,7 +249,7 @@ export class EffectManager {
       endX,
       endY,
       life,
-      maxLife: LIGHTNING_LIFE_SECONDS,
+      maxLife: lightningLifeSeconds,
       seed: Math.random() * 1000,
     };
     this.evictOldestLightning();
@@ -274,7 +276,7 @@ export class EffectManager {
     const key = targetId !== null ? `enemy-${targetId}` : `${x.toFixed(1)},${y.toFixed(1)}`;
     const existing = this.stunEffects.get(key);
     if (existing) {
-      existing.remainingLife = STUN_MARK_SECONDS;
+      existing.remainingLife = stunMarkSeconds;
       existing.x = x;
       existing.y = y;
       existing.targetId = targetId;
@@ -284,7 +286,7 @@ export class EffectManager {
       this.stunEffects.set(key, existing);
       return key;
     }
-    const effect: StunEffect = { x, y, remainingLife, maxLife: STUN_MARK_SECONDS, targetId };
+    const effect: StunEffect = { x, y, remainingLife, maxLife: stunMarkSeconds, targetId };
     this.evictOldestStun();
     this.stunEffects.set(key, effect);
     return key;
@@ -366,12 +368,12 @@ export class EffectManager {
     // worker ticks, and a bolt redrawn at full life on a position the world has
     // already left is exactly the lag this ages out.
     for (const bolt of lightningEffects ?? []) {
-      const life = LIGHTNING_LIFE_SECONDS - Math.max(0, simSeconds - bolt.simSeconds);
+      const life = lightningLifeSeconds - Math.max(0, simSeconds - bolt.simSeconds);
       if (life <= 0) continue;
       this.addLightningEffect(bolt.x1, bolt.y1, bolt.x2, bolt.y2, life);
     }
     for (const stun of stunEffects ?? []) {
-      const life = STUN_MARK_SECONDS - Math.max(0, simSeconds - stun.simSeconds);
+      const life = stunMarkSeconds - Math.max(0, simSeconds - stun.simSeconds);
       if (life <= 0) continue;
       this.addStunEffect(stun.x, stun.y, life, stun.targetId ?? null);
     }
@@ -405,7 +407,7 @@ export class EffectManager {
         effect.startY,
         effect.endX,
         effect.endY,
-        LIGHTNING_SEGMENTS,
+        lightningSegments,
         effect.seed,
       );
       const elapsed = effect.maxLife - effect.life;
@@ -447,7 +449,7 @@ export class EffectManager {
     for (let i = 1; i <= segments; i++) {
       const baseX = startX + stepX * i;
       const baseY = startY + stepY * i;
-      const randomOffset = ((Math.sin(seed + i * 7.3) * 0.5 + 0.5) * 2 - 1) * LIGHTNING_PERP_OFFSET;
+      const randomOffset = ((Math.sin(seed + i * 7.3) * 0.5 + 0.5) * 2 - 1) * lightningPerpOffset;
       const offsetX = perpX * randomOffset;
       const offsetY = perpY * randomOffset;
       points.push(`${(baseX + offsetX).toFixed(1)},${(baseY + offsetY).toFixed(1)}`);
@@ -481,7 +483,7 @@ export class EffectManager {
       const elapsed = effect.maxLife - effect.remainingLife;
       const lifeRatio = Math.max(0, effect.remainingLife / effect.maxLife);
 
-      const points = this.generateStunArcPoints(0, 0, STUN_ARC_SEGMENTS, elapsed);
+      const points = this.generateStunArcPoints(0, 0, stunArcSegments, elapsed);
 
       const outerArc = group.childNodes[0] as SVGPolylineElement;
       const innerArc = group.childNodes[1] as SVGPolylineElement;
@@ -489,11 +491,11 @@ export class EffectManager {
       outerArc.setAttribute("points", points);
       innerArc.setAttribute("points", points);
 
-      const outerOpacity = (0.35 + 0.15 * Math.sin(elapsed * STUN_PULSE_HZ * Math.PI * 2)) * STUN_STROKE_OPACITY_SCALE;
+      const outerOpacity = (0.35 + 0.15 * Math.sin(elapsed * stunPulseHz * Math.PI * 2)) * stunStrokeOpacityScale;
       outerArc.setAttribute("opacity", outerOpacity.toFixed(3));
 
-      const flash = Math.sin(elapsed * STUN_FLASH_HZ * Math.PI * 2) > 0.2;
-      const innerOpacity = (flash ? 1.0 : 0.08) * STUN_STROKE_OPACITY_SCALE;
+      const flash = Math.sin(elapsed * stunFlashHz * Math.PI * 2) > 0.2;
+      const innerOpacity = (flash ? 1.0 : 0.08) * stunStrokeOpacityScale;
       innerArc.setAttribute("opacity", innerOpacity.toFixed(3));
 
       // A mark with a live enemy follows it; without one (or once the enemy has
@@ -517,13 +519,13 @@ export class EffectManager {
     let firstPoint = "";
     for (let i = 0; i < segments; i++) {
       const baseAngle = (i / segments) * Math.PI * 2 - Math.PI / 2;
-      const baseX = centerX + Math.cos(baseAngle) * STUN_ARC_RADIUS;
-      const baseY = centerY + Math.sin(baseAngle) * STUN_ARC_RADIUS;
+      const baseX = centerX + Math.cos(baseAngle) * stunArcRadius;
+      const baseY = centerY + Math.sin(baseAngle) * stunArcRadius;
       const tangentX = -Math.sin(baseAngle);
       const tangentY = Math.cos(baseAngle);
       const jitter = (Math.sin(timeSeed + i * 3.7) * 0.5 + 0.5) * 2 - 1;
-      const offsetX = tangentX * jitter * STUN_WIGGLE_RANGE;
-      const offsetY = tangentY * jitter * STUN_WIGGLE_RANGE;
+      const offsetX = tangentX * jitter * stunWiggleRange;
+      const offsetY = tangentY * jitter * stunWiggleRange;
       const point = `${(baseX + offsetX).toFixed(1)},${(baseY + offsetY).toFixed(1)}`;
       if (i === 0) {
         firstPoint = point;
@@ -537,8 +539,8 @@ export class EffectManager {
   private initStunGroup(group: SVGGElement): void {
     const outerArc = document.createElementNS(SVG_NS, "polyline") as SVGPolylineElement;
     outerArc.setAttribute("fill", "none");
-    outerArc.setAttribute("stroke", STUN_COLOR_OUTER);
-    outerArc.setAttribute("stroke-width", String(STUN_STROKE_OUTER));
+    outerArc.setAttribute("stroke", stunColorOuter);
+    outerArc.setAttribute("stroke-width", String(stunStrokeOuter));
     outerArc.setAttribute("stroke-linecap", "round");
     outerArc.setAttribute("stroke-linejoin", "round");
     outerArc.setAttribute("filter", "url(#glow)");
@@ -546,8 +548,8 @@ export class EffectManager {
 
     const innerArc = document.createElementNS(SVG_NS, "polyline") as SVGPolylineElement;
     innerArc.setAttribute("fill", "none");
-    innerArc.setAttribute("stroke", STUN_COLOR_INNER);
-    innerArc.setAttribute("stroke-width", String(STUN_STROKE_INNER));
+    innerArc.setAttribute("stroke", stunColorInner);
+    innerArc.setAttribute("stroke-width", String(stunStrokeInner));
     innerArc.setAttribute("stroke-linecap", "round");
     innerArc.setAttribute("stroke-linejoin", "round");
     // No glow on the inner arc: its points are rewritten every rendered frame, and
@@ -619,8 +621,7 @@ export class EffectManager {
         }
       }
 
-      const towerBase = TOWER_BASE[selectedTowerType];
-      const baseRangeTiles = towerBase?.range ?? 3.5;
+      const baseRangeTiles = towerBase[selectedTowerType]?.range ?? 3.5;
       const rangeTiles = buildRangeTiles != null ? buildRangeTiles : baseRangeTiles;
 
       if (this.buildRangeCircleEl) {
@@ -641,7 +642,7 @@ export class EffectManager {
         }
       }
 
-      const splashTiles = TOWER_BASE[selectedTowerType]?.splash ?? 0;
+      const splashTiles = towerBase[selectedTowerType]?.splash ?? 0;
       this.buildSplashVisible = splashTiles > 0;
       if (this.splashCircleEl) {
         if (splashTiles > 0) {
@@ -679,10 +680,9 @@ export class EffectManager {
     if (tower) {
       const towerId = tower.id ?? null;
       const statsRange = tower.stats?.range;
-      const rangeTiles =
-        typeof statsRange === "number"
-          ? statsRange
-          : (TOWER_BASE[tower.type]?.range ?? 3.5) * TOWER_LEVEL_RANGE_MULT ** (tower.level - 1);
+      const rangeGrowth = getGameContent().towers.tuning.levelRangeMult ** (tower.level - 1);
+      const baseRangeTiles = (towerBase[tower.type]?.range ?? 3.5) * rangeGrowth;
+      const rangeTiles = typeof statsRange === "number" ? statsRange : baseRangeTiles;
       const cached =
         towerId !== null &&
         towerId === this.lastSelectedTowerId &&

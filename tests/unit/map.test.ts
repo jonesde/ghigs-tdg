@@ -1,17 +1,20 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
+import { getGameContent } from "@/content/gameContent.js";
 import { resolveThemeMaps } from "@/content/themeMaps.js";
 import chrithmathRaw from "@/render/themes/data/chrithmath.json";
 import aftermathRaw from "@/render/themes/data/the-aftermath.json";
-import { MAP_GEM_MULTIPLIERS, MAP_LEVELS, TOTAL_MAPS } from "@/sim/Constants.js";
-import { BOSS_CADENCE } from "@/sim/ConstantsEnemy.js";
 import { breadthFirstTilePath } from "@/sim/enemies/flightGrid.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { generateRandomMap, getMap, invalidateMapCache } from "@/sim/grid/Map.js";
 import { NavDistanceField } from "@/sim/navmesh/NavDistanceField.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { orderedPath } from "../helpers/navmesh-test-utils.js";
+
+const mapLevels = getGameContent().maps.levels;
+const totalMaps = mapLevels.length;
+const mapGemMultipliers = getGameContent().economy.mapGemMultipliers;
 
 function tileKey(tileX, tileY) {
   return `${tileX},${tileY}`;
@@ -104,7 +107,7 @@ function collarBySide(map) {
 describe("Map generation", () => {
   describe("getMap", () => {
     it("returns a valid map for each of the 36 maps", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
+      for (let i = 0; i < totalMaps; i++) {
         const map = getMap(i);
         expect(map).toBeDefined();
         expect(map.width).toBeGreaterThan(0);
@@ -115,7 +118,7 @@ describe("Map generation", () => {
     });
 
     it("keeps every base center at height 1 so a flyer can use it as a goal", () => {
-      for (let mapIndex = 0; mapIndex < TOTAL_MAPS; mapIndex++) {
+      for (let mapIndex = 0; mapIndex < totalMaps; mapIndex++) {
         const map = getMap(mapIndex);
         const center = map.tiles[map.base.y][map.base.x];
         expect(center.type, `map ${mapIndex}`).toBe("base");
@@ -124,7 +127,7 @@ describe("Map generation", () => {
     });
 
     it("returns maps with valid spawn-to-base paths", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
+      for (let i = 0; i < totalMaps; i++) {
         const map = getMap(i);
         const grid = new Grid(map);
         for (let s = 0; s < grid.spawns.length; s++) {
@@ -141,7 +144,7 @@ describe("Map generation", () => {
     });
 
     it("every spawn stands on walkable ground with a finite tile distance to the base", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
+      for (let i = 0; i < totalMaps; i++) {
         const map = getMap(i);
         const grid = new Grid(map);
         for (let s = 0; s < grid.spawns.length; s++) {
@@ -163,7 +166,7 @@ describe("Map generation", () => {
     });
 
     it("every path tile is reachable, traversable, and not a dead-end spur", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
+      for (let i = 0; i < totalMaps; i++) {
         const map = getMap(i);
         const grid = new Grid(map);
         const goalKeys = new Set(grid.getBaseGoalTiles().map((tile) => `${tile.x},${tile.y}`));
@@ -226,8 +229,8 @@ describe("Map generation", () => {
     });
 
     it("bastion maps route every spawn through the apex notch into the base", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
-        const config = MAP_LEVELS[i];
+      for (let i = 0; i < totalMaps; i++) {
+        const config = mapLevels[i];
         if (config.style !== "bastion") continue;
         const map = getMap(i);
         const grid = new Grid(map);
@@ -251,20 +254,20 @@ describe("Map generation", () => {
     });
 
     it("returns maps with correct region metadata", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
+      for (let i = 0; i < totalMaps; i++) {
         const map = getMap(i);
-        const config = MAP_LEVELS[i];
+        const config = mapLevels[i];
         expect(map.regionId).toBe(config.regionId);
         expect(map.level).toBe(config.level);
         expect(map.style).toBe(config.style);
-        expect(map.bossCadence).toBe(BOSS_CADENCE[config.regionId]);
+        expect(map.bossCadence).toBe(getGameContent().enemies.bossCadence[config.regionId]);
       }
     });
 
     it("returns maps with correct dimensions from config", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
+      for (let i = 0; i < totalMaps; i++) {
         const map = getMap(i);
-        const config = MAP_LEVELS[i];
+        const config = mapLevels[i];
         expect(map.width).toBe(config.width);
         expect(map.height).toBe(config.height);
       }
@@ -290,7 +293,7 @@ describe("Map generation", () => {
     });
 
     it("insets every spawn at least one tile from the map border", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
+      for (let i = 0; i < totalMaps; i++) {
         const map = getMap(i);
         for (const spawn of map.spawns) {
           expect(spawn.x, `Map ${i} spawn x`).toBeGreaterThanOrEqual(1);
@@ -302,7 +305,7 @@ describe("Map generation", () => {
     });
 
     it("all maps have name property", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
+      for (let i = 0; i < totalMaps; i++) {
         const map = getMap(i);
         expect(map.name).toBeDefined();
         expect(typeof map.name).toBe("string");
@@ -387,8 +390,8 @@ describe("Map generation", () => {
     });
 
     it("bastion keeps an island in front of one apron notch", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
-        const config = MAP_LEVELS[i];
+      for (let i = 0; i < totalMaps; i++) {
+        const config = mapLevels[i];
         if (config.style !== "bastion") continue;
         const map = getMap(i);
         const landscape = map.width > map.height;
@@ -465,8 +468,8 @@ describe("Map generation", () => {
     });
 
     it("bastion has a narrow single-tile notch entry toward the base", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
-        const config = MAP_LEVELS[i];
+      for (let i = 0; i < totalMaps; i++) {
+        const config = mapLevels[i];
         if (config.style !== "bastion") continue;
         const map = getMap(i);
         const base = map.base;
@@ -494,8 +497,8 @@ describe("Map generation", () => {
     });
 
     it("bastion triangle apron around the base is buildable terrain", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
-        const config = MAP_LEVELS[i];
+      for (let i = 0; i < totalMaps; i++) {
+        const config = mapLevels[i];
         if (config.style !== "bastion") continue;
         const map = getMap(i);
         const base = map.base;
@@ -527,22 +530,22 @@ describe("Map generation", () => {
       expect(different).toBe(true);
     });
 
-    it("MAP_GEM_MULTIPLIERS has 36 entries", () => {
-      expect(MAP_GEM_MULTIPLIERS.length).toBe(36);
+    it("mapGemMultipliers has 36 entries", () => {
+      expect(mapGemMultipliers.length).toBe(36);
     });
 
-    it("MAP_GEM_MULTIPLIERS values increase with map index", () => {
-      expect(MAP_GEM_MULTIPLIERS[0]).toBe(1);
-      expect(MAP_GEM_MULTIPLIERS[4]).toBe(1);
-      expect(MAP_GEM_MULTIPLIERS[8]).toBe(1);
-      expect(MAP_GEM_MULTIPLIERS[12]).toBe(2);
-      expect(MAP_GEM_MULTIPLIERS[24]).toBe(3);
-      expect(MAP_GEM_MULTIPLIERS[32]).toBe(5);
+    it("mapGemMultipliers values increase with map index", () => {
+      expect(mapGemMultipliers[0]).toBe(1);
+      expect(mapGemMultipliers[4]).toBe(1);
+      expect(mapGemMultipliers[8]).toBe(1);
+      expect(mapGemMultipliers[12]).toBe(2);
+      expect(mapGemMultipliers[24]).toBe(3);
+      expect(mapGemMultipliers[32]).toBe(5);
     });
 
     it("serpentine spawn is in the outer 40% of the entry edge", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
-        const config = MAP_LEVELS[i];
+      for (let i = 0; i < totalMaps; i++) {
+        const config = mapLevels[i];
         if (config.style !== "serpentine") continue;
         const map = getMap(i);
         const isLandscape = map.width > map.height;
@@ -555,8 +558,8 @@ describe("Map generation", () => {
     });
 
     it("canyon has tiles with width 3 (path tile with path neighbor 2 tiles away in perpendicular axis)", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
-        const config = MAP_LEVELS[i];
+      for (let i = 0; i < totalMaps; i++) {
+        const config = mapLevels[i];
         if (config.style !== "canyon") continue;
         const map = getMap(i);
         const isLandscape = map.width > map.height;
@@ -583,8 +586,8 @@ describe("Map generation", () => {
     });
 
     it("landscape maps have valid spawn-to-base paths", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
-        const config = MAP_LEVELS[i];
+      for (let i = 0; i < totalMaps; i++) {
+        const config = mapLevels[i];
         if (config.width <= config.height) continue;
         const map = getMap(i);
         const grid = new Grid(map);
@@ -602,8 +605,8 @@ describe("Map generation", () => {
     });
 
     it("landscape split has 2 spawns on left edge", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
-        const config = MAP_LEVELS[i];
+      for (let i = 0; i < totalMaps; i++) {
+        const config = mapLevels[i];
         if (config.style !== "split" || config.width <= config.height) continue;
         const map = getMap(i);
         expect(map.spawns).toHaveLength(2);
@@ -614,8 +617,8 @@ describe("Map generation", () => {
     });
 
     it("landscape serpentine spawn X is in the outer 40% of map width", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
-        const config = MAP_LEVELS[i];
+      for (let i = 0; i < totalMaps; i++) {
+        const config = mapLevels[i];
         if (config.style !== "serpentine" || config.width <= config.height) continue;
         const map = getMap(i);
         const spawnX = map.spawns[0]!.x;
@@ -626,8 +629,8 @@ describe("Map generation", () => {
     });
 
     it("landscape styles produce 1 spawn (except split)", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
-        const config = MAP_LEVELS[i];
+      for (let i = 0; i < totalMaps; i++) {
+        const config = mapLevels[i];
         if (config.width <= config.height) continue;
         const map = getMap(i);
         if (config.style === "split") {
@@ -638,8 +641,8 @@ describe("Map generation", () => {
       }
     });
     it("split maps join their arms with a cross-link away from the base", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
-        const config = MAP_LEVELS[i];
+      for (let i = 0; i < totalMaps; i++) {
+        const config = mapLevels[i];
         if (config.style !== "split") continue;
         const map = getMap(i);
         const start = map.spawns[0];
@@ -697,8 +700,8 @@ describe("Map generation", () => {
     });
 
     it("open maps carry a flyer-gating ridge", () => {
-      for (let i = 0; i < TOTAL_MAPS; i++) {
-        const config = MAP_LEVELS[i];
+      for (let i = 0; i < totalMaps; i++) {
+        const config = mapLevels[i];
         if (config.style !== "open") continue;
         const map = getMap(i);
         let ridgeTiles = 0;
@@ -714,7 +717,7 @@ describe("Map generation", () => {
 
     it("every map is flyable at jet height and walkable from every spawn", () => {
       const neverTower = () => false;
-      for (let i = 0; i < TOTAL_MAPS; i++) {
+      for (let i = 0; i < totalMaps; i++) {
         const map = getMap(i);
         const grid = new Grid(map);
         for (let s = 0; s < grid.spawns.length; s++) {
@@ -816,8 +819,8 @@ describe("Map generation", () => {
     }
 
     it("catalog maps keep one base door, a folded walk, and covered ground", () => {
-      for (let mapIndex = 0; mapIndex < TOTAL_MAPS; mapIndex++) {
-        assertCatalogInvariants("default", mapIndex, MAP_LEVELS[mapIndex], getMap(mapIndex));
+      for (let mapIndex = 0; mapIndex < totalMaps; mapIndex++) {
+        assertCatalogInvariants("default", mapIndex, mapLevels[mapIndex], getMap(mapIndex));
       }
     });
 

@@ -4,7 +4,7 @@ import {
   type MapBuildingSite,
   type MapCacheSite,
   nearestPathTile,
-  PACKAGE_CLICK_RADIUS_TILES,
+  packageClickRadiusTiles,
   reconcileMapSites,
   type SupplyDropSite,
 } from "@/sim/mapSites.js";
@@ -51,7 +51,7 @@ export class MapSiteManager {
   // whether a press on the map opens the picker or falls through to a tower.
   nearestPackage(grid: Grid | null, worldX: number, worldY: number): { source: SiteSource; id: number } | null {
     if (!grid) return null;
-    const radius = grid.tileSize * PACKAGE_CLICK_RADIUS_TILES;
+    const radius = grid.tileSize * packageClickRadiusTiles;
     let bestDistance = radius * radius;
     let best: { source: SiteSource; id: number } | null = null;
     const consider = (source: SiteSource, id: number, tileX: number, tileY: number): void => {

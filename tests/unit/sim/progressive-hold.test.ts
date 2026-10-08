@@ -1,8 +1,9 @@
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getGameContent } from "@/content/gameContent.js";
 import { applyCommand } from "@/sim/applyCommand.js";
-import { GameState, PRE_EMPTIVE_WAVE_TIMER, PROGRESSIVE_REROLL_GOLD_PER_WAVE } from "@/sim/Constants.js";
 import { GameEngine } from "@/sim/GameEngine.js";
+import { GameState } from "@/sim/GameRunState.js";
 import {
   createProgressiveBoard,
   legalSites,
@@ -43,7 +44,7 @@ describe("progressive placement hold", () => {
   it("pauses on wave 3 expiry and keeps that wave until a block is placed", () => {
     reachWave(3);
     const manager = waveManager();
-    manager._waveGameTime = PRE_EMPTIVE_WAVE_TIMER;
+    manager._waveGameTime = getGameContent().economy.preEmptiveWaveTimer;
     engine.update(1 / 60);
     expect(manager.currentWave).toBe(3);
     expect(engine.progressivePlacementHold).toBe(true);
@@ -118,7 +119,7 @@ describe("progressive placement hold", () => {
   it("launches the expiry wave on unpause instead of at placement", () => {
     reachWave(3);
     const manager = waveManager();
-    manager._waveGameTime = PRE_EMPTIVE_WAVE_TIMER;
+    manager._waveGameTime = getGameContent().economy.preEmptiveWaveTimer;
     engine.update(1 / 60);
     expect(engine.progressivePlacementHold).toBe(true);
     expect(engine.progressiveResumeMode).toBe("expire-advance");
@@ -328,7 +329,7 @@ describe("progressive placement hold", () => {
 
   it("re-rolls every choice for the configured gold times the wave and keeps an extender", () => {
     const wave = 3;
-    const cost = PROGRESSIVE_REROLL_GOLD_PER_WAVE * wave;
+    const cost = getGameContent().maps.progressive.rerollGoldPerWave * wave;
     engine.debug("setWave", wave);
     const goldBefore = engine.runState.gold;
     const rolled = engine.rerollProgressiveOffer();
@@ -357,7 +358,7 @@ describe("progressive placement hold", () => {
     right.debug("setWave", 3);
     expect(left.progressiveOffer).toEqual(right.progressiveOffer);
     const offer = left.progressiveOffer.slice();
-    const cost = PROGRESSIVE_REROLL_GOLD_PER_WAVE * 3;
+    const cost = getGameContent().maps.progressive.rerollGoldPerWave * 3;
     const shortGold = cost - 1;
     left.runState.gold = shortGold;
     expect(left.rerollProgressiveOffer()).toBe(false);

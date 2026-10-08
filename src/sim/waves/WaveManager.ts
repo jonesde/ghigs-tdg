@@ -1,19 +1,20 @@
+import { getGameContent } from "@/content/gameContent.js";
 import type { SpawnState } from "@/render/themes/index.js";
 import type { BossAbilityId } from "@/sim/bossAbilities.js";
-import { BETWEEN_WAVES_TIMER, PRE_EMPTIVE_WAVE_TIMER, VICTORY_WAVE } from "@/sim/Constants.js";
+import { mulberry32 } from "@/sim/grid/Map.js";
 import {
-  ENEMY_TIER_THRESHOLDS,
-  ENEMY_TYPES,
   enemyLevelForWave,
-  HEALER_MIN_GAP,
-  PROGRESSIVE_EARLY_WAVE_COUNT,
+  progressiveEarlyWaveCount,
   progressiveEnemyLevel,
   progressiveWaveUnitCount,
   tierThresholdForWave,
   waveBossCount,
   waveUnitCount,
-} from "@/sim/ConstantsEnemy.js";
-import { mulberry32 } from "@/sim/grid/Map.js";
+} from "./waveComposition.js";
+
+const victoryWave = getGameContent().economy.victoryWave;
+const betweenWavesTimer = getGameContent().economy.betweenWavesTimer;
+const healerMinGap = getGameContent().enemies.healerMinGap;
 
 interface MapRef {
   regionId: number;
@@ -83,13 +84,13 @@ export interface WaveEntry {
   bossAbility?: BossAbilityId;
 }
 
-// Enemy types whose heal auras share the HEALER_MIN_GAP stagger discipline:
+// Enemy types whose heal auras share the enemies.healerMinGap stagger discipline:
 // every type here heals allies additively, so two of them in the same pack
 // double the sustain the gap exists to bound.
-export const HEALER_TYPES: readonly string[] = ["healer", "mender"];
+const healerTypes: readonly string[] = ["healer", "mender"];
 
 export function isHealerType(type: string): boolean {
-  return HEALER_TYPES.includes(type);
+  return healerTypes.includes(type);
 }
 
 export class WaveManager {
@@ -133,18 +134,18 @@ export class WaveManager {
     this.bossCadence = map.bossCadence;
     this.rng = mulberry32(map.seed);
     this.currentWave = 0;
-    this.maxWaves = VICTORY_WAVE;
+    this.maxWaves = victoryWave;
     this.active = false;
     this.queue = [];
     this.spawnTimer = 0;
-    this.betweenTimer = BETWEEN_WAVES_TIMER;
+    this.betweenTimer = betweenWavesTimer;
     this.betweenWaves = true;
     this.bossesThisWave = 0;
     this.baseReached = false;
     this.waveComposition = {};
     this._waveGameTime = 0;
     this.countdownActive = false;
-    this.countdownTimer = BETWEEN_WAVES_TIMER;
+    this.countdownTimer = betweenWavesTimer;
     this.advanceHeld = false;
     this.spawnStates = map.spawns.map(() => ({ visualState: "closed" as const, closeTransitionTimer: 0 }));
     this.prevWaveSpawnIndices = new Set();
@@ -205,8 +206,8 @@ export class WaveManager {
     this.currentWave = wave;
     this.betweenWaves = true;
     this.countdownActive = true;
-    this.countdownTimer = BETWEEN_WAVES_TIMER;
-    this.betweenTimer = BETWEEN_WAVES_TIMER;
+    this.countdownTimer = betweenWavesTimer;
+    this.betweenTimer = betweenWavesTimer;
     this.active = false;
     this.bossesThisWave = 0;
     this.baseReached = false;
@@ -295,7 +296,7 @@ export class WaveManager {
       ? progressiveWaveUnitCount(n, this.map.level, this.map.entryCount ?? 1)
       : waveUnitCount(n);
     const enemyLevel = progressive ? progressiveEnemyLevel(n, this.map.level) : enemyLevelForWave(n, this.map.level);
-    const bossCount = progressive && n <= PROGRESSIVE_EARLY_WAVE_COUNT ? 0 : waveBossCount(n, this.bossCadence);
+    const bossCount = progressive && n <= progressiveEarlyWaveCount ? 0 : waveBossCount(n, this.bossCadence);
 
     // Render-pool size is not a gameplay balance lever; non-boss count is purely
     // driven by wave scaling. Overflow is absorbed by EnemyManager's pending queue.
@@ -304,7 +305,7 @@ export class WaveManager {
 
     // Healers and menders share one rate limit so their additive heal auras
     // cannot stack into an unkillable pack: a healer-type drawn with fewer
-    // than HEALER_MIN_GAP enemies since the last one goes to healerBacklog,
+    // than enemies.healerMinGap enemies since the last one goes to healerBacklog,
     // this slot is refilled by a re-roll that excludes both healer types, and
     // the backlog is emitted (oldest first) once the gap is satisfied again.
     // sinceLastHealer starts at the full gap so the wave's first healer-type
@@ -312,16 +313,16 @@ export class WaveManager {
     // discarded: those slots were already filled by other enemies and the wave
     // reached maximum healer density.
     const healerBacklog: string[] = [];
-    let sinceLastHealer = HEALER_MIN_GAP;
+    let sinceLastHealer = healerMinGap;
     for (let i = 0; i < nonBossCount; i++) {
       let type: string;
-      if (healerBacklog.length > 0 && sinceLastHealer >= HEALER_MIN_GAP) {
+      if (healerBacklog.length > 0 && sinceLastHealer >= healerMinGap) {
         type = healerBacklog.shift()!;
       } else {
         type = this.rollType(n);
-        if (isHealerType(type) && sinceLastHealer < HEALER_MIN_GAP) {
+        if (isHealerType(type) && sinceLastHealer < healerMinGap) {
           healerBacklog.push(type);
-          type = this.rollType(n, HEALER_TYPES);
+          type = this.rollType(n, healerTypes);
         }
       }
       out.push({ type, level: enemyLevel, delay: 0.5 + this.rng() * 0.5 });
@@ -340,7 +341,7 @@ export class WaveManager {
     const excluded = new Set(excludeTypes);
     const rand = this.rng();
     let cumulative = 0;
-    for (const tier of ENEMY_TIER_THRESHOLDS) {
+    for (const tier of getGameContent().enemies.tierThresholds) {
       if (excluded.has(tier.type)) continue;
       if (wave < tier.minWave) {
         // Flat bands keep their dead mass while locked, which is what preserves
@@ -392,7 +393,7 @@ export class WaveManager {
         this.transitionActiveSpawnsToTransition();
       }
       if (this.betweenTimer <= 0) {
-        if (this.currentWave < VICTORY_WAVE) {
+        if (this.currentWave < victoryWave) {
           this.closeAllSpawns();
           this.startNextWave();
           if (onWaveStart) onWaveStart(this.currentWave);
@@ -409,13 +410,13 @@ export class WaveManager {
     // differently without touching this call site. Today expiry pays the same
     // progress rewards (milestones, best-wave, map unlock track waves survived,
     // not kills), which is why GameEngine.onWaveExpired shares that path.
-    if (this._waveGameTime >= PRE_EMPTIVE_WAVE_TIMER) {
-      if (this.currentWave >= VICTORY_WAVE) {
+    if (this._waveGameTime >= getGameContent().economy.preEmptiveWaveTimer) {
+      if (this.currentWave >= victoryWave) {
         // Same wave-end notification as the branch below, minus startNextWave.
-        // Dropping it here left VICTORY_WAVE unrewarded: GameEngine.update ends
+        // Dropping it here left economy.victoryWave unrewarded: GameEngine.update ends
         // the run once this parks betweenWaves with an empty field, so without
         // the callback the victory wave never reached applyWaveProgressRewards
-        // and the map's best wave froze at VICTORY_WAVE - 1.
+        // and the map's best wave froze at economy.victoryWave - 1.
         (onWaveExpired ?? onWaveCleared)?.(this.currentWave);
         this.betweenWaves = true;
         return;
@@ -444,14 +445,14 @@ export class WaveManager {
         this.active = false;
         return;
       }
-      if (this.currentWave >= VICTORY_WAVE) {
+      if (this.currentWave >= victoryWave) {
         this.betweenWaves = true;
       } else {
         this.saveActiveSpawns();
         this.countdownActive = true;
-        this.countdownTimer = BETWEEN_WAVES_TIMER;
+        this.countdownTimer = betweenWavesTimer;
         this.betweenWaves = true;
-        this.betweenTimer = BETWEEN_WAVES_TIMER;
+        this.betweenTimer = betweenWavesTimer;
       }
       return;
     }
@@ -459,7 +460,7 @@ export class WaveManager {
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       const next = this.queue.shift();
-      if (!next || !ENEMY_TYPES[next.type]) {
+      if (!next || !getGameContent().enemies.types[next.type]) {
         return;
       }
       // Progressive lanes emit in corridor-length order: twice as far, twice as

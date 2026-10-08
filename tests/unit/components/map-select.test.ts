@@ -6,7 +6,7 @@ import type { RouteRecordRaw } from "vue-router";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { mockDefaultTheme } from "@/../tests/helpers/mock-stores.js";
 import MapSelect from "@/components/MapSelect.vue";
-import { CUSTOM_PROGRESSIVE_MAP_INDEX, CUSTOM_RANDOM_MAP_INDEX } from "@/sim/Constants.js";
+import { customProgressiveMapIndex, customRandomMapIndex } from "@/sim/GameRunState.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
@@ -383,7 +383,7 @@ describe("MapSelect", () => {
     playButton!.click();
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(router.currentRoute.value.path).toBe("/game");
-    expect(gameStore.mapIndex).toBe(CUSTOM_RANDOM_MAP_INDEX);
+    expect(gameStore.mapIndex).toBe(customRandomMapIndex);
     expect(gameStore.map.seed).toBe(777);
     expect(gameStore.randomMapParams.seed).toBe(777);
     expect(gameStore.randomMapParams.level).toBe(4);
@@ -419,7 +419,7 @@ describe("MapSelect", () => {
     playButton!.click();
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(router.currentRoute.value.path).toBe("/game");
-    expect(gameStore.mapIndex).toBe(CUSTOM_PROGRESSIVE_MAP_INDEX);
+    expect(gameStore.mapIndex).toBe(customProgressiveMapIndex);
     expect(gameStore.map.style).toBe("progressive");
     expect(gameStore.map.regionId).toBe(0);
     expect(gameStore.map.level).toBe(7);

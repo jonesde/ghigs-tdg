@@ -1,12 +1,12 @@
 import { getGameContent } from "@/content/gameContent.js";
+import type { EconomyContent } from "@/content/schemas/economy.js";
+import { TowerIds } from "@/content/towerIds.js";
 import type { TowerVisualMeta } from "@/render/themes/index.js";
-import { GENERAL_ADDON_GEM_COSTS, SELL_OPTION_GEM_COST } from "@/sim/Constants.js";
-import { TowerIds } from "@/sim/ConstantsTower.js";
 import type { PersistState } from "@/sim/PersistState.js";
 
 const skillTreeContent = getGameContent().skillTree;
-const LEVEL_COSTS = skillTreeContent.levelCosts;
-const ADDON_COSTS = skillTreeContent.addonCosts;
+const levelCosts = skillTreeContent.levelCosts;
+const addonCosts = skillTreeContent.addonCosts;
 
 interface SkillNode {
   tier: string;
@@ -35,20 +35,15 @@ interface GeneralAddonDef {
   isSellOption?: boolean;
 }
 
-interface GeneralAddonCategory {
-  label: string;
-  addons: string[];
-}
+export const skillTree: Record<string, TowerSkillTree> = {};
 
-export const SKILL_TREE: Record<string, TowerSkillTree> = {};
-
-const NEUTRAL_DISPLAY = { name: "", color: "#8fbc8f", icon: "\u2500" };
+const neutralDisplay = { name: "", color: "#8fbc8f", icon: "\u2500" };
 
 export function populateSkillTreeTheme(defaultTowerVisuals: Record<string, TowerVisualMeta>): void {
   for (const id of Object.values(TowerIds)) {
     const visual = defaultTowerVisuals[id];
     if (!visual) continue;
-    const entry = SKILL_TREE[id];
+    const entry = skillTree[id];
     if (!entry) continue;
     entry.name = visual.name;
     entry.color = visual.color;
@@ -56,69 +51,66 @@ export function populateSkillTreeTheme(defaultTowerVisuals: Record<string, Tower
   }
 }
 
-export const VARIANT_INFO: Record<string, { A: { name: string; desc: string }; B: { name: string; desc: string } }> =
-  skillTreeContent.variantInfo;
-
-const ADDON_INFO: Record<string, { name: string; desc: string }[]> = skillTreeContent.addonInfo;
+const addonInfo: Record<string, { name: string; desc: string }[]> = skillTreeContent.addonInfo;
 
 for (const id of Object.values(TowerIds)) {
-  const variantA = VARIANT_INFO[id]!.A;
-  const variantB = VARIANT_INFO[id]!.B;
-  const addonDefs = ADDON_INFO[id]!;
-  SKILL_TREE[id] = {
-    name: NEUTRAL_DISPLAY.name,
-    color: NEUTRAL_DISPLAY.color,
-    icon: NEUTRAL_DISPLAY.icon,
+  const variantA = skillTreeContent.variantInfo[id]!.A;
+  const variantB = skillTreeContent.variantInfo[id]!.B;
+  const addonDefs = addonInfo[id]!;
+  skillTree[id] = {
+    name: neutralDisplay.name,
+    color: neutralDisplay.color,
+    icon: neutralDisplay.icon,
     levels: [
-      { tier: "level", index: 2, label: "Level 3", cost: LEVEL_COSTS[2]!, desc: "Unlock upgrade to level 3." },
-      { tier: "level", index: 3, label: "Level 4", cost: LEVEL_COSTS[3]!, desc: "Unlock upgrade to level 4." },
+      { tier: "level", index: 2, label: "Level 3", cost: levelCosts[2]!, desc: "Unlock upgrade to level 3." },
+      { tier: "level", index: 3, label: "Level 4", cost: levelCosts[3]!, desc: "Unlock upgrade to level 4." },
     ],
     variantA: [
-      { tier: "variantA", index: 0, label: `${variantA.name} 1`, cost: LEVEL_COSTS[4]!, desc: variantA.desc },
+      { tier: "variantA", index: 0, label: `${variantA.name} 1`, cost: levelCosts[4]!, desc: variantA.desc },
       {
         tier: "variantA",
         index: 1,
         label: `${variantA.name} 2`,
-        cost: LEVEL_COSTS[5]!,
+        cost: levelCosts[5]!,
         desc: `${variantA.name} 2 upgrade (level 6).`,
       },
       {
         tier: "variantA",
         index: 2,
         label: `${variantA.name} 3`,
-        cost: LEVEL_COSTS[6]!,
+        cost: levelCosts[6]!,
         desc: `${variantA.name} 3 final mastery (level 7).`,
       },
     ],
     variantB: [
-      { tier: "variantB", index: 0, label: `${variantB.name} 1`, cost: LEVEL_COSTS[4]!, desc: variantB.desc },
+      { tier: "variantB", index: 0, label: `${variantB.name} 1`, cost: levelCosts[4]!, desc: variantB.desc },
       {
         tier: "variantB",
         index: 1,
         label: `${variantB.name} 2`,
-        cost: LEVEL_COSTS[5]!,
+        cost: levelCosts[5]!,
         desc: `${variantB.name} 2 upgrade (level 6).`,
       },
       {
         tier: "variantB",
         index: 2,
         label: `${variantB.name} 3`,
-        cost: LEVEL_COSTS[6]!,
+        cost: levelCosts[6]!,
         desc: `${variantB.name} 3 final mastery (level 7).`,
       },
     ],
     addons: [
-      { tier: "addons", index: 0, label: addonDefs[0]!.name, cost: ADDON_COSTS[0]!, desc: addonDefs[0]!.desc },
-      { tier: "addons", index: 1, label: addonDefs[1]!.name, cost: ADDON_COSTS[1]!, desc: addonDefs[1]!.desc },
-      { tier: "addons", index: 2, label: addonDefs[2]!.name, cost: ADDON_COSTS[2]!, desc: addonDefs[2]!.desc },
+      { tier: "addons", index: 0, label: addonDefs[0]!.name, cost: addonCosts[0]!, desc: addonDefs[0]!.desc },
+      { tier: "addons", index: 1, label: addonDefs[1]!.name, cost: addonCosts[1]!, desc: addonDefs[1]!.desc },
+      { tier: "addons", index: 2, label: addonDefs[2]!.name, cost: addonCosts[2]!, desc: addonDefs[2]!.desc },
     ],
   };
 }
 
 function getCost(tier: string, index: number): number {
-  if (tier === "level") return LEVEL_COSTS[index] || 0;
-  if (tier === "variantA" || tier === "variantB") return LEVEL_COSTS[index + 4] || 0;
-  if (tier === "addons") return ADDON_COSTS[index] || 0;
+  if (tier === "level") return levelCosts[index] || 0;
+  if (tier === "variantA" || tier === "variantB") return levelCosts[index + 4] || 0;
+  if (tier === "addons") return addonCosts[index] || 0;
   return 0;
 }
 
@@ -233,24 +225,23 @@ export function maxLevelFor(save: PersistState, towerId: string, variant: "A" | 
   return max;
 }
 
-export const GENERAL_ADDON_CATEGORIES: Record<string, GeneralAddonCategory> = skillTreeContent.generalAddonCategories;
+// The pack ships one node per base level, so the ladder length is the level count.
+const baseLevelCount = skillTreeContent.baseLevels.length;
 
-export const BASE_LEVEL_COUNT = 7;
-
-export const BASE_LEVEL_NODES: { index: number; label: string; desc: string; cost: number }[] =
+export const baseLevelNodes: { index: number; label: string; desc: string; cost: number }[] =
   skillTreeContent.baseLevels.map((node, index) => ({
     index,
     label: node.label,
     desc: node.desc,
-    cost: LEVEL_COSTS[index] ?? 0,
+    cost: levelCosts[index] ?? 0,
   }));
 
 function baseLevelCost(index: number): number {
-  return LEVEL_COSTS[index] ?? 0;
+  return levelCosts[index] ?? 0;
 }
 
 export function isBaseUnlocked(save: PersistState, index: number): boolean {
-  if (index < 0 || index >= BASE_LEVEL_COUNT) return false;
+  if (index < 0 || index >= baseLevelCount) return false;
   const levels = save.baseUnlocks?.levels;
   if (!levels) return index < 2;
   return !!levels[index];
@@ -259,7 +250,7 @@ export function isBaseUnlocked(save: PersistState, index: number): boolean {
 // Shared base-level precondition for isBaseAvailable/tryUnlockBase. Index 0 and 1
 // are free. Index 2 and above require the previous index.
 function checkBaseUnlockPreconditions(save: PersistState, index: number): { ok: true } | { ok: false; reason: string } {
-  if (index < 0 || index >= BASE_LEVEL_COUNT) return { ok: false, reason: "Invalid base level" };
+  if (index < 0 || index >= baseLevelCount) return { ok: false, reason: "Invalid base level" };
   if (index >= 2 && !isBaseUnlocked(save, index - 1)) {
     return { ok: false, reason: "Unlock previous level first" };
   }
@@ -287,10 +278,10 @@ export function tryUnlockBase(save: PersistState, index: number) {
 }
 
 export function canRefundBase(save: PersistState, index: number): number {
-  if (index < 2 || index >= BASE_LEVEL_COUNT) return 0;
+  if (index < 2 || index >= baseLevelCount) return 0;
   const levels = save.baseUnlocks?.levels;
   if (!levels?.[index]) return 0;
-  for (let higher = index + 1; higher < BASE_LEVEL_COUNT; higher++) {
+  for (let higher = index + 1; higher < baseLevelCount; higher++) {
     if (levels[higher]) return 0;
   }
   const cost = baseLevelCost(index);
@@ -310,7 +301,7 @@ export function maxLevelForBase(save: PersistState): number {
   const levels = save.baseUnlocks?.levels;
   if (!levels) return 2;
   let max = 0;
-  for (let index = 0; index < BASE_LEVEL_COUNT; index++) {
+  for (let index = 0; index < baseLevelCount; index++) {
     if (!levels[index]) break;
     max = index + 1;
   }
@@ -318,13 +309,13 @@ export function maxLevelForBase(save: PersistState): number {
 }
 
 function resolveGeneralAddonCosts(costKey: string | undefined, isSellOption: boolean | undefined): readonly number[] {
-  if (isSellOption) return [SELL_OPTION_GEM_COST, SELL_OPTION_GEM_COST];
+  if (isSellOption) return [getGameContent().economy.sellOptionGemCost, getGameContent().economy.sellOptionGemCost];
   if (!costKey) return [];
-  const costs = GENERAL_ADDON_GEM_COSTS[costKey as keyof typeof GENERAL_ADDON_GEM_COSTS];
+  const costs = getGameContent().economy.generalAddonGemCosts[costKey as keyof EconomyContent["generalAddonGemCosts"]];
   return costs ?? [];
 }
 
-export const GENERAL_ADDON_DEFS: Record<string, GeneralAddonDef> = Object.fromEntries(
+export const generalAddonDefs: Record<string, GeneralAddonDef> = Object.fromEntries(
   Object.entries(skillTreeContent.generalAddonDefs).map(([key, def]) => [
     key,
     {
@@ -343,18 +334,18 @@ export const GENERAL_ADDON_DEFS: Record<string, GeneralAddonDef> = Object.fromEn
 // effect, null means not bought. There is no second ownership flag, so "bought
 // both" is unrepresentable rather than merely discouraged.
 
-export const SELL_OPTION_MODES = ["refund", "discount"] as const;
+const sellOptionModes = ["refund", "discount"] as const;
 
-export type SellOptionMode = (typeof SELL_OPTION_MODES)[number];
+export type SellOptionMode = (typeof sellOptionModes)[number];
 
 // sellOption tier index → generalAddons.sellActive value.
 export function sellOptionMode(index: number): SellOptionMode | null {
-  return SELL_OPTION_MODES[index] ?? null;
+  return sellOptionModes[index] ?? null;
 }
 
 export function activeSellMode(save: PersistState): SellOptionMode | null {
   const active = save.generalAddons.sellActive;
-  return SELL_OPTION_MODES.find((mode) => mode === active) ?? null;
+  return sellOptionModes.find((mode) => mode === active) ?? null;
 }
 
 export function isSellOptionPurchased(save: PersistState): boolean {
@@ -370,7 +361,7 @@ export function isGeneralUnlocked(save: PersistState, key: string, index: number
 export function isGeneralAvailable(save: PersistState, key: string, index: number): boolean {
   if (key === "sellOption" && sellOptionMode(index) === null) return false;
   if (isGeneralUnlocked(save, key, index)) return true;
-  const def = GENERAL_ADDON_DEFS[key];
+  const def = generalAddonDefs[key];
   if (!def) return false;
   const cost = def.costs[index]!;
   if (save.gems < cost) return false;
@@ -383,7 +374,7 @@ export function isGeneralAvailable(save: PersistState, key: string, index: numbe
 }
 
 export function tryUnlockGeneral(save: PersistState, key: string, index: number) {
-  const def = GENERAL_ADDON_DEFS[key];
+  const def = generalAddonDefs[key];
   if (!def) return { ok: false, reason: "Unknown add-on" };
   const cost = def.costs[index]!;
 
@@ -428,7 +419,7 @@ export function getGeneralAddonValue(save: PersistState, key: string): number | 
 
 export function getGeneralAddonTierData(save: PersistState, key: string) {
   const tier = getGeneralAddonValue(save, key);
-  const def = GENERAL_ADDON_DEFS[key];
+  const def = generalAddonDefs[key];
   if (!def || tier === null || tier === undefined) return null;
   return { tier, ...def.tiers[tier as number] };
 }
@@ -438,11 +429,11 @@ export function canRefundGeneral(save: PersistState, key: string, index: number)
   // refundable, so a refund always clears sellActive (same end state as the bulk path).
   if (key === "sellOption") {
     const mode = sellOptionMode(index);
-    return mode !== null && mode === activeSellMode(save) ? SELL_OPTION_GEM_COST : 0;
+    return mode !== null && mode === activeSellMode(save) ? getGameContent().economy.sellOptionGemCost : 0;
   }
   const current = getGeneralAddonValue(save, key);
   if (current !== index) return 0;
-  const def = GENERAL_ADDON_DEFS[key];
+  const def = generalAddonDefs[key];
   if (!def) return 0;
   return def.costs[index]!;
 }
@@ -482,14 +473,14 @@ export function countRefundableGems(save: PersistState): number {
       if (unlocked.addons[i]) total += getCost("addons", i);
     }
   }
-  for (const key of Object.keys(GENERAL_ADDON_DEFS)) {
+  for (const key of Object.keys(generalAddonDefs)) {
     if (key === "sellOption") {
-      if (isSellOptionPurchased(save)) total += SELL_OPTION_GEM_COST;
+      if (isSellOptionPurchased(save)) total += getGameContent().economy.sellOptionGemCost;
       continue;
     }
     const current = getGeneralAddonValue(save, key);
     if (typeof current !== "number") continue;
-    const def = GENERAL_ADDON_DEFS[key];
+    const def = generalAddonDefs[key];
     if (!def) continue;
     for (let i = 0; i <= current; i++) {
       total += def.costs[i]!;
@@ -497,7 +488,7 @@ export function countRefundableGems(save: PersistState): number {
   }
   const baseLevels = save.baseUnlocks?.levels;
   if (baseLevels) {
-    for (let index = BASE_LEVEL_COUNT - 1; index >= 0; index--) {
+    for (let index = baseLevelCount - 1; index >= 0; index--) {
       if (baseLevels[index]) total += baseLevelCost(index);
     }
   }
@@ -520,9 +511,9 @@ export function refundAllGems(save: PersistState) {
       if (unlocked.levels[i]) tryRefund(save, towerId, "level", i);
     }
   }
-  for (const key of Object.keys(GENERAL_ADDON_DEFS)) {
+  for (const key of Object.keys(generalAddonDefs)) {
     if (key === "sellOption") {
-      if (isSellOptionPurchased(save)) save.gems += SELL_OPTION_GEM_COST;
+      if (isSellOptionPurchased(save)) save.gems += getGameContent().economy.sellOptionGemCost;
       save.generalAddons.sellActive = null;
       continue;
     }
@@ -533,7 +524,7 @@ export function refundAllGems(save: PersistState) {
     }
   }
   if (save.baseUnlocks?.levels) {
-    for (let index = BASE_LEVEL_COUNT - 1; index >= 0; index--) {
+    for (let index = baseLevelCount - 1; index >= 0; index--) {
       if (save.baseUnlocks.levels[index]) tryRefundBase(save, index);
     }
   }

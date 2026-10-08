@@ -1,5 +1,5 @@
-import type { TowerId } from "@/sim/ConstantsTower.js";
-import { BASE_SELECTION_ID } from "@/sim/towers/BaseDefense.js";
+import type { TowerId } from "@/content/towerIds.js";
+import { baseSelectionId } from "@/sim/towers/BaseDefense.js";
 
 export interface ClickEffectInput {
   progressivePlacementHold: boolean;
@@ -33,7 +33,7 @@ export type RightClickAction = "cancelBuild" | "deselect" | null;
 
 // Maximum pointer travel, in screen pixels, that still counts as a right click.
 // Beyond this the press is a right-drag pan and must not exit build mode.
-export const RIGHT_CLICK_MAX_DRAG_PX = 5;
+export const rightClickMaxDragPx = 5;
 
 // Mirrors the Escape/X priority in Input.ts: build mode exits first (keeping any
 // tower selection), otherwise an open tower or base selection deselects.
@@ -48,7 +48,7 @@ export function rightPressIsClick(
   startClientY: number,
   endClientX: number,
   endClientY: number,
-  maxDragPixels: number = RIGHT_CLICK_MAX_DRAG_PX,
+  maxDragPixels: number = rightClickMaxDragPx,
 ): boolean {
   const deltaX = endClientX - startClientX;
   const deltaY = endClientY - startClientY;
@@ -66,7 +66,7 @@ export function baseSelectionStale(
   hoverTile: { tileX: number; tileY: number } | null,
   baseTile: { x: number; y: number } | null,
 ): boolean {
-  if (selectedTowerId !== BASE_SELECTION_ID) return false;
+  if (selectedTowerId !== baseSelectionId) return false;
   if (selectedTowerType === null) return false;
   if (!baseTile) return false;
   return hoverTile === null || hoverTile.tileX !== baseTile.x || hoverTile.tileY !== baseTile.y;

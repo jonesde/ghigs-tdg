@@ -1,11 +1,6 @@
 {
-  "mapBaseSize": 20,
-  "mapSizeScale": 2.5,
-  "maxMapDim": 50,
   "heightNoiseFreq": 0.3,
   "heightNoiseDivisor": 1.5,
-  "serpentineStep": 4,
-  "serpentineDownCap": 3,
   "mapsPerRegion": 12,
   "levels": [
     { "width": 15, "height": 10, "regionId": 0, "level": 1, "style": "serpentine", "seed": 10112 },

@@ -6,13 +6,14 @@ import type { RouteRecordRaw } from "vue-router";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { mockDefaultTheme } from "@/../tests/helpers/mock-stores.js";
 import MainMenu from "@/components/MainMenu.vue";
-import { CUSTOM_PROGRESSIVE_MAP_INDEX, CUSTOM_RANDOM_MAP_INDEX } from "@/sim/Constants.js";
+import { getGameContent } from "@/content/gameContent.js";
+import { customProgressiveMapIndex, customRandomMapIndex } from "@/sim/GameRunState.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { usePersistStore } from "@/stores/persist.js";
 import { useUiStore } from "@/stores/ui.js";
 
-const THEME_BG_SVG = "<svg viewBox='0 0 1600 900'><rect width='1600' height='900' fill='themebgmarker'/></svg>";
+const themeBgSvg = "<svg viewBox='0 0 1600 900'><rect width='1600' height='900' fill='themebgmarker'/></svg>";
 
 interface MountResult {
   pinia: ReturnType<typeof createPinia>;
@@ -40,7 +41,7 @@ function mountMainMenu(): MountResult {
   const persistStore = usePersistStore();
   const uiStore = useUiStore();
   const themeStore = useMapThemeStore();
-  const themedMock = { ...mockDefaultTheme, menuBackground: THEME_BG_SVG };
+  const themedMock = { ...mockDefaultTheme, menuBackground: themeBgSvg };
   const aftermathMock = { ...themedMock, id: "the-aftermath", label: "Aftermath" };
   const chrithmathMock = { ...themedMock, id: "chrithmath", label: "Chrithmath" };
   themeStore.defaultTheme = themedMock;
@@ -53,9 +54,9 @@ function mountMainMenu(): MountResult {
   themeStore.loadedThemes.chrithmath = chrithmathMock;
   // The world card paints from menuBackgrounds, not loadedThemes, so that
   // prefill too — the same late-mutation hazard applies to the preview cache.
-  themeStore.menuBackgrounds[themedMock.id] = THEME_BG_SVG;
-  themeStore.menuBackgrounds["the-aftermath"] = THEME_BG_SVG;
-  themeStore.menuBackgrounds.chrithmath = THEME_BG_SVG;
+  themeStore.menuBackgrounds[themedMock.id] = themeBgSvg;
+  themeStore.menuBackgrounds["the-aftermath"] = themeBgSvg;
+  themeStore.menuBackgrounds.chrithmath = themeBgSvg;
   gameStore.resetToMenu();
   const router = createRouterWithRoutes();
   return { pinia, gameStore, persistStore, uiStore, themeStore, router };
@@ -107,6 +108,17 @@ describe("MainMenu", () => {
     const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
     const slider = wrapper.find('input[type="range"]');
     expect(slider.exists()).toBe(true);
+  });
+
+  it("bounds the difficulty slider at the tick index the pack's ladder reaches", () => {
+    // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
+    const { pinia, gameStore, persistStore, uiStore, router } = mountMainMenu();
+    const wrapper = mount(MainMenu, { global: { plugins: [router, pinia] } });
+    const slider = wrapper.find('input[type="range"]');
+    const economy = getGameContent().economy;
+    const ladderBound = (economy.difficultyMultMax - economy.difficultyMultMin) / economy.difficultyMultTick;
+    expect(slider.attributes("max")).toBe(String(ladderBound));
+    expect(slider.attributes("min")).toBe("0");
   });
 
   it("displays current difficulty value", () => {
@@ -354,7 +366,7 @@ describe("MainMenu", () => {
     playButton!.click();
     await flushNavigation();
     expect(router.currentRoute.value.path).toBe("/game");
-    expect(gameStore.mapIndex).toBe(CUSTOM_RANDOM_MAP_INDEX);
+    expect(gameStore.mapIndex).toBe(customRandomMapIndex);
     expect(gameStore.map.seed).toBe(777);
     expect(gameStore.randomMapParams.seed).toBe(777);
     expect(gameStore.randomMapParams.level).toBe(4);
@@ -383,7 +395,7 @@ describe("MainMenu", () => {
     playButton!.click();
     await flushNavigation();
     expect(router.currentRoute.value.path).toBe("/game");
-    expect(gameStore.mapIndex).toBe(CUSTOM_PROGRESSIVE_MAP_INDEX);
+    expect(gameStore.mapIndex).toBe(customProgressiveMapIndex);
     expect(gameStore.map.style).toBe("progressive");
     expect(gameStore.map.entryCount).toBe(3);
     expect(gameStore.map.seed).toBe(424242);

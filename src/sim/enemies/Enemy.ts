@@ -1,19 +1,9 @@
 import type RAPIER from "@dimforge/rapier2d-compat";
 import type { CrowdAgent } from "recast-navigation";
+import { getGameContent } from "@/content/gameContent.js";
+import type { EnemyMeta } from "@/content/schemas/enemies.js";
 import type { EnemyVisualMeta, MapThemeAnimation, MapThemeData } from "@/render/themes/index.js";
 import type { BossAbilityId } from "@/sim/bossAbilities.js";
-import {
-  AGENT_RESYNC_RADIUS_FRACTION,
-  BOSS_STUN_REDUCTION,
-  BREACH_HYSTERESIS_SECONDS,
-  BREACH_REEVAL_SECONDS,
-  ENEMY_TYPES,
-  MAX_BURN_STACKS,
-  MIN_SLOW_FACTOR,
-  STUCK_RECOVERY_SECONDS,
-  STUN_CAP_PER_SECOND,
-  STUN_WINDOW_SECONDS,
-} from "@/sim/ConstantsEnemy.js";
 import { decideBreach } from "@/sim/navmesh/BreachDecision.js";
 import { restoreCrowdAgentVelocity } from "@/sim/navmesh/CrowdManager.js";
 import { fromRecast, toRecast } from "@/sim/navmesh/coords.js";
@@ -45,11 +35,11 @@ const warnedUnreachableFlightIds = new Set<number>();
 // A sustained force-field bias can shove a flyer out of its tile every tick.
 // Containment must re-teleport each time, but the polyline clear + rebuild behind
 // it is throttled to this cadence so the oscillation cannot force a BFS per tick.
-const FLIGHT_CONTAINMENT_REPLAN_COOLDOWN_SECONDS = 0.25;
+const flightContainmentReplanCooldownSeconds = 0.25;
 
 // Pin-recovery nudge strength in tiles per second of target slide speed over the
 // ballistic window (scaled by body mass and tile size into an impulse).
-const STUCK_NUDGE_TILES_PER_SECOND = 4;
+const stuckNudgeTilesPerSecond = 4;
 
 export function resetEnemyId() {
   nextId = 1;
@@ -78,7 +68,7 @@ export interface AttackTarget {
 // Slow strengths compare on a 4-decimal grid: many shooters compute the "same"
 // effective slow through different float paths, and exact equality fragmented
 // one logical stack into unbounded near-duplicate entries.
-const SLOW_STACK_QUANTIZATION = 1e4;
+const slowStackQuantization = 1e4;
 
 interface SlowEntry {
   eff: number;
@@ -91,27 +81,6 @@ interface BurnEntry {
   // Tower that applied this stack, for DPS-graph / milestone credit. Absent on
   // legacy/test constructions; burn still ticks, just without credit.
   sourceTowerId?: string | undefined;
-}
-
-interface EnemyMetaRef {
-  baseHp: number;
-  speed: number;
-  bounty: number;
-  radius: number;
-  walking: unknown;
-  hitReaction: unknown;
-  resist?: number;
-  slowResist?: number;
-  knockResist?: number;
-  shield?: number;
-  heal?: number;
-  healRange?: number;
-  attackDamage: number;
-  attackSpeed: number;
-  flyingHeight?: number;
-  spawnIntervalSeconds?: number;
-  spawnCap?: number;
-  spawnType?: string;
 }
 
 interface GridRef {
@@ -265,7 +234,7 @@ export class Enemy {
   id: number;
   type: string;
   level: number;
-  meta: EnemyMetaRef;
+  meta: EnemyMeta;
   maxHp: number;
   hp: number;
   speed: number;
@@ -307,7 +276,7 @@ export class Enemy {
   slowStack!: SlowEntry[];
   stunTimer!: number;
   // Stun diminishing-returns budget: fresh stun credited inside the trailing
-  // STUN_WINDOW_SECONDS window, capped at STUN_CAP_PER_SECOND. Excess stun is
+  // enemies.stunWindowSeconds window, capped at enemies.stunCapPerSecond. Excess stun is
   // discarded, so chain-stuns cannot hold an enemy past the cap per second.
   stunWindowStart!: number;
   stunWindowApplied!: number;
@@ -434,7 +403,7 @@ export class Enemy {
     baseTarget: AttackTarget | null = null,
     regionFactor = 1,
   ) {
-    const meta = ENEMY_TYPES[type] as unknown as EnemyMetaRef;
+    const meta = getGameContent().enemies.types[type] as EnemyMeta;
     this.id = nextId++;
     this.body = null;
     this.type = type;
@@ -530,7 +499,7 @@ export class Enemy {
   applySlow(amount: number, duration: number) {
     const effectiveSlow = amount * (1 - this.slowResist);
     if (effectiveSlow <= 0) return;
-    const quantizedSlow = Math.round(effectiveSlow * SLOW_STACK_QUANTIZATION) / SLOW_STACK_QUANTIZATION;
+    const quantizedSlow = Math.round(effectiveSlow * slowStackQuantization) / slowStackQuantization;
     const existing = this.slowStack.find((slowEntry) => slowEntry.eff === quantizedSlow && slowEntry.remaining > 0);
     if (existing) {
       existing.remaining = Math.max(existing.remaining, duration);
@@ -543,24 +512,27 @@ export class Enemy {
   recalcSlow() {
     this.slowFactor = 1;
     for (const slowEntry of this.slowStack) this.slowFactor *= 1 - slowEntry.eff;
-    this.slowFactor = Math.max(MIN_SLOW_FACTOR, this.slowFactor);
+    this.slowFactor = Math.max(getGameContent().enemies.minSlowFactor, this.slowFactor);
   }
 
   applyStun(duration: number) {
-    if (this.type === "boss") duration *= BOSS_STUN_REDUCTION;
+    if (this.type === "boss") duration *= getGameContent().enemies.bossStunReduction;
     if (duration <= 0) return;
-    if (this._gameSeconds - this.stunWindowStart >= STUN_WINDOW_SECONDS) {
+    if (this._gameSeconds - this.stunWindowStart >= getGameContent().enemies.stunWindowSeconds) {
       this.stunWindowStart = this._gameSeconds;
       this.stunWindowApplied = 0;
     }
-    const credited = Math.min(duration, Math.max(0, STUN_CAP_PER_SECOND - this.stunWindowApplied));
+    const credited = Math.min(
+      duration,
+      Math.max(0, getGameContent().enemies.stunCapPerSecond - this.stunWindowApplied),
+    );
     if (credited <= 0) return;
     this.stunWindowApplied += credited;
     this.stunTimer = Math.max(this.stunTimer, credited);
   }
 
   applyBurn(dps: number, duration: number, sourceTowerId?: string) {
-    // Same/similar DPS refreshes duration; otherwise stack up to MAX_BURN_STACKS,
+    // Same/similar DPS refreshes duration; otherwise stack up to enemies.maxBurnStacks,
     // replacing the lowest-DPS entry when full so weak ticks cannot crowd out strong ones.
     const similarEntry = this.burnStack.find((entry) => Math.abs(entry.dps - dps) < 1e-6);
     if (similarEntry) {
@@ -569,7 +541,7 @@ export class Enemy {
       similarEntry.sourceTowerId = sourceTowerId ?? similarEntry.sourceTowerId;
       return;
     }
-    if (this.burnStack.length < MAX_BURN_STACKS) {
+    if (this.burnStack.length < getGameContent().enemies.maxBurnStacks) {
       this.burnStack.push({ dps, timer: duration, sourceTowerId });
       return;
     }
@@ -939,7 +911,7 @@ export class Enemy {
     if (!towerSetChanged && !siegeTargetGone && anchorKey === this.breachSnapKey && this.breachCooldownSeconds > 0) {
       return;
     }
-    this.breachCooldownSeconds = BREACH_REEVAL_SECONDS;
+    this.breachCooldownSeconds = getGameContent().enemies.breachReevalSeconds;
     const openDistance = readOpen(anchor.x, anchor.y);
     const throughDistance = readThrough(anchor.x, anchor.y);
     if (throughDistance < 0) {
@@ -955,7 +927,7 @@ export class Enemy {
       blockers,
       enemyDamagePerSecond: this.effectiveAttackDamage * this.attackSpeed,
       enemySpeedTilesPerSecond: this.speed,
-      hysteresisSeconds: BREACH_HYSTERESIS_SECONDS,
+      hysteresisSeconds: getGameContent().enemies.breachHysteresisSeconds,
       currentlySieging,
     });
     this.breachSnapKey = anchorKey;
@@ -997,7 +969,7 @@ export class Enemy {
   // the breach comparator chose the detour, so a physical jam re-plans the crowd
   // corridor and nudges the body along the wall face instead of converting the
   // enemy to a siege. A pin is no progress (or an INVALID agent) for
-  // STUCK_RECOVERY_SECONDS; the nudge impulse rides the ballistic window so the
+  // enemies.stuckRecoverySeconds; the nudge impulse rides the ballistic window so the
   // crowd steering cannot overwrite it, and the tangent side alternates between
   // attempts. Stunned enemies are excluded: launchEnemy releases the motion lock
   // a stun park must keep.
@@ -1018,7 +990,7 @@ export class Enemy {
       return;
     }
     this.stuckTimer += dt;
-    if (this.stuckTimer < STUCK_RECOVERY_SECONDS) return;
+    if (this.stuckTimer < getGameContent().enemies.stuckRecoverySeconds) return;
     this.stuckTimer = 0;
     this.lastProgressX = this.x;
     this.lastProgressY = this.y;
@@ -1047,7 +1019,7 @@ export class Enemy {
     const blendX = tangentX + (outwardX / outwardLength) * 0.5;
     const blendY = tangentY + (outwardY / outwardLength) * 0.5;
     const blendLength = Math.hypot(blendX, blendY) || 1;
-    const impulseScale = this.body.mass() * this.grid.tileSize * STUCK_NUDGE_TILES_PER_SECOND;
+    const impulseScale = this.body.mass() * this.grid.tileSize * stuckNudgeTilesPerSecond;
     launchEnemy(this, (blendX / blendLength) * impulseScale, (blendY / blendLength) * impulseScale);
     this.stuckNudgeSign = side === 1 ? -1 : 1;
   }
@@ -1085,7 +1057,10 @@ export class Enemy {
     if (crowdAgent && !crowdParked) {
       const agentPos = fromRecast(crowdAgent.position());
       const drift = Math.hypot(this.x - agentPos.x, this.y - agentPos.y);
-      const resyncThreshold = Math.max(this.radius * AGENT_RESYNC_RADIUS_FRACTION, this.grid.tileSize * 0.15);
+      const resyncThreshold = Math.max(
+        this.radius * getGameContent().enemies.agentResyncRadiusFraction,
+        this.grid.tileSize * 0.15,
+      );
       if (drift > resyncThreshold) {
         const previousVelocity = crowdAgent.velocity();
         crowdAgent.teleport(toRecast({ x: this.x, y: this.y }));
@@ -1175,7 +1150,7 @@ export class Enemy {
           }
           if (this.containmentReplanCooldownSeconds <= 0) {
             this.clearFlightPolyline();
-            this.containmentReplanCooldownSeconds = FLIGHT_CONTAINMENT_REPLAN_COOLDOWN_SECONDS;
+            this.containmentReplanCooldownSeconds = flightContainmentReplanCooldownSeconds;
           }
         } else {
           // No traversable tile exists at this height. Drop the stale polyline that was

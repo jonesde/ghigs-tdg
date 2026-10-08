@@ -1,4 +1,4 @@
-import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { type FlightGrid, flightDistanceGrid, type LiveTowerAt } from "@/sim/enemies/flightGrid.js";
 
 // One 4-connected distance-to-base grid per flyingHeight above 0. The live-tower
@@ -24,7 +24,7 @@ export class FlightDistanceField {
     this.liveTowerAt = liveTowerAt;
     this.fields.clear();
     const heights = new Set<number>();
-    for (const meta of Object.values(ENEMY_TYPES)) {
+    for (const meta of Object.values(getGameContent().enemies.types)) {
       const flyingHeight = meta.flyingHeight ?? 0;
       if (flyingHeight > 0) heights.add(flyingHeight);
     }

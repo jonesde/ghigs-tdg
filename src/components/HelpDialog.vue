@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from "vue";
-import { progressiveRerollGoldPerWave } from "@/sim/Constants.js";
+import { themeProgressiveRerollGoldPerWave } from "@/content/themeMaps.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { useUiStore } from "@/stores/ui.js";
 import HelpEnemyTab from "./HelpEnemyTab.vue";
@@ -11,7 +11,7 @@ const themeStore = useMapThemeStore();
 
 // The re-roll row has to quote the active world's price, not the content-pack
 // default: a theme maps override changes what the button actually charges.
-const rerollGoldPerWave = computed(() => progressiveRerollGoldPerWave(themeStore.activeTheme?.maps));
+const rerollGoldPerWave = computed(() => themeProgressiveRerollGoldPerWave(themeStore.activeTheme?.maps));
 
 type HelpTabId = "howto" | "towers" | "enemies";
 const helpTabs: Array<{ id: HelpTabId; label: string }> = [
@@ -53,17 +53,17 @@ function onTabKeydown(event: KeyboardEvent): void {
   if (nextTab) selectTab(nextTab.id);
 }
 
-const KEYBOARD_Y = 70;
-const KEY_SIZE = 28;
-const KEY_STEP = 30;
-const ROW_STEP = 32;
+const keyboardY = 70;
+const keySize = 28;
+const keyStep = 30;
+const rowStep = 32;
 
 const buildRow = (
   rowIndex: number,
   keys: Array<{ label: string; width: number; highlighted?: boolean }>,
   arrowOffset = false,
 ) => {
-  const baseY = KEYBOARD_Y + rowIndex * ROW_STEP + (arrowOffset ? 8 : 0);
+  const baseY = keyboardY + rowIndex * rowStep + (arrowOffset ? 8 : 0);
   let currentX = 0;
   return keys.map((key) => {
     const keyData = {
@@ -79,11 +79,11 @@ const buildRow = (
 };
 
 const row0 = buildRow(0, [
-  { label: "Esc", width: KEY_SIZE, highlighted: true },
-  ...Array.from({ length: 9 }, (_, i) => ({ label: String(i + 1), width: KEY_SIZE, highlighted: true })),
-  { label: "0", width: KEY_SIZE },
-  { label: "-", width: KEY_SIZE },
-  { label: "=", width: KEY_SIZE },
+  { label: "Esc", width: keySize, highlighted: true },
+  ...Array.from({ length: 9 }, (_, i) => ({ label: String(i + 1), width: keySize, highlighted: true })),
+  { label: "0", width: keySize },
+  { label: "-", width: keySize },
+  { label: "=", width: keySize },
   { label: "⌫", width: 88 },
 ]);
 
@@ -91,11 +91,11 @@ const row1 = buildRow(1, [
   { label: "Tab", width: 42, highlighted: true },
   ...["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"].map((label) => ({
     label,
-    width: KEY_SIZE,
+    width: keySize,
     highlighted: label === "W" || label === "U" || label === "E",
   })),
-  { label: "[", width: KEY_SIZE },
-  { label: "]", width: KEY_SIZE },
+  { label: "[", width: keySize },
+  { label: "]", width: keySize },
   { label: "\\", width: 74 },
 ]);
 
@@ -103,11 +103,11 @@ const row2 = buildRow(2, [
   { label: "Caps", width: 58 },
   ...["A", "S", "D", "F", "G", "H", "J", "K", "L"].map((label) => ({
     label,
-    width: KEY_SIZE,
+    width: keySize,
     highlighted: ["A", "S", "D", "F"].includes(label),
   })),
-  { label: ";", width: KEY_SIZE },
-  { label: "'", width: KEY_SIZE },
+  { label: ";", width: keySize },
+  { label: "'", width: keySize },
   { label: "Enter", width: 88, highlighted: true },
 ]);
 
@@ -115,16 +115,16 @@ const row3 = buildRow(3, [
   { label: "Shift", width: 74, highlighted: true },
   ...["Z", "X", "C", "V", "B", "N", "M"].map((label) => ({
     label,
-    width: KEY_SIZE,
+    width: keySize,
     highlighted: label === "X" || label === "C",
   })),
-  { label: ",", width: KEY_SIZE },
-  { label: ".", width: KEY_SIZE },
-  { label: "/", width: KEY_SIZE },
+  { label: ",", width: keySize },
+  { label: ".", width: keySize },
+  { label: "/", width: keySize },
   { label: "Shift", width: 58 },
 ]);
 
-const row3Arrows = buildRow(3, [{ label: "↑", width: KEY_SIZE, highlighted: true }], true);
+const row3Arrows = buildRow(3, [{ label: "↑", width: keySize, highlighted: true }], true);
 row3Arrows[0].x = 450;
 
 const row4 = buildRow(4, [
@@ -132,17 +132,17 @@ const row4 = buildRow(4, [
   { label: "Meta", width: 42 },
   { label: "Alt", width: 42 },
   { label: "Space", width: 182, highlighted: true },
-  { label: "Alt", width: KEY_SIZE },
-  { label: "Fn", width: KEY_SIZE },
-  { label: "Ctrl", width: KEY_SIZE },
+  { label: "Alt", width: keySize },
+  { label: "Fn", width: keySize },
+  { label: "Ctrl", width: keySize },
 ]);
 
 const row4Arrows = buildRow(
   4,
   [
-    { label: "←", width: KEY_SIZE, highlighted: true },
-    { label: "↓", width: KEY_SIZE, highlighted: true },
-    { label: "→", width: KEY_SIZE, highlighted: true },
+    { label: "←", width: keySize, highlighted: true },
+    { label: "↓", width: keySize, highlighted: true },
+    { label: "→", width: keySize, highlighted: true },
   ],
   true,
 );

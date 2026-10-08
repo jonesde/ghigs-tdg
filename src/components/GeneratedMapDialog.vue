@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
-import { CUSTOM_RANDOM_MAP_INDEX, type MapStyle } from "@/sim/Constants.js";
+import { getGameContent } from "@/content/gameContent.js";
+import type { MapStyle } from "@/content/schemas/maps.js";
+import { customRandomMapIndex } from "@/sim/GameRunState.js";
 import { generateRandomMap } from "@/sim/grid/Map.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
@@ -59,8 +61,11 @@ const randomHeight = computed({
   },
 });
 
-const DIMENSION_OPTIONS = [15, 20, 25, 30, 35, 40, 45, 50] as const;
-const STYLE_OPTIONS: MapStyle[] = ["open", "canyon", "serpentine", "split", "bastion", "battlefield"];
+const dimensionOptions = [15, 20, 25, 30, 35, 40, 45, 50] as const;
+const styleOptions: MapStyle[] = ["open", "canyon", "serpentine", "split", "bastion", "battlefield"];
+// The custom-run level range is the world's per-region level count, so the input's
+// max and the validation below read the same number.
+const mapsPerRegion = computed(() => getGameContent().maps.mapsPerRegion);
 
 async function startRandomMap() {
   const regionId = randomRegion.value - 1;
@@ -70,8 +75,8 @@ async function startRandomMap() {
   const height = randomHeight.value;
   const seed = randomSeed.value ?? Math.floor(Math.random() * 999999);
 
-  if (level < 1 || level > 12) {
-    alert("Map Level must be between 1 and 12.");
+  if (level < 1 || level > mapsPerRegion.value) {
+    alert(`Map Level must be between 1 and ${mapsPerRegion.value}.`);
     return;
   }
   if (width < 15 || width > 50 || width % 5 !== 0) {
@@ -95,7 +100,7 @@ async function startRandomMap() {
   const mapData = generateRandomMap(width, height, style, regionId, level, seed, themeStore.resolvedMaps);
   const params = { regionId, level, style, seed, width, height };
 
-  gameStore.initMap(CUSTOM_RANDOM_MAP_INDEX, mapData, null);
+  gameStore.initMap(customRandomMapIndex, mapData, null);
   gameStore.randomMapParams = params;
 
   router.push("/game");
@@ -132,12 +137,12 @@ onUnmounted(() => window.removeEventListener("keydown", onWindowKeydown));
             </div>
             <div class="form-field">
               <label for="random-level">Map Level</label>
-              <input id="random-level" type="number" v-model.number="randomLevel" min="1" max="12" />
+              <input id="random-level" type="number" v-model.number="randomLevel" min="1" :max="mapsPerRegion" />
             </div>
             <div class="form-field">
               <label for="random-style">Generation Type</label>
               <select id="random-style" v-model="randomStyle">
-                <option v-for="s in STYLE_OPTIONS" :key="s" :value="s">{{ s }}</option>
+                <option v-for="s in styleOptions" :key="s" :value="s">{{ s }}</option>
               </select>
             </div>
           </div>
@@ -149,13 +154,13 @@ onUnmounted(() => window.removeEventListener("keydown", onWindowKeydown));
             <div class="form-field">
               <label for="random-width">Width (tiles)</label>
               <select id="random-width" v-model.number="randomWidth">
-                <option v-for="v in DIMENSION_OPTIONS" :key="v" :value="v">{{ v }}</option>
+                <option v-for="v in dimensionOptions" :key="v" :value="v">{{ v }}</option>
               </select>
             </div>
             <div class="form-field">
               <label for="random-height">Height (tiles)</label>
               <select id="random-height" v-model.number="randomHeight">
-                <option v-for="v in DIMENSION_OPTIONS" :key="v" :value="v">{{ v }}</option>
+                <option v-for="v in dimensionOptions" :key="v" :value="v">{{ v }}</option>
               </select>
             </div>
           </div>

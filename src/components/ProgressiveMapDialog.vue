@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
-import { CUSTOM_PROGRESSIVE_MAP_INDEX } from "@/sim/Constants.js";
+import { getGameContent } from "@/content/gameContent.js";
+import { customProgressiveMapIndex } from "@/sim/GameRunState.js";
 import { generateProgressiveMap, type ProgressiveConfig } from "@/sim/grid/ProgressiveMap.js";
 import { useGameStore } from "@/stores/game.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
@@ -47,7 +48,11 @@ const progressiveSeed = computed({
   },
 });
 
-const ENTRY_COUNT_OPTIONS = [1, 2, 3, 4] as const;
+const entryCountOptions = [1, 2, 3, 4] as const;
+
+// The custom-run level range is the world's per-region level count, so the input's
+// max and the validation below read the same number.
+const mapsPerRegion = computed(() => getGameContent().maps.mapsPerRegion);
 
 function startProgressiveMap() {
   const regionId = progressiveRegion.value - 1;
@@ -55,8 +60,8 @@ function startProgressiveMap() {
   const entryCount = progressiveEntries.value;
   const seed = progressiveSeed.value ?? Math.floor(Math.random() * 999999);
 
-  if (level < 1 || level > 12) {
-    alert("Map Level must be between 1 and 12.");
+  if (level < 1 || level > mapsPerRegion.value) {
+    alert(`Map Level must be between 1 and ${mapsPerRegion.value}.`);
     return;
   }
   if (entryCount < 1 || entryCount > 4) {
@@ -71,7 +76,7 @@ function startProgressiveMap() {
   const config: ProgressiveConfig = { regionId, level, entryCount, seed };
   const mapData = generateProgressiveMap(config);
 
-  gameStore.initMap(CUSTOM_PROGRESSIVE_MAP_INDEX, mapData, null);
+  gameStore.initMap(customProgressiveMapIndex, mapData, null);
 
   router.push("/game");
 }
@@ -107,7 +112,7 @@ onUnmounted(() => window.removeEventListener("keydown", onWindowKeydown));
             </div>
             <div class="form-field">
               <label for="progressive-level">Map Level</label>
-              <input id="progressive-level" type="number" v-model.number="progressiveLevel" min="1" max="12" />
+              <input id="progressive-level" type="number" v-model.number="progressiveLevel" min="1" :max="mapsPerRegion" />
             </div>
           </div>
           <div class="form-row">
@@ -118,7 +123,7 @@ onUnmounted(() => window.removeEventListener("keydown", onWindowKeydown));
             <div class="form-field">
               <label for="progressive-entries">Base Entries</label>
               <select id="progressive-entries" v-model.number="progressiveEntries">
-                <option v-for="entryCountOption in ENTRY_COUNT_OPTIONS" :key="entryCountOption" :value="entryCountOption">
+                <option v-for="entryCountOption in entryCountOptions" :key="entryCountOption" :value="entryCountOption">
                   {{ entryCountOption }}
                 </option>
               </select>

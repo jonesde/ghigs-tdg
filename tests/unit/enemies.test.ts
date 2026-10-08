@@ -4,22 +4,11 @@
 import { createPinia, setActivePinia } from "pinia";
 import { Detour } from "recast-navigation";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DIFFICULTY_MULT_TICK, ENEMY_WOUND_DAMAGE_REDUCTION_PCT } from "@/sim/Constants.js";
-import {
-  BOSS_STUN_REDUCTION,
-  ENEMY_LEVEL_DAMAGE_MULT,
-  ENEMY_LEVEL_HP_MULT,
-  ENEMY_TYPES,
-  ENEMY_WAVE_DAMAGE_MULT,
-  ENEMY_WAVE_HP_MULT,
-  enemyLevelBounty,
-  MIN_SLOW_FACTOR,
-  STUCK_RECOVERY_SECONDS,
-  STUN_CAP_PER_SECOND,
-  STUN_WINDOW_SECONDS,
-} from "@/sim/ConstantsEnemy.js";
+import { enemyLevelMult } from "@/content/formulas.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { EnemyManager } from "@/sim/enemies/EnemyManager.js";
+import { enemyLevelBounty } from "@/sim/enemies/enemyWaveStats.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
 import { fromRecast } from "@/sim/navmesh/coords.js";
@@ -31,6 +20,13 @@ import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap, makeOneWideCornerMap } from "../helpers/mock-grid";
 import { mockDefaultTheme } from "../helpers/mock-stores.js";
 import { orderedPath } from "../helpers/navmesh-test-utils.js";
+
+const enemyTypes = getGameContent().enemies.types;
+const waveHpMult = getGameContent().enemies.waveHpMult;
+const waveDamageMult = getGameContent().enemies.waveDamageMult;
+const stunCapPerSecond = getGameContent().enemies.stunCapPerSecond;
+const enemyWoundDamageReductionPct = getGameContent().economy.enemyWoundDamageReductionPct;
+const difficultyMultTick = getGameContent().economy.difficultyMultTick;
 
 describe("Enemy", () => {
   let grid: Grid;
@@ -84,7 +80,7 @@ describe("Enemy", () => {
       const enemy = new Enemy("tank", 3, 0, grid, 10);
       expect(enemy.type).toBe("tank");
       expect(enemy.level).toBe(3);
-      expect(enemy.meta).toBe(ENEMY_TYPES.tank);
+      expect(enemy.meta).toBe(enemyTypes.tank);
     });
 
     it("computes HP using the formula", () => {
@@ -92,9 +88,10 @@ describe("Enemy", () => {
       const level = 2;
       const diffTick = 0;
       const enemy = new Enemy("minion", level, 0, grid, wave, diffTick);
-      const waveMult = 1 + ENEMY_WAVE_HP_MULT * (wave - 1);
-      const diffMult = 1 + DIFFICULTY_MULT_TICK * diffTick;
-      const expected = ENEMY_TYPES.minion.baseHp * ENEMY_LEVEL_HP_MULT(level) * waveMult * diffMult;
+      const waveMult = 1 + waveHpMult * (wave - 1);
+      const diffMult = 1 + difficultyMultTick * diffTick;
+      const levelMult = enemyLevelMult(level, getGameContent().enemies.levelHpMult);
+      const expected = enemyTypes.minion.baseHp * levelMult * waveMult * diffMult;
       expect(enemy.maxHp).toBeCloseTo(expected, 4);
       expect(enemy.hp).toBe(enemy.maxHp);
     });
@@ -102,21 +99,22 @@ describe("Enemy", () => {
     it("scales HP with wave number", () => {
       const enemy1 = new Enemy("minion", 1, 0, grid, 1, 0);
       const enemy2 = new Enemy("minion", 1, 0, grid, 11, 0);
-      const expectedRatio = (1 + ENEMY_WAVE_HP_MULT * 10) / (1 + ENEMY_WAVE_HP_MULT * 0);
+      const expectedRatio = (1 + waveHpMult * 10) / (1 + waveHpMult * 0);
       expect(enemy2.maxHp / enemy1.maxHp).toBeCloseTo(expectedRatio, 4);
     });
 
     it("scales HP with enemy level", () => {
       const enemy1 = new Enemy("minion", 1, 0, grid, 1, 0);
       const enemy2 = new Enemy("minion", 3, 0, grid, 1, 0);
-      const expectedRatio = ENEMY_LEVEL_HP_MULT(3) / ENEMY_LEVEL_HP_MULT(1);
+      const levelHpMult = getGameContent().enemies.levelHpMult;
+      const expectedRatio = enemyLevelMult(3, levelHpMult) / enemyLevelMult(1, levelHpMult);
       expect(enemy2.maxHp / enemy1.maxHp).toBeCloseTo(expectedRatio, 4);
     });
 
     it("scales HP with difficulty tick", () => {
       const enemy1 = new Enemy("minion", 1, 0, grid, 1, 0);
       const enemy2 = new Enemy("minion", 1, 0, grid, 1, 4);
-      const expectedRatio = (1 + DIFFICULTY_MULT_TICK * 4) / (1 + DIFFICULTY_MULT_TICK * 0);
+      const expectedRatio = (1 + difficultyMultTick * 4) / (1 + difficultyMultTick * 0);
       expect(enemy2.maxHp / enemy1.maxHp).toBeCloseTo(expectedRatio, 4);
     });
 
@@ -125,17 +123,18 @@ describe("Enemy", () => {
       const level = 2;
       const diffTick = 2;
       const enemy = new Enemy("minion", level, 0, grid, wave, diffTick);
-      const waveMult = 1 + ENEMY_WAVE_DAMAGE_MULT * (wave - 1);
-      const diffMult = 1 + DIFFICULTY_MULT_TICK * diffTick;
-      const expected = ENEMY_TYPES.minion.attackDamage * ENEMY_LEVEL_DAMAGE_MULT(level) * waveMult * diffMult;
+      const waveMult = 1 + waveDamageMult * (wave - 1);
+      const diffMult = 1 + difficultyMultTick * diffTick;
+      const levelMult = enemyLevelMult(level, getGameContent().enemies.levelDamageMult);
+      const expected = enemyTypes.minion.attackDamage * levelMult * waveMult * diffMult;
       expect(enemy.attackDamage).toBeCloseTo(expected, 4);
     });
 
     it("scales attack damage with wave using the damage wave coefficient, not the HP one", () => {
       const enemy1 = new Enemy("minion", 1, 0, grid, 1, 0);
       const enemy2 = new Enemy("minion", 1, 0, grid, 11, 0);
-      const expectedDamageRatio = (1 + ENEMY_WAVE_DAMAGE_MULT * 10) / (1 + ENEMY_WAVE_DAMAGE_MULT * 0);
-      const expectedHpRatio = (1 + ENEMY_WAVE_HP_MULT * 10) / (1 + ENEMY_WAVE_HP_MULT * 0);
+      const expectedDamageRatio = (1 + waveDamageMult * 10) / (1 + waveDamageMult * 0);
+      const expectedHpRatio = (1 + waveHpMult * 10) / (1 + waveHpMult * 0);
       expect(enemy2.attackDamage / enemy1.attackDamage).toBeCloseTo(expectedDamageRatio, 4);
       expect(enemy2.maxHp / enemy1.maxHp).toBeCloseTo(expectedHpRatio, 4);
     });
@@ -144,31 +143,36 @@ describe("Enemy", () => {
       const enemy1 = new Enemy("minion", 1, 0, grid, 1, 0);
       const enemy2 = new Enemy("minion", 3, 0, grid, 1, 0);
       expect(enemy2.attackDamage / enemy1.attackDamage).toBeCloseTo(
-        ENEMY_LEVEL_DAMAGE_MULT(3) / ENEMY_LEVEL_DAMAGE_MULT(1),
+        enemyLevelMult(3, getGameContent().enemies.levelDamageMult) /
+          enemyLevelMult(1, getGameContent().enemies.levelDamageMult),
         4,
       );
-      expect(enemy2.maxHp / enemy1.maxHp).toBeCloseTo(ENEMY_LEVEL_HP_MULT(3) / ENEMY_LEVEL_HP_MULT(1), 4);
+      expect(enemy2.maxHp / enemy1.maxHp).toBeCloseTo(
+        enemyLevelMult(3, getGameContent().enemies.levelHpMult) /
+          enemyLevelMult(1, getGameContent().enemies.levelHpMult),
+        4,
+      );
     });
 
     it("scales attack damage with difficulty tick", () => {
       const enemy1 = new Enemy("minion", 1, 0, grid, 1, 0);
       const enemy2 = new Enemy("minion", 1, 0, grid, 1, 4);
-      const expectedRatio = (1 + DIFFICULTY_MULT_TICK * 4) / (1 + DIFFICULTY_MULT_TICK * 0);
+      const expectedRatio = (1 + difficultyMultTick * 4) / (1 + difficultyMultTick * 0);
       expect(enemy2.attackDamage / enemy1.attackDamage).toBeCloseTo(expectedRatio, 4);
     });
 
     it("applies bounty level growth, full through wave 10 and discounted after", () => {
       const early = new Enemy("minion", 4, 0, grid, 10, 0);
       const late = new Enemy("minion", 4, 0, grid, 11, 0);
-      expect(early.bounty).toBe(enemyLevelBounty(ENEMY_TYPES.minion.bounty, 4, 10));
-      expect(late.bounty).toBe(enemyLevelBounty(ENEMY_TYPES.minion.bounty, 4, 11));
+      expect(early.bounty).toBe(enemyLevelBounty(enemyTypes.minion.bounty, 4, 10));
+      expect(late.bounty).toBe(enemyLevelBounty(enemyTypes.minion.bounty, 4, 11));
       expect(late.bounty).toBeLessThan(early.bounty);
     });
 
     it("sets shield for shielded enemies, scaling with the full HP multiplier", () => {
       const enemy = new Enemy("shielded", 2, 0, grid, 1, 0);
       // Level 2 HP mult is 1 + 0.8 = 1.8; wave 1 and pre-steepening contribute 1x.
-      expect((enemy as { shield: number }).shield).toBeCloseTo(ENEMY_TYPES.shielded.shield! * 1.8, 8);
+      expect((enemy as { shield: number }).shield).toBeCloseTo(enemyTypes.shielded.shield! * 1.8, 8);
       expect((enemy as { maxShield: number }).maxShield).toBe((enemy as { shield: number }).shield);
     });
 
@@ -188,24 +192,24 @@ describe("Enemy", () => {
 
     it("sets speed from meta", () => {
       const enemy = new Enemy("runner", 1, 0, grid, 1, 0);
-      expect(enemy.speed).toBe(ENEMY_TYPES.runner.speed);
+      expect(enemy.speed).toBe(enemyTypes.runner.speed);
     });
 
     it("sets radius from meta and grid.tileSize", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
-      expect(enemy.radius).toBe(ENEMY_TYPES.minion.radius * grid.tileSize * 0.5);
+      expect(enemy.radius).toBe(enemyTypes.minion.radius * grid.tileSize * 0.5);
     });
 
     it("sets heal and healRange for healer type", () => {
       const enemy = new Enemy("healer", 1, 0, grid, 1, 0);
-      expect((enemy as { heal: number }).heal).toBe(ENEMY_TYPES.healer.heal!);
-      expect((enemy as { healRange: number }).healRange).toBe(ENEMY_TYPES.healer.healRange! * grid.tileSize);
+      expect((enemy as { heal: number }).heal).toBe(enemyTypes.healer.heal!);
+      expect((enemy as { healRange: number }).healRange).toBe(enemyTypes.healer.healRange! * grid.tileSize);
     });
 
     it("sets resist and slowResist for boss", () => {
       const enemy = new Enemy("boss", 1, 0, grid, 1, 0);
-      expect((enemy as { resist: number }).resist).toBe(ENEMY_TYPES.boss.resist);
-      expect((enemy as { slowResist: number }).slowResist).toBe(ENEMY_TYPES.boss.slowResist);
+      expect((enemy as { resist: number }).resist).toBe(enemyTypes.boss.resist);
+      expect((enemy as { slowResist: number }).slowResist).toBe(enemyTypes.boss.slowResist);
     });
 
     it("sets knockResist from the type table (boss 0.8, tank 0.3)", () => {
@@ -261,32 +265,32 @@ describe("Enemy", () => {
     });
 
     it("deals full damage at full health even when a tier is owned", () => {
-      const enemy = woundedEnemy(ENEMY_WOUND_DAMAGE_REDUCTION_PCT[2], 1);
+      const enemy = woundedEnemy(enemyWoundDamageReductionPct[2], 1);
       expect(enemy.effectiveAttackDamage).toBeCloseTo(enemy.attackDamage, 6);
     });
 
     it("scales the reduction by the fraction of max health lost", () => {
-      const enemy = woundedEnemy(ENEMY_WOUND_DAMAGE_REDUCTION_PCT[0], 0.5);
+      const enemy = woundedEnemy(enemyWoundDamageReductionPct[0], 0.5);
       expect(enemy.effectiveAttackDamage / enemy.attackDamage).toBeCloseTo(0.85, 6);
     });
 
     it("halves a half-health enemy's damage at tier 2", () => {
-      const enemy = woundedEnemy(ENEMY_WOUND_DAMAGE_REDUCTION_PCT[2], 0.5);
+      const enemy = woundedEnemy(enemyWoundDamageReductionPct[2], 0.5);
       expect(enemy.effectiveAttackDamage / enemy.attackDamage).toBeCloseTo(0.5, 6);
     });
 
     it("nearly zeroes the damage at tier 2 once the enemy is at 1 HP", () => {
-      const enemy = woundedEnemy(ENEMY_WOUND_DAMAGE_REDUCTION_PCT[2], 0.001);
+      const enemy = woundedEnemy(enemyWoundDamageReductionPct[2], 0.001);
       expect(enemy.effectiveAttackDamage / enemy.attackDamage).toBeLessThan(0.01);
     });
 
     it("never returns a negative multiplier, even past 100% health lost", () => {
-      const enemy = woundedEnemy(ENEMY_WOUND_DAMAGE_REDUCTION_PCT[2], -5);
+      const enemy = woundedEnemy(enemyWoundDamageReductionPct[2], -5);
       expect(enemy.effectiveAttackDamage).toBeGreaterThanOrEqual(0);
     });
 
     it("restores full punch after the enemy heals back to full health", () => {
-      const enemy = woundedEnemy(ENEMY_WOUND_DAMAGE_REDUCTION_PCT[1], 0.2);
+      const enemy = woundedEnemy(enemyWoundDamageReductionPct[1], 0.2);
       const wounded = enemy.effectiveAttackDamage;
       enemy.hp = enemy.maxHp;
       expect(enemy.effectiveAttackDamage).toBeCloseTo(enemy.attackDamage, 6);
@@ -294,7 +298,7 @@ describe("Enemy", () => {
     });
 
     it("leaves base health untouched when maxHp is 0 rather than dividing by zero", () => {
-      const enemy = woundedEnemy(ENEMY_WOUND_DAMAGE_REDUCTION_PCT[2], 0);
+      const enemy = woundedEnemy(enemyWoundDamageReductionPct[2], 0);
       enemy.maxHp = 0;
       enemy.hp = 0;
       expect(enemy.effectiveAttackDamage).toBeCloseTo(enemy.attackDamage, 6);
@@ -302,7 +306,7 @@ describe("Enemy", () => {
 
     it("hands the reduced number to the base on a real attack tick", () => {
       const enemy = spawn("minion");
-      enemy.readWoundDamageReduction = () => ENEMY_WOUND_DAMAGE_REDUCTION_PCT[0];
+      enemy.readWoundDamageReduction = () => enemyWoundDamageReductionPct[0];
       enemy.hp = enemy.maxHp * 0.5;
       const hits = [];
       enemy.baseTarget = {
@@ -424,10 +428,10 @@ describe("Enemy", () => {
       expect(enemy.slowStack[0].remaining).toBe(2.0);
     });
 
-    it("clamps slowFactor to MIN_SLOW_FACTOR", () => {
+    it("clamps slowFactor to getGameContent().enemies.minSlowFactor", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       enemy.applySlow(0.95, 10.0);
-      expect(enemy.slowFactor).toBeGreaterThanOrEqual(MIN_SLOW_FACTOR);
+      expect(enemy.slowFactor).toBeGreaterThanOrEqual(getGameContent().enemies.minSlowFactor);
     });
 
     it("does nothing for zero or negative eff", () => {
@@ -451,16 +455,16 @@ describe("Enemy", () => {
       expect(enemy.stunTimer).toBe(0.4);
     });
 
-    it("reduces duration for boss by BOSS_STUN_REDUCTION", () => {
+    it("reduces duration for boss by getGameContent().enemies.bossStunReduction", () => {
       const enemy = new Enemy("boss", 1, 0, grid, 1, 0);
       enemy.applyStun(1.0);
-      expect(enemy.stunTimer).toBeCloseTo(1.0 * BOSS_STUN_REDUCTION, 4);
+      expect(enemy.stunTimer).toBeCloseTo(1.0 * getGameContent().enemies.bossStunReduction, 4);
     });
 
-    it("truncates a single over-cap stun to STUN_CAP_PER_SECOND", () => {
+    it("truncates a single over-cap stun to stunCapPerSecond", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       enemy.applyStun(2.0);
-      expect(enemy.stunTimer).toBeCloseTo(STUN_CAP_PER_SECOND, 8);
+      expect(enemy.stunTimer).toBeCloseTo(stunCapPerSecond, 8);
     });
 
     it("discards stun past the cap inside one window", () => {
@@ -474,7 +478,7 @@ describe("Enemy", () => {
       const enemy = new Enemy("minion", 1, 0, grid, 1, 0);
       enemy.applyStun(0.2);
       expect(enemy.stunTimer).toBe(0.2);
-      enemy._gameSeconds += STUN_WINDOW_SECONDS + 0.1;
+      enemy._gameSeconds += getGameContent().enemies.stunWindowSeconds + 0.1;
       enemy.applyStun(0.6);
       expect(enemy.stunTimer).toBe(0.6);
     });
@@ -569,9 +573,9 @@ describe("Enemy", () => {
     it("reduces stunTimer each tick", () => {
       const enemy = spawn("minion", 1, 0, 1);
       enemy.applyStun(1.0);
-      expect(enemy.stunTimer).toBeCloseTo(STUN_CAP_PER_SECOND, 4);
+      expect(enemy.stunTimer).toBeCloseTo(stunCapPerSecond, 4);
       tickEnemy(enemy, 0.5);
-      expect(enemy.stunTimer).toBeCloseTo(STUN_CAP_PER_SECOND - 0.5, 4);
+      expect(enemy.stunTimer).toBeCloseTo(stunCapPerSecond - 0.5, 4);
     });
 
     it("does not move while stunned", () => {
@@ -833,7 +837,7 @@ describe("Enemy", () => {
       const physicsWorld = new PhysicsWorld(grid);
       try {
         const { enemy, manager } = makePinnedWalker(grid, physicsWorld);
-        const steps = Math.ceil(STUCK_RECOVERY_SECONDS / fixedDt);
+        const steps = Math.ceil(getGameContent().enemies.stuckRecoverySeconds / fixedDt);
         for (let step = 0; step < steps; step++) enemy.computeIntent(fixedDt, manager);
         expect(enemy.ballisticTimer).toBeGreaterThan(0);
         expect(enemy.routingMode).toBe("default");
@@ -848,7 +852,7 @@ describe("Enemy", () => {
       const physicsWorld = new PhysicsWorld(grid);
       try {
         const { enemy, manager } = makePinnedWalker(grid, physicsWorld);
-        const steps = Math.ceil(STUCK_RECOVERY_SECONDS / fixedDt);
+        const steps = Math.ceil(getGameContent().enemies.stuckRecoverySeconds / fixedDt);
         for (let step = 0; step < steps; step++) {
           enemy.computeIntent(fixedDt, manager);
           enemy.x += grid.tileSize * 0.1;
@@ -865,11 +869,11 @@ describe("Enemy", () => {
       const grid = new Grid(makeBastionMap());
       const physicsWorld = new PhysicsWorld(grid);
       try {
-        // Stun credit caps at STUN_CAP_PER_SECOND per window, so the stun
+        // Stun credit caps at stunCapPerSecond per window, so the stun
         // holds for the cap, not the full recovery window. Step inside the
         // cap: no nudge may fire while the park is stun-held.
         const { enemy, manager } = makePinnedWalker(grid, physicsWorld, 10);
-        expect(enemy.stunTimer).toBeCloseTo(STUN_CAP_PER_SECOND, 8);
+        expect(enemy.stunTimer).toBeCloseTo(stunCapPerSecond, 8);
         const steps = Math.ceil(0.6 / fixedDt);
         for (let step = 0; step < steps; step++) enemy.computeIntent(fixedDt, manager);
         expect(enemy.stunTimer).toBeGreaterThan(0);

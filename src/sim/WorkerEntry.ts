@@ -1,11 +1,5 @@
-import {
-  CUSTOM_PROGRESSIVE_MAP_INDEX,
-  CUSTOM_RANDOM_MAP_INDEX,
-  FIXED_DT,
-  GameState,
-  MAX_ACCUM,
-} from "@/sim/Constants.js";
 import { GameEngine } from "@/sim/GameEngine.js";
+import { customProgressiveMapIndex, customRandomMapIndex, GameState } from "@/sim/GameRunState.js";
 import type { ProgressiveConfig } from "@/sim/grid/ProgressiveMap.js";
 import { initNavMesh } from "@/sim/navmesh/recastContext.js";
 import { WorkerParticleSpawner } from "@/sim/ParticleSystem.js";
@@ -16,7 +10,7 @@ import { drainCommandQueue } from "./commandDrain.js";
 import type { PersistStateSlice } from "./HostBindings.js";
 import { buildSnapshot } from "./SnapshotSerializer.js";
 import { decideSnapshotPost } from "./snapshotGate.js";
-import { computeStepBudget, type StepBudget } from "./stepBudget.js";
+import { computeStepBudget, fixedDeltaSeconds, type StepBudget } from "./stepBudget.js";
 import { WorkerHostBindings } from "./WorkerHostBindings.js";
 import type { MainToWorkerMessage, WorkerToMainMessage } from "./WorkerProtocol.js";
 
@@ -87,8 +81,13 @@ let lastFlushMilestoneKeys = 0;
 let lastFlushBossesKilled = 0;
 let lastFlushTime = 0;
 
-const TARGET_FRAME_MS = 1000 / 60; // 16.67ms
-const PERSIST_FLUSH_FALLBACK_MS = 5000;
+const targetFrameMs = 1000 / 60; // 16.67ms
+// Ceiling on one tick's raw wall-clock delta. A stalled tab or a long main-thread
+// block would otherwise dump all of it into the accumulator at once; stepBudget's
+// fixedDeltaSeconds/maxStepsPerUpdate pair caps how much of it is simulated and
+// counts the rest as droppedSimSeconds.
+const maxAccumulatedSeconds = 0.1;
+const persistFlushFallbackMs = 5000;
 
 function postMessage(msg: WorkerToMainMessage): void {
   self.postMessage(msg);
@@ -156,7 +155,7 @@ function consumeDeliveredEffects(engineRef: GameEngine): void {
 function scheduleTick(): void {
   // setTimeout (not setInterval) — setTimeout reschedules after each tick,
   // so a slow tick doesn't cause pile-up. setInterval can drift under load.
-  tickTimeoutId = setTimeout(tick, TARGET_FRAME_MS);
+  tickTimeoutId = setTimeout(tick, targetFrameMs);
 }
 
 function tick(): void {
@@ -164,7 +163,7 @@ function tick(): void {
 
   const now = performance.now(); // available in workers, no self. prefix needed
   if (lastTime === 0) lastTime = now;
-  const rawDt = Math.min(MAX_ACCUM, (now - lastTime) / 1000);
+  const rawDt = Math.min(maxAccumulatedSeconds, (now - lastTime) / 1000);
   lastTime = now;
 
   // Drain command queue before any simulation work. Commands are applied in arrival
@@ -207,7 +206,7 @@ function tick(): void {
     accumulator = stepBudget.accumulator;
     engine.droppedSimSeconds += stepBudget.droppedSeconds;
     for (let stepIndex = 0; stepIndex < stepBudget.steps; stepIndex++) {
-      engine.update(FIXED_DT);
+      engine.update(fixedDeltaSeconds);
       stepsExecuted++;
     }
 
@@ -293,7 +292,7 @@ function tick(): void {
       const waveChanged = engine.runState.currentWave !== lastFlushWave;
       const milestoneGained = milestoneKeyCount > lastFlushMilestoneKeys;
       const bossesKilledChanged = engine.runState.bossesKilledThisRun !== lastFlushBossesKilled;
-      const fallbackElapsed = now - lastFlushTime >= PERSIST_FLUSH_FALLBACK_MS;
+      const fallbackElapsed = now - lastFlushTime >= persistFlushFallbackMs;
       if (engine.persistDirty && (waveChanged || milestoneGained || bossesKilledChanged || fallbackElapsed)) {
         host.schedulePersistSave(buildPersistSlice(engine));
         engine.persistDirty = false;
@@ -321,7 +320,7 @@ function tick(): void {
     );
     if (engine) {
       const unsimulatedSteps = stepBudget ? stepBudget.steps - stepsExecuted : 0;
-      engine.droppedSimSeconds += unsimulatedSteps * FIXED_DT + accumulator;
+      engine.droppedSimSeconds += unsimulatedSteps * fixedDeltaSeconds + accumulator;
     }
     accumulator = 0;
   } finally {
@@ -410,10 +409,10 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
         lastFlushMilestoneKeys = 0;
         lastFlushBossesKilled = 0;
         lastFlushTime = performance.now();
-        // For custom generated maps, loadMap uses CUSTOM_RANDOM_MAP_INDEX; branch to
+        // For custom generated maps, loadMap uses customRandomMapIndex; branch to
         // loadRandomMap so getMap(-1) is never hit. Custom progressive maps branch the
         // same way with their config. Catalog maps use loadMap(mapIndex).
-        if (msg.mapIndex === CUSTOM_RANDOM_MAP_INDEX && msg.randomMapParams) {
+        if (msg.mapIndex === customRandomMapIndex && msg.randomMapParams) {
           const params = msg.randomMapParams as {
             width: number;
             height: number;
@@ -423,7 +422,7 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
             seed: number;
           };
           engine.loadRandomMap(params.width, params.height, params.level, params.style, params.regionId, params.seed);
-        } else if (msg.mapIndex === CUSTOM_PROGRESSIVE_MAP_INDEX && msg.progressiveMapParams) {
+        } else if (msg.mapIndex === customProgressiveMapIndex && msg.progressiveMapParams) {
           engine.loadProgressiveMap(msg.progressiveMapParams as ProgressiveConfig);
         } else {
           engine.loadMap(msg.mapIndex);

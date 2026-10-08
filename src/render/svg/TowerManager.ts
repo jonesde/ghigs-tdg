@@ -1,16 +1,16 @@
+import { getGameContent } from "@/content/gameContent.js";
 import type { MapThemeAnimation } from "@/render/themes/index.js";
-import { GHOST_OPACITY } from "@/sim/ConstantsTower.js";
 import type { BaseSentrySnapshot, TowerSnapshot } from "../../sim/SimulationSnapshot.js";
 import { GRID_TILE_SIZE, SVG_NS, TOWER_SCALED_SIZE } from "./types.js";
 
-const SENTRY_SCALED_SIZE = GRID_TILE_SIZE * 0.5;
+const sentryScaledSize = GRID_TILE_SIZE * 0.5;
 
-const PIP_SILVER_FILL = "#c0c0c0";
-const PIP_GOLD_FILL = "#ffd84d";
-const PIP_GOLD_FIRST_INDEX = 3;
+const pipSilverFill = "#c0c0c0";
+const pipGoldFill = "#ffd84d";
+const pipGoldFirstIndex = 3;
 
 function pipFillForIndex(pipIndex: number): string {
-  return pipIndex >= PIP_GOLD_FIRST_INDEX ? PIP_GOLD_FILL : PIP_SILVER_FILL;
+  return pipIndex >= pipGoldFirstIndex ? pipGoldFill : pipSilverFill;
 }
 
 // Theme visual pair for one base-turret sprite ("basic" corners, "sniper" edges).
@@ -224,7 +224,7 @@ class TowerRenderProxy {
 
   sync(tower: TowerSnapshot, dt: number): void {
     this.el.style.visibility = "visible";
-    this.el.style.opacity = tower.isGhost ? String(GHOST_OPACITY) : "1";
+    this.el.style.opacity = tower.isGhost ? String(getGameContent().towers.tuning.ghostOpacity) : "1";
     if (tower.color !== this.lastColor) {
       this.el.style.color = tower.color;
       this.lastColor = tower.color;
@@ -299,8 +299,8 @@ class SentryRenderProxy {
 
   constructor(el: SVGUseElement) {
     this.el = el;
-    this.el.setAttribute("width", String(SENTRY_SCALED_SIZE));
-    this.el.setAttribute("height", String(SENTRY_SCALED_SIZE));
+    this.el.setAttribute("width", String(sentryScaledSize));
+    this.el.setAttribute("height", String(sentryScaledSize));
   }
 
   hide(): void {
@@ -329,7 +329,7 @@ class SentryRenderProxy {
       this.el.setAttribute("href", `#${spriteId}`);
       this.lastSpriteId = spriteId;
     }
-    const halfSize = SENTRY_SCALED_SIZE / 2;
+    const halfSize = sentryScaledSize / 2;
     const rotationDeg = (sentry.angle || 0) * (180 / Math.PI);
     const transform = `translate(${sentry.x - halfSize}, ${sentry.y - halfSize}) rotate(${rotationDeg}, ${halfSize}, ${halfSize})`;
     if (transform !== this.lastTransform) {

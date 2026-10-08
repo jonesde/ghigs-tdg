@@ -1,7 +1,6 @@
 /** @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
-import { MAP_GEM_MULTIPLIERS, TOTAL_MAPS } from "@/sim/Constants.js";
-import { enemyLevelForWave, progressiveEnemyLevel } from "@/sim/ConstantsEnemy.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { Enemy, resetEnemyId } from "@/sim/enemies/Enemy.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { getMap, mulberry32 } from "@/sim/grid/Map.js";
@@ -39,14 +38,15 @@ import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { createDefaultPersistState, maybeUnlockNextMap } from "@/sim/PersistState.js";
 import { tryRefundGeneral, tryUnlockGeneral } from "@/sim/towers/SkillTree.js";
 import { WaveManager } from "@/sim/waves/WaveManager.js";
+import { enemyLevelForWave, progressiveEnemyLevel } from "@/sim/waves/waveComposition.js";
 
-const EDGE_DELTA: Record<BlockEdge, { x: number; y: number }> = {
+const edgeDelta: Record<BlockEdge, { x: number; y: number }> = {
   N: { x: 0, y: -1 },
   E: { x: 1, y: 0 },
   S: { x: 0, y: 1 },
   W: { x: -1, y: 0 },
 };
-const OPPOSITE_EDGE: Record<BlockEdge, BlockEdge> = { N: "S", E: "W", S: "N", W: "E" };
+const oppositeEdge: Record<BlockEdge, BlockEdge> = { N: "S", E: "W", S: "N", W: "E" };
 
 function configFor(entryCount: number, seed = 900001): ProgressiveConfig {
   return { regionId: 0, level: entryCount === 4 ? 12 : 1, entryCount, seed };
@@ -84,7 +84,7 @@ function rotationFacing(template: BlockTemplate, edge: BlockEdge): number {
   throw new Error(`template ${template.pattern} has no rotation with mouth ${edge}`);
 }
 
-const MOUTH_LOCAL: Record<BlockEdge, [number, number]> = { N: [2, 0], E: [4, 2], S: [2, 4], W: [0, 2] };
+const mouthLocal: Record<BlockEdge, [number, number]> = { N: [2, 0], E: [4, 2], S: [2, 4], W: [0, 2] };
 
 function pathTileKeys(template: BlockTemplate): Set<string> {
   const keys = new Set<string>();
@@ -100,7 +100,7 @@ function expectOnePathComponent(template: BlockTemplate): void {
   const pathKeys = pathTileKeys(template);
   const firstMouth = template.mouths[0];
   if (!firstMouth) return;
-  const [startX, startY] = MOUTH_LOCAL[firstMouth];
+  const [startX, startY] = mouthLocal[firstMouth];
   const seen = new Set<string>([`${startX},${startY}`]);
   const queue: Array<{ x: number; y: number }> = [{ x: startX, y: startY }];
   const neighborOffsets: Array<[number, number]> = [
@@ -122,7 +122,7 @@ function expectOnePathComponent(template: BlockTemplate): void {
   }
   expect(seen.size).toBe(pathKeys.size);
   for (const mouth of template.mouths) {
-    const [mouthX, mouthY] = MOUTH_LOCAL[mouth];
+    const [mouthX, mouthY] = mouthLocal[mouth];
     expect(seen.has(`${mouthX},${mouthY}`)).toBe(true);
   }
 }
@@ -279,8 +279,8 @@ describe("progressive placement", () => {
   it("accepts a mouth-to-mouth join and rejects a terrain block against a mouth", () => {
     const started = createProgressiveBoard(configFor(1));
     const spawn = started.board.spawns[0]!;
-    const delta = EDGE_DELTA[spawn.edge];
-    const facing = OPPOSITE_EDGE[spawn.edge];
+    const delta = edgeDelta[spawn.edge];
+    const facing = oppositeEdge[spawn.edge];
     const straightRotation = rotationFacing(started.catalog[0]!, facing);
     expect(
       placementLegal(
@@ -297,7 +297,7 @@ describe("progressive placement", () => {
     );
     const base = started.board.blocks[0]!;
     const blankEdge = (["N", "E", "S", "W"] as BlockEdge[]).find((edge) => !base.entryEdges.includes(edge))!;
-    const blankDelta = EDGE_DELTA[blankEdge];
+    const blankDelta = edgeDelta[blankEdge];
     expect(placementLegal(started.board, started.catalog, 10, 0, blankDelta.x, blankDelta.y)).toBe(true);
     expect(legalSites(started.board, started.catalog, 0).some((site) => site.blockX === 1 && site.blockY === 1)).toBe(
       false,
@@ -307,8 +307,8 @@ describe("progressive placement", () => {
   it("moves one spawn along a straight and adds a spawn for a tee", () => {
     const started = createProgressiveBoard(configFor(1));
     const spawn = started.board.spawns[0]!;
-    const delta = EDGE_DELTA[spawn.edge];
-    const facing = OPPOSITE_EDGE[spawn.edge];
+    const delta = edgeDelta[spawn.edge];
+    const facing = oppositeEdge[spawn.edge];
     const straight = commitPlacement(
       started.board,
       started.catalog,
@@ -380,8 +380,8 @@ describe("progressive placement", () => {
   it("still accepts a straight that continues into open space", () => {
     const started = createProgressiveBoard(configFor(1));
     const spawn = started.board.spawns[0]!;
-    const delta = EDGE_DELTA[spawn.edge];
-    const facing = OPPOSITE_EDGE[spawn.edge];
+    const delta = edgeDelta[spawn.edge];
+    const facing = oppositeEdge[spawn.edge];
     expect(
       placementLegal(
         started.board,
@@ -495,7 +495,7 @@ describe("progressive world positions", () => {
   });
 
   it("keeps every spawn enemy at its spawn tile on a negative-origin board", () => {
-    const map = generateProgressiveMapByIndex(TOTAL_MAPS)!;
+    const map = generateProgressiveMapByIndex(getGameContent().maps.levels.length)!;
     const grid = new Grid(map);
     const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
     resetEnemyId();
@@ -547,7 +547,7 @@ describe("progressive economy", () => {
   it("uses the linked normal map's gem multiplier and ramps the early enemy level", () => {
     expect(gemMultiplierForRegionLevel(0, 1)).toBe(1);
     expect(gemMultiplierForRegionLevel(0, 12)).toBe(1);
-    expect(gemMultiplierForRegionLevel(0, 1)).toBe(MAP_GEM_MULTIPLIERS[0]);
+    expect(gemMultiplierForRegionLevel(0, 1)).toBe(getGameContent().economy.mapGemMultipliers[0]);
     expect(progressiveUnlockMapIndex(progressiveConfigForIndex(36)!)).toBe(0);
     expect(progressiveUnlockMapIndex(progressiveConfigForIndex(37)!)).toBe(4);
     const levelTwelve = generateProgressiveMap(progressiveConfigForIndex(39)!);
@@ -589,8 +589,8 @@ describe("progressive block offers", () => {
   it("reserves a template that can extend an opening", () => {
     const started = createProgressiveBoard(configFor(1));
     const spawn = started.board.spawns[0]!;
-    const delta = EDGE_DELTA[spawn.edge];
-    const facing = OPPOSITE_EDGE[spawn.edge];
+    const delta = edgeDelta[spawn.edge];
+    const facing = oppositeEdge[spawn.edge];
     const rotation = rotationFacing(started.catalog[0]!, facing);
     expect(
       placementExtendsOpening(

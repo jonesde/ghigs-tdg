@@ -1,9 +1,10 @@
 import { BOMBARD_TELEGRAPH_SECONDS } from "@/sim/bossAbilities.js";
-import { applyUpgradeCostReduction, cashOutAmount, WAVE_GRAPH_MAX_SEND } from "@/sim/Constants.js";
 import type { Enemy } from "@/sim/enemies/Enemy.js";
 import type { GameEngine } from "@/sim/GameEngine.js";
 import { formatTowerBonusLine } from "@/sim/runBonuses.js";
+import { waveGraphMaxDotsPerPost } from "@/sim/SimulationSnapshot.js";
 import type { Tower } from "@/sim/towers/Tower.js";
+import { applyUpgradeCostReduction, cashOutAmount } from "@/sim/towers/towerEconomy.js";
 import type { PersistState } from "./PersistState.js";
 import type {
   BombardShotSnapshot,
@@ -18,11 +19,11 @@ import type {
   TowerUpgradeCheck,
   WaveGraphDot,
 } from "./SimulationSnapshot.js";
-import { SNAPSHOT_SCHEMA_VERSION } from "./SimulationSnapshot.js";
+import { snapshotSchemaVersion } from "./SimulationSnapshot.js";
 
 let nextFrameId = 1;
 
-const EMPTY_STATUS_EFFECTS: StatusEffectSnapshot[] = Object.freeze([]) as unknown as StatusEffectSnapshot[];
+const emptyStatusEffects: StatusEffectSnapshot[] = Object.freeze([]) as unknown as StatusEffectSnapshot[];
 
 export interface SnapshotCommandReceipt {
   commandId: number;
@@ -103,12 +104,12 @@ export function buildSnapshot(
 
   const selectedTowerId = engine.runState.selectedTowerId;
 
-  // Wave-graph dots only change shape every WAVE_GRAPH_INTERVAL_SECONDS (a dot
+  // Wave-graph dots only change shape every waveGraphIntervalSeconds (a dot
   // is flushed) or on a front-trim/dispose, so ship the dots window only when
   // the tracker's generation changed since the last posted snapshot. The worker
-  // sends just the most recent WAVE_GRAPH_MAX_SEND dots; the main thread merges
-  // them into its accumulation. The generation is always included so a change
-  // stays detectable even when the window itself is omitted.
+  // sends just the most recent waveGraphMaxDotsPerPost dots; the main thread
+  // merges them into its accumulation. The generation is always included so a
+  // change stays detectable even when the window itself is omitted.
   const progressivePlacements =
     engine.layoutGeneration !== engine.lastPostedLayoutGeneration ? engine.progressivePlacements : undefined;
   if (progressivePlacements) engine.lastPostedLayoutGeneration = engine.layoutGeneration;
@@ -119,13 +120,13 @@ export function buildSnapshot(
   if (tracker) {
     waveGraphDotsGeneration = tracker.getGeneration();
     if (tracker.getGeneration() !== engine.lastPostedWaveGraphGeneration) {
-      waveGraphDots = tracker.getDots().slice(-WAVE_GRAPH_MAX_SEND);
+      waveGraphDots = tracker.getDots().slice(-waveGraphMaxDotsPerPost);
       engine.lastPostedWaveGraphGeneration = waveGraphDotsGeneration;
     }
   }
 
   return {
-    schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+    schemaVersion: snapshotSchemaVersion,
     frameId: nextFrameId++,
     lastAppliedCommandId,
     lastFailedCommandId: lastFailedCommandId ?? receipt?.failedCommandId ?? 0,
@@ -339,7 +340,7 @@ function buildEnemyStatusEffects(
 ): StatusEffectSnapshot[] {
   const hasEffects =
     e.slowFactor < 1 || e.stunTimer > 0 || maxBurnRemaining > 0 || e.shield > 0 || e.markTargetMult > 0;
-  if (!hasEffects) return EMPTY_STATUS_EFFECTS;
+  if (!hasEffects) return emptyStatusEffects;
   const effects: StatusEffectSnapshot[] = [];
   if (e.slowFactor < 1) {
     effects.push({ kind: "slow", remaining: maxSlowRemaining, magnitude: 1 - e.slowFactor });

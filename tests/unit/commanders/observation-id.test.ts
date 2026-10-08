@@ -11,7 +11,7 @@ import type { CommanderObservation } from "@/commanders/observation.js";
 import { buildObservation } from "@/commanders/observation.js";
 import type { CommanderSnapshotSlice, CommanderToMainMessage } from "@/commanders/protocol.js";
 import { peekNextObservationIdForTests, resetRelayForTests, startRelay, stopRelay } from "@/commanders/relay.js";
-import { GameState } from "@/sim/Constants.js";
+import { GameState } from "@/sim/GameRunState.js";
 import { getLatestSnapshot } from "@/sim/SnapshotStore.js";
 
 vi.mock("@/sim/SnapshotStore.js", () => ({ getLatestSnapshot: vi.fn() }));

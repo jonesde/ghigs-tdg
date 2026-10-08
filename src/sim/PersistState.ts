@@ -1,4 +1,5 @@
-import { TOTAL_MAPS } from "@/sim/Constants.js";
+import { getGameContent } from "@/content/gameContent.js";
+import { isCustomMapIndex } from "@/sim/GameRunState.js";
 import type { BaseUnlocks, GeneralAddons, ThemeProgress, TowerUnlocks } from "@/stores/persist.js";
 
 // Authoritative persist state — ALL fields enumerated explicitly. The
@@ -30,7 +31,7 @@ export interface PersistState {
   soundEnabled: boolean;
 }
 
-const CURRENT_SAVE_VERSION = 7;
+const currentSaveVersion = 7;
 
 function defaultBaseUnlocks(): BaseUnlocks {
   return { levels: [true, true, false, false, false, false, false] };
@@ -75,7 +76,7 @@ function defaultGeneralAddons(): GeneralAddons {
 
 export function createDefaultPersistState(): PersistState {
   return {
-    saveVersion: CURRENT_SAVE_VERSION,
+    saveVersion: currentSaveVersion,
     gems: 0,
     themeProgress: {},
     activeWaves: {},
@@ -141,7 +142,7 @@ export function updateBestWave(state: PersistState, themeId: string, mapIndex: n
 }
 
 export function maybeUnlockNextMap(state: PersistState, themeId: string, mapIndex: number): boolean {
-  if (mapIndex >= 0 && mapIndex + 1 < TOTAL_MAPS) {
+  if (!isCustomMapIndex(mapIndex) && mapIndex + 1 < getGameContent().maps.levels.length) {
     const progress = ensureThemeProgress(state, themeId);
     progress.highestUnlockedMap = Math.max(progress.highestUnlockedMap, mapIndex + 1);
     return true;
@@ -178,14 +179,14 @@ export function addRunToHistory(state: PersistState, entry: unknown): boolean {
 // Sentinel date the worker stamps on runHistory entries. The worker never calls
 // Date.now() (wall-clock would poison deterministic replay); the host replaces
 // the sentinel with the real receipt time in stampRunHistoryDate.
-export const WORKER_RUN_DATE_SENTINEL = 0;
+export const workerRunDateSentinel = 0;
 
 // Host-side receipt stamp: replaces sentinel/missing dates with the host's
 // wall-clock. Runs on the main-thread persist-flush path, never in the worker.
 export function stampRunHistoryDate(entry: unknown, nowMillis: number): void {
   if (typeof entry !== "object" || entry === null) return;
   const record = entry as Record<string, unknown>;
-  if (record.date === WORKER_RUN_DATE_SENTINEL || record.date === undefined) {
+  if (record.date === workerRunDateSentinel || record.date === undefined) {
     record.date = nowMillis;
   }
 }

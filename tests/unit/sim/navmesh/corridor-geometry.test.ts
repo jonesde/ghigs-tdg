@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ENEMY_TYPES } from "@/sim/ConstantsEnemy.js";
+import { getGameContent } from "@/content/gameContent.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import {
@@ -14,7 +14,7 @@ import {
 } from "@/sim/physics/corridorWalls.js";
 import { makeBastionMap, makeOneWideCornerMap, makeSerpentineMap } from "../../../helpers/mock-grid.js";
 
-const ENDPOINT_EPSILON = 1e-6;
+const endpointEpsilon = 1e-6;
 
 function isDiagonal(segment: CorridorSegment): boolean {
   return segment.x1 !== segment.x2 && segment.y1 !== segment.y2;
@@ -52,8 +52,8 @@ function nearestOtherEndpoint(
 function endpointMeetsDiagonal(pointX: number, pointY: number, diagonals: CorridorSegment[]): boolean {
   return diagonals.some(
     (diagonal) =>
-      Math.hypot(diagonal.x1 - pointX, diagonal.y1 - pointY) < ENDPOINT_EPSILON ||
-      Math.hypot(diagonal.x2 - pointX, diagonal.y2 - pointY) < ENDPOINT_EPSILON,
+      Math.hypot(diagonal.x1 - pointX, diagonal.y1 - pointY) < endpointEpsilon ||
+      Math.hypot(diagonal.x2 - pointX, diagonal.y2 - pointY) < endpointEpsilon,
   );
 }
 
@@ -120,14 +120,14 @@ describe("inside-corner chamfer clearance", () => {
     if (!diagonal) throw new Error("expected the L inside-corner diagonal");
 
     const innerFace = distancePointToSegment(vertexX, vertexY, diagonal) - corridorWallHalfThicknessWorld(tileSize);
-    const bossMeta = ENEMY_TYPES.boss;
+    const bossMeta = getGameContent().enemies.types.boss;
     if (!bossMeta) throw new Error("expected boss enemy type");
     const bossRadius = bossMeta.radius * tileSize * 0.5;
 
     expect(maxGroundEnemyRadiusWorld(tileSize)).toBeGreaterThanOrEqual(bossRadius);
     expect(innerFace).toBeGreaterThan(bossRadius);
-    expect(nearestOtherEndpoint(diagonal.x1, diagonal.y1, diagonal, segments)).toBeLessThan(ENDPOINT_EPSILON);
-    expect(nearestOtherEndpoint(diagonal.x2, diagonal.y2, diagonal, segments)).toBeLessThan(ENDPOINT_EPSILON);
+    expect(nearestOtherEndpoint(diagonal.x1, diagonal.y1, diagonal, segments)).toBeLessThan(endpointEpsilon);
+    expect(nearestOtherEndpoint(diagonal.x2, diagonal.y2, diagonal, segments)).toBeLessThan(endpointEpsilon);
   });
 
   it("meets both ends of a peninsula wall with the diagonals", () => {
@@ -137,8 +137,8 @@ describe("inside-corner chamfer clearance", () => {
     const diagonals = segments.filter(isDiagonal);
     expect(diagonals.length).toBeGreaterThan(0);
     for (const diagonal of diagonals) {
-      expect(nearestOtherEndpoint(diagonal.x1, diagonal.y1, diagonal, segments)).toBeLessThan(ENDPOINT_EPSILON);
-      expect(nearestOtherEndpoint(diagonal.x2, diagonal.y2, diagonal, segments)).toBeLessThan(ENDPOINT_EPSILON);
+      expect(nearestOtherEndpoint(diagonal.x1, diagonal.y1, diagonal, segments)).toBeLessThan(endpointEpsilon);
+      expect(nearestOtherEndpoint(diagonal.x2, diagonal.y2, diagonal, segments)).toBeLessThan(endpointEpsilon);
     }
 
     const bothEndWalls = segments.filter(

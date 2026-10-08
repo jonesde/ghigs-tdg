@@ -1,24 +1,18 @@
+import { getGameContent } from "@/content/gameContent.js";
 import { GRID_TILE_SIZE } from "@/render/svg/types.js";
 import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
 import type { ProjectileHitEvent } from "@/sim/physics/ContactProcessor.js";
 import type { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { damageAgainstFlying } from "@/sim/towers/towerFlyingDamage.js";
-import { MAX_PROJECTILE_AGE, PROJECTILE_HIT_SLOP, PROJECTILE_RETARGET_CORRIDOR_TILE_FRACTION } from "./Constants.js";
-import {
-  ANTI_HEAL_DURATION,
-  BOUNCE_DAMAGE_FALLOFF,
-  BURN_CIRCUIT_DMG_MULT,
-  BURN_CIRCUIT_DURATION,
-  CHAIN_DAMAGE_FALLOFF,
-  CHAIN_RANGE,
-  KNOCKBACK_HP_DIVISOR,
-  MARK_TARGET_DURATION,
-  MARKSMAN_CHANCE,
-  NAPALM_BURN_DPS_RATIO,
-  NAPALM_BURN_DURATION,
-  SPLASH_DAMAGE_RATIO,
-  TOWER_BASE,
-} from "./ConstantsTower.js";
+
+const bounceDamageFalloff = getGameContent().towers.tuning.bounceDamageFalloff;
+const chainRange = getGameContent().towers.tuning.chainRange;
+
+// Numerical slack on the projectile glyph when testing a hit. Not an enemy radius.
+export const projectileHitSlop = 1;
+const maxProjectileAge = 12;
+// Half-width floor for path retarget cast, as a fraction of tile size ("roughly on path").
+const projectileRetargetCorridorTileFraction = 0.35;
 
 export interface DamageCreditTarget {
   totalDamageDealt: number;
@@ -29,11 +23,11 @@ export interface DamageCreditTarget {
 // tileSize (covers the local neighborhood before any range is applied), the
 // rest scale by the caller's range. Module constant so the array is not rebuilt
 // per search call.
-const NEAREST_SEARCH_FRACTIONS = [0.5, 0.25, 0.5, 1] as const;
+const nearestSearchFractions = [0.5, 0.25, 0.5, 1] as const;
 
 // Impact bursts read as hit feedback on top of the enemy sprites, so they
 // render dimmed (stun-ring precedent); death/build/ghost bursts stay full.
-const HIT_PARTICLE_OPACITY_SCALE = 0.5;
+const hitParticleOpacityScale = 0.5;
 
 export interface ProjectileGame {
   id: number;
@@ -262,8 +256,8 @@ export interface StunVisualEffect {
 // the newest 20 lightning bolts / 50 stun marks anyway, and an effect older than
 // its own lifetime is dropped on arrival, so evicted entries are invisible either
 // way.
-export const MAX_PENDING_LIGHTNING_EFFECTS = 256;
-export const MAX_PENDING_STUN_EFFECTS = 256;
+export const maxPendingLightningEffects = 256;
+export const maxPendingStunEffects = 256;
 
 // Bounded FIFO of effects awaiting the next successful snapshot post. The cap is
 // enforced by dropping the overflow prefix in one re-slice per push rather than
@@ -366,8 +360,8 @@ export class ProjectileManager {
     this.onGoldReward = null;
     this.nextProjectileId = 1;
     this.towerLookup = towerLookup;
-    this.pendingLightning = new PendingEffectBuffer<LightningVisualEffect>(MAX_PENDING_LIGHTNING_EFFECTS);
-    this.pendingStuns = new PendingEffectBuffer<StunVisualEffect>(MAX_PENDING_STUN_EFFECTS);
+    this.pendingLightning = new PendingEffectBuffer<LightningVisualEffect>(maxPendingLightningEffects);
+    this.pendingStuns = new PendingEffectBuffer<StunVisualEffect>(maxPendingStunEffects);
     if (rng) this.rng = rng;
   }
 
@@ -506,8 +500,8 @@ export class ProjectileManager {
       projectile.isCrit = true;
     }
 
-    const knockbackBase = opts.knockbackBase ?? TOWER_BASE[opts.towerType]?.knockbackBase ?? 0;
-    const knockbackScale = opts.knockbackScale ?? TOWER_BASE[opts.towerType]?.knockbackScale ?? 0;
+    const knockbackBase = opts.knockbackBase ?? getGameContent().towers.base[opts.towerType]?.knockbackBase ?? 0;
+    const knockbackScale = opts.knockbackScale ?? getGameContent().towers.base[opts.towerType]?.knockbackScale ?? 0;
 
     this.applyProjectileEffects(
       projectile,
@@ -544,7 +538,7 @@ export class ProjectileManager {
       projectileId: projectile.id,
       x: projectile.x,
       y: projectile.y,
-      radius: projectile.radius + PROJECTILE_HIT_SLOP,
+      radius: projectile.radius + projectileHitSlop,
       velocityX: 0,
       velocityY: 0,
       isSensor: true,
@@ -569,8 +563,8 @@ export class ProjectileManager {
     const tier = Math.max(0, towerLevel - 4);
 
     if (napalm) {
-      projectile.burnDps = projectile.damage * NAPALM_BURN_DPS_RATIO;
-      projectile.burnDuration = NAPALM_BURN_DURATION;
+      projectile.burnDps = projectile.damage * getGameContent().towers.tuning.napalmBurnDpsRatio;
+      projectile.burnDuration = getGameContent().towers.tuning.napalmBurnDuration;
     }
 
     // Splash radius comes from the computed stats.splash (base + per-level scaling
@@ -584,14 +578,14 @@ export class ProjectileManager {
     }
 
     // Knockback applies to any tower whose stats carry a knockback base. The
-    // railgun falls back to its TOWER_BASE defaults when the caller (e.g. a
+    // railgun falls back to its towers.base defaults when the caller (e.g. a
     // direct spawn without stats) omits the pair.
     if (knockbackBase > 0) {
       projectile.knockback = knockbackBase + knockbackScale * tier;
     }
 
     if (marksman) {
-      projectile.marksman = this.rng() < MARKSMAN_CHANCE;
+      projectile.marksman = this.rng() < getGameContent().towers.tuning.marksmanChance;
     }
 
     // Piercer: pierce through N enemies means N hits (not N-1).
@@ -612,7 +606,7 @@ export class ProjectileManager {
         continue;
       }
       projectile.age += dt;
-      if (projectile.age > MAX_PROJECTILE_AGE) {
+      if (projectile.age > maxProjectileAge) {
         this.removeProjectile(projectile, "expired");
         this.destroyProjectileBody(projectile.id);
         this.removeProjectileAt(i);
@@ -637,7 +631,7 @@ export class ProjectileManager {
         continue;
       }
       projectile.age += dt;
-      if (projectile.age > MAX_PROJECTILE_AGE) {
+      if (projectile.age > maxProjectileAge) {
         this.removeProjectile(projectile, "expired");
         this.destroyProjectileBody(projectile.id);
         this.removeProjectileAt(i);
@@ -747,7 +741,7 @@ export class ProjectileManager {
   }
 
   private glyphHitRadius(projectile: ProjectileGame): number {
-    return projectile.radius + PROJECTILE_HIT_SLOP;
+    return projectile.radius + projectileHitSlop;
   }
 
   // Center travel for this step only. The cast ball is the glyph, so this length must
@@ -956,7 +950,7 @@ export class ProjectileManager {
     dirY /= dirLength;
 
     const tileSize = this.grid?.tileSize ?? GRID_TILE_SIZE;
-    const corridorRadius = PROJECTILE_RETARGET_CORRIDOR_TILE_FRACTION * tileSize;
+    const corridorRadius = projectileRetargetCorridorTileFraction * tileSize;
     const maxDistance = projectile.range * tileSize;
     const hitSet = projectile.hitEnemyIds;
     const foundTargets: CastEnemy[] = [];
@@ -1020,7 +1014,7 @@ export class ProjectileManager {
         this.particles.spawn(projectile.x, projectile.y, projectile.color, 3, {
           speed: 30,
           life: 0.2,
-          opacity: HIT_PARTICLE_OPACITY_SCALE,
+          opacity: hitParticleOpacityScale,
         });
       }
       if (projectile.isCrit && projectile.goldOnCrit > 0 && this.onGoldReward) {
@@ -1038,7 +1032,7 @@ export class ProjectileManager {
         this.particles.spawn(projectile.x, projectile.y, projectile.color, 3, {
           speed: 30,
           life: 0.2,
-          opacity: HIT_PARTICLE_OPACITY_SCALE,
+          opacity: hitParticleOpacityScale,
         });
       }
       if (projectile.isCrit && projectile.goldOnCrit > 0 && this.onGoldReward) {
@@ -1054,12 +1048,12 @@ export class ProjectileManager {
     this.recordDamage(projectile.towerId, dealtDamage);
 
     if (projectile.markTarget > 0 && enemy.applyMarkTarget) {
-      enemy.applyMarkTarget(projectile.markTarget, MARK_TARGET_DURATION);
+      enemy.applyMarkTarget(projectile.markTarget, getGameContent().towers.tuning.markTargetDuration);
     }
 
     // Anti-Heal: disable enemy healer auras
     if (projectile.antiHeal && enemy.applyAntiHeal) {
-      enemy.applyAntiHeal(ANTI_HEAL_DURATION);
+      enemy.applyAntiHeal(getGameContent().towers.tuning.antiHealDuration);
     }
 
     // Gold Rush: grant gold on critical hit
@@ -1089,7 +1083,7 @@ export class ProjectileManager {
       const knockAmount =
         projectile.knockback *
         (this.grid?.tileSize ?? GRID_TILE_SIZE) *
-        Math.max(0.1, Math.min(2, KNOCKBACK_HP_DIVISOR / enemy.maxHp));
+        Math.max(0.1, Math.min(2, getGameContent().towers.tuning.knockbackHpDivisor / enemy.maxHp));
       if (knockAmount > 0 && enemy.applyKnockback) {
         enemy.applyKnockback(knockAmount);
       }
@@ -1122,7 +1116,7 @@ export class ProjectileManager {
     if (projectile.splashRadius > 0 && this.particles) {
       const splashRadiusPx = projectile.splashRadius * (this.grid?.tileSize ?? 1);
       const tileSize = this.grid?.tileSize ?? GRID_TILE_SIZE;
-      const splashDamage = scaledDamage * SPLASH_DAMAGE_RATIO;
+      const splashDamage = scaledDamage * getGameContent().towers.tuning.splashDamageRatio;
       // Visitor scan: no per-hit in-range array. Visitor order matches
       // getEnemiesInRange's array order (one shape query, same filter), so the
       // damage application order to multiple splash targets is unchanged.
@@ -1137,7 +1131,7 @@ export class ProjectileManager {
         this.recordDamage(projectile.towerId, dealtSplash);
 
         if (projectile.markTarget > 0 && splashEnemy.applyMarkTarget) {
-          splashEnemy.applyMarkTarget(projectile.markTarget, MARK_TARGET_DURATION);
+          splashEnemy.applyMarkTarget(projectile.markTarget, getGameContent().towers.tuning.markTargetDuration);
         }
         if (projectile.burnDps > 0 && splashEnemy.applyBurn) {
           const burnDps = damageAgainstFlying(
@@ -1151,8 +1145,9 @@ export class ProjectileManager {
           splashEnemy.applySlow(projectile.slowFactor, projectile.slowDuration);
         }
         if (projectile.knockback > 0 && splashEnemy.applyKnockback) {
+          const knockDivisor = getGameContent().towers.tuning.knockbackHpDivisor;
           const knockAmount =
-            projectile.knockback * tileSize * Math.max(0.1, Math.min(2, KNOCKBACK_HP_DIVISOR / splashEnemy.maxHp));
+            projectile.knockback * tileSize * Math.max(0.1, Math.min(2, knockDivisor / splashEnemy.maxHp));
           if (knockAmount > 0) {
             splashEnemy.applyKnockback(knockAmount);
           }
@@ -1181,11 +1176,11 @@ export class ProjectileManager {
         // Uniform bounce falloff: damage and applied status magnitudes scale by
         // the same factor so a bounced shot is weaker across the board. Stun is
         // duration-only, so its "magnitude" is the duration itself.
-        projectile.damage *= BOUNCE_DAMAGE_FALLOFF;
-        projectile.burnDps *= BOUNCE_DAMAGE_FALLOFF;
-        projectile.slowFactor *= BOUNCE_DAMAGE_FALLOFF;
-        projectile.stunDuration *= BOUNCE_DAMAGE_FALLOFF;
-        projectile.splashStun *= BOUNCE_DAMAGE_FALLOFF;
+        projectile.damage *= bounceDamageFalloff;
+        projectile.burnDps *= bounceDamageFalloff;
+        projectile.slowFactor *= bounceDamageFalloff;
+        projectile.stunDuration *= bounceDamageFalloff;
+        projectile.splashStun *= bounceDamageFalloff;
         projectile.bounceCount++;
         return;
       }
@@ -1195,7 +1190,7 @@ export class ProjectileManager {
       this.particles.spawn(projectile.x, projectile.y, projectile.color, 3, {
         speed: 30,
         life: 0.2,
-        opacity: HIT_PARTICLE_OPACITY_SCALE,
+        opacity: hitParticleOpacityScale,
       });
     }
 
@@ -1247,18 +1242,18 @@ export class ProjectileManager {
       this.particles.spawn(current.x, current.y, opts.color ?? "#ffcf4d", 3, {
         speed: 30,
         life: 0.2,
-        opacity: HIT_PARTICLE_OPACITY_SCALE,
+        opacity: hitParticleOpacityScale,
       });
     }
 
     const chainedIds = new Set<number>([current.id]);
     let chainsUsed = 0;
     while (remainingChains > 0) {
-      const chainRangePx = CHAIN_RANGE * (this.grid?.tileSize ?? 1);
+      const chainRangePx = chainRange * (this.grid?.tileSize ?? 1);
       const nextTarget = this.findNearestEnemy(current.x, current.y, chainRangePx, undefined, chainedIds);
       if (!nextTarget) break;
 
-      const chainDamage = finalDamage * CHAIN_DAMAGE_FALLOFF ** (chainsUsed + 1);
+      const chainDamage = finalDamage * getGameContent().towers.tuning.chainDamageFalloff ** (chainsUsed + 1);
       const chainDealt =
         nextTarget.takeDamage(damageAgainstFlying(chainDamage, flyingDamageMult, nextTarget.flyingHeight)) ??
         chainDamage;
@@ -1269,17 +1264,17 @@ export class ProjectileManager {
         this.particles.spawn(nextTarget.x, nextTarget.y, opts.color ?? "#ffcf4d", 3, {
           speed: 30,
           life: 0.2,
-          opacity: HIT_PARTICLE_OPACITY_SCALE,
+          opacity: hitParticleOpacityScale,
         });
       }
       // Burn Circuit: chained enemies take burn damage over time
       if (opts.burnCircuit && nextTarget.applyBurn) {
         const burnDps = damageAgainstFlying(
-          chainDamage * BURN_CIRCUIT_DMG_MULT,
+          chainDamage * getGameContent().towers.tuning.burnCircuitDmgMult,
           flyingDamageMult,
           nextTarget.flyingHeight,
         );
-        nextTarget.applyBurn(burnDps, BURN_CIRCUIT_DURATION, opts.towerId);
+        nextTarget.applyBurn(burnDps, getGameContent().towers.tuning.burnCircuitDuration, opts.towerId);
       }
       this.bufferLightningEffect({
         x1: current.x,
@@ -1297,7 +1292,7 @@ export class ProjectileManager {
     // addition to the normal chain. Each random strike deals reduced damage, is
     // added to chainTargets so it also gets stunned, and fires a lightning flash.
     if (opts.stormcall) {
-      const wideRangePx = CHAIN_RANGE * 3 * (this.grid?.tileSize ?? 1);
+      const wideRangePx = chainRange * 3 * (this.grid?.tileSize ?? 1);
       const stormcallCount = 1 + tier;
       const stormcallChainedIds = new Set(chainTargets.map((target) => target.id));
       const wideEnemies = this.enemyManager
@@ -1306,7 +1301,7 @@ export class ProjectileManager {
       for (let strike = 0; strike < stormcallCount && wideEnemies.length > 0; strike++) {
         const pickIndex = Math.floor(this.rng() * wideEnemies.length);
         const stormTarget = wideEnemies.splice(pickIndex, 1)[0]!;
-        const stormDamage = finalDamage * CHAIN_DAMAGE_FALLOFF;
+        const stormDamage = finalDamage * getGameContent().towers.tuning.chainDamageFalloff;
         const stormDealt =
           stormTarget.takeDamage(damageAgainstFlying(stormDamage, flyingDamageMult, stormTarget.flyingHeight)) ??
           stormDamage;
@@ -1316,7 +1311,7 @@ export class ProjectileManager {
           this.particles.spawn(stormTarget.x, stormTarget.y, opts.color ?? "#ffcf4d", 3, {
             speed: 30,
             life: 0.2,
-            opacity: HIT_PARTICLE_OPACITY_SCALE,
+            opacity: hitParticleOpacityScale,
           });
         }
         this.bufferLightningEffect({
@@ -1348,7 +1343,7 @@ export class ProjectileManager {
       const secondTarget = this.findNearestEnemy(
         opts.originX,
         opts.originY,
-        (opts.range ?? CHAIN_RANGE) * (this.grid?.tileSize ?? 1),
+        (opts.range ?? chainRange) * (this.grid?.tileSize ?? 1),
         opts.targetId,
       );
       if (secondTarget) {
@@ -1427,8 +1422,8 @@ export class ProjectileManager {
     // must cover the same tile neighborhood the tower stats did.
     const tileSize = this.grid?.tileSize ?? GRID_TILE_SIZE;
     const subRanges = this.nearestSearchSubRanges;
-    for (let index = 0; index < NEAREST_SEARCH_FRACTIONS.length; index++) {
-      subRanges[index] = NEAREST_SEARCH_FRACTIONS[index]! * (index === 0 ? tileSize : range);
+    for (let index = 0; index < nearestSearchFractions.length; index++) {
+      subRanges[index] = nearestSearchFractions[index]! * (index === 0 ? tileSize : range);
     }
     for (const subRange of subRanges) {
       this.enemyManager.forEachEnemyInRange(x, y, subRange, this.nearestSearchVisitor);

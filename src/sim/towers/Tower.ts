@@ -7,42 +7,10 @@ interface AuraTarget {
   takeDamage(amount: number, armorPiercing?: boolean): number | undefined;
 }
 
+import { getGameContent } from "@/content/gameContent.js";
+import type { TowerMeta } from "@/content/schemas/towers.js";
+import type { TowerId } from "@/content/towerIds.js";
 import type { MapThemeAnimation, MapThemeData, TowerVisualMeta } from "@/render/themes/index.js";
-import {
-  MILESTONE_BONUS_PCT,
-  MILESTONE_THRESHOLD_PER_LEVEL_SQUARED,
-  TERRAIN_HEIGHT_BONUS_PCT,
-  TERRAIN_HEIGHT_RANGE_BONUS,
-} from "@/sim/Constants.js";
-import {
-  CANCEL_BUILD_WINDOW_MS,
-  CHARGE_SHOT_COUNT,
-  CHARGE_SHOT_MULT,
-  ELECTRIC_FENCE_INTERVAL,
-  ELECTRIC_FENCE_RANGE_TILES,
-  GHOST_RESTORE_BASE_SECONDS,
-  GHOST_RESTORE_MIN_SECONDS,
-  GHOST_RESTORE_PER_LEVEL,
-  ICE_AURA_DURATION,
-  ICE_AURA_RANGE,
-  ICE_AURA_SLOW_MULT,
-  ICE_BURST_INTERVAL,
-  ICE_BURST_RANGE,
-  ICE_BURST_STUN_DURATION,
-  MILESTONE_MAX_TIERS,
-  PROJECTILE_SPEED_MULTIPLIER,
-  SELL_VALUE_RATIO,
-  STATIC_FIELD_RANGE,
-  STATIC_FIELD_SLOW_AMT,
-  STATIC_FIELD_SLOW_DUR,
-  TERRAIN_DAMAGE_BONUS_MAX_MULT,
-  TOWER_ADDON_EFFECTS,
-  TOWER_BASE,
-  TOWER_META,
-  type TowerId,
-  type TowerMeta,
-  UPGRADE_COST_BASE,
-} from "@/sim/ConstantsTower.js";
 import type { SoundPlayer } from "@/sim/HostBindings.js";
 import type { PersistState } from "@/sim/PersistState.js";
 import { createDefaultPersistState } from "@/sim/PersistState.js";
@@ -55,6 +23,8 @@ import {
 import { getGeneralAddonValue, maxLevelFor } from "./SkillTree.js";
 import { damageAgainstFlying } from "./towerFlyingDamage.js";
 
+const milestoneMaxTiers = getGameContent().towers.tuning.milestoneMaxTiers;
+
 interface GridRef {
   tileSize: number;
   tiles?: { type: string; height: number }[][];
@@ -66,7 +36,7 @@ interface GridRef {
 
 // Fixed-aim barrels look along one of four world directions. Module constant so
 // the vector table is not rebuilt per fixed-aim tower per tick.
-const FIXED_AIM_DIRECTION_VECTORS: Record<"N" | "E" | "S" | "W", [number, number]> = {
+const fixedAimDirectionVectors: Record<"N" | "E" | "S" | "W", [number, number]> = {
   N: [0, -1],
   E: [1, 0],
   S: [0, 1],
@@ -368,13 +338,19 @@ export class Tower {
 
   private applyFrostAura?: (enemy: AuraTarget) => void = (enemy: AuraTarget): void => {
     const slowAmt = (this.frameStats ?? this.stats).slowAmt;
-    enemy.applySlow(slowAmt * ICE_AURA_SLOW_MULT, ICE_AURA_DURATION);
+    enemy.applySlow(
+      slowAmt * getGameContent().towers.tuning.iceAuraSlowMult,
+      getGameContent().towers.tuning.iceAuraDuration,
+    );
   };
   private applyStaticField?: (enemy: AuraTarget) => void = (enemy: AuraTarget): void => {
-    enemy.applySlow(STATIC_FIELD_SLOW_AMT, STATIC_FIELD_SLOW_DUR);
+    enemy.applySlow(
+      getGameContent().towers.tuning.staticFieldSlowAmt,
+      getGameContent().towers.tuning.staticFieldSlowDur,
+    );
   };
   private applyIceBurst?: (enemy: AuraTarget) => void = (enemy: AuraTarget): void => {
-    if (enemy.applyStun) enemy.applyStun(ICE_BURST_STUN_DURATION);
+    if (enemy.applyStun) enemy.applyStun(getGameContent().towers.tuning.iceBurstStunDuration);
   };
   private applyElectricFence?: (enemy: AuraTarget) => void = (enemy: AuraTarget): void => {
     const stats = this.frameStats ?? this.stats;
@@ -405,8 +381,8 @@ export class Tower {
     this.x = center.x;
     this.y = center.y;
     const towerId = type as TowerId;
-    this.meta = TOWER_META[towerId]!;
-    this.base = TOWER_BASE[towerId]!;
+    this.meta = getGameContent().towers.meta[towerId]!;
+    this.base = getGameContent().towers.base[towerId]!;
     this.theme = theme;
     const towerVisual = (theme?.towers[type] ?? null) as TowerVisualMeta | null;
     this.color = towerVisual?.color || defaultVisual?.color || "#8fbc8f";
@@ -476,7 +452,7 @@ export class Tower {
     const milestoneTier = getGeneralAddonValue(this.save!, "damageMilestoneBonus");
     const milestoneLevels =
       typeof milestoneTier === "number"
-        ? Math.min(MILESTONE_MAX_TIERS, Math.floor(this.totalDamageDealt / this.currentMilestoneThreshold()))
+        ? Math.min(milestoneMaxTiers, Math.floor(this.totalDamageDealt / this.currentMilestoneThreshold()))
         : -1;
     const h = typeof heightTier === "number" ? heightTier : -1;
     const r = typeof rangeTier === "number" ? rangeTier : -1;
@@ -516,7 +492,7 @@ export class Tower {
     let groundOnly = core.groundOnly;
 
     // Apply data-driven addon effects
-    const addonEffects = TOWER_ADDON_EFFECTS[this.type as TowerId];
+    const addonEffects = getGameContent().towers.addonEffects[this.type as TowerId];
     if (addonEffects) {
       for (const addonIdx of this.addons) {
         const effect = addonEffects[addonIdx];
@@ -537,22 +513,25 @@ export class Tower {
 
     const heightTier = this.save ? getGeneralAddonValue(this.save, "terrainHeightBonus") : null;
     if (typeof heightTier === "number") {
-      const bonusPct = TERRAIN_HEIGHT_BONUS_PCT[heightTier] || 0;
-      const heightBonus = Math.min(TERRAIN_DAMAGE_BONUS_MAX_MULT, 1 + bonusPct * this.terrainHeight);
+      const bonusPct = getGameContent().economy.terrainHeightBonusPct[heightTier] || 0;
+      const heightBonus = Math.min(
+        getGameContent().towers.tuning.terrainDamageBonusMaxMult,
+        1 + bonusPct * this.terrainHeight,
+      );
       damage *= heightBonus;
     }
 
     const rangeTier = this.save ? getGeneralAddonValue(this.save, "terrainHeightRangeBonus") : null;
     if (typeof rangeTier === "number") {
-      const bonusPerHeight = TERRAIN_HEIGHT_RANGE_BONUS[rangeTier] || 0;
+      const bonusPerHeight = getGameContent().economy.terrainHeightRangeBonus[rangeTier] || 0;
       range += bonusPerHeight * this.terrainHeight;
     }
 
     const milestoneTier = this.save ? getGeneralAddonValue(this.save, "damageMilestoneBonus") : null;
     if (typeof milestoneTier === "number") {
       const milestoneThreshold = this.currentMilestoneThreshold();
-      const tiers = Math.min(MILESTONE_MAX_TIERS, Math.floor(this.totalDamageDealt / milestoneThreshold));
-      const [dmgPct, speedPct] = MILESTONE_BONUS_PCT[milestoneTier] || [0, 0];
+      const tiers = Math.min(milestoneMaxTiers, Math.floor(this.totalDamageDealt / milestoneThreshold));
+      const [dmgPct, speedPct] = getGameContent().economy.milestoneBonusPct[milestoneTier] || [0, 0];
       damage *= 1 + dmgPct * tiers;
       fireRate *= 1 + speedPct * tiers;
     }
@@ -639,7 +618,7 @@ export class Tower {
   }
 
   currentMilestoneThreshold(): number {
-    return this.level * this.level * MILESTONE_THRESHOLD_PER_LEVEL_SQUARED;
+    return this.level * this.level * getGameContent().economy.milestoneThresholdPerLevelSquared;
   }
 
   currentMilestoneBonus() {
@@ -647,13 +626,14 @@ export class Tower {
     if (!this.save) return { damagePct: 0, speedPct: 0, tiers: 0, threshold };
     const tier = getGeneralAddonValue(this.save, "damageMilestoneBonus");
     if (typeof tier !== "number") return { damagePct: 0, speedPct: 0, tiers: 0, threshold };
-    const tiers = Math.min(MILESTONE_MAX_TIERS, Math.floor(this.totalDamageDealt / threshold));
-    const [dmgPct, speedPct] = MILESTONE_BONUS_PCT[tier] || [0, 0];
+    const tiers = Math.min(milestoneMaxTiers, Math.floor(this.totalDamageDealt / threshold));
+    const [dmgPct, speedPct] = getGameContent().economy.milestoneBonusPct[tier] || [0, 0];
     return { damagePct: dmgPct * tiers * 100, speedPct: speedPct * tiers * 100, tiers, threshold };
   }
 
   upgradeCost(nextLevel: number): number {
-    return Math.round(this.meta.cost * UPGRADE_COST_BASE ** (nextLevel - 2));
+    const costGrowth = getGameContent().towers.tuning.upgradeCostBase;
+    return Math.round(this.meta.cost * costGrowth ** (nextLevel - 2));
   }
 
   canUpgrade(save: PersistState | undefined): CanUpgradeResult {
@@ -702,7 +682,7 @@ export class Tower {
 
   sellValue(): number {
     if (this.isGhost) return 0;
-    return Math.round(this.totalInvested * SELL_VALUE_RATIO);
+    return Math.round(this.totalInvested * getGameContent().towers.tuning.sellValueRatio);
   }
 
   canModify(): boolean {
@@ -764,11 +744,12 @@ export class Tower {
   }
 
   canCancel(): boolean {
-    return this._gameSeconds * 1000 < CANCEL_BUILD_WINDOW_MS && this.level === 1;
+    const elapsedMs = this._gameSeconds * 1000;
+    return elapsedMs < getGameContent().towers.tuning.cancelBuildWindowMs && this.level === 1;
   }
 
   cancelRemainingMs(): number {
-    return Math.max(0, CANCEL_BUILD_WINDOW_MS - this._gameSeconds * 1000);
+    return Math.max(0, getGameContent().towers.tuning.cancelBuildWindowMs - this._gameSeconds * 1000);
   }
 
   selectTarget(
@@ -866,8 +847,9 @@ export class Tower {
     if (this.isGhost) {
       this.ghostTimer += dt;
       const restoreTime = Math.max(
-        GHOST_RESTORE_MIN_SECONDS,
-        GHOST_RESTORE_BASE_SECONDS - this.level * GHOST_RESTORE_PER_LEVEL,
+        getGameContent().towers.tuning.ghostRestoreMinSeconds,
+        getGameContent().towers.tuning.ghostRestoreBaseSeconds -
+          this.level * getGameContent().towers.tuning.ghostRestorePerLevel,
       );
       if (this.ghostTimer >= restoreTime) {
         this.restore();
@@ -884,7 +866,7 @@ export class Tower {
     // Data-driven frost aura (ice addon 0)
     if (stats.frostAura) {
       const tileSize = this.grid?.tileSize || 36;
-      const frostRangePx = ICE_AURA_RANGE * tileSize;
+      const frostRangePx = getGameContent().towers.tuning.iceAuraRange * tileSize;
       const usedSensor = enemyManager.forEachSensorHits?.(`${this.id}:frost`, this.applyFrostAura!);
       if (!usedSensor) {
         enemyManager.forEachEnemyInRange(this.x, this.y, frostRangePx, this.applyFrostAura!);
@@ -894,7 +876,7 @@ export class Tower {
     // Data-driven static field (lightning addon 0)
     if (stats.staticField) {
       const tileSize = this.grid?.tileSize || 36;
-      const staticFieldRangePx = STATIC_FIELD_RANGE * tileSize;
+      const staticFieldRangePx = getGameContent().towers.tuning.staticFieldRange * tileSize;
       const usedSensor = enemyManager.forEachSensorHits?.(`${this.id}:static`, this.applyStaticField!);
       if (!usedSensor) {
         enemyManager.forEachEnemyInRange(this.x, this.y, staticFieldRangePx, this.applyStaticField!);
@@ -904,10 +886,10 @@ export class Tower {
     // Data-driven ice burst (ice addon 2)
     if (stats.iceBurst) {
       this.iceBurstTimer += dt;
-      if (this.iceBurstTimer >= ICE_BURST_INTERVAL) {
+      if (this.iceBurstTimer >= getGameContent().towers.tuning.iceBurstInterval) {
         this.iceBurstTimer = 0;
         const tileSize = this.grid?.tileSize || 36;
-        const iceBurstRangePx = ICE_BURST_RANGE * tileSize;
+        const iceBurstRangePx = getGameContent().towers.tuning.iceBurstRange * tileSize;
         enemyManager.forEachEnemyInRange(this.x, this.y, iceBurstRangePx, this.applyIceBurst!);
       }
     }
@@ -916,10 +898,10 @@ export class Tower {
     // dealing contact damage and briefly stunning them (stopping motion + attacks).
     if (stats.fenceDamage > 0) {
       this.fenceTimer += dt;
-      if (this.fenceTimer >= ELECTRIC_FENCE_INTERVAL) {
+      if (this.fenceTimer >= getGameContent().towers.tuning.electricFenceInterval) {
         this.fenceTimer = 0;
         const tileSize = this.grid?.tileSize || 36;
-        const fenceRangePx = tileSize * ELECTRIC_FENCE_RANGE_TILES;
+        const fenceRangePx = tileSize * getGameContent().towers.tuning.electricFenceRangeTiles;
         enemyManager.forEachEnemyInRange(this.x, this.y, fenceRangePx, this.applyElectricFence!);
       }
     }
@@ -934,7 +916,7 @@ export class Tower {
     const rangeSquared = rangePx * rangePx;
 
     if (resolveEffectiveBase(this.base, this.type as TowerId, this.variant).fixedAim && this.fixedAimDir) {
-      const [ddx, ddy] = FIXED_AIM_DIRECTION_VECTORS[this.fixedAimDir];
+      const [ddx, ddy] = fixedAimDirectionVectors[this.fixedAimDir];
       this.angle = Math.atan2(ddy, ddx);
 
       let targetEnemy: { x: number; y: number; id: number } | null = null;
@@ -1032,9 +1014,9 @@ export class Tower {
 
     // Charge shot: every 5th shot deals 3x damage
     if (stats.chargeShot) {
-      this.chargeShotCount = (this.chargeShotCount + 1) % CHARGE_SHOT_COUNT;
+      this.chargeShotCount = (this.chargeShotCount + 1) % getGameContent().towers.tuning.chargeShotCount;
       if (this.chargeShotCount === 0) {
-        fireDamage *= CHARGE_SHOT_MULT;
+        fireDamage *= getGameContent().towers.tuning.chargeShotMult;
       }
     }
 
@@ -1059,7 +1041,7 @@ export class Tower {
         speed:
           (resolveEffectiveBase(this.base, this.type as TowerId, this.variant).projSpeed || 1) *
           tileSize *
-          PROJECTILE_SPEED_MULTIPLIER,
+          getGameContent().towers.tuning.projectileSpeedMultiplier,
         range: stats.range,
         towerType: this.type,
         towerLevel: this.level,
@@ -1103,7 +1085,7 @@ export class Tower {
       speed:
         (resolveEffectiveBase(this.base, this.type as TowerId, this.variant).projSpeed || 1) *
         tileSize *
-        PROJECTILE_SPEED_MULTIPLIER,
+        getGameContent().towers.tuning.projectileSpeedMultiplier,
       range: stats.range,
       towerType: this.type,
       towerLevel: this.level,

@@ -50,7 +50,7 @@ describe("mergeWaveGraphDots", () => {
   it("caps the accumulation at the maximum fill", () => {
     const accum = windowOf(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
     const merged = mergeWaveGraphDots(accum, windowOf(2, 3, 4, 5, 6, 7, 8, 9, 10));
-    // max accum is 10 for these small inputs? cap = ceil(WAVE_GRAPH_WIDTH / DOT_SPACING) = 250
+    // max accum is 10 for these small inputs? cap = waveGraphDotCapacity(waveGraphDotWidth) = 250
     expect(merged.length).toBeLessThanOrEqual(250);
     expect(merged[merged.length - 1]).toEqual(dot(10));
   });

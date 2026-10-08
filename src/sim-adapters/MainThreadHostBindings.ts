@@ -47,7 +47,7 @@ export class MainThreadHostBindings implements HostBindings {
     // can be replaced without aliasing the worker's live state.
     persistStore.themeProgress = state.themeProgress;
     persistStore.activeWaves = { ...state.activeWaves };
-    // Host-side wall-clock stamp: the worker stores WORKER_RUN_DATE_SENTINEL so
+    // Host-side wall-clock stamp: the worker stores workerRunDateSentinel so
     // replays stay deterministic; the real date is applied here on receipt.
     for (const entry of state.runHistory) {
       stampRunHistoryDate(entry, Date.now());
