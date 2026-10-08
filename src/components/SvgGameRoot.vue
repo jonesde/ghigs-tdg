@@ -31,6 +31,7 @@ import { useInput } from "@/composables/Input.js";
 import { progressivePlacementCommand, rotateProgressiveBlockAt } from "@/composables/progressivePlacement.js";
 import { getGameContent } from "@/content/gameContent.js";
 import { type TowerId, TowerIds } from "@/content/towerIds.js";
+import { perfEnabled } from "@/perfSession.js";
 import { fitFrame, frameFromCenter, TILE_SIZE, wheelZoomFactor } from "@/render/svg/cameraFrame.js";
 import {
   baseSelectionStale,
@@ -65,7 +66,7 @@ import {
 } from "@/render/svg/viewBoxTween.js";
 import type { EnemyVisualMeta, TowerVisualMeta } from "@/render/themes/index.js";
 import { setCommandDispatcher } from "@/sim/commandBus.js";
-import { customProgressiveMapIndex } from "@/sim/GameRunState.js";
+import { customProgressiveMapIndex, GameState } from "@/sim/GameRunState.js";
 import { Grid } from "@/sim/grid/Grid.js";
 import {
   boardToGeneratedMap,
@@ -86,6 +87,14 @@ import {
 } from "@/sim/mapSites.js";
 import { ParticleSystem } from "@/sim/ParticleSystem.js";
 import type { PersistState } from "@/sim/PersistState.js";
+import {
+  type GhigsPerfReadout,
+  publishGhigsPerf,
+  type RenderPerfSample,
+  spanEnd,
+  spanStart,
+  type WorkerPerfSample,
+} from "@/sim/perfTrace.js";
 import type { BonusOffer } from "@/sim/runBonuses.js";
 import { SnapshotStore } from "@/sim/SnapshotStore.js";
 import { baseSelectionId } from "@/sim/towers/BaseDefense.js";
@@ -302,6 +311,14 @@ let mapSiteLayer: MapSiteLayer | null = null;
 // one snapshot across multiple rAF frames (see snapshotAnimDt).
 let lastRenderedFrameId: number | null = null;
 let lastRenderedWorkerGeneration: number | null = null;
+
+// perfEnabled is the first-load latch (see perfSession.ts). The worker hears it
+// through the init message. Off means the render loop does not call performance.now().
+let latestWorkerPerf: WorkerPerfSample | null = null;
+let perfLogAt = 0;
+let perfFrames = 0;
+let lastRafAt = 0;
+let lastLoggedDroppedSimSeconds = 0;
 
 // rAF lifecycle: the render loop must be stopped when the component unmounts
 // (route change) so a late frame never touches managers that have been disposed.
@@ -1010,11 +1027,59 @@ function handleWorkerMessage(event: MessageEvent): void {
     case "workerError":
       console.error("Worker error:", msg.message, msg.stack);
       break;
+    case "perfSample":
+      latestWorkerPerf = msg.sample;
+      break;
   }
+}
+
+function notePerfFrame(frame: RenderPerfSample, snapshot: NonNullable<ReturnType<typeof snapshotStore.get>>): void {
+  if (!perfEnabled) return;
+  // A paused tick would print over the sample being copied, and would mix idle
+  // steps into the next window. Drop the open second so unpause starts clean.
+  if (snapshot.meta.state === GameState.PAUSED) {
+    perfLogAt = 0;
+    perfFrames = 0;
+    return;
+  }
+  perfFrames += 1;
+  const now = performance.now();
+  if (perfLogAt === 0) {
+    perfLogAt = now;
+    lastLoggedDroppedSimSeconds = snapshot.meta.droppedSimSeconds ?? 0;
+  }
+  if (now - perfLogAt < 1000) return;
+  const droppedSimSeconds = snapshot.meta.droppedSimSeconds ?? 0;
+  const readout: GhigsPerfReadout = {
+    atMs: now,
+    worker: latestWorkerPerf,
+    render: frame,
+    counts: {
+      enemies: snapshot.enemies.length,
+      towers: snapshot.towers.length,
+      projectiles: snapshot.projectiles.length,
+      lightningEffects: snapshot.lightningEffects?.length ?? 0,
+      stunEffects: snapshot.stunEffects?.length ?? 0,
+      droppedSimSeconds,
+      droppedSecondsDelta: droppedSimSeconds - lastLoggedDroppedSimSeconds,
+      frames: perfFrames,
+    },
+  };
+  publishGhigsPerf(readout);
+  lastLoggedDroppedSimSeconds = droppedSimSeconds;
+  perfFrames = 0;
+  perfLogAt = now;
 }
 
 function renderLoop(): void {
   if (disposed) return;
+  const frameStartedAt = spanStart(perfEnabled);
+  let frameIntervalMs = 0;
+  if (perfEnabled) {
+    const rafAt = performance.now();
+    frameIntervalMs = lastRafAt === 0 ? 0 : rafAt - lastRafAt;
+    lastRafAt = rafAt;
+  }
   const snapshot = snapshotStore.get();
   if (!snapshot) {
     renderFrameHandle = requestAnimationFrame(renderLoop);
@@ -1027,7 +1092,10 @@ function renderLoop(): void {
   lastRenderedWorkerGeneration = snapshot.meta.workerGeneration ?? null;
 
   mapSiteLayer?.sync(snapshot);
+  const enemiesStartedAt = spanStart(perfEnabled);
   enemyManager.syncFromGameEngine(snapshot.enemies);
+  const enemiesMs = spanEnd(perfEnabled, "render.enemies", enemiesStartedAt);
+  const towersStartedAt = spanStart(perfEnabled);
   towerManager.syncFromGameEngine(snapshot.towers, animDt);
   const grid = gameStore.grid;
   const baseTile = grid?.getBase() ?? null;
@@ -1057,20 +1125,26 @@ function renderLoop(): void {
     { animation: sniperVisual?.animation ?? null, color: sniperVisual?.color ?? "#c8c8c8" },
     animDt,
   );
+  const towersMs = spanEnd(perfEnabled, "render.towers", towersStartedAt);
+  const projectilesStartedAt = spanStart(perfEnabled);
   projectileManager.syncFromGameEngine(snapshot.projectiles);
+  const projectilesMs = spanEnd(perfEnabled, "render.projectiles", projectilesStartedAt);
   // Finding 7: simulate + render particles on the main thread. The worker no
   // longer ships a `particles` array; instead this rAF loop advances the
   // main-thread ParticleSystem once per posted snapshot — gated on the game
   // clock (frozen while paused, scales with timeScale, no jump on tab resume)
   // — and the render ParticleManager draws from its current state.
+  const particlesStartedAt = spanStart(perfEnabled);
   mainParticleSystem.update(animDt);
   particleManager.syncFromGameEngine(mainParticleSystem.getRenderData());
+  const particlesMs = spanEnd(perfEnabled, "render.particles", particlesStartedAt);
 
   // addLightningEffect re-adds with a fresh seed per call, so the spawn is gated
   // on the new-snapshot signal — not animDt, which is also 0 for a new paused
   // post whose arming tick generated bolts that must still appear. simSeconds lets
   // the manager age each effect by the time it spent in the worker buffer, so a
   // held snapshot drops its spent bolts instead of replaying them stale.
+  const effectsStartedAt = spanStart(perfEnabled);
   if (isNewSnapshot) {
     effectManager.syncVisualEffectsFromSnapshot(
       snapshot.lightningEffects,
@@ -1107,6 +1181,8 @@ function renderLoop(): void {
       : null,
     snapshot.meta.selectedTowerType === null,
   );
+  const effectsMs = spanEnd(perfEnabled, "render.effects", effectsStartedAt);
+  const overlayStartedAt = spanStart(perfEnabled);
   uiOverlayManager.syncFromGameEngine(snapshot.enemies, selectedTower, snapshot.towers);
   uiOverlayManager.syncWaveTopTowers(
     snapshot.towers,
@@ -1119,12 +1195,29 @@ function renderLoop(): void {
     uiOverlayManager.syncBaseHealthBar(gameStore.grid, snapshot.meta.baseHealth, snapshot.meta.maxBaseHealth);
   }
   spawnManager.sync(snapshot.spawnStates);
+  const overlayMs = spanEnd(perfEnabled, "render.overlay", overlayStartedAt);
 
   // Backpressure handshake (P2-1): the main thread acks each rendered snapshot
   // (by frameId) so the worker may build+post the next one. The early return at the
   // top of this loop (no snapshot available yet) naturally defers acking until the
   // worker's baseline snapshot arrives.
   worker?.postMessage({ type: "snapshotAck", frameId: snapshot.frameId });
+
+  const frameMs = spanEnd(perfEnabled, "render.frame", frameStartedAt, { frameAdvanced: isNewSnapshot });
+  notePerfFrame(
+    {
+      frameMs,
+      frameIntervalMs,
+      frameAdvanced: isNewSnapshot,
+      enemiesMs,
+      towersMs,
+      projectilesMs,
+      particlesMs,
+      effectsMs,
+      overlayMs,
+    },
+    snapshot,
+  );
 
   renderFrameHandle = requestAnimationFrame(renderLoop);
 }
@@ -1218,6 +1311,7 @@ onMounted(async () => {
     themeBundle,
     mapIndex: gameStore.mapIndex,
     randomMapParams: gameStore.randomMapParams ?? undefined,
+    perf: perfEnabled,
     // Custom progressive runs carry no catalog index; the worker rebuilds the
     // start board from these params, so they must ride the init message.
     progressiveMapParams:

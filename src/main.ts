@@ -1,6 +1,8 @@
 import { createPinia } from "pinia";
 import { createApp } from "vue";
 import App from "./App.vue";
+// Latches ?perf=1 from the loaded document URL before the router can strip it.
+import "./perfSession.js";
 import { TowerIds } from "./content/towerIds.js";
 import type { TowerVisualMeta } from "./render/themes/index.js";
 import router from "./router";

@@ -8,6 +8,16 @@ import { initPhysics } from "@/sim/physics/rapierContext.js";
 import type { Command } from "./Command.js";
 import { drainCommandQueue } from "./commandDrain.js";
 import type { PersistStateSlice } from "./HostBindings.js";
+import {
+  createWorkerPerfSink,
+  measureDuration,
+  measureSpan,
+  resetWorkerPerfSink,
+  setActivePerfSink,
+  spanEnd,
+  spanStart,
+  type WorkerPerfSample,
+} from "./perfTrace.js";
 import { buildSnapshot } from "./SnapshotSerializer.js";
 import { decideSnapshotPost } from "./snapshotGate.js";
 import { computeStepBudget, fixedDeltaSeconds, type StepBudget } from "./stepBudget.js";
@@ -81,6 +91,15 @@ let lastFlushMilestoneKeys = 0;
 let lastFlushBossesKilled = 0;
 let lastFlushTime = 0;
 
+// Set from the init message. False unless this is a dev build and the page
+// asked for ?perf=1. The tick reads it to decide whether to time subphases.
+let perfTracing = false;
+const perfSink = createWorkerPerfSink();
+let perfWindowStartedAt = 0;
+let perfTicks = 0;
+let perfPostsSkipped = 0;
+let perfDroppedWindow = 0;
+
 const targetFrameMs = 1000 / 60; // 16.67ms
 // Ceiling on one tick's raw wall-clock delta. A stalled tab or a long main-thread
 // block would otherwise dump all of it into the accumulator at once; stepBudget's
@@ -91,6 +110,77 @@ const persistFlushFallbackMs = 5000;
 
 function postMessage(msg: WorkerToMainMessage): void {
   self.postMessage(msg);
+}
+
+function resetPerfWindow(): void {
+  perfWindowStartedAt = 0;
+  perfTicks = 0;
+  perfPostsSkipped = 0;
+  perfDroppedWindow = 0;
+}
+
+function publishWorkerTick(
+  tickStartedAt: number,
+  steps: number,
+  droppedSeconds: number,
+  snapshotMs: number,
+  postMs: number,
+  postSkipped: boolean,
+): void {
+  const tickEndedAt = performance.now();
+  measureSpan("worker.tick", tickStartedAt, tickEndedAt);
+  measureDuration("worker.crowd", tickEndedAt, perfSink.crowdMs);
+  measureDuration("worker.physics", tickEndedAt, perfSink.physicsMs);
+  measureDuration("worker.projectiles", tickEndedAt, perfSink.projectilesMs);
+  measureDuration("worker.projectileAim", tickEndedAt, perfSink.projectileAimMs);
+  measureDuration("worker.projectileCast", tickEndedAt, perfSink.projectileCastMs);
+  measureDuration("worker.projectileContact", tickEndedAt, perfSink.projectileContactMs);
+  measureDuration("worker.towers", tickEndedAt, perfSink.towersMs);
+  measureDuration("worker.towerAura", tickEndedAt, perfSink.towerAuraMs);
+  measureDuration("worker.towerTarget", tickEndedAt, perfSink.towerTargetMs);
+  measureDuration("worker.towerLightning", tickEndedAt, perfSink.towerLightningMs);
+  measureDuration("worker.lightningSearch", tickEndedAt, perfSink.lightningSearchMs);
+  measureDuration("worker.baseDefense", tickEndedAt, perfSink.baseDefenseMs);
+  if (postSkipped) measureSpan("worker.postSkipped", tickEndedAt, tickEndedAt);
+
+  perfTicks += 1;
+  if (postSkipped) perfPostsSkipped += 1;
+  perfDroppedWindow += droppedSeconds;
+  if (perfWindowStartedAt === 0) perfWindowStartedAt = tickEndedAt;
+  if (tickEndedAt - perfWindowStartedAt < 1000) return;
+
+  const sample: WorkerPerfSample = {
+    tickMs: tickEndedAt - tickStartedAt,
+    steps,
+    droppedSeconds,
+    crowdMs: perfSink.crowdMs,
+    physicsMs: perfSink.physicsMs,
+    projectilesMs: perfSink.projectilesMs,
+    projectileAimMs: perfSink.projectileAimMs,
+    projectileCastMs: perfSink.projectileCastMs,
+    projectileContactMs: perfSink.projectileContactMs,
+    towersMs: perfSink.towersMs,
+    towerAuraMs: perfSink.towerAuraMs,
+    towerTargetMs: perfSink.towerTargetMs,
+    towerLightningMs: perfSink.towerLightningMs,
+    lightningSearchMs: perfSink.lightningSearchMs,
+    baseDefenseMs: perfSink.baseDefenseMs,
+    towerTargetScans: perfSink.towerTargetScans,
+    lightningShots: perfSink.lightningShots,
+    lightningChains: perfSink.lightningChains,
+    shapeCasts: perfSink.shapeCasts,
+    snapshotMs,
+    postMs,
+    postSkipped,
+    ticks: perfTicks,
+    postsSkipped: perfPostsSkipped,
+    droppedSecondsWindow: perfDroppedWindow,
+  };
+  // Crosses to the main thread once a second. The sample is the tick that
+  // closed the window, plus how many ticks in that second skipped a post.
+  postMessage({ type: "perfSample", sample });
+  resetPerfWindow();
+  perfWindowStartedAt = tickEndedAt;
 }
 
 // Splits queued entries into current-generation commands (drained in order) and a
@@ -161,6 +251,7 @@ function scheduleTick(): void {
 function tick(): void {
   if (!engine || !running) return;
 
+  const tracing = import.meta.env.DEV && perfTracing;
   const now = performance.now(); // available in workers, no self. prefix needed
   if (lastTime === 0) lastTime = now;
   const rawDt = Math.min(maxAccumulatedSeconds, (now - lastTime) / 1000);
@@ -192,7 +283,20 @@ function tick(): void {
   // ran. Declared outside try so the catch can count the skipped ones.
   let stepBudget: StepBudget | null = null;
   let stepsExecuted = 0;
+  let stepsStartedAt = 0;
+  let stepsMeasured = false;
+  let snapshotMs = 0;
+  let postMs = 0;
+  let postSkipped = false;
   try {
+    if (tracing) {
+      resetWorkerPerfSink(perfSink);
+      // Crosses into GameEngine.update, and through the active sink into Tower and
+      // ProjectileManager, for this tick only. Cleared in finally so a thrown step
+      // cannot leave a later untraced update paying for phase timers.
+      engine.perfSink = perfSink;
+      setActivePerfSink(perfSink);
+    }
     // commanderHold is not GameState.PAUSED. PAUSED makes the commander worker skip
     // decide, which would cancel the request this hold exists to wait for.
     const timeScale =
@@ -205,10 +309,16 @@ function tick(): void {
     stepBudget = computeStepBudget(accumulator, scaledDt, timeScale);
     accumulator = stepBudget.accumulator;
     engine.droppedSimSeconds += stepBudget.droppedSeconds;
+    stepsStartedAt = spanStart(tracing);
     for (let stepIndex = 0; stepIndex < stepBudget.steps; stepIndex++) {
       engine.update(fixedDeltaSeconds);
       stepsExecuted++;
     }
+    spanEnd(tracing, "worker.steps", stepsStartedAt, {
+      steps: stepsExecuted,
+      droppedSeconds: stepBudget.droppedSeconds,
+    });
+    stepsMeasured = true;
 
     const state = engine.runState.state;
     const terminal = state === GameState.VICTORY || state === GameState.GAME_OVER;
@@ -232,6 +342,7 @@ function tick(): void {
 
     if (terminal) {
       // Final frame: post exactly once, then stop the loop until the next init.
+      const snapshotStartedAt = spanStart(tracing);
       const snapshot = buildSnapshot(
         engine,
         lastAppliedCommandId,
@@ -243,8 +354,11 @@ function tick(): void {
         },
         lastFailedCommandId,
       );
+      snapshotMs = spanEnd(tracing, "worker.snapshot", snapshotStartedAt);
       stampSnapshotGeneration(snapshot, workerGeneration);
+      const postStartedAt = spanStart(tracing);
       postMessage({ type: "snapshot", snapshot });
+      postMs = spanEnd(tracing, "worker.post", postStartedAt);
       lastPostedFrameId = snapshot.frameId;
       consumeDeliveredEffects(engine);
       hasPostedSnapshot = true;
@@ -261,6 +375,7 @@ function tick(): void {
     // post is false for a paused-idle tick and for a running tick still waiting
     // on snapshotAck. Effects stay buffered until a real post.
     if (snapshotGate.post) {
+      const snapshotStartedAt = spanStart(tracing);
       const snapshot = buildSnapshot(
         engine,
         lastAppliedCommandId,
@@ -272,8 +387,11 @@ function tick(): void {
         },
         lastFailedCommandId,
       );
+      snapshotMs = spanEnd(tracing, "worker.snapshot", snapshotStartedAt);
       stampSnapshotGeneration(snapshot, workerGeneration);
+      const postStartedAt = spanStart(tracing);
       postMessage({ type: "snapshot", snapshot });
+      postMs = spanEnd(tracing, "worker.post", postStartedAt);
       lastPostedFrameId = snapshot.frameId;
       consumeDeliveredEffects(engine);
       hasPostedSnapshot = true;
@@ -301,6 +419,10 @@ function tick(): void {
       lastFlushWave = engine.runState.currentWave;
       lastFlushMilestoneKeys = milestoneKeyCount;
       lastFlushBossesKilled = engine.runState.bossesKilledThisRun;
+    } else if (tracing && snapshotGate.awaitingAck && engine.lastScaledDt > 0) {
+      // Ack gate dropped this post. A paused tick also skips the post; lastScaledDt
+      // keeps that idle skip out of the postSkipped count.
+      postSkipped = true;
     }
   } catch (err) {
     // A simulation or snapshot error must not kill the tick loop. Report it and
@@ -324,6 +446,17 @@ function tick(): void {
     }
     accumulator = 0;
   } finally {
+    if (engine) engine.perfSink = null;
+    setActivePerfSink(null);
+    if (tracing) {
+      if (!stepsMeasured && stepsStartedAt !== 0) {
+        spanEnd(tracing, "worker.steps", stepsStartedAt, {
+          steps: stepsExecuted,
+          droppedSeconds: stepBudget?.droppedSeconds ?? 0,
+        });
+      }
+      publishWorkerTick(now, stepsExecuted, stepBudget?.droppedSeconds ?? 0, snapshotMs, postMs, postSkipped);
+    }
     // Schedule next tick only while the loop is still running. stopLoop() (terminal
     // path above) sets running=false, so we must NOT reschedule here or we'd spin
     // a no-op 60Hz tick forever after the run ends.
@@ -379,6 +512,8 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage>) => {
         engine = null;
       }
       commandQueue.length = 0;
+      perfTracing = import.meta.env.DEV && msg.perf === true;
+      resetPerfWindow();
       awaitingAck = false;
       placementHoldPosted = false;
       lastPostedFrameId = 0;

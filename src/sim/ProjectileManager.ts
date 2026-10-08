@@ -1,6 +1,7 @@
 import { getGameContent } from "@/content/gameContent.js";
 import { GRID_TILE_SIZE } from "@/render/svg/types.js";
 import type { ParticleSpawner } from "@/sim/ParticleSystem.js";
+import { activePerfSink, phaseCount, phaseEnd, phaseStart } from "@/sim/perfTrace.js";
 import type { ProjectileHitEvent } from "@/sim/physics/ContactProcessor.js";
 import type { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { damageAgainstFlying } from "@/sim/towers/towerFlyingDamage.js";
@@ -660,6 +661,7 @@ export class ProjectileManager {
     }
 
     const hitByContact = new Set<number>();
+    const contactStartedAt = phaseStart(activePerfSink());
     for (const hit of contactHits) {
       const projectile = this.projectilesById.get(hit.projectileId);
       const enemy = this.enemyManager.getEnemyById(hit.enemyId);
@@ -671,6 +673,7 @@ export class ProjectileManager {
       projectile.hitEnemyIds.add(enemy.id);
       hitByContact.add(projectile.id);
     }
+    phaseEnd(activePerfSink(), "projectileContactMs", contactStartedAt);
 
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const projectile = this.projectiles[i];
@@ -822,6 +825,34 @@ export class ProjectileManager {
     this.removeProjectile(projectile, "reached-target");
   }
 
+  private timeShapeCast(
+    originX: number,
+    originY: number,
+    directionX: number,
+    directionY: number,
+    ballRadius: number,
+    maxDistance: number,
+    maxHits: number,
+    visit: (enemy: CastEnemy) => boolean,
+    groundOnly?: boolean,
+  ): void {
+    const sink = activePerfSink();
+    const castStartedAt = phaseStart(sink);
+    this.enemyManager.castShapePierce(
+      originX,
+      originY,
+      directionX,
+      directionY,
+      ballRadius,
+      maxDistance,
+      maxHits,
+      visit,
+      groundOnly,
+    );
+    phaseEnd(sink, "projectileCastMs", castStartedAt);
+    phaseCount(sink, "shapeCasts");
+  }
+
   private updateCircleProjectile(projectile: ProjectileGame, dt: number, positionFromBody = false): void {
     if (projectile.targetId === 0) {
       if (projectile.cacheId !== undefined) {
@@ -840,7 +871,7 @@ export class ProjectileManager {
       const segment = this.stepCast(projectile, dt, positionFromBody, projectile.targetX, projectile.targetY, true);
       const maxHits = projectile.maxHitCount > 0 ? projectile.maxHitCount : 1;
 
-      this.enemyManager.castShapePierce(
+      this.timeShapeCast(
         segment.originX,
         segment.originY,
         segment.directionX,
@@ -906,7 +937,7 @@ export class ProjectileManager {
     }
     const homingHitSet = projectile.hitEnemyIds as Set<number>;
     const homingHits: CastEnemy[] = [];
-    this.enemyManager.castShapePierce(
+    this.timeShapeCast(
       segment.originX,
       segment.originY,
       segment.directionX,
@@ -955,7 +986,7 @@ export class ProjectileManager {
     const hitSet = projectile.hitEnemyIds;
     const foundTargets: CastEnemy[] = [];
 
-    this.enemyManager.castShapePierce(
+    this.timeShapeCast(
       projectile.x,
       projectile.y,
       dirX,
@@ -1250,7 +1281,9 @@ export class ProjectileManager {
     let chainsUsed = 0;
     while (remainingChains > 0) {
       const chainRangePx = chainRange * (this.grid?.tileSize ?? 1);
+      const chainSearchStartedAt = phaseStart(activePerfSink());
       const nextTarget = this.findNearestEnemy(current.x, current.y, chainRangePx, undefined, chainedIds);
+      phaseEnd(activePerfSink(), "lightningSearchMs", chainSearchStartedAt);
       if (!nextTarget) break;
 
       const chainDamage = finalDamage * getGameContent().towers.tuning.chainDamageFalloff ** (chainsUsed + 1);
@@ -1286,6 +1319,7 @@ export class ProjectileManager {
       chainsUsed++;
       remainingChains--;
       current = nextTarget;
+      phaseCount(activePerfSink(), "lightningChains");
     }
 
     // Stormcall (lightning B variant): strike random enemies in a wide area in
@@ -1295,9 +1329,11 @@ export class ProjectileManager {
       const wideRangePx = chainRange * 3 * (this.grid?.tileSize ?? 1);
       const stormcallCount = 1 + tier;
       const stormcallChainedIds = new Set(chainTargets.map((target) => target.id));
+      const stormSearchStartedAt = phaseStart(activePerfSink());
       const wideEnemies = this.enemyManager
         .getEnemiesInRange(opts.originX, opts.originY, wideRangePx)
         .filter((enemy) => !stormcallChainedIds.has(enemy.id));
+      phaseEnd(activePerfSink(), "lightningSearchMs", stormSearchStartedAt);
       for (let strike = 0; strike < stormcallCount && wideEnemies.length > 0; strike++) {
         const pickIndex = Math.floor(this.rng() * wideEnemies.length);
         const stormTarget = wideEnemies.splice(pickIndex, 1)[0]!;
@@ -1340,12 +1376,14 @@ export class ProjectileManager {
 
     // Double Discharge: 10% chance to fire a second bolt to a different target
     if (opts.doubleDischarge && opts.doubleDischarge > 0 && this.rng() < opts.doubleDischarge) {
+      const dischargeSearchStartedAt = phaseStart(activePerfSink());
       const secondTarget = this.findNearestEnemy(
         opts.originX,
         opts.originY,
         (opts.range ?? chainRange) * (this.grid?.tileSize ?? 1),
         opts.targetId,
       );
+      phaseEnd(activePerfSink(), "lightningSearchMs", dischargeSearchStartedAt);
       if (secondTarget) {
         const secondIsCrit = critChance > 0 && this.rng() < critChance;
         const secondDamage = finalDamage * 0.5 * (secondIsCrit ? 2 : 1);

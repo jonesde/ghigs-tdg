@@ -14,6 +14,7 @@ import type { MapThemeAnimation, MapThemeData, TowerVisualMeta } from "@/render/
 import type { SoundPlayer } from "@/sim/HostBindings.js";
 import type { PersistState } from "@/sim/PersistState.js";
 import { createDefaultPersistState } from "@/sim/PersistState.js";
+import { activePerfSink, phaseCount, phaseEnd, phaseStart } from "@/sim/perfTrace.js";
 import {
   computeTowerCoreStats,
   computeTowerMaxHealth,
@@ -863,6 +864,7 @@ export class Tower {
     const stats = this.stats;
     this.frameStats = stats;
 
+    const auraStartedAt = phaseStart(activePerfSink());
     // Data-driven frost aura (ice addon 0)
     if (stats.frostAura) {
       const tileSize = this.grid?.tileSize || 36;
@@ -905,6 +907,7 @@ export class Tower {
         enemyManager.forEachEnemyInRange(this.x, this.y, fenceRangePx, this.applyElectricFence!);
       }
     }
+    phaseEnd(activePerfSink(), "towerAuraMs", auraStartedAt);
 
     // SturdyWall-style towers carry range 0 and have no projectile path: the aura,
     // burst, and fence blocks above already ran with their own ranges, so targeting
@@ -938,6 +941,7 @@ export class Tower {
         // the visitor so no in-range array is allocated. Strict `<` on squared
         // distance preserves the old first-found-wins tie-break. The holder object
         // keeps the closure-side write visible to control-flow typing.
+        const targetStartedAt = phaseStart(activePerfSink());
         const scanResult: { target: { x: number; y: number; id: number } | null } = { target: null };
         let bestSquaredDistance = Infinity;
         enemyManager.forEachEnemyInRange(this.x, this.y, rangePx, (enemy) => {
@@ -955,6 +959,8 @@ export class Tower {
         });
         targetEnemy = scanResult.target;
         this.cachedTargetId = targetEnemy ? targetEnemy.id : null;
+        phaseEnd(activePerfSink(), "towerTargetMs", targetStartedAt);
+        phaseCount(activePerfSink(), "towerTargetScans");
       }
       if (targetEnemy) {
         const aimTarget = { x: this.x + ddx * rangePx, y: this.y + ddy * rangePx, id: 0 };
@@ -986,12 +992,15 @@ export class Tower {
       if (!this.inRangeScratch) this.inRangeScratch = [];
       const inRangeScratch = this.inRangeScratch;
       inRangeScratch.length = 0;
+      const targetStartedAt = phaseStart(activePerfSink());
       enemyManager.forEachEnemyInRange(this.x, this.y, rangePx, (enemy) => {
         if (stats.groundOnly && (enemy.flyingHeight ?? 0) > 0) return;
         inRangeScratch.push(enemy);
       });
       target = this.selectTarget(inRangeScratch);
       this.cachedTargetId = target ? target.id : null;
+      phaseEnd(activePerfSink(), "towerTargetMs", targetStartedAt);
+      phaseCount(activePerfSink(), "towerTargetScans");
     }
     if (target) {
       this.fire({ kind: "enemy", ...target }, enemyManager, projectileManager, sound);
@@ -1057,6 +1066,7 @@ export class Tower {
     }
 
     if (this.type === "lightning") {
+      const lightningStartedAt = phaseStart(activePerfSink());
       projectileManager.fireLightning({
         originX: this.x + Math.cos(this.angle) * barrelOffset,
         originY: this.y + Math.sin(this.angle) * barrelOffset,
@@ -1075,6 +1085,8 @@ export class Tower {
         color: this.color,
         flyingDamageMult: stats.flyingDamageMult,
       });
+      phaseEnd(activePerfSink(), "towerLightningMs", lightningStartedAt);
+      phaseCount(activePerfSink(), "lightningShots");
       return;
     }
     projectileManager.spawn({

@@ -94,6 +94,7 @@ import {
   workerRunDateSentinel,
 } from "@/sim/PersistState.js";
 import { ProjectileManager } from "@/sim/ProjectileManager.js";
+import { phaseEnd, phaseStart, type WorkerPerfSink } from "@/sim/perfTrace.js";
 import { ContactProcessor } from "@/sim/physics/ContactProcessor.js";
 import { ForceFieldSystem } from "@/sim/physics/ForceFieldSystem.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
@@ -156,6 +157,9 @@ export class GameEngine {
   // overload (see computeStepBudget in WorkerEntry). Exposed in snapshot meta so
   // replays/load can tell "ran slow" apart from "ran fine".
   droppedSimSeconds: number = 0;
+  // Set by WorkerEntry for the duration of one traced tick (?perf=1). Null in
+  // normal play, so update() does not call performance.now() on these phases.
+  perfSink: WorkerPerfSink | null = null;
   // Per-run seeded combat-roll source, forked from (map seed, runId). Injected
   // into ProjectileManager/ParticleSystem so replays of the same run are bit-identical.
   simRng: () => number = Math.random;
@@ -682,20 +686,29 @@ export class GameEngine {
 
     this.syncAuraSensors();
     this.enemyManager.preStep(dt);
+    const crowdStartedAt = phaseStart(this.perfSink);
     this.crowdManager?.update(dt, this.enemyManager.enemies);
+    phaseEnd(this.perfSink, "crowdMs", crowdStartedAt);
     writeFlightVelocities(this.enemyManager.enemies, this.grid!, dt, this.forceFieldSystem);
     this.forceFieldSystem.apply(dt, this.enemyManager.enemies, this.physicsWorld);
     // Homing projectiles set kinematic velocities before the physics step.
+    const prePhysicsStartedAt = phaseStart(this.perfSink);
     this.projectileManager?.prePhysics(dt);
+    phaseEnd(this.perfSink, "projectileAimMs", prePhysicsStartedAt);
+    phaseEnd(this.perfSink, "projectilesMs", prePhysicsStartedAt);
     // fixedDeltaSeconds is passed explicitly: PhysicsWorld.step asserts it, so a
     // variable-dt caller fails loudly instead of silently desyncing the fixed-step sim.
+    const physicsStartedAt = phaseStart(this.perfSink);
     this.physicsWorld!.step(fixedDeltaSeconds);
+    phaseEnd(this.perfSink, "physicsMs", physicsStartedAt);
     // PhysicsWorld.step already projected contact flags onto enemies; drain the
     // projectile hit queue for postPhysics resolution.
     const projectileHits = this.contactProcessor?.drainProjectileHits() ?? [];
     this.enemyManager.postStep(dt, onEnemyKill, onEnemyBeginAttackBase);
     // Projectiles read body positions and resolve hits (contacts + cast fallback).
+    const postPhysicsStartedAt = phaseStart(this.perfSink);
     this.projectileManager?.postPhysics(dt, projectileHits);
+    phaseEnd(this.perfSink, "projectilesMs", postPhysicsStartedAt);
     this.clampBallisticEnemiesToNavMesh();
 
     // Known one-tick gap (documented, behavior-identical by design): towers fire
@@ -703,12 +716,16 @@ export class GameEngine {
     // tick's prePhysics — it is drawn bodiless for exactly one tick. The tick is NOT
     // reordered: moving tower fire earlier showed no perf win and would shift every
     // combat roll by a tick.
+    const towersStartedAt = phaseStart(this.perfSink);
     this.towerManager.update(dt, this.enemyManager, this.cacheShotTargets(), (cacheId, damage) =>
       this.damageCache(cacheId, damage),
     );
+    const baseDefenseStartedAt = phaseStart(this.perfSink);
     if (this.baseDefense && this.projectileManager) {
       this.baseDefense.update(dt, this.enemyManager, this.projectileManager, this.host, this.simSeconds);
     }
+    phaseEnd(this.perfSink, "baseDefenseMs", baseDefenseStartedAt);
+    phaseEnd(this.perfSink, "towersMs", towersStartedAt);
 
     // Known one-tick gap: a tower ghosted this frame drops its block now (visuals
     // resolve here) but enemies route through the tile only after next tick's
