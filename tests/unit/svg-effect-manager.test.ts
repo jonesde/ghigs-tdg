@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { EffectManager } from "@/render/svg/EffectManager.js";
 import { LIGHTNING_POOL_SIZE, STUN_POOL_SIZE } from "@/render/svg/types.js";
 
+// Matches LIGHTNING_LIFE_SECONDS / STUN_MARK_SECONDS on the manager side.
+const LIGHTNING_LIFE = 1 / 3;
+const STUN_MARK_LIFE = 0.3;
+
 function makeLayer(): SVGGElement {
   return document.createElementNS("http://www.w3.org/2000/svg", "g") as unknown as SVGGElement;
 }
@@ -13,6 +17,14 @@ function visibleCount(pool: SVGGElement[] | SVGPolylineElement[]): number {
     if (el.style.visibility === "visible") count++;
   }
   return count;
+}
+
+function lightningPolylines(layer: SVGGElement): SVGPolylineElement[] {
+  return Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
+}
+
+function stunGroups(layer: SVGGElement): SVGGElement[] {
+  return Array.from(layer.querySelectorAll("g")) as SVGGElement[];
 }
 
 describe("EffectManager", () => {
@@ -50,7 +62,7 @@ describe("EffectManager", () => {
 
   describe("lightning effects", () => {
     it("renders a single lightning effect at the given coordinates", () => {
-      manager.addLightningEffect(10, 20, 100, 200);
+      manager.addLightningEffect(10, 20, 100, 200, LIGHTNING_LIFE);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
@@ -64,7 +76,7 @@ describe("EffectManager", () => {
     });
 
     it("hides unused lightning pool slots when fewer effects are active", () => {
-      manager.addLightningEffect(0, 0, 10, 10);
+      manager.addLightningEffect(0, 0, 10, 10, LIGHTNING_LIFE);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
@@ -75,9 +87,9 @@ describe("EffectManager", () => {
     });
 
     it("assigns multiple active effects to sequential pool slots", () => {
-      manager.addLightningEffect(0, 0, 10, 10);
-      manager.addLightningEffect(50, 50, 60, 60);
-      manager.addLightningEffect(100, 100, 110, 110);
+      manager.addLightningEffect(0, 0, 10, 10, LIGHTNING_LIFE);
+      manager.addLightningEffect(50, 50, 60, 60, LIGHTNING_LIFE);
+      manager.addLightningEffect(100, 100, 110, 110, LIGHTNING_LIFE);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
@@ -92,7 +104,7 @@ describe("EffectManager", () => {
     });
 
     it("hides effect after its life expires", () => {
-      manager.addLightningEffect(0, 0, 10, 10);
+      manager.addLightningEffect(0, 0, 10, 10, LIGHTNING_LIFE);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
       expect(polylines[0]!.style.visibility).toBe("visible");
@@ -104,29 +116,32 @@ describe("EffectManager", () => {
       expect(polylines[0]!.style.visibility).toBe("hidden");
     });
 
-    it("regression: renders effects spawned after pool size is exceeded (original bug)", () => {
-      for (let i = 0; i < LIGHTNING_POOL_SIZE + 5; i++) {
-        manager.addLightningEffect(i * 10, 0, i * 10 + 5, 0);
+    it("keeps the newest batch when the pool overflows (evicts oldest on add)", () => {
+      const extraCount = 5;
+      const spawned = LIGHTNING_POOL_SIZE + extraCount;
+      for (let i = 0; i < spawned; i++) {
+        manager.addLightningEffect(i * 10, 0, i * 10 + 5, 0, LIGHTNING_LIFE);
       }
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
-      const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
+      const polylines = lightningPolylines(layer);
       expect(visibleCount(polylines)).toBe(LIGHTNING_POOL_SIZE);
-      const firstPoint = polylines[0]!.getAttribute("points")?.split(" ")[0];
-      expect(firstPoint).toBe("0.0,0.0");
-      const lastSlotPoint = polylines[LIGHTNING_POOL_SIZE - 1]!.getAttribute("points")?.split(" ")[0];
-      expect(lastSlotPoint).toBe(`${(LIGHTNING_POOL_SIZE - 1) * 10}.0,0.0`);
+      // The five oldest bolts are evicted, so the drawn set is the newest 20.
+      for (let slot = 0; slot < LIGHTNING_POOL_SIZE; slot++) {
+        const expectedSource = extraCount + slot;
+        expect(polylines[slot]!.getAttribute("points")?.split(" ")[0]).toBe(`${expectedSource * 10}.0,0.0`);
+      }
     });
 
     it("clears expired effects and reuses slots for new effects", () => {
-      manager.addLightningEffect(1, 0, 2, 0);
+      manager.addLightningEffect(1, 0, 2, 0, LIGHTNING_LIFE);
       for (let frame = 0; frame < 45; frame++) {
         manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
       }
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
       expect(polylines[0]!.style.visibility).toBe("hidden");
 
-      manager.addLightningEffect(99, 0, 100, 0);
+      manager.addLightningEffect(99, 0, 100, 0, LIGHTNING_LIFE);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
       expect(polylines[0]!.style.visibility).toBe("visible");
       expect(polylines[0]!.getAttribute("points")?.split(" ")[0]).toBe("99.0,0.0");
@@ -135,7 +150,7 @@ describe("EffectManager", () => {
 
   describe("stun effects", () => {
     it("renders a single stun effect at the given coordinates", () => {
-      manager.addStunEffect(40, 50, 0.3);
+      manager.addStunEffect(40, 50, STUN_MARK_LIFE);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
@@ -146,7 +161,7 @@ describe("EffectManager", () => {
     });
 
     it("initializes two polylines lazily inside the stun group", () => {
-      manager.addStunEffect(10, 10, 0.3);
+      manager.addStunEffect(10, 10, STUN_MARK_LIFE);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
@@ -154,21 +169,20 @@ describe("EffectManager", () => {
       expect(polylines.length).toBe(2);
     });
 
-    it("glows each stun arc once (per-arc filter, no group-level filter)", () => {
-      manager.addStunEffect(10, 10, 0.3);
+    it("glows only the outer arc, so a barrage halves the filtered polylines", () => {
+      manager.addStunEffect(10, 10, STUN_MARK_LIFE);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
       expect(groups[0]!.getAttribute("filter")).toBeNull();
       const polylines = Array.from(groups[0]!.querySelectorAll("polyline"));
       expect(polylines.length).toBe(2);
-      for (const polyline of polylines) {
-        expect(polyline.getAttribute("filter")).toBe("url(#glow)");
-      }
+      expect(polylines[0]!.getAttribute("filter")).toBe("url(#glow)");
+      expect(polylines[1]!.getAttribute("filter")).toBeNull();
     });
 
     it("draws the stun ring at half stroke opacity and keeps the life fade", () => {
-      manager.addStunEffect(10, 10, 0.3);
+      manager.addStunEffect(10, 10, STUN_MARK_LIFE);
       manager.syncFromGameEngine(null, null, null, null, false, 0);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
@@ -179,7 +193,7 @@ describe("EffectManager", () => {
     });
 
     it("hides unused stun pool slots", () => {
-      manager.addStunEffect(10, 10, 0.3);
+      manager.addStunEffect(10, 10, STUN_MARK_LIFE);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
@@ -190,9 +204,9 @@ describe("EffectManager", () => {
     });
 
     it("assigns multiple stun effects to sequential slots", () => {
-      manager.addStunEffect(10, 10, 0.3);
-      manager.addStunEffect(20, 20, 0.3);
-      manager.addStunEffect(30, 30, 0.3);
+      manager.addStunEffect(10, 10, STUN_MARK_LIFE);
+      manager.addStunEffect(20, 20, STUN_MARK_LIFE);
+      manager.addStunEffect(30, 30, STUN_MARK_LIFE);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
@@ -206,7 +220,7 @@ describe("EffectManager", () => {
     });
 
     it("hides stun effect after its life expires", () => {
-      manager.addStunEffect(10, 10, 0.3);
+      manager.addStunEffect(10, 10, STUN_MARK_LIFE);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
       expect(groups[0]!.style.visibility).toBe("visible");
@@ -218,23 +232,130 @@ describe("EffectManager", () => {
       expect(groups[0]!.style.visibility).toBe("hidden");
     });
 
-    it("regression: renders stun effects after pool size is exceeded (original bug)", () => {
-      for (let i = 0; i < STUN_POOL_SIZE + 5; i++) {
-        manager.addStunEffect(i, i, 0.3);
+    it("regression: every stun effect ages out past the pool limit (no frozen slots)", () => {
+      // The original bug decremented remainingLife inside the draw loop, so every
+      // effect past the last pool slot never aged, never expired, and held its slot
+      // for the rest of the run: new marks queued behind them forever.
+      for (let i = 0; i < STUN_POOL_SIZE + 40; i++) {
+        manager.addStunEffect(i, i, STUN_MARK_LIFE);
+      }
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      expect(visibleCount(stunGroups(layer))).toBe(STUN_POOL_SIZE);
+
+      for (let frame = 0; frame < 30; frame++) {
+        manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      }
+      expect(visibleCount(stunGroups(layer))).toBe(0);
+
+      // The pool is reusable afterwards, which is what the frozen entries prevented.
+      manager.addStunEffect(999, 999, STUN_MARK_LIFE);
+      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      expect(visibleCount(stunGroups(layer))).toBe(1);
+      expect(stunGroups(layer)[0]!.getAttribute("transform")).toContain("999.0");
+    });
+
+    it("keeps the newest marks when the pool overflows (evicts oldest on add)", () => {
+      const extraCount = 5;
+      const spawned = STUN_POOL_SIZE + extraCount;
+      for (let i = 0; i < spawned; i++) {
+        manager.addStunEffect(i * 10, 0, STUN_MARK_LIFE);
       }
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
-      const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
+      const groups = stunGroups(layer);
       expect(visibleCount(groups)).toBe(STUN_POOL_SIZE);
+      for (let slot = 0; slot < STUN_POOL_SIZE; slot++) {
+        expect(groups[slot]!.getAttribute("transform")).toContain(`${(extraCount + slot) * 10}.0`);
+      }
+    });
+  });
+
+  describe("stun effect tracking", () => {
+    function syncEffects(
+      snapshotSeconds: number,
+      lightning = undefined,
+      stun = undefined,
+      enemies = undefined,
+      dt = 0,
+    ) {
+      manager.syncVisualEffectsFromSnapshot(lightning, stun, snapshotSeconds, enemies);
+      manager.syncFromGameEngine(null, null, null, null, false, dt);
+    }
+
+    it("drops an effect that spent its whole life in the worker effect buffer", () => {
+      syncEffects(12, [{ x1: 0, y1: 0, x2: 10, y2: 10, simSeconds: 11.5 }]);
+      expect(visibleCount(lightningPolylines(layer))).toBe(0);
+      syncEffects(12, [{ x1: 0, y1: 0, x2: 10, y2: 10, simSeconds: 10 }]);
+      expect(visibleCount(lightningPolylines(layer))).toBe(0);
+    });
+
+    it("clamps a negative age (a stamp ahead of the snapshot clock) to full life", () => {
+      syncEffects(12, [{ x1: 0, y1: 0, x2: 10, y2: 10, simSeconds: 12.5 }]);
+      const polylines = lightningPolylines(layer);
+      expect(polylines[0]!.style.visibility).toBe("visible");
+      expect(polylines[0]!.getAttribute("opacity")).toBe("1.000");
+    });
+
+    it("draws a partially aged effect already faded in, rather than at full life", () => {
+      const halfLife = LIGHTNING_LIFE / 2;
+      syncEffects(10, [{ x1: 0, y1: 0, x2: 10, y2: 10, simSeconds: 10 - halfLife }]);
+      const polylines = lightningPolylines(layer);
+      expect(polylines[0]!.style.visibility).toBe("visible");
+      expect(Number(polylines[0]!.getAttribute("opacity"))).toBeCloseTo(0.5, 2);
+    });
+
+    it("drops a stun mark that spent its whole life in the worker effect buffer", () => {
+      syncEffects(12, undefined, [{ x: 5, y: 5, simSeconds: 10.5 }]);
+      expect(visibleCount(stunGroups(layer))).toBe(0);
+    });
+
+    it("keys one mark per stunned enemy instead of one per position", () => {
+      for (let frame = 0; frame < 4; frame++) {
+        // Same enemy, nudged a fraction of a pixel each snapshot.
+        syncEffects(
+          10 + frame,
+          undefined,
+          [{ x: 5 + frame * 0.05, y: 5, targetId: 77, simSeconds: 10 + frame }],
+          [{ id: 77, x: 5 + frame * 0.05, y: 5 }],
+        );
+      }
+      expect(visibleCount(stunGroups(layer))).toBe(1);
+    });
+
+    it("follows the stunned enemy's live position", () => {
+      syncEffects(10, undefined, [{ x: 5, y: 5, targetId: 77, simSeconds: 10 }], [{ id: 77, x: 5, y: 5 }]);
+      expect(stunGroups(layer)[0]!.getAttribute("transform")).toBe("translate(5.0, 5.0)");
+
+      // Next snapshot: the enemy has moved on, the mark must move with it.
+      syncEffects(11, undefined, undefined, [{ id: 77, x: 240, y: 130 }]);
+      expect(stunGroups(layer)[0]!.getAttribute("transform")).toBe("translate(240.0, 130.0)");
+    });
+
+    it("falls back to the shipped position once the enemy leaves the snapshot", () => {
+      syncEffects(10, undefined, [{ x: 5, y: 5, targetId: 77, simSeconds: 10 }], [{ id: 77, x: 5, y: 5 }]);
+      syncEffects(11, undefined, undefined, []);
+      expect(stunGroups(layer)[0]!.getAttribute("transform")).toBe("translate(5.0, 5.0)");
+    });
+
+    it("restarts the flash when the same enemy is stunned again", () => {
+      syncEffects(10, undefined, [{ x: 5, y: 5, targetId: 77, simSeconds: 10 }], [{ id: 77, x: 5, y: 5 }]);
+      for (let frame = 0; frame < 12; frame++) {
+        manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      }
+      expect(stunGroups(layer)[0]!.getAttribute("opacity")).not.toBe("1.000");
+
+      syncEffects(10.2, undefined, [{ x: 5, y: 5, targetId: 77, simSeconds: 10.2 }], [{ id: 77, x: 5, y: 5 }]);
+      expect(visibleCount(stunGroups(layer))).toBe(1);
+      expect(stunGroups(layer)[0]!.getAttribute("opacity")).toBe("1.000");
     });
   });
 
   describe("lightning and stun use independent counters", () => {
     it("spawning both types does not cause cross-type slot collisions", () => {
-      manager.addLightningEffect(0, 0, 10, 10);
-      manager.addStunEffect(20, 20, 0.3);
-      manager.addLightningEffect(30, 30, 40, 40);
-      manager.addStunEffect(50, 50, 0.3);
+      manager.addLightningEffect(0, 0, 10, 10, LIGHTNING_LIFE);
+      manager.addStunEffect(20, 20, STUN_MARK_LIFE);
+      manager.addLightningEffect(30, 30, 40, 40, LIGHTNING_LIFE);
+      manager.addStunEffect(50, 50, STUN_MARK_LIFE);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
 
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
@@ -423,8 +544,8 @@ describe("EffectManager", () => {
     });
 
     it("clears active effects so subsequent sync renders nothing", () => {
-      manager.addLightningEffect(0, 0, 10, 10);
-      manager.addStunEffect(20, 20, 0.3);
+      manager.addLightningEffect(0, 0, 10, 10, LIGHTNING_LIFE);
+      manager.addStunEffect(20, 20, STUN_MARK_LIFE);
       manager.dispose();
       manager.init(layer);
       manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);

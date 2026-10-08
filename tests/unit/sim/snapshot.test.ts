@@ -273,6 +273,32 @@ describe("SnapshotSerializer (Phase 5)", () => {
     expect(snap.particleSpawns![1]!.opacity).toBeUndefined();
   });
 
+  it("stamps every lightning/stun effect with the sim clock and the stunned enemy id", () => {
+    const engine = makeEngine();
+    const enemy = engine.enemyManager.spawn("minion", 1, 0, 1);
+    engine.update(1 / 60);
+    engine.update(1 / 60);
+    engine.projectileManager.fireLightning({
+      originX: 100,
+      originY: 200,
+      damage: 4,
+      towerLevel: 1,
+      targetId: enemy.id,
+      stunDuration: 0.1,
+    });
+
+    const snap = buildSnapshot(engine, 0);
+    expect(snap.lightningEffects!.length).toBeGreaterThan(0);
+    expect(snap.stunEffects!.length).toBeGreaterThan(0);
+    // The renderer ages an arriving effect against meta.simSeconds, so the two
+    // must come from the same clock.
+    for (const bolt of snap.lightningEffects!) {
+      expect(bolt.simSeconds).toBeCloseTo(engine.simSeconds, 6);
+    }
+    expect(snap.stunEffects![0]!.simSeconds).toBeCloseTo(engine.simSeconds, 6);
+    expect(snap.stunEffects![0]!.targetId).toBe(enemy.id);
+  });
+
   it("does not consume effects at build time; an explicit consume clears the buffers", () => {
     const engine = makeEngine();
     const enemy = engine.enemyManager.spawn("minion", 1, 0, 1);

@@ -230,7 +230,7 @@ The simulation runs in a Web Worker; the main thread renders and produces intent
 
 - **Worker owns the engine.** `src/sim/WorkerEntry.ts` constructs `GameEngine` (with plain `GameRunState` + `PersistState` + `HostBindings` + `ThemeBundle`, not Pinia), runs a `setTimeout` fixed-timestep loop, drains a command queue at the start of each tick, and posts a `SimulationSnapshot` every tick. `requestAnimationFrame` is unavailable in a worker, so a `setTimeout`-driven loop is used instead.
 - **Commands in (`src/sim/Command.ts`).** All intent is a typed `Command`: `input:*` (e.g. `input:click`), `action:*` (pause, cycle speed, upgrade, sell, select tower/build type, targeting, …), `lifecycle:*` (`init`/`dispose`), and future `llm:*`. The main thread dispatches via `commandBus.dispatchCommand` → `WorkerCommandDispatcher`, which forwards through `postMessage`. Hover and camera are main-thread-only and never become commands.
-- **Snapshots out (`src/sim/SimulationSnapshot.ts`, `SnapshotSerializer.ts`).** Each tick the worker serializes plain-data DTOs — `enemies`, `towers`, `projectiles`, `particleSpawns` (sparse spawn requests), `spawnStates`, `paths`/`pathsVersion` (worker-authoritative enemy paths for highlight rendering), `waveGraphDots`/`waveGraphDotsGeneration` (per-interval wave-graph data, shipped only when generation changes), `gridLayout` (constant map layout for the commander worker, omitted once cached), `progressivePlacements` (progressive stamp log, shipped only when `layoutGeneration` changes), `lightningEffects`/`stunEffects` (ephemeral visual effects, `undefined` when their buffers are empty), plus a `meta` scalar block (lives, gold, wave, selection, `lastScaledDt`, etc.) and a `persistDirty` flag. Snapshots are versioned: `SNAPSHOT_SCHEMA_VERSION` is stamped on every snapshot and `SnapshotStore.apply` rejects a snapshot from another schema version (warn once, keep the previous). Enemy animation payloads (walking/hitReaction/attack theme objects with inline SVG) are **not** shipped — they are constant per type and the render proxies resolve frames from the active theme; only timing marks (`hitAnimTime`, `attackAnimTime`, `gameSeconds`) ride the snapshot. `SnapshotSerializer.buildSnapshot` reads entity fields directly; effects are *peeked* (never consumed) during build, and `WorkerEntry` consumes the particle/lightning/stun buffers only after a successful `postMessage`, so a built-but-not-posted snapshot re-ships the same effects instead of dropping them. The render managers' `syncFromGameEngine` signatures take these snapshot arrays.
+- **Snapshots out (`src/sim/SimulationSnapshot.ts`, `SnapshotSerializer.ts`).** Each tick the worker serializes plain-data DTOs — `enemies`, `towers`, `projectiles`, `particleSpawns` (sparse spawn requests), `spawnStates`, `paths`/`pathsVersion` (worker-authoritative enemy paths for highlight rendering), `waveGraphDots`/`waveGraphDotsGeneration` (per-interval wave-graph data, shipped only when generation changes), `gridLayout` (constant map layout for the commander worker, omitted once cached), `progressivePlacements` (progressive stamp log, shipped only when `layoutGeneration` changes), `lightningEffects`/`stunEffects` (ephemeral visual effects, `undefined` when their buffers are empty; each carries the `simSeconds` at which it resolved, and a stun effect carries the `targetId` it stunned), plus a `meta` scalar block (lives, gold, wave, selection, `lastScaledDt`, etc.) and a `persistDirty` flag. Snapshots are versioned: `SNAPSHOT_SCHEMA_VERSION` is stamped on every snapshot and `SnapshotStore.apply` rejects a snapshot from another schema version (warn once, keep the previous). Enemy animation payloads (walking/hitReaction/attack theme objects with inline SVG) are **not** shipped — they are constant per type and the render proxies resolve frames from the active theme; only timing marks (`hitAnimTime`, `attackAnimTime`, `gameSeconds`) ride the snapshot. `SnapshotSerializer.buildSnapshot` reads entity fields directly; effects are *peeked* (never consumed) during build, and `WorkerEntry` consumes the particle/lightning/stun buffers only after a successful `postMessage`, so a built-but-not-posted snapshot re-ships the same effects instead of dropping them. The render managers' `syncFromGameEngine` signatures take these snapshot arrays.
 - **Reactive mirror (`src/sim/SnapshotStore.ts`).** On the main thread, `SnapshotStore` holds the latest snapshot and diff-mirrors `meta` into `gameStore` (the reactive projection). The rAF render loop reads from the `SnapshotStore`, never from the engine. `gameStore` is a cache; the worker is authoritative, and reconciliation happens within one frame.
 - **HostBindings seam (`src/sim/HostBindings.ts`).** The sim reaches the outside world only through `HostBindings`: `playSound`, `notifyUi`, `schedulePersistSave`, `syncGridTower`, `requestConfirm`. Implemented twice — `WorkerHostBindings` (worker → `postMessage`) and `MainThreadHostBindings` in `src/sim-adapters/` (main thread → `SoundManager`/`uiStore`/`persistStore`). This seam is what made the worker migration behavior-preserving at every step.
 - **Persistence batching.** The worker sets `persistDirty` on persist mutations and the host flushes `schedulePersistSave` only on significant events (wave change, game-over/victory, new milestone claim, or a 5s fallback), avoiding a `localStorage` write per mutation.
@@ -281,6 +281,48 @@ sequence ids so each consumer acks independently and the worker posts when the
 max-latency fallback (post anyway if `awaitingAck` has been true beyond N ms)
  should also be reconsidered then so a stalled consumer cannot starve the others.
 This is the main open design point before introducing additional stream readers.
+
+**Staleness of delayed effects.** The ack gate above can hold a snapshot across
+many worker ticks, and lightning/stun effects sit in a peeked buffer until a post
+lands — so an effect can reach the renderer several sim-seconds after it resolved.
+A bolt carries the `simSeconds` it was fired at, and `EffectManager` ages it on
+arrival by `snapshot.meta.simSeconds - effect.simSeconds`: an effect that already
+spent its whole visible life in the buffer is dropped, and a partially-spent one
+fades in from where it actually is. Without the stamp a delayed effect restarted
+at full life on a position the world had left, which read as lightning lagging
+seconds behind the towers firing it.
+
+### Lightning and Stun Effect Pools
+
+`EffectManager` holds two `Map`s of live effects — keyed by a generated id for
+lightning, and by the stunned enemy (falling back to a rounded position) for stun
+marks. Three rules keep them from falling behind the action:
+
+- **Age before draw.** Both `syncLightning` and `syncStun` decrement every live
+  effect's life in a pass that runs *before* the pool-bounded draw loop. The stun
+  pass used to decrement inside the draw loop, so every entry past the last pool
+  slot never aged, never expired, and held its slot for the rest of the run —
+  new marks queued behind immortal entries and the pool wedged at whatever
+  positions those entries froze on.
+- **Evict oldest on add.** The maps are capped at `LIGHTNING_POOL_SIZE` (20) and
+  `STUN_POOL_SIZE` (50) when an effect is *inserted*, dropping the oldest.
+  Insertion order then leaves the newest batch on screen, so what you see is the
+  bolts and marks the sim just fired rather than the stalest it still holds. (The
+  pool table in `src/render/svg/types.ts` records this; the draw loop's `break` is
+  now a backstop, not the eviction path.)
+- **One mark per enemy.** A stun mark is keyed on `targetId` and re-centered each
+  frame on that enemy's live position from the snapshot's enemy list (falling back
+  to the shipped `x`/`y` once the enemy is gone). Keying on position minted a new
+  entry every snapshot the enemy shifted by a tenth of a pixel — roughly 18 live
+  entries per stunned enemy, all iterated twice per rendered frame. A refresh
+  restarts the flash, since a new stun application is a distinct event from the
+  one already showing.
+
+A stun group glows on its outer arc only. The inner white arc's points are
+rewritten every rendered frame, and a `feGaussianBlur` + `feMerge` per arc
+doubled the SVG filter work during a lightning barrage — slow main-thread frames
+throttle the snapshot stream, which is what makes these effects lag in the first
+place.
 
 ### Second Renderer (Text Minimap)
 
@@ -657,7 +699,7 @@ only removes its popstate listener and the router guard disposes the worker with
 | `src/composables/buildTile.ts` | `currentBuildTile(grid, hoverTile)`: the highlighted build tile — the hover tile while the pointer or the arrow keys have set one, else the map center the build preview snaps to first. The single resolution shared by the Enter and arrow-key paths in `Input.ts` and the build preview + site tooltip in `SvgGameRoot` |
 | `src/composables/usePanelDrag.ts` | Header-drag behavior for every floating in-game panel: one implementation of the mouse and touch gesture against a `read`/`write` pair, ownership of the gesture listeners (released on `mouseup`/`touchend`/`blur`/`touchcancel` and on unmount), and an optional viewport clamp that needs the panel element for its size. `panelRef` is required; `clampOnResize: false` opts a caller out of the automatic re-clamp on viewport resize |
 | `src/composables/progressivePlacement.ts` | Main-thread placement helpers shared by the keyboard path and the SVG click path: offer selection/rotation, site probing, and the right-click rotate entry point |
-| `src/sim/ProjectileManager.ts` | Game-side projectile simulation: travel, hits, splash, chain, burn, knockback. `computeMaxHitCount` is the single pierce-total helper for every tower path; bounce falloff scales damage and burn/slow/stun magnitudes together; `creditDamage` is the public out-of-band credit entry used by burn ticks. `flyingDamageMult` rides the projectile (`ProjectileGame`, `spawn` opts) and is read through `damageAgainstFlying` at every tower-sourced damage site — primary hit, splash, napalm burn dps, and the lightning primary/chain/stormcall/double-discharge hits and burn-circuit dps; cache hits read the plain `damage` |
+| `src/sim/ProjectileManager.ts` | Game-side projectile simulation: travel, hits, splash, chain, burn, knockback. `computeMaxHitCount` is the single pierce-total helper for every tower path; bounce falloff scales damage and burn/slow/stun magnitudes together; `creditDamage` is the public out-of-band credit entry used by burn ticks. `flyingDamageMult` rides the projectile (`ProjectileGame`, `spawn` opts) and is read through `damageAgainstFlying` at every tower-sourced damage site — primary hit, splash, napalm burn dps, and the lightning primary/chain/stormcall/double-discharge hits and burn-circuit dps; cache hits read the plain `damage`. `fireLightning` buffers its bolts and stun marks in a bounded FIFO (`PendingEffectBuffer`, drop-oldest at 256, trimmed as one prefix per insert rather than a `shift()` per entry) and stamps each with the engine clock `GameEngine` pushes in via `setSimSeconds`, plus the stunned enemy's id on a stun mark — the renderer ages and tracks from those |
 | `src/sim/ParticleSystem.ts` | Game-side particle simulation: spawn, motion, life/expiry |
 | `src/sim/WaveGraphTracker.ts` | Per-wave graph data: damage dealt, gold earned, gems earned, peak enemy HP per wave |
 | `src/sim/physics/PhysicsWorld.ts` | Rapier2d physics world: static geometry (base/towers/corridor walls), dynamic enemy bodies driven by velocity |
@@ -750,7 +792,7 @@ Multipliers compound multiplicatively, like every other effect in the game. The 
 | `src/render/svg/TowerManager.ts` | Tower rendering pool: `<use>` elements with barrel rotation, level pip `<circle>` elements |
 | `src/render/svg/ProjectileManager.ts` | Projectile rendering pool: `<circle>` bullets, `<line>` beams |
 | `src/render/svg/ParticleManager.ts` | Particle rendering pool: `<circle>` elements with fade/expansion |
-| `src/render/svg/EffectManager.ts` | Lightning paths, stun aura paths, build preview rect, range circle, upgrade button SVG elements |
+| `src/render/svg/EffectManager.ts` | Lightning paths, stun aura paths, build preview rect, range circle, upgrade button SVG elements. Lightning/stun pools age every live effect before the pool-bounded draw, evict oldest on add, drop an effect whose life elapsed in the worker's buffer, and key stun marks on the stunned enemy so they track it live (see "Lightning and Stun Effect Pools") |
 | `src/render/svg/UiOverlayManager.ts` | Pooled `<rect>` / `<text>` overlays: the **composite enemy bar**, boss HP text, and the wave-top medals. One bar row per enemy at `enemy.y - 12` — the health fill (`#00ff00` / `#ffff00` / `#ff0000` by hp percent) is the background and, when `shield > 0 && maxShield > 0`, the `#00ffff` shield fill draws in front of it in the same slot (the shield pool is appended after the health pool, which is what puts it in front; the shield slot is a bare `<rect>` because the health bar's own bg/border back the pair). That is why the health bar is force-shown while a shield is up, including at full hp — otherwise there is nothing for the shield to drain onto — and why breaking the shield leaves the green fill standing at the current enemy health with no position jump. Unshielded enemies keep the old rule: no bar at all while `hp === maxHp` (matching the text renderer). Tower bars render only while damaged. Wave-top medals are three pooled `<text>` glyphs drawn `TOWER_SCALED_SIZE / 2 + 12` above a tower (or the base center for the `"base"` entry); see the Wave Top Towers section |
 | `src/render/svg/SpawnManager.ts` | Spawn point rendering pool: `<use>` elements for spawn location indicators |
 | `src/render/svg/MapSiteLayer.ts` | Site glyph markup (supply drops with the `site-pulse` halo ring and `aria-label`, caches with HP bars plus icon and wave-scaled lock/unlock label and the same halo once broken open, buildings with icon and a `buildingBlurb` aria-label, an unpowered one wrapped in `<g opacity="0.45">`) behind a signature cache that includes `unlocked`, each cache's `hp`, and each building's `active` flag, so the layer only rewrites when a site, its damage, unlock or powered state, or the wave changes |
@@ -766,7 +808,7 @@ Multipliers compound multiplicatively, like every other effect in the game. The 
 | `src/render/text/types.ts` | `TextRenderScale` (separate x/y world→canvas scales) and `TextThemeAccess` interfaces |
 | `src/components/TextGameRoot.vue` | Second passive renderer: renders a `<pre>` static base grid + a `<canvas>` overlay, driven by its own rAF loop reading `getLatestSnapshot()`; no worker, no `snapshotAck`, no input |
 | `src/components/MinimapPanel.vue` | Movable hovering panel (drag from `usePanelDrag`, uses `gameStore.minimapPanelPos`) hosting `TextGameRoot`; toggled by `uiStore.showMinimap` |
-| `src/components/SvgGameRoot.vue` | Single SVG root: creates the simulation Web Worker, owns `SnapshotStore` (render loop reads snapshots) and `WorkerCommandDispatcher` (click/key intents → commands); rAF render loop does imperative DOM writes; the SVG viewBox is the camera (wheel zoom, right-drag / Alt+left-drag / inert-point left-drag pan); CTM-based mouse→world coordinate conversion; passes theme bundle to worker at `lifecycle:init` and to `useSvgStaticContent`; initializes SpawnManager; owns map-site hover (`siteHoverAt` on the pointer, `.site-hover` tooltip div, suppressed while the picker or a pan is active; in build mode the tooltip also follows the highlighted build tile via `siteHoverAtTile` for all three site kinds, anchored at the tile center, re-resolved on tile, build-selection, and site-list changes) |
+| `src/components/SvgGameRoot.vue` | Single SVG root: creates the simulation Web Worker, owns `SnapshotStore` (render loop reads snapshots) and `WorkerCommandDispatcher` (click/key intents → commands); rAF render loop does imperative DOM writes; the SVG viewBox is the camera (wheel zoom, right-drag / Alt+left-drag / inert-point left-drag pan); CTM-based mouse→world coordinate conversion; passes theme bundle to worker at `lifecycle:init` and to `useSvgStaticContent`; initializes SpawnManager; owns map-site hover (`siteHoverAt` on the pointer, `.site-hover` tooltip div, suppressed while the picker or a pan is active; in build mode the tooltip also follows the highlighted build tile via `siteHoverAtTile` for all three site kinds, anchored at the tile center, re-resolved on tile, build-selection, and site-list changes). On each new snapshot it hands `snapshot.meta.simSeconds` and `snapshot.enemies` to `EffectManager.syncVisualEffectsFromSnapshot` so delayed lightning/stun effects are aged and stun marks tracked live |
 
 ### Audio
 

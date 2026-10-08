@@ -2,7 +2,6 @@ import { TOWER_BASE, TOWER_LEVEL_RANGE_MULT } from "@/sim/ConstantsTower.js";
 import { LIGHTNING_POOL_SIZE, STUN_POOL_SIZE, SVG_NS, GRID_TILE_SIZE as TILE_SIZE } from "./types.js";
 
 interface LightningEffect {
-  id: string;
   startX: number;
   startY: number;
   endX: number;
@@ -13,11 +12,36 @@ interface LightningEffect {
 }
 
 interface StunEffect {
-  id: string;
   x: number;
   y: number;
   remainingLife: number;
   maxLife: number;
+  // The stunned enemy, when the snapshot carried one. The mark centers on that
+  // enemy's live position so it stays on the enemy instead of trailing the point
+  // the bolt resolved at; null falls back to the shipped x/y.
+  targetId: number | null;
+}
+
+// Structural view of the enemy a stun mark follows. EnemySnapshot satisfies it.
+interface StunTargetView {
+  id: number;
+  x: number;
+  y: number;
+}
+
+interface LightningEffectSnapshot {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  simSeconds: number;
+}
+
+interface StunEffectSnapshot {
+  x: number;
+  y: number;
+  simSeconds: number;
+  targetId?: number;
 }
 
 // Minimal structural view of the Grid needed to anchor the splash circle on a
@@ -60,6 +84,9 @@ const STUN_COLOR_INNER = "#ffffff";
 const STUN_STROKE_OUTER = 2.5;
 const STUN_STROKE_INNER = 1.5;
 const STUN_STROKE_OPACITY_SCALE = 0.5;
+// How long a stun mark reads for once it lands. Independent of the sim stun
+// duration, which is budgeted per enemy and can be far shorter than the flash.
+const STUN_MARK_SECONDS = 0.3;
 
 export class EffectManager {
   private lightningPool: SVGPolylineElement[] = [];
@@ -78,9 +105,16 @@ export class EffectManager {
 
   private lightningEffects: Map<string, LightningEffect> = new Map();
   private stunEffects: Map<string, StunEffect> = new Map();
+  // Reused expiry scratch: the sync loops collect dead keys here instead of
+  // allocating an array per rendered frame. One field per pool so neither loop can
+  // disturb the other's pending list.
+  private expiringLightningKeys: string[] = [];
+  private expiringStunKeys: string[] = [];
+  // Live enemy positions by id, rebuilt once per new snapshot. Stun marks read
+  // it to stay centered on the enemy they stunned.
+  private enemiesById: Map<number, StunTargetView> = new Map();
 
   private nextLightningId: number = 0;
-  private nextStunId: number = 0;
 
   private buildPreviewSpriteLastId = "";
   private buildPreviewSpriteLastTransform = "";
@@ -199,33 +233,67 @@ export class EffectManager {
     layer.appendChild(this.selectedTileRectEl);
   }
 
-  addLightningEffect(startX: number, startY: number, endX: number, endY: number): string {
+  // `life` is what remains of the effect, so a caller that already spent part of
+  // the flash in the worker's effect buffer passes the reduced value: the bolt
+  // then fades from where it actually is in its life instead of restarting at
+  // full opacity. The collection is capped at the pool size on insert, evicting
+  // the oldest — Map iteration is insertion-ordered, so what survives overflow is
+  // the newest batch, not the stalest.
+  addLightningEffect(startX: number, startY: number, endX: number, endY: number, life: number): string {
     const id = this.generateLightningId();
     const effect: LightningEffect = {
-      id,
       startX,
       startY,
       endX,
       endY,
-      life: LIGHTNING_LIFE_SECONDS,
+      life,
       maxLife: LIGHTNING_LIFE_SECONDS,
       seed: Math.random() * 1000,
     };
+    this.evictOldestLightning();
     this.lightningEffects.set(id, effect);
     return id;
   }
 
-  addStunEffect(x: number, y: number, duration: number): string {
-    const key = `${x.toFixed(1)},${y.toFixed(1)}`;
+  private evictOldestLightning(): void {
+    if (this.lightningEffects.size < LIGHTNING_POOL_SIZE) return;
+    const oldest = this.lightningEffects.keys().next();
+    if (oldest.done !== true) this.lightningEffects.delete(oldest.value);
+  }
+
+  // Keyed on the stunned enemy when the snapshot carried one, so a chain stun
+  // refreshes a single mark per enemy instead of minting a new entry every
+  // snapshot the enemy shifts by even a tenth of a pixel (the position-keyed form
+  // grew to ~18 live entries per stunned enemy, all of them iterated per frame).
+  //
+  // `remainingLife` is what a *first* insert gets, reduced by the time the mark
+  // spent unshown in the worker's buffer. A refresh instead restarts the flash at
+  // the full mark duration: it is a new stun application, a distinct event from
+  // the one already on screen, and there is no delivery delay left to discount.
+  addStunEffect(x: number, y: number, remainingLife: number, targetId: number | null = null): string {
+    const key = targetId !== null ? `enemy-${targetId}` : `${x.toFixed(1)},${y.toFixed(1)}`;
     const existing = this.stunEffects.get(key);
     if (existing) {
-      existing.remainingLife = Math.max(existing.remainingLife, duration);
-      return existing.id;
+      existing.remainingLife = STUN_MARK_SECONDS;
+      existing.x = x;
+      existing.y = y;
+      existing.targetId = targetId;
+      // Re-insert so a refreshed mark counts as the newest and is not evicted
+      // ahead of marks that have not been refreshed in this long.
+      this.stunEffects.delete(key);
+      this.stunEffects.set(key, existing);
+      return key;
     }
-    const id = this.generateStunId();
-    const effect: StunEffect = { id, x, y, remainingLife: duration, maxLife: duration };
+    const effect: StunEffect = { x, y, remainingLife, maxLife: STUN_MARK_SECONDS, targetId };
+    this.evictOldestStun();
     this.stunEffects.set(key, effect);
-    return id;
+    return key;
+  }
+
+  private evictOldestStun(): void {
+    if (this.stunEffects.size < STUN_POOL_SIZE) return;
+    const oldest = this.stunEffects.keys().next();
+    if (oldest.done !== true) this.stunEffects.delete(oldest.value);
   }
 
   syncFromGameEngine(
@@ -281,21 +349,52 @@ export class EffectManager {
   // here: absence means "nothing new this frame", not "clear existing effects".
   // The renderer's own pool ages and hides effects independently.
   syncVisualEffectsFromSnapshot(
-    lightningEffects: Array<{ x1: number; y1: number; x2: number; y2: number }> | undefined,
-    stunEffects: Array<{ x: number; y: number }> | undefined,
+    lightningEffects: LightningEffectSnapshot[] | undefined,
+    stunEffects: StunEffectSnapshot[] | undefined,
+    simSeconds: number,
+    enemies: readonly StunTargetView[] | undefined,
   ): void {
+    this.enemiesById.clear();
+    if (enemies) {
+      for (const enemy of enemies) {
+        this.enemiesById.set(enemy.id, enemy);
+      }
+    }
+
+    // An effect whose whole visible life elapsed while it waited in the worker's
+    // buffer is dropped on arrival — the ack gate can hold a snapshot across many
+    // worker ticks, and a bolt redrawn at full life on a position the world has
+    // already left is exactly the lag this ages out.
     for (const bolt of lightningEffects ?? []) {
-      this.addLightningEffect(bolt.x1, bolt.y1, bolt.x2, bolt.y2);
+      const life = LIGHTNING_LIFE_SECONDS - Math.max(0, simSeconds - bolt.simSeconds);
+      if (life <= 0) continue;
+      this.addLightningEffect(bolt.x1, bolt.y1, bolt.x2, bolt.y2, life);
     }
     for (const stun of stunEffects ?? []) {
-      this.addStunEffect(stun.x, stun.y, 0.3);
+      const life = STUN_MARK_SECONDS - Math.max(0, simSeconds - stun.simSeconds);
+      if (life <= 0) continue;
+      this.addStunEffect(stun.x, stun.y, life, stun.targetId ?? null);
     }
   }
 
+  // Ages every live effect before drawing, so nothing is skipped by the pool
+  // bound (the collections are capped at the pool size on insert, so both loops
+  // below are bounded). Aging inside the draw loop used to leave every entry past
+  // the last pool slot at a frozen life: it never expired, never left the map, and
+  // permanently held its slot.
   private syncLightning(dt: number): void {
+    const expiring = this.expiringLightningKeys;
+    expiring.length = 0;
+    for (const [id, effect] of this.lightningEffects) {
+      effect.life -= dt;
+      if (effect.life <= 0) expiring.push(id);
+    }
+    for (const id of expiring) {
+      this.lightningEffects.delete(id);
+    }
+
     let slotIndex = 0;
     for (const effect of this.lightningEffects.values()) {
-      if (effect.life <= 0) continue;
       if (slotIndex >= this.lightningPool.length) break;
 
       const polyline = this.lightningPool[slotIndex]!;
@@ -319,17 +418,6 @@ export class EffectManager {
 
     for (let i = slotIndex; i < this.lightningPool.length; i++) {
       this.lightningPool[i]!.style.visibility = "hidden";
-    }
-
-    const expiredIds: string[] = [];
-    for (const [id, effect] of this.lightningEffects) {
-      effect.life -= dt;
-      if (effect.life <= 0) {
-        expiredIds.push(id);
-      }
-    }
-    for (const id of expiredIds) {
-      this.lightningEffects.delete(id);
     }
   }
 
@@ -370,9 +458,18 @@ export class EffectManager {
   }
 
   private syncStun(dt: number): void {
+    const expiring = this.expiringStunKeys;
+    expiring.length = 0;
+    for (const [key, effect] of this.stunEffects) {
+      effect.remainingLife -= dt;
+      if (effect.remainingLife <= 0) expiring.push(key);
+    }
+    for (const key of expiring) {
+      this.stunEffects.delete(key);
+    }
+
     let slotIndex = 0;
     for (const effect of this.stunEffects.values()) {
-      if (effect.remainingLife <= 0) continue;
       if (slotIndex >= this.stunPool.length) break;
 
       const group = this.stunPool[slotIndex]!;
@@ -399,25 +496,19 @@ export class EffectManager {
       const innerOpacity = (flash ? 1.0 : 0.08) * STUN_STROKE_OPACITY_SCALE;
       innerArc.setAttribute("opacity", innerOpacity.toFixed(3));
 
-      group.setAttribute("transform", `translate(${effect.x.toFixed(1)}, ${effect.y.toFixed(1)})`);
+      // A mark with a live enemy follows it; without one (or once the enemy has
+      // left the snapshot's enemy list) it stays where the bolt resolved.
+      const target = effect.targetId === null ? undefined : this.enemiesById.get(effect.targetId);
+      const drawX = target?.x ?? effect.x;
+      const drawY = target?.y ?? effect.y;
+
+      group.setAttribute("transform", `translate(${drawX.toFixed(1)}, ${drawY.toFixed(1)})`);
       group.setAttribute("opacity", lifeRatio.toFixed(3));
       group.style.visibility = "visible";
-
-      effect.remainingLife -= dt;
     }
 
     for (let i = slotIndex; i < this.stunPool.length; i++) {
       this.stunPool[i]!.style.visibility = "hidden";
-    }
-
-    const expiredKeys: string[] = [];
-    for (const [key, effect] of this.stunEffects) {
-      if (effect.remainingLife <= 0) {
-        expiredKeys.push(key);
-      }
-    }
-    for (const key of expiredKeys) {
-      this.stunEffects.delete(key);
     }
   }
 
@@ -459,7 +550,9 @@ export class EffectManager {
     innerArc.setAttribute("stroke-width", String(STUN_STROKE_INNER));
     innerArc.setAttribute("stroke-linecap", "round");
     innerArc.setAttribute("stroke-linejoin", "round");
-    innerArc.setAttribute("filter", "url(#glow)");
+    // No glow on the inner arc: its points are rewritten every rendered frame, and
+    // a feGaussianBlur+feMerge per arc doubled the filter work during a lightning
+    // barrage for a 1.5px white line the blurred 2.5px outer arc already carries.
     group.appendChild(innerArc);
   }
 
@@ -739,11 +832,6 @@ export class EffectManager {
     return `lightning-${this.nextLightningId}`;
   }
 
-  private generateStunId(): string {
-    this.nextStunId += 1;
-    return `stun-${this.nextStunId}`;
-  }
-
   dispose(): void {
     for (const polyline of this.lightningPool) {
       if (polyline.parentNode) {
@@ -787,5 +875,8 @@ export class EffectManager {
     this.stunPool = [];
     this.lightningEffects.clear();
     this.stunEffects.clear();
+    this.enemiesById.clear();
+    this.expiringLightningKeys.length = 0;
+    this.expiringStunKeys.length = 0;
   }
 }

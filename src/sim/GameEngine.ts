@@ -598,6 +598,10 @@ export class GameEngine {
     if (this.runState.state === GameState.VICTORY || this.runState.state === GameState.GAME_OVER) return;
 
     this.simSeconds += dt;
+    // Cross-module: the projectile manager stamps the run clock onto the lightning
+    // and stun effects it buffers, so the renderer can age an effect by how long it
+    // waited for a snapshot post instead of restarting its life on arrival.
+    this.projectileManager?.setSimSeconds(this.simSeconds);
 
     this.waveManager.update(
       dt,

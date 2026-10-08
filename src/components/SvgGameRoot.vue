@@ -1072,10 +1072,16 @@ function renderLoop(): void {
 
   // addLightningEffect re-adds with a fresh seed per call, so the spawn is gated
   // on the new-snapshot signal — not animDt, which is also 0 for a new paused
-  // post whose arming tick generated bolts that must still appear. Stun dedups
-  // by position key; lightning does not.
+  // post whose arming tick generated bolts that must still appear. simSeconds lets
+  // the manager age each effect by the time it spent in the worker buffer, so a
+  // held snapshot drops its spent bolts instead of replaying them stale.
   if (isNewSnapshot) {
-    effectManager.syncVisualEffectsFromSnapshot(snapshot.lightningEffects, snapshot.stunEffects);
+    effectManager.syncVisualEffectsFromSnapshot(
+      snapshot.lightningEffects,
+      snapshot.stunEffects,
+      snapshot.meta.simSeconds ?? 0,
+      snapshot.enemies,
+    );
   }
 
   const selectedTower = snapshotStore.resolveSelectedTower();

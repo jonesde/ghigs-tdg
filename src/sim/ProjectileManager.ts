@@ -233,25 +233,71 @@ export interface EnemyManager {
 export type OnStunEffectCallback = (x: number, y: number, duration: number) => void;
 export type OnGoldRewardCallback = (amount: number) => void;
 
+// `simSeconds` is the engine clock at the instant the effect resolved. The render
+// side ages an effect by (snapshot simSeconds - this) on arrival, so an effect
+// that rides a stalled snapshot stream (the ack gate throttles posts, and effects
+// stay buffered until one lands) is drawn at its true age or dropped, rather than
+// restarting at full life on a stale position.
 export interface LightningVisualEffect {
   x1: number;
   y1: number;
   x2: number;
   y2: number;
+  simSeconds: number;
 }
 
+// `targetId` lets the renderer key the stun mark on the enemy (one mark per
+// stunned enemy) and center it on that enemy's live position. `x`/`y` remain the
+// fall-back for when the enemy is gone or off-pool.
 export interface StunVisualEffect {
   x: number;
   y: number;
+  simSeconds: number;
+  targetId?: number;
 }
 
 // Drop-oldest caps for the per-tick visual-effect buffers. Effects are only
 // cleared after a successful snapshot post, so a long stall (renderer not
 // draining) would otherwise grow them without bound. The render pools only draw
-// the 20 newest lightning bolts / 50 stun marks anyway, so older entries are
-// invisible and safe to evict.
+// the newest 20 lightning bolts / 50 stun marks anyway, and an effect older than
+// its own lifetime is dropped on arrival, so evicted entries are invisible either
+// way.
 export const MAX_PENDING_LIGHTNING_EFFECTS = 256;
 export const MAX_PENDING_STUN_EFFECTS = 256;
+
+// Bounded FIFO of effects awaiting the next successful snapshot post. The cap is
+// enforced by dropping the overflow prefix in one re-slice per push rather than
+// an Array.shift() per insert: a lightning barrage inserts hundreds of entries
+// per tick, and a per-insert shift is O(cap) inside the worker's hot path.
+class PendingEffectBuffer<T> {
+  private entries: T[] = [];
+  private head = 0;
+
+  constructor(private readonly cap: number) {}
+
+  push(entry: T): void {
+    this.entries.push(entry);
+    this.trimToCap();
+  }
+
+  private trimToCap(): void {
+    const liveCount = this.entries.length - this.head;
+    if (liveCount <= this.cap) return;
+    // Re-slice rather than splice in place so the array already handed to a
+    // posted snapshot is never mutated underneath the structured clone.
+    this.entries = this.entries.slice(this.head + (liveCount - this.cap));
+    this.head = 0;
+  }
+
+  snapshot(): T[] {
+    return this.head === 0 ? this.entries.slice() : this.entries.slice(this.head);
+  }
+
+  clear(): void {
+    this.entries = [];
+    this.head = 0;
+  }
+}
 
 export class ProjectileManager {
   private projectiles: ProjectileGame[];
@@ -264,8 +310,8 @@ export class ProjectileManager {
   private onCacheHit: ((cacheId: number, damage: number) => void) | null = null;
   private nextProjectileId: number;
   private towerLookup: ((towerId: string) => DamageCreditTarget | null) | null = null;
-  private pendingLightning: LightningVisualEffect[];
-  private pendingStuns: StunVisualEffect[];
+  private pendingLightning: PendingEffectBuffer<LightningVisualEffect>;
+  private pendingStuns: PendingEffectBuffer<StunVisualEffect>;
   private renderDataBuffer: Array<{ id: number; x: number; y: number; radius: number; color: string; icon: string }> =
     [];
   // Seeded combat-roll source, forked per run by GameEngine from (map seed, runId).
@@ -289,6 +335,9 @@ export class ProjectileManager {
   private nearestSearchBest: LightningTarget | null = null;
   private nearestSearchBestDistSquared: number = Infinity;
   private nearestSearchSubRanges: number[] = [0, 0, 0, 0];
+  // Engine clock, pushed in by GameEngine each tick. Stamped onto every buffered
+  // visual effect so the renderer can age it on arrival.
+  private simSeconds: number = 0;
   private readonly nearestSearchVisitor = (enemy: LightningTarget): void => {
     if (enemy.id === this.nearestSearchExcludeId) return;
     if (this.nearestSearchExcludeIds?.has(enemy.id)) return;
@@ -317,14 +366,23 @@ export class ProjectileManager {
     this.onGoldReward = null;
     this.nextProjectileId = 1;
     this.towerLookup = towerLookup;
-    this.pendingLightning = [];
-    this.pendingStuns = [];
+    this.pendingLightning = new PendingEffectBuffer<LightningVisualEffect>(MAX_PENDING_LIGHTNING_EFFECTS);
+    this.pendingStuns = new PendingEffectBuffer<StunVisualEffect>(MAX_PENDING_STUN_EFFECTS);
     if (rng) this.rng = rng;
   }
 
   // Cross-module: GameEngine injects its per-run seeded fork here after construct.
   setRng(rng: () => number): void {
     this.rng = rng;
+  }
+
+  // Cross-module: GameEngine owns the run clock and pushes it here each tick so
+  // the buffered visual effects can carry the sim time they resolved at. The
+  // renderer ages an arriving effect by the difference against the snapshot's
+  // own simSeconds, which is what keeps a delayed effect from being redrawn at
+  // full life on a stale position.
+  setSimSeconds(simSeconds: number): void {
+    this.simSeconds = simSeconds;
   }
 
   setPhysicsWorld(physicsWorld: PhysicsWorld | null): void {
@@ -1223,7 +1281,13 @@ export class ProjectileManager {
         );
         nextTarget.applyBurn(burnDps, BURN_CIRCUIT_DURATION, opts.towerId);
       }
-      this.bufferLightningEffect({ x1: current.x, y1: current.y, x2: nextTarget.x, y2: nextTarget.y });
+      this.bufferLightningEffect({
+        x1: current.x,
+        y1: current.y,
+        x2: nextTarget.x,
+        y2: nextTarget.y,
+        simSeconds: this.simSeconds,
+      });
       chainsUsed++;
       remainingChains--;
       current = nextTarget;
@@ -1255,16 +1319,28 @@ export class ProjectileManager {
             opacity: HIT_PARTICLE_OPACITY_SCALE,
           });
         }
-        this.bufferLightningEffect({ x1: opts.originX, y1: opts.originY, x2: stormTarget.x, y2: stormTarget.y });
+        this.bufferLightningEffect({
+          x1: opts.originX,
+          y1: opts.originY,
+          x2: stormTarget.x,
+          y2: stormTarget.y,
+          simSeconds: this.simSeconds,
+        });
       }
     }
 
     if (opts.stunDuration > 0) {
       for (const target of chainTargets) {
         if (target.applyStun) target.applyStun(opts.stunDuration);
-        this.bufferStunEffect({ x: target.x, y: target.y });
+        this.bufferStunEffect({ x: target.x, y: target.y, targetId: target.id, simSeconds: this.simSeconds });
       }
-      this.bufferLightningEffect({ x1: opts.originX, y1: opts.originY, x2: current.x, y2: current.y });
+      this.bufferLightningEffect({
+        x1: opts.originX,
+        y1: opts.originY,
+        x2: current.x,
+        y2: current.y,
+        simSeconds: this.simSeconds,
+      });
     }
 
     // Double Discharge: 10% chance to fire a second bolt to a different target
@@ -1289,7 +1365,13 @@ export class ProjectileManager {
         if (opts.stunDuration > 0 && secondTarget.applyStun) {
           secondTarget.applyStun(opts.stunDuration);
         }
-        this.bufferLightningEffect({ x1: opts.originX, y1: opts.originY, x2: secondTarget.x, y2: secondTarget.y });
+        this.bufferLightningEffect({
+          x1: opts.originX,
+          y1: opts.originY,
+          x2: secondTarget.x,
+          y2: secondTarget.y,
+          simSeconds: this.simSeconds,
+        });
       }
     }
   }
@@ -1379,34 +1461,26 @@ export class ProjectileManager {
   }
 
   getRenderVisualEffects(): { lightning: LightningVisualEffect[]; stuns: StunVisualEffect[] } {
-    return { lightning: [...this.pendingLightning], stuns: [...this.pendingStuns] };
+    return { lightning: this.pendingLightning.snapshot(), stuns: this.pendingStuns.snapshot() };
   }
 
-  // Bounded buffer writes: newest effects are the ones a fresh snapshot still
-  // draws, so evict the oldest when the cap is hit.
   private bufferLightningEffect(effect: LightningVisualEffect): void {
-    if (this.pendingLightning.length >= MAX_PENDING_LIGHTNING_EFFECTS) {
-      this.pendingLightning.shift();
-    }
     this.pendingLightning.push(effect);
   }
 
   private bufferStunEffect(effect: StunVisualEffect): void {
-    if (this.pendingStuns.length >= MAX_PENDING_STUN_EFFECTS) {
-      this.pendingStuns.shift();
-    }
     this.pendingStuns.push(effect);
   }
 
   consumeRenderVisualEffects(): { lightning: LightningVisualEffect[]; stuns: StunVisualEffect[] } {
-    const effects = { lightning: [...this.pendingLightning], stuns: [...this.pendingStuns] };
+    const effects = this.getRenderVisualEffects();
     this.clearVisualEffects();
     return effects;
   }
 
   private clearVisualEffects(): void {
-    this.pendingLightning = [];
-    this.pendingStuns = [];
+    this.pendingLightning.clear();
+    this.pendingStuns.clear();
   }
 
   clear(): void {
@@ -1416,7 +1490,7 @@ export class ProjectileManager {
     this.bodyIds.clear();
     this.projectiles = [];
     this.projectilesById.clear();
-    this.pendingLightning = [];
-    this.pendingStuns = [];
+    this.pendingLightning.clear();
+    this.pendingStuns.clear();
   }
 }

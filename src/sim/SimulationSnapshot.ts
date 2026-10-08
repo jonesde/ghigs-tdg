@@ -17,6 +17,21 @@ import type { BonusOffer, BonusPickerState, RunBonuses } from "./runBonuses.js";
 // render/HMR pairing can never show an unpowered building at full strength.
 export const SNAPSHOT_SCHEMA_VERSION = 4;
 
+export interface LightningEffectSnapshot {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  simSeconds: number;
+}
+
+export interface StunEffectSnapshot {
+  x: number;
+  y: number;
+  simSeconds: number;
+  targetId?: number;
+}
+
 export interface SimulationSnapshot {
   schemaVersion: number; // SNAPSHOT_SCHEMA_VERSION; consumers reject mismatches
   frameId: number; // monotonic per-tick counter
@@ -68,8 +83,16 @@ export interface SimulationSnapshot {
   // nothing), exactly like particleSpawns. Cleared only after a successful
   // postMessage (WorkerEntry consumes), never during build, so a snapshot that
   // was built but not posted keeps its effects for the next build.
-  lightningEffects: Array<{ x1: number; y1: number; x2: number; y2: number }> | undefined;
-  stunEffects: Array<{ x: number; y: number }> | undefined;
+  //
+  // `simSeconds` is the engine clock when the effect resolved. Effects ride a
+  // buffered stream that the ack gate can stall, so the renderer ages an arriving
+  // effect by (meta.simSeconds - effect.simSeconds) and drops it once that exceeds
+  // its lifetime. Without the stamp a delayed effect restarts at full life on a
+  // position the world has already left. A stun effect's `targetId` lets the
+  // renderer key one mark per enemy and center it on that enemy's live position;
+  // `x`/`y` are the fall-back for an enemy that has since left the frame.
+  lightningEffects: LightningEffectSnapshot[] | undefined;
+  stunEffects: StunEffectSnapshot[] | undefined;
   // Rapier debug-render line soup (flat 2D vertices: [x1,y1,x2,y2,...]). Always
   // shipped so the ASCII minimap can stroke collider outlines.
   debugPhysics: { vertices: number[] } | null;
