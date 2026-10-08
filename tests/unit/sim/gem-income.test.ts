@@ -79,10 +79,10 @@ describe("custom map gem multipliers", () => {
     expect(engine.runState.gemBreakdown.bossKills).toEqual({
       base: 1,
       afterDiff: 1,
-      afterRegion: 3,
-      afterFirstTime: 3,
+      afterRegion: 1,
+      afterFirstTime: 1,
     });
-    expect(engine.runState.runGemsEarned).toBe(3);
+    expect(engine.runState.runGemsEarned).toBe(1);
   });
 
   it("applies the same multiplier to custom progressive runs and records replay params", () => {
@@ -94,7 +94,7 @@ describe("custom map gem multipliers", () => {
     );
     engine.loadProgressiveMap({ regionId: 0, level: 12, entryCount: 1, seed: 999 });
     engine.onBossKilled();
-    expect(engine.runState.gemBreakdown.bossKills.afterRegion).toBe(3);
+    expect(engine.runState.gemBreakdown.bossKills.afterRegion).toBe(1);
     engine.endGame(false);
     const historyEntry = engine.persistState.runHistory[engine.persistState.runHistory.length - 1];
     expect(historyEntry.mapIndex).toBe(CUSTOM_PROGRESSIVE_MAP_INDEX);

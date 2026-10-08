@@ -152,6 +152,7 @@ export const PRE_EMPTIVE_WAVE_TIMER = economy.preEmptiveWaveTimer;
 export const DIFFICULTY_MULT_MIN = economy.difficultyMultMin;
 export const DIFFICULTY_MULT_MAX = economy.difficultyMultMax;
 export const DIFFICULTY_MULT_TICK = economy.difficultyMultTick;
+export const REGION_DIFFICULTY_MULT = economy.regionDifficultyMult;
 export const DIFFICULTY_MULT_GEM_BASE = economy.difficultyMultGemBase;
 
 export const MAP_GEM_MULTIPLIERS = economy.mapGemMultipliers;

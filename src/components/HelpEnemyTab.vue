@@ -2,7 +2,7 @@
 import { computed, ref } from "vue";
 import { formatEnemyLevelMult } from "@/content/formulas.js";
 import { getGameContent } from "@/content/gameContent.js";
-import { DIFFICULTY_MULT_TICK } from "@/sim/Constants.js";
+import { DIFFICULTY_MULT_TICK, REGION_DIFFICULTY_MULT } from "@/sim/Constants.js";
 import {
   BOSS_CADENCE,
   ENEMY_ORDER,
@@ -39,6 +39,7 @@ const mapLevel = computed(() => Math.max(1, gameStore.map?.level ?? 1));
 const bossCadence = computed(() => gameStore.map?.bossCadence ?? BOSS_CADENCE[0]!);
 const difficultyTick = computed(() => persistStore.difficulty?.multiplierTick ?? 0);
 const difficultyMult = computed(() => difficultyTick.value * DIFFICULTY_MULT_TICK + 1);
+const regionFactor = computed(() => REGION_DIFFICULTY_MULT * (gameStore.map?.regionId ?? 0));
 
 const firstWaveByType = new Map<string, number>();
 for (const threshold of ENEMY_TIER_THRESHOLDS) {
@@ -92,7 +93,7 @@ const enemyRows = computed<EnemyHelpRow[]>(() => {
   return ENEMY_ORDER.map((type) => {
     const meta = ENEMY_TYPES[type] as EnemyMeta;
     const visual = themeStore.getEnemyVisual(type);
-    const waveStats = computeEnemyWaveStats(meta, enemyLevel, wave.value, difficultyTick.value);
+    const waveStats = computeEnemyWaveStats(meta, enemyLevel, wave.value, difficultyTick.value, regionFactor.value);
     return {
       type,
       name: visual?.name ?? meta.name ?? type,

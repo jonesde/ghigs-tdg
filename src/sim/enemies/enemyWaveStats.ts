@@ -49,10 +49,11 @@ export function computeEnemyWaveStats(
   level: number,
   wave: number,
   difficultyTick: number,
+  regionFactor = 1,
 ): EnemyWaveStats {
   const waveHpMult = 1 + ENEMY_WAVE_HP_MULT * (wave - 1);
   const waveDamageMult = 1 + ENEMY_WAVE_DAMAGE_MULT * (wave - 1);
-  const diffMult = (difficultyTick || 0) * DIFFICULTY_MULT_TICK + 1;
+  const diffMult = ((difficultyTick || 0) * DIFFICULTY_MULT_TICK + 1) * (regionFactor || 1);
   const hpMult = ENEMY_LEVEL_HP_MULT(level) * waveHpMult * lateHpMult(wave) * diffMult;
   const attackDamage =
     meta.attackDamage * ENEMY_LEVEL_DAMAGE_MULT(level) * waveDamageMult * lateDamageMult(wave) * diffMult;

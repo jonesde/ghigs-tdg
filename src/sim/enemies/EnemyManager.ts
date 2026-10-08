@@ -57,6 +57,9 @@ export class EnemyManager {
   // GameEngine re-points it on action:syncPersist so a mid-run purchase reaches
   // enemies already on the field, not just ones spawned afterwards.
   woundDamageReductionPct: number = 0;
+  // Per-run enemy toughness bump (HP and damage), set by GameEngine from the map's
+  // regionId so higher regions feel like Region 0's late maps. Default 1 = Region 0.
+  regionFactor: number = 1;
   private idToEnemy: Map<number, Enemy>;
   private pendingQueues: Map<number, PendingEnemyEntry[]>;
   // Overflow evictions since run start. Bounded queues must stay lossless-visible:
@@ -385,6 +388,7 @@ export class EnemyManager {
       this.theme,
       this.defaultEnemyVisuals[type] ?? null,
       this.baseTarget,
+      this.regionFactor,
     );
     if (bossAbility !== undefined) enemy.bossAbility = bossAbility;
     // Cross-module: the engine counts a boss and writes its ability fields here,

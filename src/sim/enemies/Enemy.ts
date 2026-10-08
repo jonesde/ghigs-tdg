@@ -432,6 +432,7 @@ export class Enemy {
     theme: MapThemeData | null = null,
     defaultVisual: EnemyVisualMeta | null = null,
     baseTarget: AttackTarget | null = null,
+    regionFactor = 1,
   ) {
     const meta = ENEMY_TYPES[type] as unknown as EnemyMetaRef;
     this.id = nextId++;
@@ -452,7 +453,7 @@ export class Enemy {
     this.resist = meta.resist || 0;
     this.slowResist = meta.slowResist || 0;
     this.knockResist = meta.knockResist || 0;
-    const waveStats = computeEnemyWaveStats(meta, level, wave, difficultyTick);
+    const waveStats = computeEnemyWaveStats(meta, level, wave, difficultyTick, regionFactor);
     this.shield = waveStats.shield;
     this.maxShield = this.shield;
     this.heal = meta.heal || 0;

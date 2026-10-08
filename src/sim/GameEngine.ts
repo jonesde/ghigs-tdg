@@ -125,6 +125,7 @@ import {
   MILESTONE_WAVES,
   progressivePlacementInterval,
   progressiveRerollGoldPerWave,
+  REGION_DIFFICULTY_MULT,
   SELL_DISCOUNT_PCT,
   SLOW_HEALING_PER_ROUND,
   STARTING_BASE_HEALTH,
@@ -388,6 +389,9 @@ export class GameEngine {
       this.themeBundle.defaultEnemyVisuals,
     );
     this.enemyManager.setWoundDamageReductionPct(this.woundDamageReductionPct());
+    // Region bump on enemy HP & damage so higher regions feel like Region 0's late maps.
+    // Region 0 -> factor 1, byte-identical to prior behavior.
+    this.enemyManager.regionFactor = 1 + REGION_DIFFICULTY_MULT * mapData.regionId;
     // Runs inside spawn, after the ability field is set and before the crowd agent.
     this.enemyManager.onSpawned = (enemy) => this.onEnemySpawned(enemy);
     this.projectileManager = new ProjectileManager(this.enemyManager, this.particleSpawner, null, this.grid);

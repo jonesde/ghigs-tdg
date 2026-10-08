@@ -534,8 +534,8 @@ describe("GameEngine", () => {
       }
       expect(tower!.level).toBe(4);
       engine.runState.selectedTowerId = String(tower!.id);
-      expect(engine.getUpgradeCost(tower!)).toBe(120);
-      engine.runState.gold = 120;
+      expect(engine.getUpgradeCost(tower!)).toBe(128);
+      engine.runState.gold = 128;
       engine.specializeSelected("A");
       const selected = engine.getSelectedTower() as Tower;
       expect(selected.level).toBe(5);

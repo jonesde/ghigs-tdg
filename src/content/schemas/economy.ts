@@ -14,6 +14,7 @@ export const EconomyContentSchema = z.object({
   difficultyMultMin: z.number(),
   difficultyMultMax: z.number(),
   difficultyMultTick: z.number(),
+  regionDifficultyMult: z.number(),
   difficultyMultGemBase: z.number(),
   mapGemMultipliers: z.array(z.number()).length(36),
   firstTimeMilestoneMult: z.number(),

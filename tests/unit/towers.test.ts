@@ -575,7 +575,7 @@ describe("Tower", () => {
 
     it("level-up raises the threshold and cuts tiers until damage catches up", () => {
       const save = makeSave();
-      save.generalAddons.damageMilestoneBonus = 0; // tier 0: +5% damage per threshold
+      save.generalAddons.damageMilestoneBonus = 0; // tier 0: +2% damage per threshold
       const tower = new Tower("basic", 0, 0, save, makeMockGrid());
       tower.totalDamageDealt = MILESTONE_THRESHOLD_PER_LEVEL_SQUARED * 4;
       expect(tower.currentMilestoneBonus().tiers).toBe(4);
@@ -585,7 +585,7 @@ describe("Tower", () => {
       const bonusAfterUpgrade = tower.currentMilestoneBonus();
       expect(bonusAfterUpgrade.threshold).toBe(MILESTONE_THRESHOLD_PER_LEVEL_SQUARED * 4); // level 2 → 2² × 20,000
       expect(bonusAfterUpgrade.tiers).toBe(1); // floor(80,000 / 80,000)
-      expect(bonusAfterUpgrade.damagePct).toBeCloseTo(5, 6);
+      expect(bonusAfterUpgrade.damagePct).toBeCloseTo(2, 6);
 
       // Control: a level-2 tower with the same damage must have identical stats —
       // proves the upgraded tower recomputed at 1 tier instead of its stale 4.

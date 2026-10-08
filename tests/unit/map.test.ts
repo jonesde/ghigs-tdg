@@ -533,11 +533,11 @@ describe("Map generation", () => {
 
     it("MAP_GEM_MULTIPLIERS values increase with map index", () => {
       expect(MAP_GEM_MULTIPLIERS[0]).toBe(1);
-      expect(MAP_GEM_MULTIPLIERS[4]).toBe(2);
-      expect(MAP_GEM_MULTIPLIERS[8]).toBe(3);
-      expect(MAP_GEM_MULTIPLIERS[12]).toBe(4);
-      expect(MAP_GEM_MULTIPLIERS[24]).toBe(7);
-      expect(MAP_GEM_MULTIPLIERS[32]).toBe(10);
+      expect(MAP_GEM_MULTIPLIERS[4]).toBe(1);
+      expect(MAP_GEM_MULTIPLIERS[8]).toBe(1);
+      expect(MAP_GEM_MULTIPLIERS[12]).toBe(2);
+      expect(MAP_GEM_MULTIPLIERS[24]).toBe(3);
+      expect(MAP_GEM_MULTIPLIERS[32]).toBe(5);
     });
 
     it("serpentine spawn is in the outer 40% of the entry edge", () => {

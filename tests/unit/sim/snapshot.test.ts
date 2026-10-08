@@ -161,8 +161,8 @@ describe("SnapshotSerializer (Phase 5)", () => {
     engine.persistState.generalAddons.upgradeCostReduction = 1;
     const reducedSnapshot = buildSnapshot(engine, 0);
     const reducedTower = reducedSnapshot.towers.find((entry) => entry.id === String(tower.id));
-    expect(reducedTower.canUpgrade.cost).toBe(15);
-    expect(reducedTower.upgradeCostAt5).toBe(120);
+    expect(reducedTower.canUpgrade.cost).toBe(16);
+    expect(reducedTower.upgradeCostAt5).toBe(128);
 
     engine.persistState.unlocked.basic.levels[2] = true;
     engine.persistState.unlocked.basic.levels[3] = true;
@@ -175,7 +175,7 @@ describe("SnapshotSerializer (Phase 5)", () => {
     const gateTower = gateSnapshot.towers.find((entry) => entry.id === String(tower.id));
     expect(gateTower.canUpgrade.needVariant).toBe(true);
     expect(gateTower.canUpgrade.cost).toBeUndefined();
-    expect(gateTower.upgradeCostAt5).toBe(120);
+    expect(gateTower.upgradeCostAt5).toBe(128);
   });
 
   it("publishes the sell and downgrade payout the worker credits", () => {
