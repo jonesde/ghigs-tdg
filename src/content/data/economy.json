@@ -39,5 +39,5 @@
   "baseGoldCost": 50,
   "baseLevelHealthMult": 3,
   "milestoneBonusPct": [[0.05, 0.02], [0.1, 0.05], [0.2, 0.1]],
-  "milestoneThreshold": 6000
+  "milestoneThresholdPerLevelSquared": 20000
 }

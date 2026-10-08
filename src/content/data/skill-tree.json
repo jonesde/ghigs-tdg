@@ -170,11 +170,11 @@
     "damageMilestoneBonus": {
       "key": "damageMilestoneBonus",
       "label": "Experience Bonus",
-      "desc": "Towers gain bonus damage & speed per 6,000 total damage dealt.",
+      "desc": "Towers gain bonus damage & speed per 20,000 × tower level squared total damage dealt (20,000 at level 1 up to 980,000 at level 7). Leveling up raises the threshold and cuts the bonus until the tower deals more damage.",
       "tiers": [
-        { "label": "+5%/+2%", "desc": "+5% dmg, +2% speed per 6,000 damage." },
-        { "label": "+10%/+5%", "desc": "+10% dmg, +5% speed per 6,000 damage." },
-        { "label": "+20%/+10%", "desc": "+20% dmg, +10% speed per 6,000 damage." }
+        { "label": "+5%/+2%", "desc": "+5% dmg, +2% speed per 20,000 × tower level squared damage." },
+        { "label": "+10%/+5%", "desc": "+10% dmg, +5% speed per 20,000 × tower level squared damage." },
+        { "label": "+20%/+10%", "desc": "+20% dmg, +10% speed per 20,000 × tower level squared damage." }
       ],
       "costKey": "damageMilestoneBonus"
     },

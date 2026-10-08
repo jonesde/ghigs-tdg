@@ -5,7 +5,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MILESTONE_BONUS_PCT,
-  MILESTONE_THRESHOLD,
+  MILESTONE_THRESHOLD_PER_LEVEL_SQUARED,
   SELL_VALUE_RATIO,
   TERRAIN_HEIGHT_BONUS_PCT,
   TOWER_BASE,
@@ -500,7 +500,7 @@ describe("Tower", () => {
       const save = makeSave();
       save.generalAddons.damageMilestoneBonus = 0; // tier 0: +5% damage per threshold
       const tower = new Tower("basic", 0, 0, save, makeMockGrid());
-      tower.totalDamageDealt = MILESTONE_THRESHOLD;
+      tower.totalDamageDealt = MILESTONE_THRESHOLD_PER_LEVEL_SQUARED;
       const baseDamage = TOWER_BASE.basic.damage;
       const expectedDamage = baseDamage * (1 + MILESTONE_BONUS_PCT[0][0] * 1);
       expect(tower.stats.damage).toBeCloseTo(expectedDamage, 4);
@@ -510,7 +510,7 @@ describe("Tower", () => {
       const save = makeSave();
       save.generalAddons.damageMilestoneBonus = 0;
       const tower = new Tower("basic", 0, 0, save, makeMockGrid());
-      tower.totalDamageDealt = MILESTONE_THRESHOLD * 2;
+      tower.totalDamageDealt = MILESTONE_THRESHOLD_PER_LEVEL_SQUARED * 2;
       const baseDamage = TOWER_BASE.basic.damage;
       const expectedDamage = baseDamage * (1 + MILESTONE_BONUS_PCT[0][0] * 2);
       expect(tower.stats.damage).toBeCloseTo(expectedDamage, 4);
@@ -522,11 +522,11 @@ describe("Tower", () => {
       const tower = new Tower("basic", 0, 0, save, makeMockGrid());
 
       // Below threshold — stats are cached
-      tower.totalDamageDealt = MILESTONE_THRESHOLD - 1;
+      tower.totalDamageDealt = MILESTONE_THRESHOLD_PER_LEVEL_SQUARED - 1;
       const statsBelow = tower.stats;
 
       // Cross the threshold — should recompute without manual cache touch
-      tower.totalDamageDealt = MILESTONE_THRESHOLD;
+      tower.totalDamageDealt = MILESTONE_THRESHOLD_PER_LEVEL_SQUARED;
       const statsAbove = tower.stats;
 
       expect(statsAbove.damage).toBeGreaterThan(statsBelow.damage);
@@ -539,10 +539,10 @@ describe("Tower", () => {
       save.generalAddons.damageMilestoneBonus = 0; // tier 0: +5% damage per threshold
       const tower = new Tower("basic", 0, 0, save, makeMockGrid());
 
-      tower.totalDamageDealt = MILESTONE_THRESHOLD;
+      tower.totalDamageDealt = MILESTONE_THRESHOLD_PER_LEVEL_SQUARED;
       const statsAtOneTier = tower.stats;
 
-      tower.totalDamageDealt = MILESTONE_THRESHOLD * 2;
+      tower.totalDamageDealt = MILESTONE_THRESHOLD_PER_LEVEL_SQUARED * 2;
       const statsAtTwoTiers = tower.stats;
 
       expect(statsAtTwoTiers.damage).toBeGreaterThan(statsAtOneTier.damage);
@@ -554,7 +554,7 @@ describe("Tower", () => {
       const save = makeSave();
       save.generalAddons.damageMilestoneBonus = 0;
       const tower = new Tower("basic", 0, 0, save, makeMockGrid());
-      tower.totalDamageDealt = MILESTONE_THRESHOLD * (MILESTONE_MAX_TIERS + 3);
+      tower.totalDamageDealt = MILESTONE_THRESHOLD_PER_LEVEL_SQUARED * (MILESTONE_MAX_TIERS + 3);
       const baseDamage = TOWER_BASE.basic.damage;
       const expectedDamage = baseDamage * (1 + MILESTONE_BONUS_PCT[0][0] * MILESTONE_MAX_TIERS);
       expect(tower.stats.damage).toBeCloseTo(expectedDamage, 4);
@@ -565,12 +565,54 @@ describe("Tower", () => {
       const save = makeSave();
       save.generalAddons.damageMilestoneBonus = 0;
       const tower = new Tower("basic", 0, 0, save, makeMockGrid());
-      tower.totalDamageDealt = MILESTONE_THRESHOLD * MILESTONE_MAX_TIERS;
+      tower.totalDamageDealt = MILESTONE_THRESHOLD_PER_LEVEL_SQUARED * MILESTONE_MAX_TIERS;
       void tower.stats;
       const computeSpy = vi.spyOn(tower, "_computeStats");
-      tower.totalDamageDealt = MILESTONE_THRESHOLD * (MILESTONE_MAX_TIERS + 4);
+      tower.totalDamageDealt = MILESTONE_THRESHOLD_PER_LEVEL_SQUARED * (MILESTONE_MAX_TIERS + 4);
       void tower.stats;
       expect(computeSpy).not.toHaveBeenCalled();
+    });
+
+    it("level-up raises the threshold and cuts tiers until damage catches up", () => {
+      const save = makeSave();
+      save.generalAddons.damageMilestoneBonus = 0; // tier 0: +5% damage per threshold
+      const tower = new Tower("basic", 0, 0, save, makeMockGrid());
+      tower.totalDamageDealt = MILESTONE_THRESHOLD_PER_LEVEL_SQUARED * 4;
+      expect(tower.currentMilestoneBonus().tiers).toBe(4);
+
+      tower.doUpgrade(save);
+      expect(tower.level).toBe(2);
+      const bonusAfterUpgrade = tower.currentMilestoneBonus();
+      expect(bonusAfterUpgrade.threshold).toBe(MILESTONE_THRESHOLD_PER_LEVEL_SQUARED * 4); // level 2 → 2² × 20,000
+      expect(bonusAfterUpgrade.tiers).toBe(1); // floor(80,000 / 80,000)
+      expect(bonusAfterUpgrade.damagePct).toBeCloseTo(5, 6);
+
+      // Control: a level-2 tower with the same damage must have identical stats —
+      // proves the upgraded tower recomputed at 1 tier instead of its stale 4.
+      const controlTower = new Tower("basic", 0, 0, save, makeMockGrid());
+      controlTower.level = 2;
+      controlTower.totalDamageDealt = MILESTONE_THRESHOLD_PER_LEVEL_SQUARED * 4;
+      expect(tower.stats.damage).toBeCloseTo(controlTower.stats.damage, 6);
+
+      tower.creditDamage(MILESTONE_THRESHOLD_PER_LEVEL_SQUARED * 4); // 160,000 total → 2 tiers again
+      expect(tower.currentMilestoneBonus().tiers).toBe(2);
+      const controlAfterCatchUp = new Tower("basic", 0, 0, save, makeMockGrid());
+      controlAfterCatchUp.level = 2;
+      controlAfterCatchUp.totalDamageDealt = MILESTONE_THRESHOLD_PER_LEVEL_SQUARED * 8;
+      expect(tower.stats.damage).toBeCloseTo(controlAfterCatchUp.stats.damage, 6);
+    });
+
+    it("uses the level-7 threshold at max level", () => {
+      const save = makeSave();
+      save.generalAddons.damageMilestoneBonus = 0;
+      const tower = new Tower("basic", 0, 0, save, makeMockGrid());
+      tower.level = 7;
+      tower.totalDamageDealt = MILESTONE_THRESHOLD_PER_LEVEL_SQUARED * 49 - 1;
+      expect(tower.currentMilestoneBonus().tiers).toBe(0);
+      tower.totalDamageDealt = MILESTONE_THRESHOLD_PER_LEVEL_SQUARED * 49;
+      const bonus = tower.currentMilestoneBonus();
+      expect(bonus.tiers).toBe(1);
+      expect(bonus.threshold).toBe(MILESTONE_THRESHOLD_PER_LEVEL_SQUARED * 49);
     });
 
     it("recomputes stats when the addon set changes (cache key includes addons)", () => {
@@ -849,9 +891,10 @@ describe("Tower", () => {
       const save = makeSave();
       save.generalAddons.damageMilestoneBonus = 0;
       const tower = new Tower("basic", 0, 0, save, makeMockGrid());
-      tower.totalDamageDealt = MILESTONE_THRESHOLD * 3;
+      tower.totalDamageDealt = MILESTONE_THRESHOLD_PER_LEVEL_SQUARED * 3;
       const bonus = tower.currentMilestoneBonus();
       expect(bonus.tiers).toBe(3);
+      expect(bonus.threshold).toBe(MILESTONE_THRESHOLD_PER_LEVEL_SQUARED);
     });
   });
 

@@ -44,7 +44,7 @@ interface MockTower {
   isGhost: boolean;
   health: number;
   maxHealth: number;
-  milestoneBonus: { damagePct: number; speedPct: number; tiers: number };
+  milestoneBonus: { damagePct: number; speedPct: number; tiers: number; threshold: number };
   base: { fixedAim: boolean };
   fixedAimDir: string | null;
   // Elapsed sim ms since place. TowerPanel derives canCancel/cancelRemaining
@@ -75,7 +75,7 @@ function makeMockTower(overrides: Partial<MockTower> = {}): MockTower {
     isGhost: false,
     health: 100,
     maxHealth: 100,
-    milestoneBonus: { damagePct: 0, speedPct: 0, tiers: 0 },
+    milestoneBonus: { damagePct: 0, speedPct: 0, tiers: 0, threshold: 0 },
     base: { fixedAim: false },
     fixedAimDir: null,
     placedAt: 0,

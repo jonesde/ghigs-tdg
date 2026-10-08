@@ -232,7 +232,7 @@ export const STARTING_BASE_HEALTH = economy.startingBaseHealth;
 export const BASE_GOLD_COST = economy.baseGoldCost;
 export const BASE_LEVEL_HEALTH_MULT = economy.baseLevelHealthMult;
 export const MILESTONE_BONUS_PCT = economy.milestoneBonusPct;
-export const MILESTONE_THRESHOLD = economy.milestoneThreshold;
+export const MILESTONE_THRESHOLD_PER_LEVEL_SQUARED = economy.milestoneThresholdPerLevelSquared;
 
 // ===== Wave Graph (not content) =====
 

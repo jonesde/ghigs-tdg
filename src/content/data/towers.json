@@ -72,7 +72,7 @@
     "ghostRestorePerLevel": 5,
     "ghostRestoreMinSeconds": 5,
     "terrainDamageBonusMaxMult": 2,
-    "milestoneMaxTiers": 5,
+    "milestoneMaxTiers": 20,
     "ghostParticleDuration": 2,
     "ghostParticleCount": 14,
     "ghostOpacity": 0.5,

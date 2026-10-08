@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { usePanelDrag } from "@/composables/usePanelDrag.js";
-import { MILESTONE_THRESHOLD } from "@/sim/Constants.js";
 import { CANCEL_BUILD_WINDOW_MS, TOWER_META, targetsLabel, towerGroundOnly } from "@/sim/ConstantsTower.js";
 import { dispatchCommand } from "@/sim/commandBus.js";
 import type { TowerSnapshot } from "@/sim/SimulationSnapshot.js";
@@ -73,7 +72,6 @@ const { onHeaderMouseDown, onHeaderTouchStart } = usePanelDrag({
 });
 
 const milestoneTier = computed(() => persistStore.generalAddons?.damageMilestoneBonus);
-const milestoneStepLabel = MILESTONE_THRESHOLD.toLocaleString("en-US");
 const milestoneBonus = computed(() => {
   if (milestoneTier.value !== null && milestoneTier.value !== undefined && tower.value) {
     return tower.value.milestoneBonus;
@@ -198,7 +196,7 @@ function handleFixedAim(dir: string | null) {
     <div class="stat-row"><span>Previous Wave</span><span>{{ damageStats?.previousWave?.toLocaleString() ?? 0 }}</span></div>
 
     <div v-if="milestoneBonus && milestoneBonus.tiers > 0" class="milestone-bonus">
-      Experience Bonus: +{{ Math.round(milestoneBonus.damagePct) }}% dmg, +{{ Math.round(milestoneBonus.speedPct) }}% speed ({{ milestoneBonus.tiers }}×{{ milestoneStepLabel }} total)
+      Experience Bonus: +{{ Math.round(milestoneBonus.damagePct) }}% dmg, +{{ Math.round(milestoneBonus.speedPct) }}% speed ({{ milestoneBonus.tiers }}×{{ milestoneBonus.threshold.toLocaleString("en-US") }} total)
     </div>
 
     <div class="stat-row"><span>Targeting</span><kbd>F</kbd></div>

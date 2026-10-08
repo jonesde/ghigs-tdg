@@ -48,7 +48,7 @@ export const EconomyContentSchema = z.object({
     z.tuple([z.number(), z.number()]),
     z.tuple([z.number(), z.number()]),
   ]),
-  milestoneThreshold: z.number(),
+  milestoneThresholdPerLevelSquared: z.number(),
 });
 
 export type EconomyContent = z.infer<typeof EconomyContentSchema>;

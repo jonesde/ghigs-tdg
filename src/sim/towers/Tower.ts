@@ -10,7 +10,7 @@ interface AuraTarget {
 import type { MapThemeAnimation, MapThemeData, TowerVisualMeta } from "@/render/themes/index.js";
 import {
   MILESTONE_BONUS_PCT,
-  MILESTONE_THRESHOLD,
+  MILESTONE_THRESHOLD_PER_LEVEL_SQUARED,
   TERRAIN_HEIGHT_BONUS_PCT,
   TERRAIN_HEIGHT_RANGE_BONUS,
 } from "@/sim/Constants.js";
@@ -476,7 +476,7 @@ export class Tower {
     const milestoneTier = getGeneralAddonValue(this.save!, "damageMilestoneBonus");
     const milestoneLevels =
       typeof milestoneTier === "number"
-        ? Math.min(MILESTONE_MAX_TIERS, Math.floor(this.totalDamageDealt / MILESTONE_THRESHOLD))
+        ? Math.min(MILESTONE_MAX_TIERS, Math.floor(this.totalDamageDealt / this.currentMilestoneThreshold()))
         : -1;
     const h = typeof heightTier === "number" ? heightTier : -1;
     const r = typeof rangeTier === "number" ? rangeTier : -1;
@@ -550,7 +550,8 @@ export class Tower {
 
     const milestoneTier = this.save ? getGeneralAddonValue(this.save, "damageMilestoneBonus") : null;
     if (typeof milestoneTier === "number") {
-      const tiers = Math.min(MILESTONE_MAX_TIERS, Math.floor(this.totalDamageDealt / MILESTONE_THRESHOLD));
+      const milestoneThreshold = this.currentMilestoneThreshold();
+      const tiers = Math.min(MILESTONE_MAX_TIERS, Math.floor(this.totalDamageDealt / milestoneThreshold));
       const [dmgPct, speedPct] = MILESTONE_BONUS_PCT[milestoneTier] || [0, 0];
       damage *= 1 + dmgPct * tiers;
       fireRate *= 1 + speedPct * tiers;
@@ -637,13 +638,18 @@ export class Tower {
     };
   }
 
+  currentMilestoneThreshold(): number {
+    return this.level * this.level * MILESTONE_THRESHOLD_PER_LEVEL_SQUARED;
+  }
+
   currentMilestoneBonus() {
-    if (!this.save) return { damagePct: 0, speedPct: 0, tiers: 0 };
+    const threshold = this.currentMilestoneThreshold();
+    if (!this.save) return { damagePct: 0, speedPct: 0, tiers: 0, threshold };
     const tier = getGeneralAddonValue(this.save, "damageMilestoneBonus");
-    if (typeof tier !== "number") return { damagePct: 0, speedPct: 0, tiers: 0 };
-    const tiers = Math.min(MILESTONE_MAX_TIERS, Math.floor(this.totalDamageDealt / MILESTONE_THRESHOLD));
+    if (typeof tier !== "number") return { damagePct: 0, speedPct: 0, tiers: 0, threshold };
+    const tiers = Math.min(MILESTONE_MAX_TIERS, Math.floor(this.totalDamageDealt / threshold));
     const [dmgPct, speedPct] = MILESTONE_BONUS_PCT[tier] || [0, 0];
-    return { damagePct: dmgPct * tiers * 100, speedPct: speedPct * tiers * 100, tiers };
+    return { damagePct: dmgPct * tiers * 100, speedPct: speedPct * tiers * 100, tiers, threshold };
   }
 
   upgradeCost(nextLevel: number): number {

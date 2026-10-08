@@ -404,7 +404,7 @@ export interface TowerSnapshot {
   // Gold the worker credits for a sell or the next downgrade, after sellActive.
   sellCredit?: number;
   downgradeRefund?: number;
-  milestoneBonus?: { damagePct: number; speedPct: number; tiers: number };
+  milestoneBonus?: { damagePct: number; speedPct: number; tiers: number; threshold: number };
   stats?: TowerStatsSnapshot;
   // Selected tower only. Persistent run cards and adjacent buildings, as one line.
   bonusLine?: string;
