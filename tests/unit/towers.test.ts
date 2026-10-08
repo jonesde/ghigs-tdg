@@ -36,8 +36,6 @@ interface SaveFixture {
   generalAddons: {
     extraHealth: null;
     startingGold: null;
-    sellRefundUnlocked: boolean;
-    sellDiscountUnlocked: boolean;
     sellActive: null;
     upgradeCostReduction: null;
     terrainHeightBonus: null | number;
@@ -62,8 +60,6 @@ function makeSave(addons: boolean[] | null = null): SaveFixture {
     generalAddons: {
       extraHealth: null,
       startingGold: null,
-      sellRefundUnlocked: false,
-      sellDiscountUnlocked: false,
       sellActive: null,
       upgradeCostReduction: null,
       terrainHeightBonus: null,

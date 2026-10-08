@@ -29,8 +29,9 @@ const GeneralAddonsSchema = z
   .object({
     extraHealth: z.number().nullable(),
     startingGold: z.number().nullable(),
-    sellRefundUnlocked: z.boolean(),
-    sellDiscountUnlocked: z.boolean(),
+    // Sell Flexibility: one purchase, two mutually exclusive modes (save v7). The v6
+    // sellRefundUnlocked / sellDiscountUnlocked pair is stripped by migrateV6ToV7;
+    // .passthrough() keeps any leftover key from parsing a raw legacy document.
     sellActive: z.string().nullable(),
     upgradeCostReduction: z.number().nullable(),
     terrainHeightBonus: z.number().nullable(),

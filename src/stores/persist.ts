@@ -11,11 +11,12 @@ import {
 } from "@/commanders/llm/types.js";
 import { PersistStateSchema } from "@/content/schemas/persist.js";
 import { DEFAULT_THEME_ID } from "@/render/themes/index.js";
+import { SELL_OPTION_GEM_COST } from "@/sim/Constants.js";
 import { useUiStore } from "@/stores/ui.js";
 
 const LEGACY_STORAGE_KEYS = ["gempath_save_v1", "lol_ya_tdg_save_1"];
 export const STORAGE_KEY = "ghigs_save_1";
-const CURRENT_SAVE_VERSION = 6;
+const CURRENT_SAVE_VERSION = 7;
 
 export interface TowerUnlocks {
   levels: boolean[];
@@ -43,8 +44,9 @@ export interface ThemeProgress {
 export interface GeneralAddons {
   extraHealth: number | null;
   startingGold: number | null;
-  sellRefundUnlocked: boolean;
-  sellDiscountUnlocked: boolean;
+  // Sell Flexibility is one purchase with two mutually exclusive positions, so this
+  // single field is the whole of its state: a mode means bought and in effect, null
+  // means not bought. See migrateV6ToV7.
   sellActive: string | null;
   upgradeCostReduction: number | null;
   terrainHeightBonus: number | null;
@@ -141,8 +143,6 @@ function defaultGeneralAddons(): GeneralAddons {
   return {
     extraHealth: null,
     startingGold: null,
-    sellRefundUnlocked: false,
-    sellDiscountUnlocked: false,
     sellActive: null,
     upgradeCostReduction: null,
     terrainHeightBonus: null,
@@ -370,6 +370,32 @@ function migrateV5ToV6(parsed: Record<string, unknown>): PersistStateShape {
   return result;
 }
 
+// v6 -> v7: Sell Flexibility becomes ONE purchase with two mutually exclusive
+// modes, carried entirely by generalAddons.sellActive. v6 tracked two independent
+// purchase flags alongside it, so a save holding both (only reachable from the
+// build that let the second mode be bought) collapses to the mode in effect and
+// hands back the redundant purchase rather than silently voiding it. The flag keys
+// are deleted, not just unused: mergeWithDefaults spreads the parsed document over
+// the defaults, so they would otherwise ride along in every future save.
+function migrateV6ToV7(parsed: Record<string, unknown>): PersistStateShape {
+  const result = migrateCurrentVersion(parsed);
+  const generalAddons = result.generalAddons as Record<string, unknown>;
+  const savedMode = generalAddons.sellActive;
+  const purchasesHeld =
+    (generalAddons.sellRefundUnlocked === true ? 1 : 0) + (generalAddons.sellDiscountUnlocked === true ? 1 : 0);
+  if (savedMode === "refund" || savedMode === "discount") {
+    generalAddons.sellActive = savedMode;
+  } else {
+    // Owned but with no mode recorded (or hand-edited): keep the purchase on Full Refund.
+    generalAddons.sellActive = purchasesHeld > 0 ? "refund" : null;
+  }
+  result.gems += SELL_OPTION_GEM_COST * Math.max(0, purchasesHeld - 1);
+  delete generalAddons.sellRefundUnlocked;
+  delete generalAddons.sellDiscountUnlocked;
+  result.saveVersion = CURRENT_SAVE_VERSION;
+  return result;
+}
+
 export function migrateToCurrent(parsed: Record<string, unknown>): PersistStateShape {
   const version = parsed.saveVersion;
   if (version === undefined || version === null) {
@@ -389,6 +415,9 @@ export function migrateToCurrent(parsed: Record<string, unknown>): PersistStateS
   }
   if (version === 5) {
     return migrateV5ToV6(parsed);
+  }
+  if (version === 6) {
+    return migrateV6ToV7(parsed);
   }
   if (version === CURRENT_SAVE_VERSION) {
     return migrateCurrentVersion(parsed);

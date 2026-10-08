@@ -18,9 +18,11 @@ import {
   isBaseUnlocked,
   isGeneralAvailable,
   isGeneralUnlocked,
+  isSellOptionPurchased,
   isUnlocked,
   refundAllGems,
   SKILL_TREE,
+  sellOptionMode,
   tryRefund,
   tryRefundBase,
   tryRefundGeneral,
@@ -96,35 +98,49 @@ function goBack() {
   }
 }
 
-function handleGeneralClick(key: string, type: string | number, opt: string | null, element: HTMLElement) {
-  if (key === "sellOption" && type === "toggle") {
-    const generalAddons = persistStore.generalAddons;
-    const unlocked = generalAddons.sellRefundUnlocked && generalAddons.sellDiscountUnlocked;
-    if (!unlocked) {
-      flashElement(element);
-      return;
-    }
-    const gemsBefore = persistStore.gems;
-    generalAddons.sellActive = opt;
-    saveAndSyncPersist(gemsBefore);
-    return;
-  }
-
-  const idxNum = parseInt(type as string, 10);
-  if (isGeneralUnlocked(persistStore.$state, key, idxNum)) {
-    const refundGems = canRefundGeneral(persistStore.$state, key, idxNum);
+function handleGeneralClick(key: string, index: number, element: HTMLElement) {
+  if (isGeneralUnlocked(persistStore.$state, key, index)) {
+    const refundGems = canRefundGeneral(persistStore.$state, key, index);
     if (refundGems > 0) {
-      showGeneralRefundConfirm(key, idxNum, refundGems);
+      showGeneralRefundConfirm(key, index, refundGems);
     }
     return;
   }
-  if (!isGeneralAvailable(persistStore.$state, key, idxNum)) {
+  if (!isGeneralAvailable(persistStore.$state, key, index)) {
     flashElement(element);
     return;
   }
 
   const gemsBefore = persistStore.gems;
-  const result = tryUnlockGeneral(persistStore.$state, key, idxNum);
+  const result = tryUnlockGeneral(persistStore.$state, key, index);
+  if (result.ok) {
+    saveAndSyncPersist(gemsBefore);
+  } else {
+    flashElement(element);
+  }
+}
+
+// Sell Flexibility is one purchase: the active mode refunds like any other
+// upgrade, and the other mode is a free switch of that purchase. tryUnlockGeneral
+// decides buy-vs-switch, so nothing here has to know the price of a second mode.
+function handleSellOptionClick(index: number, element: HTMLElement) {
+  if (getGeneralAddonValue(persistStore.$state, "sellOption") === sellOptionMode(index)) {
+    const refundGems = canRefundGeneral(persistStore.$state, "sellOption", index);
+    if (refundGems > 0) {
+      showGeneralRefundConfirm("sellOption", index, refundGems);
+    } else {
+      flashElement(element);
+    }
+    return;
+  }
+
+  if (!isGeneralAvailable(persistStore.$state, "sellOption", index)) {
+    flashElement(element);
+    return;
+  }
+
+  const gemsBefore = persistStore.gems;
+  const result = tryUnlockGeneral(persistStore.$state, "sellOption", index);
   if (result.ok) {
     saveAndSyncPersist(gemsBefore);
   } else {
@@ -165,9 +181,10 @@ function showRefundConfirm(towerId: TowerId, tier: string, index: number, gems: 
 function showGeneralRefundConfirm(key: string, index: number, gems: number) {
   const def = GENERAL_ADDON_DEFS[key];
   const label = def?.tiers[index]?.label || key;
+  const verb = key === "sellOption" ? "Revoke" : "Downgrade";
   uiStore.showConfirm({
     title: "Refund Upgrade",
-    message: `Downgrade "${label}" and refund ${gems} 💎?`,
+    message: `${verb} "${label}" and refund ${gems} 💎?`,
     confirmLabel: "Refund",
     cancelLabel: "Cancel",
     onConfirm: () => {
@@ -250,33 +267,22 @@ function showRefundAllConfirm() {
               <div class="general-label">{{ def.label }}</div>
               <div class="general-desc">{{ def.desc }}</div>
 
-              <!-- Sell option (special) -->
+              <!-- Sell option (special): one purchase, two mutually exclusive modes. The cost
+                     belongs to the purchase, so it shows on both buttons or neither. -->
               <template v-if="def.isSellOption">
-                <template v-if="!persistStore.generalAddons.sellRefundUnlocked || !persistStore.generalAddons.sellDiscountUnlocked">
-                  <button
-                    class="addon-btn"
-                    :class="{ unavailable: !isGeneralAvailable(persistStore.$state, key, 0) }"
-                    @click="handleGeneralClick(key, 0, null, $event.currentTarget)"
-                  >
-                    Unlock Sell Flexibility ({{ def.costs[0] }} 💎)
-                  </button>
-                </template>
-                <template v-else>
-                  <button
-                    class="addon-btn"
-                    :class="{ unlocked: persistStore.generalAddons.sellActive === 'refund' }"
-                    @click="handleGeneralClick(key, 'toggle', 'refund', $event.currentTarget)"
-                  >
-                    Full Refund
-                  </button>
-                  <button
-                    class="addon-btn"
-                    :class="{ unlocked: persistStore.generalAddons.sellActive === 'discount' }"
-                    @click="handleGeneralClick(key, 'toggle', 'discount', $event.currentTarget)"
-                  >
-                    Discounted
-                  </button>
-                </template>
+                <button
+                  v-for="(tierDef, index) in def.tiers"
+                  :key="index"
+                  class="addon-btn"
+                  :title="tierDef.desc"
+                  :class="{
+                    unavailable: !isGeneralAvailable(persistStore.$state, key, index),
+                    active: getGeneralAddonValue(persistStore.$state, key) === sellOptionMode(index),
+                  }"
+                  @click="handleSellOptionClick(index, $event.currentTarget)"
+                >
+                  {{ tierDef.label }}{{ isSellOptionPurchased(persistStore.$state) ? '' : ' · ' + def.costs[index] + ' 💎' }}
+                </button>
               </template>
 
               <!-- Standard tier buttons -->
@@ -290,7 +296,7 @@ function showRefundAllConfirm() {
                     unavailable: !isGeneralAvailable(persistStore.$state, key, i),
                     active: getGeneralAddonValue(persistStore.$state, key) === i,
                   }"
-                  @click="handleGeneralClick(key, i, null, $event.currentTarget)"
+                  @click="handleGeneralClick(key, i, $event.currentTarget)"
                 >
                   {{ tierDef.label }}{{ isGeneralUnlocked(persistStore.$state, key, i) ? '' : ' · ' + def.costs[i] + ' 💎' }}
                 </button>
@@ -321,7 +327,7 @@ function showRefundAllConfirm() {
                       unavailable: !isGeneralAvailable(persistStore.$state, key, tierIndex),
                       active: getGeneralAddonValue(persistStore.$state, key) === tierIndex,
                     }"
-                    @click="handleGeneralClick(key, tierIndex, null, $event.currentTarget)"
+                    @click="handleGeneralClick(key, tierIndex, $event.currentTarget)"
                   >
                     {{ tierDef.label }}{{ isGeneralUnlocked(persistStore.$state, key, tierIndex) ? '' : ' · ' + def.costs[tierIndex] + ' 💎' }}
                   </button>

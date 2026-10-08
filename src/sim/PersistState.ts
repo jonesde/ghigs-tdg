@@ -30,7 +30,7 @@ export interface PersistState {
   soundEnabled: boolean;
 }
 
-const CURRENT_SAVE_VERSION = 6;
+const CURRENT_SAVE_VERSION = 7;
 
 function defaultBaseUnlocks(): BaseUnlocks {
   return { levels: [true, true, false, false, false, false, false] };
@@ -62,8 +62,6 @@ function defaultGeneralAddons(): GeneralAddons {
   return {
     extraHealth: null,
     startingGold: null,
-    sellRefundUnlocked: false,
-    sellDiscountUnlocked: false,
     sellActive: null,
     upgradeCostReduction: null,
     terrainHeightBonus: null,

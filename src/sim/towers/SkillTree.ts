@@ -338,24 +338,43 @@ export const GENERAL_ADDON_DEFS: Record<string, GeneralAddonDef> = Object.fromEn
   ]),
 );
 
+// Sell Flexibility is ONE purchase with two mutually exclusive positions, and
+// generalAddons.sellActive is the whole of its state: a mode means bought and in
+// effect, null means not bought. There is no second ownership flag, so "bought
+// both" is unrepresentable rather than merely discouraged.
+
+export const SELL_OPTION_MODES = ["refund", "discount"] as const;
+
+export type SellOptionMode = (typeof SELL_OPTION_MODES)[number];
+
+// sellOption tier index → generalAddons.sellActive value.
+export function sellOptionMode(index: number): SellOptionMode | null {
+  return SELL_OPTION_MODES[index] ?? null;
+}
+
+export function activeSellMode(save: PersistState): SellOptionMode | null {
+  const active = save.generalAddons.sellActive;
+  return SELL_OPTION_MODES.find((mode) => mode === active) ?? null;
+}
+
+export function isSellOptionPurchased(save: PersistState): boolean {
+  return activeSellMode(save) !== null;
+}
+
 export function isGeneralUnlocked(save: PersistState, key: string, index: number): boolean {
-  const generalAddons = save.generalAddons;
-  if (key === "sellOption") {
-    if (index === 0) return generalAddons.sellRefundUnlocked as boolean;
-    if (index === 1) return generalAddons.sellDiscountUnlocked as boolean;
-    return false;
-  }
-  const current = generalAddons[key] as number | null;
+  if (key === "sellOption") return sellOptionMode(index) !== null && isSellOptionPurchased(save);
+  const current = save.generalAddons[key] as number | null;
   return current !== null && current >= index;
 }
 
 export function isGeneralAvailable(save: PersistState, key: string, index: number): boolean {
+  if (key === "sellOption" && sellOptionMode(index) === null) return false;
   if (isGeneralUnlocked(save, key, index)) return true;
   const def = GENERAL_ADDON_DEFS[key];
   if (!def) return false;
   const cost = def.costs[index]!;
   if (save.gems < cost) return false;
-  // sellOption modes are independent unlocks (not a progression ladder).
+  // sellOption is one purchase, not a tier ladder: once owned, switching costs nothing.
   if (index >= 1 && key !== "sellOption") {
     const prevUnlocked = isGeneralUnlocked(save, key, index - 1);
     if (!prevUnlocked) return false;
@@ -368,23 +387,20 @@ export function tryUnlockGeneral(save: PersistState, key: string, index: number)
   if (!def) return { ok: false, reason: "Unknown add-on" };
   const cost = def.costs[index]!;
 
-  // sellOption modes stay unlocked once purchased; re-activation is free and only flips sellActive.
+  // The single sell purchase. The first click buys it; every later click is a free
+  // switch — refunding the outgoing mode and buying the incoming one is the same
+  // purchase moving, so the gem total does not move and only one is ever live.
   if (key === "sellOption") {
-    const generalAddons = save.generalAddons;
-    const target = index === 0 ? "refund" : "discount";
-    if (generalAddons.sellActive === target) {
-      return { ok: false, reason: "Already active" };
+    const target = sellOptionMode(index);
+    if (!target) return { ok: false, reason: "Invalid sell mode" };
+    const active = activeSellMode(save);
+    if (active === target) return { ok: false, reason: "Already active" };
+    if (active === null) {
+      if (save.gems < cost) return { ok: false, reason: "Not enough gems" };
+      save.gems -= cost;
     }
-    const alreadyUnlocked = index === 0 ? generalAddons.sellRefundUnlocked : generalAddons.sellDiscountUnlocked;
-    if (!alreadyUnlocked && save.gems < cost) return { ok: false, reason: "Not enough gems" };
-    generalAddons.sellActive = target;
-    if (index === 0) {
-      generalAddons.sellRefundUnlocked = true;
-    } else {
-      generalAddons.sellDiscountUnlocked = true;
-    }
-    if (!alreadyUnlocked) save.gems -= cost;
-    return { ok: true };
+    save.generalAddons.sellActive = target;
+    return { ok: true, gems: active === null ? cost : 0 };
   }
 
   if (isGeneralUnlocked(save, key, index)) return { ok: false, reason: "Already unlocked" };
@@ -406,11 +422,8 @@ export function tryUnlockGeneral(save: PersistState, key: string, index: number)
 }
 
 export function getGeneralAddonValue(save: PersistState, key: string): number | string | null {
-  const generalAddons = save.generalAddons;
-  if (key === "sellOption") {
-    return generalAddons.sellActive as string | null;
-  }
-  return generalAddons[key] as number | null;
+  if (key === "sellOption") return activeSellMode(save);
+  return save.generalAddons[key] as number | null;
 }
 
 export function getGeneralAddonTierData(save: PersistState, key: string) {
@@ -421,12 +434,11 @@ export function getGeneralAddonTierData(save: PersistState, key: string) {
 }
 
 export function canRefundGeneral(save: PersistState, key: string, index: number): number {
-  // sellOption purchasable flags refund individually exactly like the bulk path
-  // (countRefundableGems / refundAllGems): each purchased flag is worth its cost.
+  // One sell purchase in one position: only the mode currently in effect is
+  // refundable, so a refund always clears sellActive (same end state as the bulk path).
   if (key === "sellOption") {
-    const generalAddons = save.generalAddons;
-    const purchased = index === 0 ? generalAddons.sellRefundUnlocked : generalAddons.sellDiscountUnlocked;
-    return purchased ? SELL_OPTION_GEM_COST : 0;
+    const mode = sellOptionMode(index);
+    return mode !== null && mode === activeSellMode(save) ? SELL_OPTION_GEM_COST : 0;
   }
   const current = getGeneralAddonValue(save, key);
   if (current !== index) return 0;
@@ -439,13 +451,7 @@ export function tryRefundGeneral(save: PersistState, key: string, index: number)
   const refundAmount = canRefundGeneral(save, key, index);
   if (refundAmount === 0) return { ok: false, reason: "Cannot refund this tier" };
   if (key === "sellOption") {
-    const generalAddons = save.generalAddons;
-    const target = index === 0 ? "refund" : "discount";
-    if (index === 0) generalAddons.sellRefundUnlocked = false;
-    else generalAddons.sellDiscountUnlocked = false;
-    // Refunding the active mode clears it; refunding the inactive mode leaves the
-    // current selection alone. Same end state as refundAllGems for the refunded flag.
-    if (generalAddons.sellActive === target) generalAddons.sellActive = null;
+    save.generalAddons.sellActive = null;
     save.gems += refundAmount;
     return { ok: true, gems: refundAmount };
   }
@@ -478,9 +484,7 @@ export function countRefundableGems(save: PersistState): number {
   }
   for (const key of Object.keys(GENERAL_ADDON_DEFS)) {
     if (key === "sellOption") {
-      const generalAddons = save.generalAddons;
-      if (generalAddons?.sellRefundUnlocked) total += SELL_OPTION_GEM_COST;
-      if (generalAddons?.sellDiscountUnlocked) total += SELL_OPTION_GEM_COST;
+      if (isSellOptionPurchased(save)) total += SELL_OPTION_GEM_COST;
       continue;
     }
     const current = getGeneralAddonValue(save, key);
@@ -518,14 +522,8 @@ export function refundAllGems(save: PersistState) {
   }
   for (const key of Object.keys(GENERAL_ADDON_DEFS)) {
     if (key === "sellOption") {
-      const generalAddons = save.generalAddons;
-      if (generalAddons) {
-        if (generalAddons.sellRefundUnlocked) save.gems += SELL_OPTION_GEM_COST;
-        if (generalAddons.sellDiscountUnlocked) save.gems += SELL_OPTION_GEM_COST;
-        generalAddons.sellRefundUnlocked = false;
-        generalAddons.sellDiscountUnlocked = false;
-        generalAddons.sellActive = null;
-      }
+      if (isSellOptionPurchased(save)) save.gems += SELL_OPTION_GEM_COST;
+      save.generalAddons.sellActive = null;
       continue;
     }
     const current = getGeneralAddonValue(save, key);

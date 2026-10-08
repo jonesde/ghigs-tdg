@@ -15,6 +15,7 @@ import {
   isBaseUnlocked,
   isGeneralAvailable,
   isGeneralUnlocked,
+  isSellOptionPurchased,
   isUnlocked,
   maxLevelFor,
   maxLevelForBase,
@@ -103,8 +104,6 @@ function freshSave(): SaveFixture {
     generalAddons: {
       extraHealth: null,
       startingGold: null,
-      sellRefundUnlocked: false,
-      sellDiscountUnlocked: false,
       sellActive: null,
       upgradeCostReduction: null,
       terrainHeightBonus: null,
@@ -406,16 +405,23 @@ describe("SkillTree — General Add-ons", () => {
       expect(isGeneralUnlocked(save, "extraHealth", 0)).toBe(true);
     });
 
-    it("returns false for sellOption when neither active", () => {
+    it("returns false for sellOption when neither mode is in effect", () => {
       const save = freshSave();
       expect(isGeneralUnlocked(save, "sellOption", 0)).toBe(false);
       expect(isGeneralUnlocked(save, "sellOption", 1)).toBe(false);
     });
 
-    it("returns true for sellOption refund after purchase", () => {
+    it("returns true for both sellOption tiers once the single purchase is owned", () => {
       const save = freshSave();
       tryUnlockGeneral(save, "sellOption", 0);
       expect(isGeneralUnlocked(save, "sellOption", 0)).toBe(true);
+      expect(isGeneralUnlocked(save, "sellOption", 1)).toBe(true);
+    });
+
+    it("returns false for a sellOption tier index that names no mode", () => {
+      const save = freshSave();
+      tryUnlockGeneral(save, "sellOption", 0);
+      expect(isGeneralUnlocked(save, "sellOption", 2)).toBe(false);
     });
   });
 
@@ -436,11 +442,16 @@ describe("SkillTree — General Add-ons", () => {
       expect(isGeneralAvailable(save, "extraHealth", 1)).toBe(true);
     });
 
-    it("returns true for sellOption switching after one purchased", () => {
+    it("returns true for switching the sellOption once one mode is in effect", () => {
       const save = freshSave();
       tryUnlockGeneral(save, "sellOption", 0);
-      // Now discount should be available for switching
+      // Either mode stays available to switch to, owned or not.
       expect(isGeneralAvailable(save, "sellOption", 1)).toBe(true);
+    });
+
+    it("returns false for a sellOption tier index that names no mode", () => {
+      const save = freshSave();
+      expect(isGeneralAvailable(save, "sellOption", 2)).toBe(false);
     });
   });
 
@@ -478,34 +489,58 @@ describe("SkillTree — General Add-ons", () => {
       expect(result.ok).toBe(false);
     });
 
-    it("handles sellOption refund purchase", () => {
+    it("buys the sell purchase for Full Refund and deducts gems", () => {
       const save = freshSave();
-      const cost = SELL_OPTION_GEM_COST;
       const result = tryUnlockGeneral(save, "sellOption", 0);
-      expect(result.ok).toBe(true);
-      expect(save.generalAddons.sellRefundUnlocked).toBe(true);
+      expect(result).toEqual({ ok: true, gems: SELL_OPTION_GEM_COST });
       expect(save.generalAddons.sellActive).toBe("refund");
-      expect(save.gems).toBe(1000 - cost);
+      expect(save.gems).toBe(1000 - SELL_OPTION_GEM_COST);
     });
 
-    it("handles sellOption discount switching (free after both unlocked)", () => {
+    it("buys the sell purchase for Discounted first, without needing the other mode", () => {
+      const save = freshSave();
+      const result = tryUnlockGeneral(save, "sellOption", 1);
+      expect(result).toEqual({ ok: true, gems: SELL_OPTION_GEM_COST });
+      expect(save.generalAddons.sellActive).toBe("discount");
+      expect(save.gems).toBe(1000 - SELL_OPTION_GEM_COST);
+    });
+
+    it("refuses the buy when there are not enough gems", () => {
+      const save = freshSave();
+      save.gems = SELL_OPTION_GEM_COST - 1;
+      expect(tryUnlockGeneral(save, "sellOption", 0).ok).toBe(false);
+      expect(save.generalAddons.sellActive).toBeNull();
+    });
+
+    it("switches modes for free once the purchase is owned, in both directions", () => {
       const save = freshSave();
       tryUnlockGeneral(save, "sellOption", 0);
-      const gemsAfterRefund = save.gems;
-      const result = tryUnlockGeneral(save, "sellOption", 1);
-      expect(result.ok).toBe(true);
+      const gemsAfterPurchase = save.gems;
+
+      const switchResult = tryUnlockGeneral(save, "sellOption", 1);
+      expect(switchResult).toEqual({ ok: true, gems: 0 });
       expect(save.generalAddons.sellActive).toBe("discount");
-      expect(save.generalAddons.sellDiscountUnlocked).toBe(true);
-      expect(save.generalAddons.sellRefundUnlocked).toBe(true);
-      expect(save.gems).toBe(gemsAfterRefund - SELL_OPTION_GEM_COST);
-      // Switching back to refund is free once unlocked; both flags stay true
-      const gemsBeforeSwitch = save.gems;
+      expect(save.gems).toBe(gemsAfterPurchase);
+
       const backResult = tryUnlockGeneral(save, "sellOption", 0);
-      expect(backResult.ok).toBe(true);
+      expect(backResult).toEqual({ ok: true, gems: 0 });
       expect(save.generalAddons.sellActive).toBe("refund");
-      expect(save.generalAddons.sellRefundUnlocked).toBe(true);
-      expect(save.generalAddons.sellDiscountUnlocked).toBe(true);
-      expect(save.gems).toBe(gemsBeforeSwitch);
+      expect(save.gems).toBe(gemsAfterPurchase);
+    });
+
+    it("never leaves both modes owned: repeated switching charges exactly one purchase", () => {
+      const save = freshSave();
+      for (let index = 0; index < 6; index++) {
+        tryUnlockGeneral(save, "sellOption", index % 2);
+        expect(["refund", "discount"]).toContain(save.generalAddons.sellActive);
+      }
+      expect(save.gems).toBe(1000 - SELL_OPTION_GEM_COST);
+    });
+
+    it("refuses to switch to the mode already in effect", () => {
+      const save = freshSave();
+      tryUnlockGeneral(save, "sellOption", 1);
+      expect(tryUnlockGeneral(save, "sellOption", 1).ok).toBe(false);
     });
 
     it("unlocks all general addon categories", () => {
@@ -552,6 +587,14 @@ describe("SkillTree — General Add-ons", () => {
       tryUnlockGeneral(save, "sellOption", 0);
       expect(getGeneralAddonValue(save, "sellOption")).toBe("refund");
     });
+
+    it("treats an unrecognized stored sellActive as no purchase", () => {
+      const save = freshSave();
+      save.generalAddons.sellActive = "nonsense";
+      expect(getGeneralAddonValue(save, "sellOption")).toBeNull();
+      expect(canRefundGeneral(save, "sellOption", 0)).toBe(0);
+      expect(isSellOptionPurchased(save)).toBe(false);
+    });
   });
 
   describe("general addon labels", () => {
@@ -578,62 +621,61 @@ describe("SkillTree — General Add-ons", () => {
       expect(countRefundableGems(save)).toBe(expected);
     });
 
-    it("counts and refunds purchased sell options", () => {
+    it("counts and refunds the single sell purchase once", () => {
       const save = freshSave();
       tryUnlockGeneral(save, "sellOption", 0);
-      tryUnlockGeneral(save, "sellOption", 1);
+      tryUnlockGeneral(save, "sellOption", 1); // free switch, still one purchase
       const gemsBefore = save.gems;
-      expect(countRefundableGems(save)).toBe(SELL_OPTION_GEM_COST * 2);
+      expect(countRefundableGems(save)).toBe(SELL_OPTION_GEM_COST);
       refundAllGems(save);
-      expect(save.gems).toBe(gemsBefore + SELL_OPTION_GEM_COST * 2);
-      expect(save.generalAddons.sellRefundUnlocked).toBe(false);
-      expect(save.generalAddons.sellDiscountUnlocked).toBe(false);
+      expect(save.gems).toBe(gemsBefore + SELL_OPTION_GEM_COST);
       expect(save.generalAddons.sellActive).toBeNull();
     });
   });
 
-  describe("individual sellOption refunds (bulk parity)", () => {
-    it("canRefundGeneral reports the cost of each purchased sell mode", () => {
+  describe("sellOption refunds (one purchase, one position)", () => {
+    it("reports the cost for the mode in effect only", () => {
       const save = freshSave();
-      tryUnlockGeneral(save, "sellOption", 0);
-      expect(canRefundGeneral(save, "sellOption", 0)).toBe(SELL_OPTION_GEM_COST);
-      expect(canRefundGeneral(save, "sellOption", 1)).toBe(0);
       tryUnlockGeneral(save, "sellOption", 1);
       expect(canRefundGeneral(save, "sellOption", 1)).toBe(SELL_OPTION_GEM_COST);
+      expect(canRefundGeneral(save, "sellOption", 0)).toBe(0);
     });
 
-    it("refunds the active sell mode and clears sellActive", () => {
+    it("refunds the active mode and clears sellActive", () => {
       const save = freshSave();
       tryUnlockGeneral(save, "sellOption", 0);
       const gemsAfterPurchase = save.gems;
       const result = tryRefundGeneral(save, "sellOption", 0);
-      expect(result.ok).toBe(true);
-      expect(result.gems).toBe(SELL_OPTION_GEM_COST);
+      expect(result).toEqual({ ok: true, gems: SELL_OPTION_GEM_COST });
       expect(save.gems).toBe(gemsAfterPurchase + SELL_OPTION_GEM_COST);
-      expect(save.generalAddons.sellRefundUnlocked).toBe(false);
       expect(save.generalAddons.sellActive).toBeNull();
     });
 
-    it("refunds the inactive sell mode without clearing the active selection", () => {
+    it("cannot refund the mode that is not in effect, because it was never a separate purchase", () => {
       const save = freshSave();
       tryUnlockGeneral(save, "sellOption", 0);
-      tryUnlockGeneral(save, "sellOption", 1); // active switches to discount
-      const gemsAfterPurchases = save.gems;
+      tryUnlockGeneral(save, "sellOption", 1); // free switch to Discounted
+      expect(canRefundGeneral(save, "sellOption", 0)).toBe(0);
       const result = tryRefundGeneral(save, "sellOption", 0);
-      expect(result.ok).toBe(true);
-      expect(save.gems).toBe(gemsAfterPurchases + SELL_OPTION_GEM_COST);
-      expect(save.generalAddons.sellRefundUnlocked).toBe(false);
-      expect(save.generalAddons.sellDiscountUnlocked).toBe(true);
+      expect(result.ok).toBe(false);
       expect(save.generalAddons.sellActive).toBe("discount");
     });
 
-    it("fails to refund a sell mode that was never purchased", () => {
+    it("fails to refund a sell mode when the purchase was never made", () => {
       const save = freshSave();
-      const result = tryRefundGeneral(save, "sellOption", 0);
-      expect(result.ok).toBe(false);
+      expect(canRefundGeneral(save, "sellOption", 0)).toBe(0);
+      expect(tryRefundGeneral(save, "sellOption", 0).ok).toBe(false);
+      expect(tryRefundGeneral(save, "sellOption", 1).ok).toBe(false);
     });
 
-    it("restores the same end state as the bulk refund for one flag", () => {
+    it("refuses to refund a tier index that names no mode", () => {
+      const save = freshSave();
+      tryUnlockGeneral(save, "sellOption", 0);
+      expect(canRefundGeneral(save, "sellOption", 2)).toBe(0);
+      expect(tryRefundGeneral(save, "sellOption", 2).ok).toBe(false);
+    });
+
+    it("restores the same end state as the bulk refund", () => {
       const save = freshSave();
       tryUnlockGeneral(save, "sellOption", 0);
       const singleRefundSave = freshSave();

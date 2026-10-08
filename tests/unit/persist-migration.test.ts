@@ -1,6 +1,7 @@
 // @ts-nocheck
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
+import { SELL_OPTION_GEM_COST } from "@/sim/Constants.js";
 import { migrateToCurrent } from "@/stores/persist.js";
 
 describe("PersistStore save migration v2 -> v3", () => {
@@ -45,9 +46,9 @@ describe("PersistStore save migration v2 -> v3", () => {
     };
   }
 
-  it("bumps saveVersion to 6", () => {
+  it("bumps saveVersion to 7", () => {
     const result = migrateToCurrent(v2ShapedSave());
-    expect(result.saveVersion).toBe(6);
+    expect(result.saveVersion).toBe(7);
   });
 
   it("backfills llmCommanders as an empty array (no data loss of the new field)", () => {
@@ -104,7 +105,7 @@ describe("PersistStore save migration v2 -> v3", () => {
       },
     ];
     const result = migrateToCurrent(saved);
-    expect(result.saveVersion).toBe(6);
+    expect(result.saveVersion).toBe(7);
     expect(result.llmCommanders).toHaveLength(1);
     expect(result.llmCommanders[0].id).toBe("carried");
     expect(result.llmCommanders[0].pauseForCommander).toBe(false);
@@ -147,7 +148,7 @@ describe("PersistStore save migration pauseForCommander backfill", () => {
         commander("garbage", { pauseForCommander: "yes" }),
       ],
     });
-    expect(result.saveVersion).toBe(6);
+    expect(result.saveVersion).toBe(7);
     expect(result.llmCommanders.map((entry) => entry.pauseForCommander)).toEqual([false, true, false]);
   });
 
@@ -160,7 +161,7 @@ describe("PersistStore save migration pauseForCommander backfill", () => {
         commander("garbage", { reasoningEnabled: "yes" }),
       ],
     });
-    expect(result.saveVersion).toBe(6);
+    expect(result.saveVersion).toBe(7);
     expect(result.llmCommanders.map((entry) => entry.reasoningEnabled)).toEqual([false, true, false]);
   });
 
@@ -175,7 +176,7 @@ describe("PersistStore save migration pauseForCommander backfill", () => {
         commander("fraction", { decisionIntervalMs: 1.5 }),
       ],
     });
-    expect(result.saveVersion).toBe(6);
+    expect(result.saveVersion).toBe(7);
     expect(result.llmCommanders.map((entry) => entry.decisionIntervalMs)).toEqual([1000, 5000, 1000, 1000, 1000]);
   });
 
@@ -189,30 +190,30 @@ describe("PersistStore save migration pauseForCommander backfill", () => {
         commander("garbage", { temperatureReasoningOff: "hot", temperatureReasoningOn: null }),
       ],
     });
-    expect(result.saveVersion).toBe(6);
+    expect(result.saveVersion).toBe(7);
     expect(result.llmCommanders.map((entry) => entry.temperatureReasoningOff)).toEqual([0.7, 1.2, 0.7, 0.7]);
     expect(result.llmCommanders.map((entry) => entry.temperatureReasoningOn)).toEqual([0.6, 0.3, 0.6, 0.6]);
   });
 });
 
 describe("PersistStore save migration lastSelectedMapIndex backfill", () => {
-  it("migrates a v4 save to 6 and fills lastSelectedMapIndex as null when omitted", () => {
+  it("migrates a v4 save to 7 and fills lastSelectedMapIndex as null when omitted", () => {
     const result = migrateToCurrent({ saveVersion: 4, gems: 10 });
-    expect(result.saveVersion).toBe(6);
+    expect(result.saveVersion).toBe(7);
     expect(result.lastSelectedMapIndex).toBeNull();
   });
 
   it("keeps a saved lastSelectedMapIndex", () => {
     const result = migrateToCurrent({ saveVersion: 4, gems: 10, lastSelectedMapIndex: 15 });
-    expect(result.saveVersion).toBe(6);
+    expect(result.saveVersion).toBe(7);
     expect(result.lastSelectedMapIndex).toBe(15);
   });
 });
 
 describe("PersistStore save migration progressiveThirdChoice backfill", () => {
-  it("migrates a v4 save to 6 and fills progressiveThirdChoice when omitted", () => {
+  it("migrates a v4 save to 7 and fills progressiveThirdChoice when omitted", () => {
     const result = migrateToCurrent({ saveVersion: 4, gems: 10, generalAddons: { extraHealth: null } });
-    expect(result.saveVersion).toBe(6);
+    expect(result.saveVersion).toBe(7);
     expect(result.generalAddons.progressiveThirdChoice).toBeNull();
     expect(result.generalAddons.extraHealth).toBeNull();
   });
@@ -232,9 +233,9 @@ describe("PersistStore save migration v4 -> v5", () => {
     };
   }
 
-  it("bumps saveVersion to 6", () => {
+  it("bumps saveVersion to 7", () => {
     const result = migrateToCurrent(v4ShapedSave());
-    expect(result.saveVersion).toBe(6);
+    expect(result.saveVersion).toBe(7);
   });
 
   it("moves top-level map progress into the default world bucket", () => {
@@ -280,7 +281,7 @@ describe("PersistStore save migration v4 -> v5", () => {
 describe("PersistStore save migration v5 -> v6", () => {
   it("fills the pre-unlocked short-range base levels when the key is missing", () => {
     const result = migrateToCurrent({ saveVersion: 5, gems: 4 });
-    expect(result.saveVersion).toBe(6);
+    expect(result.saveVersion).toBe(7);
     expect(result.baseUnlocks.levels).toEqual([true, true, false, false, false, false, false]);
   });
 
@@ -291,5 +292,61 @@ describe("PersistStore save migration v5 -> v6", () => {
       baseUnlocks: { levels: [false, true, true, false, false, false, false] },
     });
     expect(result.baseUnlocks.levels).toEqual([false, true, true, false, false, false, false]);
+  });
+});
+
+describe("PersistStore save migration v6 -> v7", () => {
+  // v6 tracked two independent sell-mode purchase flags. v7 is one purchase with
+  // two mutually exclusive positions, carried by sellActive alone.
+  function v6ShapedSave(generalAddons: Record<string, unknown>): Record<string, unknown> {
+    return { saveVersion: 6, gems: 200, generalAddons };
+  }
+
+  it("keeps a single purchase on the mode in effect and refunds nothing", () => {
+    const result = migrateToCurrent(
+      v6ShapedSave({ sellRefundUnlocked: true, sellDiscountUnlocked: false, sellActive: "refund" }),
+    );
+    expect(result.saveVersion).toBe(7);
+    expect(result.generalAddons.sellActive).toBe("refund");
+    expect(result.gems).toBe(200);
+  });
+
+  it("collapses two held purchases onto the active mode and refunds the redundant one", () => {
+    const result = migrateToCurrent(
+      v6ShapedSave({ sellRefundUnlocked: true, sellDiscountUnlocked: true, sellActive: "discount" }),
+    );
+    expect(result.generalAddons.sellActive).toBe("discount");
+    expect(result.gems).toBe(200 + SELL_OPTION_GEM_COST);
+  });
+
+  it("keeps the purchase on Full Refund when v6 recorded a flag but no active mode", () => {
+    const result = migrateToCurrent(
+      v6ShapedSave({ sellRefundUnlocked: false, sellDiscountUnlocked: true, sellActive: null }),
+    );
+    expect(result.generalAddons.sellActive).toBe("refund");
+    expect(result.gems).toBe(200);
+  });
+
+  it("leaves an unbought sell option unbought", () => {
+    const result = migrateToCurrent(
+      v6ShapedSave({ sellRefundUnlocked: false, sellDiscountUnlocked: false, sellActive: null }),
+    );
+    expect(result.generalAddons.sellActive).toBeNull();
+    expect(result.gems).toBe(200);
+  });
+
+  it("drops the v6 flag keys so they stop riding along in the save", () => {
+    const result = migrateToCurrent(
+      v6ShapedSave({ sellRefundUnlocked: true, sellDiscountUnlocked: true, sellActive: "refund" }),
+    );
+    expect(result.generalAddons).not.toHaveProperty("sellRefundUnlocked");
+    expect(result.generalAddons).not.toHaveProperty("sellDiscountUnlocked");
+  });
+
+  it("leaves the other general addons untouched", () => {
+    const result = migrateToCurrent(
+      v6ShapedSave({ extraHealth: 2, sellRefundUnlocked: true, sellDiscountUnlocked: false, sellActive: "refund" }),
+    );
+    expect(result.generalAddons.extraHealth).toBe(2);
   });
 });

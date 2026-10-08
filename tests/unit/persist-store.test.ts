@@ -55,8 +55,6 @@ describe("PersistStore", () => {
       const expectedKeys = [
         "extraHealth",
         "startingGold",
-        "sellRefundUnlocked",
-        "sellDiscountUnlocked",
         "sellActive",
         "upgradeCostReduction",
         "terrainHeightBonus",
@@ -343,17 +341,17 @@ describe("PersistStore", () => {
 
   describe("schema migration on load", () => {
     it("includes saveVersion in default state", () => {
-      expect(store.saveVersion).toBe(6);
+      expect(store.saveVersion).toBe(7);
     });
 
-    it("migrates v1 data (no saveVersion) to current (v6)", () => {
+    it("migrates v1 data (no saveVersion) to current (v7)", () => {
       const oldData = { gems: 100, highestUnlockedMap: 5 };
       (localStorage.getItem as ReturnType<typeof vi.fn>)
         .mockReturnValueOnce(null) // legacy key 1 (gempath_save_v1)
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
         .mockReturnValueOnce(JSON.stringify(oldData)); // STORAGE_KEY
       store.load();
-      expect(store.saveVersion).toBe(6);
+      expect(store.saveVersion).toBe(7);
       expect(store.gems).toBe(100);
       expect(store.baseUnlocks.levels).toEqual([true, true, false, false, false, false, false]);
       expect(store.themeProgress.default.highestUnlockedMap).toBe(5);
@@ -368,12 +366,12 @@ describe("PersistStore", () => {
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
         .mockReturnValueOnce(JSON.stringify(v1Data)); // STORAGE_KEY
       store.load();
-      expect(store.saveVersion).toBe(6);
+      expect(store.saveVersion).toBe(7);
       expect(store.gems).toBe(200);
       expect(store.themeProgress.default.bestWaves.best_3).toBe(45);
     });
 
-    it("loads v2 data and migrates forward to current (v6)", () => {
+    it("loads v2 data and migrates forward to current (v7)", () => {
       const v2Data = {
         saveVersion: 2,
         gems: 300,
@@ -395,7 +393,7 @@ describe("PersistStore", () => {
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
         .mockReturnValueOnce(JSON.stringify(v2Data)); // STORAGE_KEY
       store.load();
-      expect(store.saveVersion).toBe(6);
+      expect(store.saveVersion).toBe(7);
       expect(store.gems).toBe(300);
       expect(store.difficulty.multiplierTick).toBe(4);
       expect(store.generalAddons.extraHealth).toBe(10);
@@ -423,7 +421,7 @@ describe("PersistStore", () => {
         .mockReturnValueOnce(null) // legacy key 2 (lol_ya_tdg_save_1)
         .mockReturnValueOnce(JSON.stringify(v3Data)); // STORAGE_KEY
       store.load();
-      expect(store.saveVersion).toBe(6);
+      expect(store.saveVersion).toBe(7);
       expect(store.llmCommanders[0]?.requestTimeoutMs).toBe(30000);
       expect(store.llmCommanders[0]?.decisionIntervalMs).toBe(1000);
       expect(store.llmCommanders[0]?.name).toBe("Old");
@@ -453,7 +451,7 @@ describe("PersistStore", () => {
       expect(store.gems).toBe(50);
       expect(store.generalAddons.extraHealth).toBe(15);
       expect(store.generalAddons.startingGold).toBeNull();
-      expect(store.generalAddons.sellRefundUnlocked).toBe(false);
+      expect(store.generalAddons.sellActive).toBeNull();
       expect(store.generalAddons.slowHealing).toBeNull();
       expect(store.generalAddons.progressiveThirdChoice).toBeNull();
     });
