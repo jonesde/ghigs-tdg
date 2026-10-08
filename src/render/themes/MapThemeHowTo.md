@@ -203,7 +203,7 @@ Towers are centered on their tile and the whole sprite rotates to `tower.angle`.
 
 `TowerManager` sets `style.color` from the theme color. `currentColor` in the sprite picks that up. Hard-coded fills do not. Ghost towers are drawn by lowering the element's opacity.
 
-Level pips are 2px circles along the bottom of the sprite (`tower.y + 12`).
+Level pips are 2px circles along the bottom of the sprite (`tower.y + 12`). A tower shows `level - 1` pips. Pip color comes from the pip index, not the level: pips 1-3 are silver and pips 4-6 are gold, so a level-5 tower reads as three silver pips plus one gold rather than flipping all three. The base defense draws the same row under the same rule.
 
 ### Enemy Sprites
 

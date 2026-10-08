@@ -5,6 +5,14 @@ import { GRID_TILE_SIZE, SVG_NS, TOWER_SCALED_SIZE } from "./types.js";
 
 const SENTRY_SCALED_SIZE = GRID_TILE_SIZE * 0.5;
 
+const PIP_SILVER_FILL = "#c0c0c0";
+const PIP_GOLD_FILL = "#ffd84d";
+const PIP_GOLD_FIRST_INDEX = 3;
+
+function pipFillForIndex(pipIndex: number): string {
+  return pipIndex >= PIP_GOLD_FIRST_INDEX ? PIP_GOLD_FILL : PIP_SILVER_FILL;
+}
+
 // Theme visual pair for one base-turret sprite ("basic" corners, "sniper" edges).
 export interface SentryVisual {
   animation: MapThemeAnimation | null;
@@ -68,7 +76,6 @@ export class TowerManager {
         }
       }
 
-      const pipFill = tower.level >= 5 ? "#ffd84d" : "#c0c0c0";
       for (let p = 0; p < pips.length; p++) {
         const pip = pips[p]!;
         pip.style.visibility = "visible";
@@ -78,6 +85,7 @@ export class TowerManager {
         if (pip.getAttribute("transform") !== pipTransform) {
           pip.setAttribute("transform", pipTransform);
         }
+        const pipFill = pipFillForIndex(p);
         if (pip.getAttribute("fill") !== pipFill) {
           pip.setAttribute("fill", pipFill);
         }
@@ -139,7 +147,6 @@ export class TowerManager {
       this.layer.appendChild(pip);
       this.basePipEls.push(pip);
     }
-    const pipFill = level >= 5 ? "#ffd84d" : "#c0c0c0";
     for (let pipIndex = 0; pipIndex < this.basePipEls.length; pipIndex++) {
       const pip = this.basePipEls[pipIndex]!;
       if (pipIndex >= pipCount || !baseCenter) {
@@ -151,6 +158,7 @@ export class TowerManager {
       const pipY = baseCenter.y + GRID_TILE_SIZE * 1.5 + 4;
       const pipTransform = `translate(${pipX}, ${pipY})`;
       if (pip.getAttribute("transform") !== pipTransform) pip.setAttribute("transform", pipTransform);
+      const pipFill = pipFillForIndex(pipIndex);
       if (pip.getAttribute("fill") !== pipFill) pip.setAttribute("fill", pipFill);
     }
   }
