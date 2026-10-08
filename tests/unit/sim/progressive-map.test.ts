@@ -36,6 +36,7 @@ import {
 } from "@/sim/grid/ProgressiveMap.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { createDefaultPersistState, maybeUnlockNextMap } from "@/sim/PersistState.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import { tryRefundGeneral, tryUnlockGeneral } from "@/sim/towers/SkillTree.js";
 import { WaveManager } from "@/sim/waves/WaveManager.js";
 import { enemyLevelForWave, progressiveEnemyLevel } from "@/sim/waves/waveComposition.js";
@@ -504,7 +505,7 @@ describe("progressive world positions", () => {
         const enemy = new Enemy("minion", 1, spawnIndex, grid, 1);
         const spawn = map.spawns[spawnIndex]!;
         const expected = grid.tileToWorld(spawn.x, spawn.y);
-        enemy.postPhysics(1 / 60);
+        enemy.postPhysics(fixedDeltaSeconds);
         expect(enemy.x).toBe(expected.x);
         expect(enemy.y).toBe(expected.y);
       }

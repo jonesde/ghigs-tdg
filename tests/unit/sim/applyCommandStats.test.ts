@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { applyCommandWithStats } from "@/sim/applyCommandStats.js";
 import { GameEngine } from "@/sim/GameEngine.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import {
   createTestMapThemeStore,
   createTestPersistState,
@@ -8,8 +9,6 @@ import {
   MockHostBindings,
 } from "../../helpers/mock-stores.js";
 import { orderedPath } from "../../helpers/navmesh-test-utils.js";
-
-const FIXED_DT = 1 / 60;
 
 describe("applyCommandWithStats (Block C parallel wrapper)", () => {
   let engine: GameEngine;
@@ -21,7 +20,7 @@ describe("applyCommandWithStats (Block C parallel wrapper)", () => {
     engine = new GameEngine(persistState, createTestThemeBundle(), new MockHostBindings(), 0);
     engine.loadMap(0);
     engine.waveManager?.startNextWave();
-    for (let tick = 0; tick < 30; tick++) engine.update(FIXED_DT);
+    for (let tick = 0; tick < 30; tick++) engine.update(fixedDeltaSeconds);
   });
 
   function firstEnemyId(): number {

@@ -10,6 +10,7 @@ import { Grid } from "@/sim/grid/Grid.js";
 import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap } from "../helpers/mock-grid";
 import { makeParticleSystem } from "../helpers/mock-managers";
@@ -181,7 +182,7 @@ describe("EnemyManager", () => {
       const startY = enemy.y;
       // Motion is crowd + physics driven: the crowd sets the agent's velocity and
       // the world steps the body, so stepPhysics must be driven with the crowd.
-      for (let i = 0; i < 120; i++) stepPhysics(manager, physicsWorld, 1 / 60, null, null, crowdManager);
+      for (let i = 0; i < 120; i++) stepPhysics(manager, physicsWorld, fixedDeltaSeconds, null, null, crowdManager);
       const _expectedDist = getGameContent().enemies.types.runner.speed * grid.tileSize;
       const _actualDist = Math.hypot(enemy.x - startX, enemy.y - startY);
       expect(enemy.x).not.toBe(startX);
@@ -191,7 +192,7 @@ describe("EnemyManager", () => {
   describe("getEnemiesInRange", () => {
     it("returns enemies within range", () => {
       manager.spawn("minion", 1, 0, 1);
-      stepPhysics(manager, physicsWorld, 1 / 60);
+      stepPhysics(manager, physicsWorld, fixedDeltaSeconds);
       const towerPos = { x: 18, y: 18 };
       const inRange = manager.getEnemiesInRange(towerPos.x, towerPos.y, grid.tileSize * 3.5);
       expect(inRange.length).toBeGreaterThan(0);
@@ -206,7 +207,7 @@ describe("EnemyManager", () => {
 
     it("includes enemies attacking the base in range queries (they still collide)", () => {
       const enemy = manager.spawn("minion", 1, 0, 1);
-      stepPhysics(manager, physicsWorld, 1 / 60);
+      stepPhysics(manager, physicsWorld, fixedDeltaSeconds);
       enemy.attackingBase = true;
       const inRange = manager.getEnemiesInRange(enemy.x, enemy.y, 10);
       expect(inRange).toContain(enemy);
@@ -244,7 +245,7 @@ describe("EnemyManager", () => {
     it("maintains correct hash after multiple spawn and cull cycles", () => {
       const e1 = manager.spawn("minion", 1, 0, 1);
       const e2 = manager.spawn("runner", 1, 0, 1);
-      stepPhysics(manager, physicsWorld, 1 / 60);
+      stepPhysics(manager, physicsWorld, fixedDeltaSeconds);
       e1.removed = true;
       manager.postStep(0.016, () => {});
       expect(manager.enemies).toHaveLength(1);
@@ -261,7 +262,7 @@ describe("EnemyManager", () => {
       const e2 = manager.spawn("minion", 1, 0, 1);
       const removed = manager.spawn("runner", 1, 0, 1);
       const reached = manager.spawn("minion", 1, 0, 1);
-      stepPhysics(manager, physicsWorld, 1 / 60);
+      stepPhysics(manager, physicsWorld, fixedDeltaSeconds);
       removed.removed = true;
       reached.attackingBase = true;
 

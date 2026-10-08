@@ -10,6 +10,7 @@ import { NavDistanceField } from "@/sim/navmesh/NavDistanceField.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { NoopParticleSpawner } from "@/sim/ParticleSystem.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 
 // `#` path, `B` base, `W` live blocking tower, `.` terrain.
 function gridFromRows(rows, spawn, base) {
@@ -58,7 +59,6 @@ describe("breach-vs-detour intent", () => {
   let navBuilder: NavMeshBuilder | null = null;
   let field: NavDistanceField | null = null;
   let enemyManager: EnemyManager | null = null;
-  const fixedDt = 1 / 60;
 
   function setupScenario() {
     const rows = ["S###W###B", "#########"];
@@ -119,14 +119,14 @@ describe("breach-vs-detour intent", () => {
     const { enemy, tower, manager } = spawnWithTower("minion", 1);
     expect(field.getDistanceToBase(0, 0)).toBe(10);
     expect(field.getThroughDistanceToBase(0, 0)).toBe(8);
-    enemy.computeIntent(fixedDt, manager);
+    enemy.computeIntent(fixedDeltaSeconds, manager);
     expect(enemy.routingMode).toBe("siege");
     expect(enemy.siegeTower).toBe(tower);
   });
 
   it("detours around a high-HP wall on the short leg", () => {
     const { enemy, manager } = spawnWithTower("minion", 2000);
-    enemy.computeIntent(fixedDt, manager);
+    enemy.computeIntent(fixedDeltaSeconds, manager);
     expect(field.getDistanceToBase(0, 0)).toBeGreaterThanOrEqual(0);
     expect(field.getThroughBlockers(0, 0)).toEqual([{ x: 4, y: 0 }]);
     expect(enemy.routingMode).toBe("default");
@@ -135,12 +135,12 @@ describe("breach-vs-detour intent", () => {
 
   it("splits boss and minion DPS on the same wall", () => {
     const bossSetup = spawnWithTower("boss", 12);
-    bossSetup.enemy.computeIntent(fixedDt, bossSetup.manager);
+    bossSetup.enemy.computeIntent(fixedDeltaSeconds, bossSetup.manager);
     expect(bossSetup.enemy.routingMode).toBe("siege");
     teardown();
 
     const minionSetup = spawnWithTower("minion", 12);
-    minionSetup.enemy.computeIntent(fixedDt, minionSetup.manager);
+    minionSetup.enemy.computeIntent(fixedDeltaSeconds, minionSetup.manager);
     expect(minionSetup.enemy.routingMode).toBe("default");
     expect(minionSetup.enemy.siegeTower).toBeNull();
   });
@@ -154,7 +154,7 @@ describe("breach-vs-detour intent", () => {
     enemy.centerX = nearWall.x;
     enemy.centerY = nearWall.y;
     enemy.breachCooldownSeconds = 0;
-    enemy.computeIntent(fixedDt, manager);
+    enemy.computeIntent(fixedDeltaSeconds, manager);
     expect(enemy.routingMode).toBe("siege");
     expect(enemy.siegeTower).toBe(tower);
   });
@@ -162,14 +162,14 @@ describe("breach-vs-detour intent", () => {
   it("keeps explicit hold and engagement policies out of the comparator", () => {
     const { enemy, manager } = spawnWithTower("minion", 1);
     enemy.applyRoute([{ x: 1, y: 0 }], "hold");
-    enemy.computeIntent(fixedDt, manager);
+    enemy.computeIntent(fixedDeltaSeconds, manager);
     expect(enemy.routingMode).toBe("hold");
     expect(enemy.siegeTower).toBeNull();
 
     enemy.releaseToDefault();
     enemy.targetingMode = "strongest";
     enemy.breachCooldownSeconds = 0;
-    enemy.computeIntent(fixedDt, manager);
+    enemy.computeIntent(fixedDeltaSeconds, manager);
     expect(enemy.routingMode).toBe("siege");
     expect(enemy.siegeTower).not.toBeNull();
   });
@@ -211,7 +211,7 @@ describe("breach-vs-detour intent", () => {
     const enemy = enemyManager.spawn("minion", 1, 0, 1);
     crowd.addAgent(enemy);
     expect(field.getDistanceToBase(0, 0)).toBe(-1);
-    enemy.computeIntent(fixedDt, enemyManager);
+    enemy.computeIntent(fixedDeltaSeconds, enemyManager);
     expect(enemy.routingMode).toBe("default");
     expect(enemy.siegeTower).toBeNull();
     teardown();
@@ -261,7 +261,7 @@ describe("breach-vs-detour intent", () => {
     crowd.teleportAgent(enemy, pocket);
     expect(field.getDistanceToBase(4, 1)).toBe(-1);
     enemy.breachCooldownSeconds = 0;
-    enemy.computeIntent(fixedDt, enemyManager);
+    enemy.computeIntent(fixedDeltaSeconds, enemyManager);
     expect(enemy.routingMode).toBe("default");
     expect(enemy.siegeTower).toBeNull();
     teardown();

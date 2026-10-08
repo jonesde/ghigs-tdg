@@ -7,6 +7,7 @@ import { Enemy } from "@/sim/enemies/Enemy.js";
 import { GameEngine } from "@/sim/GameEngine.js";
 import { GameState } from "@/sim/GameRunState.js";
 import { createDefaultPersistState, difficultyMultiplier as getDifficultyMultiplier } from "@/sim/PersistState.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import type { Tower } from "@/sim/towers/Tower.js";
 import {
   createTestGameStore,
@@ -955,7 +956,7 @@ describe("GameEngine", () => {
       tower.cachedTargetId = 42;
       engine.setTargeting("closest");
       expect(tower.cachedTargetId).toBeNull();
-      engine.update(1 / 60);
+      engine.update(fixedDeltaSeconds);
       expect(tower.cachedTargetId).not.toBeNull();
       const reacquired = engine.enemyManager!.getEnemyById(tower.cachedTargetId!);
       expect(reacquired).toBeDefined();
@@ -971,7 +972,7 @@ describe("GameEngine", () => {
       tower.cachedTargetId = 42;
       engine.setFixedAimDir("N");
       expect(tower.cachedTargetId).toBeNull();
-      engine.update(1 / 60);
+      engine.update(fixedDeltaSeconds);
       expect(tower.cachedTargetId).not.toBeNull();
       const reacquired = engine.enemyManager!.getEnemyById(tower.cachedTargetId!);
       expect(reacquired).toBeDefined();
@@ -988,7 +989,7 @@ describe("GameEngine", () => {
       enemy.hp = 1000;
       enemy.applyBurn(10, 5, tower.id);
       const damageBefore = tower.totalDamageDealt;
-      engine.update(1 / 60);
+      engine.update(fixedDeltaSeconds);
       expect(tower.totalDamageDealt).toBeGreaterThan(damageBefore);
       expect(enemy.hp).toBeLessThan(1000);
     });

@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { EffectManager } from "@/render/svg/EffectManager.js";
 import { LIGHTNING_POOL_SIZE, STUN_POOL_SIZE } from "@/render/svg/types.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 
 // Matches lightningLifeSeconds / stunMarkSeconds on the manager side.
 const LIGHTNING_LIFE = 1 / 3;
@@ -63,7 +64,7 @@ describe("EffectManager", () => {
   describe("lightning effects", () => {
     it("renders a single lightning effect at the given coordinates", () => {
       manager.addLightningEffect(10, 20, 100, 200, LIGHTNING_LIFE);
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
 
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
       expect(polylines[0]!.style.visibility).toBe("visible");
@@ -77,7 +78,7 @@ describe("EffectManager", () => {
 
     it("hides unused lightning pool slots when fewer effects are active", () => {
       manager.addLightningEffect(0, 0, 10, 10, LIGHTNING_LIFE);
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
 
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
       expect(polylines[0]!.style.visibility).toBe("visible");
@@ -90,7 +91,7 @@ describe("EffectManager", () => {
       manager.addLightningEffect(0, 0, 10, 10, LIGHTNING_LIFE);
       manager.addLightningEffect(50, 50, 60, 60, LIGHTNING_LIFE);
       manager.addLightningEffect(100, 100, 110, 110, LIGHTNING_LIFE);
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
 
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
       expect(polylines[0]!.style.visibility).toBe("visible");
@@ -105,12 +106,12 @@ describe("EffectManager", () => {
 
     it("hides effect after its life expires", () => {
       manager.addLightningEffect(0, 0, 10, 10, LIGHTNING_LIFE);
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
       expect(polylines[0]!.style.visibility).toBe("visible");
 
       for (let frame = 0; frame < 45; frame++) {
-        manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+        manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
       }
 
       expect(polylines[0]!.style.visibility).toBe("hidden");
@@ -122,7 +123,7 @@ describe("EffectManager", () => {
       for (let i = 0; i < spawned; i++) {
         manager.addLightningEffect(i * 10, 0, i * 10 + 5, 0, LIGHTNING_LIFE);
       }
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
 
       const polylines = lightningPolylines(layer);
       expect(visibleCount(polylines)).toBe(LIGHTNING_POOL_SIZE);
@@ -136,13 +137,13 @@ describe("EffectManager", () => {
     it("clears expired effects and reuses slots for new effects", () => {
       manager.addLightningEffect(1, 0, 2, 0, LIGHTNING_LIFE);
       for (let frame = 0; frame < 45; frame++) {
-        manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+        manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
       }
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
       expect(polylines[0]!.style.visibility).toBe("hidden");
 
       manager.addLightningEffect(99, 0, 100, 0, LIGHTNING_LIFE);
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
       expect(polylines[0]!.style.visibility).toBe("visible");
       expect(polylines[0]!.getAttribute("points")?.split(" ")[0]).toBe("99.0,0.0");
     });
@@ -151,7 +152,7 @@ describe("EffectManager", () => {
   describe("stun effects", () => {
     it("renders a single stun effect at the given coordinates", () => {
       manager.addStunEffect(40, 50, STUN_MARK_LIFE);
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
       expect(groups[0]!.style.visibility).toBe("visible");
@@ -162,7 +163,7 @@ describe("EffectManager", () => {
 
     it("initializes two polylines lazily inside the stun group", () => {
       manager.addStunEffect(10, 10, STUN_MARK_LIFE);
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
       const polylines = groups[0]!.querySelectorAll("polyline");
@@ -171,7 +172,7 @@ describe("EffectManager", () => {
 
     it("glows only the outer arc, so a barrage halves the filtered polylines", () => {
       manager.addStunEffect(10, 10, STUN_MARK_LIFE);
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
       expect(groups[0]!.getAttribute("filter")).toBeNull();
@@ -194,7 +195,7 @@ describe("EffectManager", () => {
 
     it("hides unused stun pool slots", () => {
       manager.addStunEffect(10, 10, STUN_MARK_LIFE);
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
       expect(groups[0]!.style.visibility).toBe("visible");
@@ -207,7 +208,7 @@ describe("EffectManager", () => {
       manager.addStunEffect(10, 10, STUN_MARK_LIFE);
       manager.addStunEffect(20, 20, STUN_MARK_LIFE);
       manager.addStunEffect(30, 30, STUN_MARK_LIFE);
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
 
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
       expect(groups[0]!.style.visibility).toBe("visible");
@@ -221,12 +222,12 @@ describe("EffectManager", () => {
 
     it("hides stun effect after its life expires", () => {
       manager.addStunEffect(10, 10, STUN_MARK_LIFE);
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
       expect(groups[0]!.style.visibility).toBe("visible");
 
       for (let frame = 0; frame < 20; frame++) {
-        manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+        manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
       }
 
       expect(groups[0]!.style.visibility).toBe("hidden");
@@ -239,17 +240,17 @@ describe("EffectManager", () => {
       for (let i = 0; i < STUN_POOL_SIZE + 40; i++) {
         manager.addStunEffect(i, i, STUN_MARK_LIFE);
       }
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
       expect(visibleCount(stunGroups(layer))).toBe(STUN_POOL_SIZE);
 
       for (let frame = 0; frame < 30; frame++) {
-        manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+        manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
       }
       expect(visibleCount(stunGroups(layer))).toBe(0);
 
       // The pool is reusable afterwards, which is what the frozen entries prevented.
       manager.addStunEffect(999, 999, STUN_MARK_LIFE);
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
       expect(visibleCount(stunGroups(layer))).toBe(1);
       expect(stunGroups(layer)[0]!.getAttribute("transform")).toContain("999.0");
     });
@@ -260,7 +261,7 @@ describe("EffectManager", () => {
       for (let i = 0; i < spawned; i++) {
         manager.addStunEffect(i * 10, 0, STUN_MARK_LIFE);
       }
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
 
       const groups = stunGroups(layer);
       expect(visibleCount(groups)).toBe(STUN_POOL_SIZE);
@@ -340,7 +341,7 @@ describe("EffectManager", () => {
     it("restarts the flash when the same enemy is stunned again", () => {
       syncEffects(10, undefined, [{ x: 5, y: 5, targetId: 77, simSeconds: 10 }], [{ id: 77, x: 5, y: 5 }]);
       for (let frame = 0; frame < 12; frame++) {
-        manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+        manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
       }
       expect(stunGroups(layer)[0]!.getAttribute("opacity")).not.toBe("1.000");
 
@@ -356,7 +357,7 @@ describe("EffectManager", () => {
       manager.addStunEffect(20, 20, STUN_MARK_LIFE);
       manager.addLightningEffect(30, 30, 40, 40, LIGHTNING_LIFE);
       manager.addStunEffect(50, 50, STUN_MARK_LIFE);
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
 
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];
@@ -388,13 +389,13 @@ describe("EffectManager", () => {
     });
 
     it("hides the splash circle when nothing is selected or building", () => {
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
       expect(splashCircle().style.visibility).toBe("hidden");
     });
 
     it("draws the splash circle one tile above the preview in build mode (cannon)", () => {
       const buildTilePos = { tileX: 2, tileY: 3 };
-      manager.syncFromGameEngine(buildTilePos, "cannon", null, null, true, 1 / 60);
+      manager.syncFromGameEngine(buildTilePos, "cannon", null, null, true, fixedDeltaSeconds);
       const splash = splashCircle();
       expect(splash.style.visibility).toBe("visible");
       // center of tile (2,3) is (90,126); splash sits one tile (36px) above -> y=90
@@ -405,7 +406,7 @@ describe("EffectManager", () => {
 
     it("hides the splash circle in build mode for a no-splash tower", () => {
       const buildTilePos = { tileX: 2, tileY: 3 };
-      manager.syncFromGameEngine(buildTilePos, "basic", null, null, true, 1 / 60);
+      manager.syncFromGameEngine(buildTilePos, "basic", null, null, true, fixedDeltaSeconds);
       expect(splashCircle().style.visibility).toBe("hidden");
     });
 
@@ -421,7 +422,7 @@ describe("EffectManager", () => {
         tileY: 2,
         stats: { splash: 0.5 },
       };
-      manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60, grid as never);
+      manager.syncFromGameEngine(null, null, null, selectedTower, false, fixedDeltaSeconds, grid as never);
       const splash = splashCircle();
       expect(splash.style.visibility).toBe("visible");
       // nearest path tile is (3,2) -> center (126,90); tower tile (2,2) is avoided
@@ -441,7 +442,7 @@ describe("EffectManager", () => {
         tileY: 2,
         stats: { splash: 0.5 },
       };
-      manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60, grid as never);
+      manager.syncFromGameEngine(null, null, null, selectedTower, false, fixedDeltaSeconds, grid as never);
       const splash = splashCircle();
       expect(splash.style.visibility).toBe("visible");
       expect(splash.getAttribute("transform")).toBe("translate(90, 90)");
@@ -459,12 +460,12 @@ describe("EffectManager", () => {
         tileY: 2,
         stats: { splash: 0 },
       };
-      manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60, grid as never);
+      manager.syncFromGameEngine(null, null, null, selectedTower, false, fixedDeltaSeconds, grid as never);
       expect(splashCircle().style.visibility).toBe("hidden");
     });
 
     it("hides the selected splash circle on deselect and keeps a later cannon preview", () => {
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
       const selectedTower = {
         id: "t1",
         x: 90,
@@ -475,11 +476,11 @@ describe("EffectManager", () => {
         tileY: 2,
         stats: { splash: 0.5 },
       };
-      manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, selectedTower, false, fixedDeltaSeconds);
       expect(splashCircle().style.visibility).toBe("visible");
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
       expect(splashCircle().style.visibility).toBe("hidden");
-      manager.syncFromGameEngine({ tileX: 2, tileY: 3 }, "cannon", null, null, true, 1 / 60);
+      manager.syncFromGameEngine({ tileX: 2, tileY: 3 }, "cannon", null, null, true, fixedDeltaSeconds);
       expect(splashCircle().style.visibility).toBe("visible");
       expect(splashCircle().getAttribute("stroke-dasharray")).toBe("3,3");
     });
@@ -495,7 +496,7 @@ describe("EffectManager", () => {
         tileY: 2,
         stats: { splash: 0.5 },
       };
-      manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60, null);
+      manager.syncFromGameEngine(null, null, null, selectedTower, false, fixedDeltaSeconds, null);
       const splash = splashCircle();
       expect(splash.style.visibility).toBe("visible");
       expect(splash.getAttribute("transform")).toBe("translate(90, 90)");
@@ -519,17 +520,17 @@ describe("EffectManager", () => {
         tileY: 2,
         stats: { splash: 0, range: 4.75 },
       };
-      manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, selectedTower, false, fixedDeltaSeconds);
       const solid = circleWithDash(null);
       expect(solid.getAttribute("stroke-dasharray")).toBeNull();
       expect(solid.getAttribute("r")).toBe("171");
       selectedTower.stats.range = 6;
-      manager.syncFromGameEngine(null, null, null, selectedTower, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, selectedTower, false, fixedDeltaSeconds);
       expect(solid.getAttribute("r")).toBe("216");
     });
 
     it("sizes the build preview range circle from buildRangeTiles", () => {
-      manager.syncFromGameEngine({ tileX: 1, tileY: 1 }, "basic", null, null, true, 1 / 60, null, 4.25);
+      manager.syncFromGameEngine({ tileX: 1, tileY: 1 }, "basic", null, null, true, fixedDeltaSeconds, null, 4.25);
       const dashed = circleWithDash("4,3");
       expect(dashed.style.visibility).toBe("visible");
       expect(dashed.getAttribute("r")).toBe("153");
@@ -548,7 +549,7 @@ describe("EffectManager", () => {
       manager.addStunEffect(20, 20, STUN_MARK_LIFE);
       manager.dispose();
       manager.init(layer);
-      manager.syncFromGameEngine(null, null, null, null, false, 1 / 60);
+      manager.syncFromGameEngine(null, null, null, null, false, fixedDeltaSeconds);
 
       const polylines = Array.from(layer.querySelectorAll("polyline")) as SVGPolylineElement[];
       const groups = Array.from(layer.querySelectorAll("g")) as SVGGElement[];

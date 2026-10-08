@@ -22,6 +22,7 @@ import { createDefaultPersistState } from "@/sim/PersistState.js";
 import { ProjectileManager } from "@/sim/ProjectileManager.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { waveGraphDotSpacing, waveGraphIntervalSeconds } from "@/sim/SimulationSnapshot.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import { Tower } from "@/sim/towers/Tower.js";
 import { WaveGraphTracker } from "@/sim/WaveGraphTracker.js";
 import { makeBastionMap } from "../../helpers/mock-grid.js";
@@ -149,7 +150,7 @@ describe("sensor fallback contract (Block D1-B)", () => {
       towerAt: () => null,
       forEachSensorHits: vi.fn(() => false),
     };
-    tower.update(1 / 60, enemyManager, { spawn: vi.fn(), fireLightning: vi.fn() }, { playSound: vi.fn() });
+    tower.update(fixedDeltaSeconds, enemyManager, { spawn: vi.fn(), fireLightning: vi.fn() }, { playSound: vi.fn() });
     expect(enemyManager.forEachSensorHits).toHaveBeenCalledWith(`${tower.id}:frost`, expect.any(Function));
     expect(enemyManager.forEachEnemyInRange).toHaveBeenCalledTimes(1);
     expect(enemyManager.forEachEnemyInRange.mock.calls[0][2]).toBeCloseTo(
@@ -181,7 +182,7 @@ describe("sensor fallback contract (Block D1-B)", () => {
       towerAt: () => null,
       forEachSensorHits: vi.fn(() => false),
     };
-    tower.update(1 / 60, enemyManager, { spawn: vi.fn(), fireLightning: vi.fn() }, { playSound: vi.fn() });
+    tower.update(fixedDeltaSeconds, enemyManager, { spawn: vi.fn(), fireLightning: vi.fn() }, { playSound: vi.fn() });
     expect(enemyManager.forEachEnemyInRange).toHaveBeenCalledTimes(1);
     expect(enemyManager.forEachEnemyInRange.mock.calls[0][2]).toBeCloseTo(
       getGameContent().towers.tuning.staticFieldRange * 36,
@@ -204,7 +205,7 @@ describe("sensor fallback contract (Block D1-B)", () => {
       towerAt: () => null,
       forEachSensorHits: vi.fn(() => true),
     };
-    tower.update(1 / 60, enemyManager, { spawn: vi.fn(), fireLightning: vi.fn() }, { playSound: vi.fn() });
+    tower.update(fixedDeltaSeconds, enemyManager, { spawn: vi.fn(), fireLightning: vi.fn() }, { playSound: vi.fn() });
     expect(enemyManager.forEachSensorHits).toHaveBeenCalledWith(`${tower.id}:static`, expect.any(Function));
     expect(enemyManager.forEachEnemyInRange).not.toHaveBeenCalled();
   });
@@ -222,7 +223,7 @@ describe("sensor fallback contract (Block D1-B)", () => {
       liveTowers: () => [],
       forEachSensorHits: () => false,
     };
-    healer.computeIntent(1 / 60, enemyManager);
+    healer.computeIntent(fixedDeltaSeconds, enemyManager);
     expect(usedRanges).toContain(healer.healRange);
   });
 });
@@ -262,7 +263,7 @@ describe("Tower targeting visitor paths (Block D1-D)", () => {
       towerAt: () => null,
     };
     const projectileManager = { spawn: vi.fn(), fireLightning: vi.fn() };
-    tower.update(1 / 60, enemyManager, projectileManager, { playSound: vi.fn() });
+    tower.update(fixedDeltaSeconds, enemyManager, projectileManager, { playSound: vi.fn() });
     expect(enemyManager.getEnemiesInRange).not.toHaveBeenCalled();
     expect(enemyManager.forEachEnemyInRange).not.toHaveBeenCalled();
     expect(projectileManager.spawn).toHaveBeenCalledTimes(1);
@@ -281,7 +282,7 @@ describe("Tower targeting visitor paths (Block D1-D)", () => {
       towerAt: () => null,
     };
     const projectileManager = { spawn: vi.fn(), fireLightning: vi.fn() };
-    tower.update(1 / 60, enemyManager, projectileManager, { playSound: vi.fn() });
+    tower.update(fixedDeltaSeconds, enemyManager, projectileManager, { playSound: vi.fn() });
     expect(enemyManager.getEnemiesInRange).not.toHaveBeenCalled();
     expect(enemyManager.forEachEnemyInRange).toHaveBeenCalledTimes(1);
     expect(projectileManager.spawn).toHaveBeenCalledTimes(1);
@@ -297,7 +298,7 @@ describe("Tower targeting visitor paths (Block D1-D)", () => {
       getEnemyById: () => null,
       towerAt: () => null,
     };
-    tower.update(1 / 60, enemyManager, { spawn: vi.fn(), fireLightning: vi.fn() }, { playSound: vi.fn() });
+    tower.update(fixedDeltaSeconds, enemyManager, { spawn: vi.fn(), fireLightning: vi.fn() }, { playSound: vi.fn() });
     expect(enemyManager.getEnemiesInRange).not.toHaveBeenCalled();
     expect(enemyManager.forEachEnemyInRange).not.toHaveBeenCalled();
   });
@@ -349,18 +350,18 @@ describe("ProjectileManager id index (Block D1-F)", () => {
     const firstHpBefore = firstEnemy.hp;
     const secondHpBefore = secondEnemy.hp;
 
-    manager.postPhysics(1 / 60, [{ projectileId: secondProjectileId, enemyId: secondEnemy.id }]);
+    manager.postPhysics(fixedDeltaSeconds, [{ projectileId: secondProjectileId, enemyId: secondEnemy.id }]);
     expect(secondEnemy.hp).toBeLessThan(secondHpBefore);
     expect(firstEnemy.hp).toBe(firstHpBefore);
     expect(manager.getRenderData().map((entry) => entry.id)).toContain(secondProjectileId);
 
-    manager.prePhysics(1 / 60);
+    manager.prePhysics(fixedDeltaSeconds);
     expect(manager.getRenderData().map((entry) => entry.id)).not.toContain(secondProjectileId);
 
     // The index entry is dropped with the list entry, so a stale contact for the
     // removed projectile no longer resolves.
     const staleHp = secondEnemy.hp;
-    manager.postPhysics(1 / 60, [{ projectileId: secondProjectileId, enemyId: secondEnemy.id }]);
+    manager.postPhysics(fixedDeltaSeconds, [{ projectileId: secondProjectileId, enemyId: secondEnemy.id }]);
     expect(secondEnemy.hp).toBe(staleHp);
   });
 });
@@ -405,7 +406,7 @@ describe("cannon splash visitor (Block D1-F3)", () => {
       targetId: primary.id,
       splash: 1,
     });
-    manager.postPhysics(1 / 60, [{ projectileId: 1, enemyId: primary.id }]);
+    manager.postPhysics(fixedDeltaSeconds, [{ projectileId: 1, enemyId: primary.id }]);
     expect(primary.takeDamage).toHaveBeenCalledTimes(1);
     expect(nearby.takeDamage).toHaveBeenCalledTimes(1);
     expect(farAway.takeDamage).not.toHaveBeenCalled();

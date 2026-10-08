@@ -4,14 +4,13 @@ import { applyCommand } from "@/sim/applyCommand.js";
 import type { Command } from "@/sim/Command.js";
 import { GameEngine } from "@/sim/GameEngine.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import {
   createTestMapThemeStore,
   createTestPersistState,
   createTestThemeBundle,
   MockHostBindings,
 } from "../helpers/mock-stores.js";
-
-const FIXED_DT = 1 / 60;
 
 // Minimal DedicatedWorkerGlobalScope shape for the commander worker (mirrors the
 // mock used in tests/integration/worker-roundtrip.test.ts for the sim worker).
@@ -87,7 +86,7 @@ describe("Integration: real commander worker round-trip (stubby)", () => {
     setupEngine();
 
     // Tick until a few enemies have spawned, then feed the first observation.
-    for (let tick = 0; tick < 30; tick++) engine.update(FIXED_DT);
+    for (let tick = 0; tick < 30; tick++) engine.update(fixedDeltaSeconds);
     const firstCommands = postObservation();
 
     // Exactly one setGridLayoutFeed (feed off) is emitted on first gridLayout receipt.
@@ -104,14 +103,14 @@ describe("Integration: real commander worker round-trip (stubby)", () => {
     // snapshot (consumer-visible state) rather than Enemy internals. A held enemy
     // does not advance, so its distance to the base stays put (lane-offset jitter
     // is tolerated; a real advance would close more than a tile per second).
-    for (let tick = 0; tick < 10; tick++) engine.update(FIXED_DT);
+    for (let tick = 0; tick < 10; tick++) engine.update(fixedDeltaSeconds);
     const heldId = (holds[0] as Extract<Command, { type: "llm:routeGroup" }>).enemyIds[0]!;
     const tileSize = engine.grid!.tileSize;
     const baseWorldX = engine.grid!.base.x * tileSize + tileSize / 2;
     const baseWorldY = engine.grid!.base.y * tileSize + tileSize / 2;
     const snapshotBefore = buildSnapshot(engine, 0);
     const enemyBefore = snapshotBefore.enemies.find((e) => e.id === heldId)!;
-    for (let tick = 0; tick < 60; tick++) engine.update(FIXED_DT);
+    for (let tick = 0; tick < 60; tick++) engine.update(fixedDeltaSeconds);
     const snapshotAfter = buildSnapshot(engine, 0);
     const enemyAfter = snapshotAfter.enemies.find((e) => e.id === heldId)!;
     const distBefore = Math.hypot(enemyBefore.x - baseWorldX, enemyBefore.y - baseWorldY);
@@ -122,7 +121,7 @@ describe("Integration: real commander worker round-trip (stubby)", () => {
     // has fully emerged; the worker then emits the release rush.
     let rushCommands: Command[] = [];
     for (let tick = 0; tick < 4000 && rushCommands.length === 0; tick++) {
-      engine.update(FIXED_DT);
+      engine.update(fixedDeltaSeconds);
       if (tick % 10 === 0) {
         const commands = postObservation();
         rushCommands = commands.filter(
@@ -143,7 +142,7 @@ describe("Integration: real commander worker round-trip (stubby)", () => {
     const distBeforeRush = releasedEnemy
       ? Math.hypot(releasedEnemy.centerX - baseWorldX, releasedEnemy.centerY - baseWorldY)
       : 0;
-    for (let tick = 0; tick < 2000; tick++) engine.update(FIXED_DT);
+    for (let tick = 0; tick < 2000; tick++) engine.update(fixedDeltaSeconds);
     const afterEnemy = engine.getEnemiesByIds([heldId])[0];
     if (afterEnemy) {
       const distAfterRush = Math.hypot(afterEnemy.centerX - baseWorldX, afterEnemy.centerY - baseWorldY);

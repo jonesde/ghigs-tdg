@@ -11,6 +11,7 @@ import {
   templateCanExtendOpening,
 } from "@/sim/grid/ProgressiveMap.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import type { WaveManager } from "@/sim/waves/WaveManager.js";
 import { createTestPersistState, createTestThemeBundle, MockHostBindings } from "../../helpers/mock-stores.js";
 
@@ -45,7 +46,7 @@ describe("progressive placement hold", () => {
     reachWave(3);
     const manager = waveManager();
     manager._waveGameTime = getGameContent().economy.preEmptiveWaveTimer;
-    engine.update(1 / 60);
+    engine.update(fixedDeltaSeconds);
     expect(manager.currentWave).toBe(3);
     expect(engine.progressivePlacementHold).toBe(true);
     expect(engine.progressiveResumeMode).toBe("expire-advance");
@@ -59,7 +60,7 @@ describe("progressive placement hold", () => {
     if (!engine.enemyManager) throw new Error("enemy manager missing");
     manager.queue.length = 0;
     engine.enemyManager.clear();
-    engine.update(1 / 60);
+    engine.update(fixedDeltaSeconds);
     expect(manager.currentWave).toBe(3);
     expect(engine.progressivePlacementHold).toBe(true);
     expect(engine.progressiveResumeMode).toBe("countdown");
@@ -120,7 +121,7 @@ describe("progressive placement hold", () => {
     reachWave(3);
     const manager = waveManager();
     manager._waveGameTime = getGameContent().economy.preEmptiveWaveTimer;
-    engine.update(1 / 60);
+    engine.update(fixedDeltaSeconds);
     expect(engine.progressivePlacementHold).toBe(true);
     expect(engine.progressiveResumeMode).toBe("expire-advance");
     const site = currentOfferSite();
