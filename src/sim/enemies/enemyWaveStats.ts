@@ -33,20 +33,24 @@ export function enemyLevelBounty(baseBounty: number, level: number, wave: number
 
 // HP and damage scale independently: each has its own level coefficients
 // (linear in level) and its own wave coefficient (linear in wave), plus a late
-// exponential steepening that starts at enemies.lateWaveStartWave and leaves
+// additional linear steepening that starts at enemies.lateWaveStartWave and leaves
 // earlier waves bit-identical. Difficulty is a single shared multiplier over both.
 // HP = baseHp * enemyLevelMult(level, enemies.levelHpMult) * (1 + enemies.waveHpMult*(wave-1)) * lateHpMult(wave) * diffMult
 // Damage = attackDamage * enemyLevelMult(level, enemies.levelDamageMult) * (1 + enemies.waveDamageMult*(wave-1)) * lateDamageMult(wave) * diffMult
 // Shield scales with exactly the same HP factors: shielded types carry a shield
 // instead of health, so the shield:HP ratio is constant across the run.
 export function lateHpMult(wave: number): number {
-  const pastStart = Math.max(0, wave - getGameContent().enemies.lateWaveStartWave);
-  return (1 + getGameContent().enemies.lateWaveHpGrowth) ** pastStart;
+  const pastStart = wave - getGameContent().enemies.lateWaveStartWave;
+  const rawMult = getGameContent().enemies.lateWaveHpGrowth * pastStart;
+  if (rawMult < 1) return 1;
+  return rawMult;
 }
 
 export function lateDamageMult(wave: number): number {
-  const pastStart = Math.max(0, wave - getGameContent().enemies.lateWaveStartWave);
-  return (1 + getGameContent().enemies.lateWaveDamageGrowth) ** pastStart;
+  const pastStart = wave - getGameContent().enemies.lateWaveStartWave;
+  const rawMult = getGameContent().enemies.lateWaveDamageGrowth * pastStart;
+  if (rawMult < 1) return 1;
+  return rawMult;
 }
 
 export function computeEnemyWaveStats(

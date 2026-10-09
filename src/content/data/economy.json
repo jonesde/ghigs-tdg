@@ -10,7 +10,7 @@
   "difficultyMultMin": 1.0,
   "difficultyMultMax": 4.0,
   "difficultyMultTick": 0.25,
-  "regionDifficultyMult": 2.0,
+  "regionDifficultyMult": 2.5,
   "difficultyMultGemBase": 1.5,
   "mapGemMultipliers": [1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6],
   "firstTimeMilestoneMult": 2,
