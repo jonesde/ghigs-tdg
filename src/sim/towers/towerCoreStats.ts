@@ -135,6 +135,10 @@ export function computeTowerCoreStats(
     }
   }
 
+  // Hard ceiling after level scaling and variant ops. Help reads this value, so a
+  // later level cannot advertise a rate the tower is not allowed to fire.
+  fireRate = Math.min(fireRate, getGameContent().towers.tuning.maxFireRate);
+
   return {
     range,
     damage,

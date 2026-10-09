@@ -519,7 +519,6 @@ export class ProjectileManager {
 
     this.projectiles.push(projectile);
     this.projectilesById.set(projectile.id, projectile);
-    this.ensureProjectileBody(projectile);
   }
 
   // Single removal point for the projectile list so the id index cannot drift.
@@ -527,26 +526,6 @@ export class ProjectileManager {
     const projectile = this.projectiles[index];
     if (projectile) this.projectilesById.delete(projectile.id);
     this.projectiles.splice(index, 1);
-  }
-
-  private ensureProjectileBody(projectile: ProjectileGame): void {
-    if (!this.physicsWorld || this.bodyIds.has(projectile.id)) return;
-    // Sensor, including non-pierce shots. The ball is kinematic and its radius
-    // includes the hit threshold, so a solid body spawned at the barrel overlaps
-    // a melee target and Rapier shoves that enemy off the tower. Contact events
-    // still register the hit; the hit handler removes the body.
-    this.physicsWorld.addProjectileBody({
-      projectileId: projectile.id,
-      x: projectile.x,
-      y: projectile.y,
-      radius: projectile.radius + projectileHitSlop,
-      velocityX: 0,
-      velocityY: 0,
-      isSensor: true,
-      restitution: 0,
-      collidesWithWalls: false,
-    });
-    this.bodyIds.add(projectile.id);
   }
 
   private applyProjectileEffects(
@@ -621,7 +600,8 @@ export class ProjectileManager {
     }
   }
 
-  // Before physics step: age cull + set kinematic velocities toward targets.
+  // Before the physics step: age cull only. Shots are not Rapier bodies, so this
+  // pass does not set a velocity. postPhysics aims once and integrates the sweep.
   prePhysics(dt: number): void {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const projectile = this.projectiles[i];
@@ -636,10 +616,7 @@ export class ProjectileManager {
         this.removeProjectile(projectile, "expired");
         this.destroyProjectileBody(projectile.id);
         this.removeProjectileAt(i);
-        continue;
       }
-      this.ensureProjectileBody(projectile);
-      this.setProjectileBodyVelocity(projectile, dt);
     }
   }
 
@@ -696,45 +673,6 @@ export class ProjectileManager {
         this.destroyProjectileBody(projectile.id);
       }
     }
-  }
-
-  private setProjectileBodyVelocity(projectile: ProjectileGame, _dt: number): void {
-    if (!this.physicsWorld || !this.bodyIds.has(projectile.id)) return;
-    // Known one-tick gap (documented, behavior-identical by design): homing aims
-    // at the enemy's pre-step x/y because this runs before world.step moves bodies.
-    let dirX = 0;
-    let dirY = 0;
-    if (projectile.targetId === 0) {
-      const targetDx = projectile.targetX - projectile.x;
-      const targetDy = projectile.targetY - projectile.y;
-      const targetDist = Math.hypot(targetDx, targetDy) || 1;
-      dirX = targetDx / targetDist;
-      dirY = targetDy / targetDist;
-    } else {
-      let enemy = this.enemyManager.getEnemyById(projectile.targetId);
-      if (!enemy || enemy.removed) {
-        if (!this.tryRetargetAlongPath(projectile)) {
-          this.physicsWorld.setProjectileVelocity(projectile.id, 0, 0);
-          return;
-        }
-        enemy = this.enemyManager.getEnemyById(projectile.targetId);
-        if (!enemy || enemy.removed) {
-          this.physicsWorld.setProjectileVelocity(projectile.id, 0, 0);
-          return;
-        }
-      }
-      const dx = enemy.x - projectile.x;
-      const dy = enemy.y - projectile.y;
-      const dist = Math.hypot(dx, dy) || 1;
-      dirX = dx / dist;
-      dirY = dy / dist;
-      projectile.targetX = enemy.x;
-      projectile.targetY = enemy.y;
-      projectile.lastDirX = dirX;
-      projectile.lastDirY = dirY;
-    }
-    const speed = projectile.speed;
-    this.physicsWorld.setProjectileVelocity(projectile.id, dirX * speed, dirY * speed);
   }
 
   private destroyProjectileBody(projectileId: number): void {
@@ -936,6 +874,11 @@ export class ProjectileManager {
       projectile.hitEnemyIds = new Set<number>();
     }
     const homingHitSet = projectile.hitEnemyIds as Set<number>;
+    // One sweep covers the whole step. Pierce spends every remaining slot on that
+    // segment, so a coarse 8× step hits the same enemies eight fine steps would.
+    // Hits are applied after the cast: hitCircleProjectile may cast again to
+    // retarget, and that cannot run inside this cast's callback.
+    const remainingHits = projectile.maxHitCount > 1 ? Math.max(1, projectile.maxHitCount - projectile.hitCount) : 1;
     const homingHits: CastEnemy[] = [];
     this.timeShapeCast(
       segment.originX,
@@ -944,20 +887,20 @@ export class ProjectileManager {
       segment.directionY,
       ballRadius,
       segment.castLength,
-      1,
+      remainingHits,
       (candidate) => {
         if (homingHitSet.has(candidate.id)) return true;
         homingHits.push(candidate);
-        return false;
+        return true;
       },
       projectile.groundOnly,
     );
-    const hitEnemy = homingHits[0] ?? null;
-    if (hitEnemy) {
+    for (const hitEnemy of homingHits) {
+      if (!projectile.active || homingHitSet.has(hitEnemy.id)) break;
       this.hitCircleProjectile(projectile, hitEnemy);
       homingHitSet.add(hitEnemy.id);
-      return;
     }
+    if (!projectile.active) return;
 
     if (!positionFromBody && segment.moveDist > 0) {
       projectile.x += segment.directionX * segment.moveDist;
@@ -1148,9 +1091,8 @@ export class ProjectileManager {
       const splashRadiusPx = projectile.splashRadius * (this.grid?.tileSize ?? 1);
       const tileSize = this.grid?.tileSize ?? GRID_TILE_SIZE;
       const splashDamage = scaledDamage * getGameContent().towers.tuning.splashDamageRatio;
-      // Visitor scan: no per-hit in-range array. Visitor order matches
-      // getEnemiesInRange's array order (one shape query, same filter), so the
-      // damage application order to multiple splash targets is unchanged.
+      // Visitor scan: no per-hit in-range array. Visitor order is enemies-list
+      // order, the same order getEnemiesInRange returns.
       this.enemyManager.forEachEnemyInRange(enemy.x, enemy.y, splashRadiusPx, (splashEnemy) => {
         if (splashEnemy.id === enemy.id) return;
         if (projectile.groundOnly && (splashEnemy.flyingHeight ?? 0) > 0) return;

@@ -78,6 +78,9 @@ export class PhysicsWorld {
   private contactProcessor: ContactProcessor;
   // When false, DetourCrowd owns enemy-enemy avoidance (GameEngine sets this).
   enemyEnemyCollisions = true;
+  // Step length CCD was armed against. GameEngine.update passes the speed-scaled
+  // step; setTimeScale restamps live bodies before the next spawn.
+  private stepSeconds = fixedDeltaSeconds;
   // Shared query shape reused by every range/cast query (see module comment).
   private queryBall: RAPIER.Ball | null = null;
 
@@ -266,8 +269,7 @@ export class PhysicsWorld {
     // CCD in per-step displacement units: enable when one step moves the body more
     // than half its radius, so fast runners cannot tunnel. (The old `speed >= 2.0`
     // tiles/sec check mixed up units and over/under-enabled by tile size.)
-    const stepDisplacement = enemy.speed * this.grid.tileSize * fixedDeltaSeconds;
-    const enableCcd = stepDisplacement >= enemy.radius * 0.5;
+    const enableCcd = this.enemyNeedsCcd(enemy);
     const tag: ColliderTag = { kind: "enemy", enemyId: enemy.id };
     const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(enemy.x, enemy.y)
@@ -283,6 +285,22 @@ export class PhysicsWorld {
     this.world.createCollider(colliderDesc, body);
     enemy.body = body;
     this.enemyByHandle.set(body.handle, enemy);
+  }
+
+  // Half a radius of travel in the current step. A minion is under that at 1/60
+  // and over it at 8/60, so the flag has to follow the step length.
+  private enemyNeedsCcd(enemy: Enemy): boolean {
+    const stepDisplacement = enemy.speed * this.grid.tileSize * this.stepSeconds;
+    return stepDisplacement >= enemy.radius * 0.5;
+  }
+
+  // Restamp every live body. Bodies keep the flag they were created with, and a
+  // longer step moves them far enough to tunnel through towers and each other.
+  setStepSeconds(stepSeconds: number): void {
+    this.stepSeconds = stepSeconds;
+    for (const enemy of this.enemyByHandle.values()) {
+      enemy.body?.enableCcd(this.enemyNeedsCcd(enemy));
+    }
   }
 
   // Live toggle: flips the flag AND sweeps every existing enemy collider so a
@@ -530,14 +548,11 @@ export class PhysicsWorld {
     return enemy.body ? enemy.body.translation() : null;
   }
 
-  step(fixedDt: number = fixedDeltaSeconds): void {
-    // The sim runs on a fixed timestep: every production step must carry exactly
-    // fixedDeltaSeconds (GameEngine.update passes it explicitly). The default keeps
-    // variable-dt-free test call sites green; anything else is a caller bug.
-    if (fixedDt !== fixedDeltaSeconds) {
-      throw new Error(`PhysicsWorld.step expects fixedDeltaSeconds (${fixedDeltaSeconds}), got ${fixedDt}`);
-    }
-    this.world.timestep = fixedDt;
+  step(dt: number = fixedDeltaSeconds): void {
+    // Default stays 1/60 so existing test call sites keep today's step. A speed
+    // change passes the coarse step and restamps CCD before the solver runs.
+    if (dt !== this.stepSeconds) this.setStepSeconds(dt);
+    this.world.timestep = dt;
     this.world.step(this.eventQueue);
     this.eventQueue.drainCollisionEvents((handle1, handle2, started) => {
       const collider1 = this.world.getCollider(handle1);

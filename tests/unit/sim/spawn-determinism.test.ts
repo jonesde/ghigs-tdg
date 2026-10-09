@@ -17,7 +17,7 @@ import {
 } from "@/sim/PersistState.js";
 import { ProjectileManager } from "@/sim/ProjectileManager.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
-import { computeStepBudget, fixedDeltaSeconds } from "@/sim/stepBudget.js";
+import { computeStepBudget, fixedDeltaSeconds, stepSecondsForTimeScale } from "@/sim/stepBudget.js";
 import { WaveManager } from "@/sim/waves/WaveManager.js";
 import { makeBastionMap, makeSplitMap } from "../../helpers/mock-grid";
 import { makeParticleSystem } from "../../helpers/mock-managers";
@@ -237,9 +237,30 @@ describe("Block C spawn queues and determinism", () => {
     expect(steady.accumulator).toBeCloseTo(0, 10);
 
     const overload = computeStepBudget(0, 10, 8);
-    expect(overload.steps).toBe(64);
+    // Same sim-seconds ceiling as the old 64 fine steps: 32 steps of 2/60.
+    expect(overload.steps).toBe(32);
+    expect(overload.stepSeconds).toBeCloseTo(2 * fixedDeltaSeconds, 10);
     expect(overload.droppedSeconds).toBeCloseTo(10 - 64 * fixedDeltaSeconds, 10);
     expect(overload.accumulator).toBeLessThan(fixedDeltaSeconds);
+
+    expect(computeStepBudget(0, 0.1, 1).steps).toBe(6);
+    expect(computeStepBudget(0, 0.1, 1).stepSeconds).toBeCloseTo(fixedDeltaSeconds, 10);
+    expect(computeStepBudget(0, 0.2, 2).steps).toBe(12);
+    expect(computeStepBudget(0, 0.4, 4).steps).toBe(24);
+    expect(stepSecondsForTimeScale(1)).toBeCloseTo(fixedDeltaSeconds, 10);
+    expect(stepSecondsForTimeScale(2)).toBeCloseTo(fixedDeltaSeconds, 10);
+    expect(stepSecondsForTimeScale(4)).toBeCloseTo(fixedDeltaSeconds, 10);
+    expect(stepSecondsForTimeScale(8)).toBeCloseTo(2 * fixedDeltaSeconds, 10);
+    const saturatedFast = computeStepBudget(0, 0.8, 8);
+    expect(saturatedFast.steps).toBe(24);
+    expect(saturatedFast.stepSeconds).toBeCloseTo(2 * fixedDeltaSeconds, 10);
+    const keptUp = computeStepBudget(0, fixedDeltaSeconds * 8, 8);
+    expect(keptUp.steps).toBe(4);
+    expect(keptUp.droppedSeconds).toBe(0);
+
+    const paused = computeStepBudget(0.05, 0, 0);
+    expect(paused.steps).toBe(0);
+    expect(paused.accumulator).toBeCloseTo(0.05, 10);
   });
 
   it("stores a date sentinel in worker runHistory until the host stamps it", () => {

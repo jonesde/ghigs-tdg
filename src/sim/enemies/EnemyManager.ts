@@ -71,6 +71,13 @@ export class EnemyManager {
   regionFactor: number = 1;
   private idToEnemy: Map<number, Enemy>;
   private pendingQueues: Map<number, PendingEnemyEntry[]>;
+  // Pierce casts fill these, sort an index list, then invoke the callback.
+  // The callback must not call castShapePierce: a nested cast reuses the same
+  // arrays while the outer emit loop is still walking them. Homing applies
+  // hits after its cast for that reason. A one-hit cast never touches them.
+  private segmentHitEnemies: Enemy[] = [];
+  private segmentHitProjections: number[] = [];
+  private segmentHitOrder: number[] = [];
   // Overflow evictions since run start. Bounded queues must stay lossless-visible:
   // the counter lets tests and the snapshot tell "merged away" apart from "never emitted".
   private pendingOverflowDropped: number = 0;
@@ -615,11 +622,9 @@ export class EnemyManager {
     return this.physicsWorld.forEachSensorHits(sensorId, callback);
   }
 
+  // Center-to-center circle on enemy.x/y. A Rapier shape query produced this same
+  // set at about 80 µs per tower per step, and the live cap is gameplayEnemyCap.
   forEachEnemyInRange(x: number, y: number, range: number, cb: (enemy: Enemy) => void): void {
-    if (this.physicsWorld) {
-      this.physicsWorld.forEachEnemyInRange(x, y, range, cb);
-      return;
-    }
     const rangeSquared = range * range;
     for (const enemy of this.enemies) {
       if (enemy.removed) continue;
@@ -630,18 +635,17 @@ export class EnemyManager {
   }
 
   getEnemiesInRange(x: number, y: number, range: number): Enemy[] {
-    if (this.physicsWorld) return this.physicsWorld.queryEnemiesInRange(x, y, range);
-    const rangeSquared = range * range;
     const result: Enemy[] = [];
-    for (const enemy of this.enemies) {
-      if (enemy.removed) continue;
-      const deltaX = enemy.x - x;
-      const deltaY = enemy.y - y;
-      if (deltaX * deltaX + deltaY * deltaY <= rangeSquared) result.push(enemy);
-    }
+    this.forEachEnemyInRange(x, y, range, (enemy) => {
+      result.push(enemy);
+    });
     return result;
   }
 
+  // Segment against enemy centers. Shots are not Rapier bodies, and one castShape
+  // per projectile per step was the cost under projectileCastMs. One hit keeps the
+  // nearest enemy and allocates nothing. Pierce fills the scratch arrays, nearest
+  // projection first. An equal projection keeps the earlier enemies-list entry.
   castShapePierce(
     originX: number,
     originY: number,
@@ -653,33 +657,91 @@ export class EnemyManager {
     cb: (enemy: Enemy) => boolean,
     groundOnly = false,
   ): void {
-    if (this.physicsWorld) {
-      this.physicsWorld.castShapePierce(originX, originY, dirX, dirY, ballRadius, maxDistance, maxHits, cb, groundOnly);
+    if (!(maxHits > 0)) return;
+    const directionLength = Math.hypot(dirX, dirY) || 1;
+    const unitX = dirX / directionLength;
+    const unitY = dirY / directionLength;
+    if (maxHits === 1) {
+      let bestEnemy: Enemy | null = null;
+      let bestProjection = Infinity;
+      for (const enemy of this.enemies) {
+        const projection = this.segmentHitProjection(
+          enemy,
+          originX,
+          originY,
+          unitX,
+          unitY,
+          maxDistance,
+          ballRadius,
+          groundOnly,
+        );
+        if (projection === null || projection >= bestProjection) continue;
+        bestProjection = projection;
+        bestEnemy = enemy;
+      }
+      if (bestEnemy) cb(bestEnemy);
       return;
     }
-    const length = Math.hypot(dirX, dirY) || 1;
-    const unitX = dirX / length;
-    const unitY = dirY / length;
-    const candidates: { enemy: Enemy; projection: number }[] = [];
+
+    const hitEnemies = this.segmentHitEnemies;
+    const hitProjections = this.segmentHitProjections;
+    hitEnemies.length = 0;
+    hitProjections.length = 0;
     for (const enemy of this.enemies) {
-      if (enemy.removed) continue;
-      if (groundOnly && enemy.flyingHeight > 0) continue;
-      const apx = enemy.x - originX;
-      const apy = enemy.y - originY;
-      const projection = Math.max(0, Math.min(maxDistance, apx * unitX + apy * unitY));
-      const closestX = originX + unitX * projection;
-      const closestY = originY + unitY * projection;
-      const dist = Math.hypot(enemy.x - closestX, enemy.y - closestY);
-      if (dist <= ballRadius + (enemy.radius ?? 0)) candidates.push({ enemy, projection });
+      const projection = this.segmentHitProjection(
+        enemy,
+        originX,
+        originY,
+        unitX,
+        unitY,
+        maxDistance,
+        ballRadius,
+        groundOnly,
+      );
+      if (projection === null) continue;
+      hitEnemies.push(enemy);
+      hitProjections.push(projection);
     }
-    candidates.sort((a, b) => a.projection - b.projection);
-    let hits = 0;
-    for (const candidate of candidates) {
-      if (hits >= maxHits) break;
-      hits++;
-      const keepGoing = cb(candidate.enemy);
-      if (!keepGoing) break;
+    const hitCount = hitEnemies.length;
+    const hitOrder = this.segmentHitOrder;
+    hitOrder.length = hitCount;
+    for (let index = 0; index < hitCount; index++) hitOrder[index] = index;
+    hitOrder.sort((leftIndex, rightIndex) => {
+      const leftProjection = hitProjections[leftIndex] ?? 0;
+      const rightProjection = hitProjections[rightIndex] ?? 0;
+      return leftProjection - rightProjection;
+    });
+    const emitCount = Math.min(maxHits, hitCount);
+    for (let emitIndex = 0; emitIndex < emitCount; emitIndex++) {
+      const orderIndex = hitOrder[emitIndex];
+      const enemy = orderIndex === undefined ? undefined : hitEnemies[orderIndex];
+      if (!enemy) break;
+      if (!cb(enemy)) break;
     }
+  }
+
+  // Closest point of the swept ball's center segment to the enemy center.
+  // groundOnly drops flyers before they can take a pierce slot.
+  private segmentHitProjection(
+    enemy: Enemy,
+    originX: number,
+    originY: number,
+    unitX: number,
+    unitY: number,
+    maxDistance: number,
+    ballRadius: number,
+    groundOnly: boolean,
+  ): number | null {
+    if (enemy.removed || (groundOnly && enemy.flyingHeight > 0)) return null;
+    const offsetX = enemy.x - originX;
+    const offsetY = enemy.y - originY;
+    const rawProjection = offsetX * unitX + offsetY * unitY;
+    const projection = Math.max(0, Math.min(maxDistance, rawProjection));
+    const deltaX = offsetX - unitX * projection;
+    const deltaY = offsetY - unitY * projection;
+    const reach = ballRadius + (enemy.radius ?? 0);
+    if (deltaX * deltaX + deltaY * deltaY > reach * reach) return null;
+    return projection;
   }
 
   getEnemyById(id: number): Enemy | null {

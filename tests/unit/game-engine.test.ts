@@ -935,9 +935,9 @@ describe("GameEngine", () => {
     function placeEnemyInTowerRange(tower: Tower): Enemy {
       const enemy = engine.enemyManager!.spawn("minion", 1, 0, 1)!;
       // Freeze the enemy at the tower so it stays within range during the tick
-      // (a spawned enemy otherwise walks its path away from the tower). Under
-      // physics the enemy's rigid body is authoritative, so we move the body
-      // too; getEnemiesInRange now resolves through the physics world.
+      // (a spawned enemy otherwise walks its path away from the tower). postStep
+      // copies the rigid body onto enemy.x/y before towers scan that position,
+      // so the body has to be moved too.
       enemy.speed = 0;
       enemy.centerX = tower.x;
       enemy.centerY = tower.y;

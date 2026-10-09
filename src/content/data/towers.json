@@ -33,6 +33,7 @@
     "levelDmgMult": 1.8,
     "levelHealthMult": 3.0,
     "levelRateMult": 1.25,
+    "maxFireRate": 7,
     "levelRangeMult": 1.1,
     "levelSplashMult": 1.2,
     "upgradeCostBase": 2,

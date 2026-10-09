@@ -8,6 +8,7 @@ import { Grid } from "@/sim/grid/Grid.js";
 import { getMap } from "@/sim/grid/Map.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { initPhysics } from "@/sim/physics/rapierContext.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import { orderedPath } from "../../../helpers/navmesh-test-utils.js";
 
 function dist(a, b) {
@@ -189,5 +190,55 @@ describe("PhysicsWorld — lifecycle & containment (flag OFF, direct constructio
       threw = true;
     }
     expect(threw || after === null).toBe(true);
+  });
+});
+
+describe("enemy CCD follows the step length", () => {
+  let grid: Grid;
+  let physicsWorld: PhysicsWorld;
+
+  beforeAll(async () => {
+    await initPhysics();
+  });
+
+  beforeEach(() => {
+    grid = new Grid(getMap(0));
+    physicsWorld = new PhysicsWorld(grid);
+  });
+
+  afterEach(() => {
+    physicsWorld.dispose();
+  });
+
+  function ccdFor(type: string, stepSeconds: number): boolean {
+    physicsWorld.setStepSeconds(stepSeconds);
+    const enemy = new Enemy(type, 1, 0, grid, 1);
+    enemy.x = enemy.centerX;
+    enemy.y = enemy.centerY;
+    physicsWorld.addEnemy(enemy);
+    return enemy.body.isCcdEnabled();
+  }
+
+  it("leaves a minion off at 1/60 and arms it at 8/60", () => {
+    expect(ccdFor("minion", fixedDeltaSeconds)).toBe(false);
+    expect(ccdFor("minion", 8 * fixedDeltaSeconds)).toBe(true);
+  });
+
+  it("keeps a runner armed at 1× under the half-radius rule", () => {
+    // radius is meta.radius * tileSize * 0.5, so a runner already clears half a
+    // radius in one 1/60 step. The coarse step does not turn that off.
+    expect(ccdFor("runner", fixedDeltaSeconds)).toBe(true);
+    expect(ccdFor("runner", 8 * fixedDeltaSeconds)).toBe(true);
+  });
+
+  it("restamps a live minion when the step length changes and accepts an 8/60 step", () => {
+    physicsWorld.setStepSeconds(fixedDeltaSeconds);
+    const enemy = new Enemy("minion", 1, 0, grid, 1);
+    enemy.x = enemy.centerX;
+    enemy.y = enemy.centerY;
+    physicsWorld.addEnemy(enemy);
+    expect(enemy.body.isCcdEnabled()).toBe(false);
+    expect(() => physicsWorld.step(8 * fixedDeltaSeconds)).not.toThrow();
+    expect(enemy.body.isCcdEnabled()).toBe(true);
   });
 });

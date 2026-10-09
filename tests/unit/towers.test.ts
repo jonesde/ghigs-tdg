@@ -144,6 +144,62 @@ describe("Tower", () => {
       expect(tower.stats.damage).toBeCloseTo(expectedDamage, 4);
     });
 
+    it("clamps stacked fire rate multipliers at maxFireRate and leaves a wall at zero", () => {
+      const maxFireRate = getGameContent().towers.tuning.maxFireRate;
+      const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
+      tower.level = 7;
+      tower.variant = "A";
+      tower.runFireRateMult = 10;
+      expect(tower.stats.fireRate).toBe(maxFireRate);
+      const wall = new Tower("sturdyWall", 0, 0, makeSave(), makeMockGrid());
+      expect(wall.stats.fireRate).toBe(0);
+    });
+
+    it("adds the fire interval onto the step remainder and loops a second shot only when the step covers it", () => {
+      const tower = new Tower("basic", 2, 3, makeSave(), makeMockGrid());
+      tower.runFireRateMult = 100;
+      expect(tower.stats.fireRate).toBe(getGameContent().towers.tuning.maxFireRate);
+      const enemy = {
+        id: 1,
+        x: 110,
+        y: 126,
+        hp: 10,
+        maxHp: 10,
+        removed: false,
+        flyingHeight: 0,
+        applySlow() {},
+        takeDamage: vi.fn(),
+      };
+      const enemyManager = {
+        enemies: [enemy],
+        getEnemiesInRange: () => [enemy],
+        forEachEnemyInRange: (_x, _y, _range, callback) => callback(enemy),
+        getEnemyById: () => enemy,
+        towerAt: () => null,
+      };
+      const spawn = vi.fn();
+      const stepSeconds = (1 / 60) * 8;
+      tower.cooldown = 0.02;
+      tower.update(stepSeconds, enemyManager, { spawn }, null);
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(tower.cooldown).toBeCloseTo(0.02 - stepSeconds + 1 / 7, 6);
+
+      spawn.mockClear();
+      tower.cooldown = 0;
+      tower.update(0.3, enemyManager, { spawn }, null);
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(tower.cooldown).toBeCloseTo(-0.3 + 2 / 7, 6);
+
+      spawn.mockClear();
+      const idle = new Tower("basic", 2, 3, makeSave(), makeMockGrid());
+      idle.runFireRateMult = 100;
+      const emptyManager = { ...enemyManager, enemies: [], forEachEnemyInRange: () => {}, getEnemyById: () => null };
+      idle.update(0.3, emptyManager, { spawn }, null);
+      idle.update(0.3, emptyManager, { spawn }, null);
+      expect(spawn).not.toHaveBeenCalled();
+      expect(idle.cooldown).toBeCloseTo(-0.3, 6);
+    });
+
     it("scales fire rate at level N using levelRateMult", () => {
       const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
       tower.level = 3;

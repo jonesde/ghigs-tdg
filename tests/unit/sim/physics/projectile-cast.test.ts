@@ -140,26 +140,85 @@ describe("EnemyManager cast delegate", () => {
     manager.setPhysicsWorld(pw);
   });
 
-  it("castShapePierce delegates to the physics world", () => {
-    const e1 = manager.spawn("minion", 1, 0, 1)!;
-    const e2 = manager.spawn("minion", 1, 0, 1)!;
-    for (const [e, x] of [
-      [e1, 150],
-      [e2, 200],
+  it("orders segment hits near to far and keeps the nearer enemy for one hit", () => {
+    const farther = manager.spawn("minion", 1, 0, 1)!;
+    const nearer = manager.spawn("minion", 1, 0, 1)!;
+    for (const [enemy, x] of [
+      [farther, 250],
+      [nearer, 150],
     ] as const) {
-      e.x = x;
-      e.y = 200;
-      e.centerX = x;
-      e.centerY = 200;
-      e.body?.setTranslation({ x, y: 200 }, true);
+      enemy.x = x;
+      enemy.y = 200;
+      enemy.centerX = x;
+      enemy.centerY = 200;
     }
-    pw.step();
-    const hits: number[] = [];
-    manager.castShapePierce(100, 200, 1, 0, ball, 300, 3, (en) => {
-      hits.push(en.x);
+    const oneHit: number[] = [];
+    manager.castShapePierce(100, 200, 1, 0, ball, 300, 1, (enemy) => {
+      oneHit.push(enemy.x);
       return true;
     });
-    expect(hits).toHaveLength(2);
+    expect(oneHit).toEqual([150]);
+
+    const pierced: number[] = [];
+    manager.castShapePierce(100, 200, 1, 0, ball, 300, 3, (enemy) => {
+      pierced.push(enemy.x);
+      return true;
+    });
+    expect(pierced).toEqual([150, 250]);
+
+    const stopped: number[] = [];
+    manager.castShapePierce(100, 200, 1, 0, ball, 300, 3, (enemy) => {
+      stopped.push(enemy.x);
+      return false;
+    });
+    expect(stopped).toEqual([150]);
+
+    nearer.y = 10000;
+    farther.y = 10000;
+    const tiedFirst = manager.spawn("minion", 1, 0, 1)!;
+    const tiedSecond = manager.spawn("runner", 1, 0, 1)!;
+    for (const enemy of [tiedFirst, tiedSecond]) {
+      enemy.x = 180;
+      enemy.y = 200;
+      enemy.centerX = 180;
+      enemy.centerY = 200;
+    }
+    const tied: number[] = [];
+    manager.castShapePierce(100, 200, 1, 0, ball, 300, 1, (enemy) => {
+      tied.push(enemy.id);
+      return true;
+    });
+    expect(tied).toEqual([tiedFirst.id]);
+  });
+
+  it("ground-only segment skips a flyer without spending the one hit", () => {
+    const ground = manager.spawn("minion", 1, 0, 1)!;
+    const flyer = manager.spawn("flyer", 1, 0, 1)!;
+    for (const [enemy, x] of [
+      [flyer, 150],
+      [ground, 250],
+    ] as const) {
+      enemy.x = x;
+      enemy.y = 200;
+      enemy.centerX = x;
+      enemy.centerY = 200;
+    }
+    const hits: number[] = [];
+    manager.castShapePierce(
+      100,
+      200,
+      1,
+      0,
+      ball,
+      300,
+      1,
+      (enemy) => {
+        hits.push(enemy.id);
+        return true;
+      },
+      true,
+    );
+    expect(hits).toEqual([ground.id]);
   });
 
   it("fallback casts without a physics world skip flyers for ground-only casts", () => {
@@ -243,20 +302,17 @@ describe("projectile hit radius", () => {
       critChance: 0,
     });
     projectileManager.prePhysics(fixedDeltaSeconds);
-    const projectileId = projectileManager.getRenderData()[0].id;
-    const sensorRadius = physicsWorld.projectileSensorRadius(projectileId);
     physicsWorld.step();
     const contactHits = physicsWorld.getContactProcessor().drainProjectileHits();
     projectileManager.postPhysics(fixedDeltaSeconds, contactHits);
-    return { hpBefore, sensorRadius, renderData: projectileManager.getRenderData() };
+    return { hpBefore, renderData: projectileManager.getRenderData() };
   }
 
-  it("sensor is the glyph plus slop, and one step hits a minion on that reach", () => {
+  it("one step hits a minion on the glyph-plus-slop reach", () => {
     const enemy = placeMinion(200, 200);
     const moveDist = 60 * fixedDeltaSeconds;
     const reach = 3 + projectileHitSlop + enemy.radius + moveDist;
     const result = tickToward(enemy, enemy.x - (reach - 0.5));
-    expect(result.sensorRadius).toBeCloseTo(3 + projectileHitSlop);
     expect(enemy.hp).toBeLessThan(result.hpBefore);
     expect(result.renderData).toHaveLength(1);
     expect(result.renderData[0].x).toBeCloseTo(enemy.x - enemy.radius, 0);
@@ -270,8 +326,72 @@ describe("projectile hit radius", () => {
     const bossRadius = 0.33 * grid.tileSize * 0.5;
     const reach = 3 + projectileHitSlop + enemy.radius + moveDist;
     const result = tickToward(enemy, enemy.x - (reach + bossRadius));
-    expect(result.sensorRadius).toBeCloseTo(3 + projectileHitSlop);
     expect(enemy.hp).toBe(result.hpBefore);
     expect(result.renderData).toHaveLength(1);
+  });
+});
+
+describe("one coarse sweep matches eight fine sweeps", () => {
+  function damagedMarks(stepSeconds: number[]): string[] {
+    const grid = new Grid(getMap(0));
+    const physicsWorld = new PhysicsWorld(grid);
+    const enemyManager = new EnemyManager(grid, makeParticleSystem(), 0);
+    enemyManager.setPhysicsWorld(physicsWorld);
+    const projectileManager = new ProjectileManager(enemyManager, makeParticleSystem(), null, grid);
+    projectileManager.setPhysicsWorld(physicsWorld);
+
+    const place = (type: string, x: number, y: number) => {
+      const enemy = enemyManager.spawn(type, 1, 0, 1)!;
+      enemy.x = x;
+      enemy.y = y;
+      enemy.centerX = x;
+      enemy.centerY = y;
+      enemy.body?.setTranslation({ x, y }, true);
+      return enemy;
+    };
+    const first = place("minion", 160, 200);
+    const second = place("minion", 200, 200);
+    const flyer = place("flyer", 180, 200);
+    // setTranslation does not update the query pipeline until a step. One step
+    // publishes the held positions; these bodies have no velocity, so they stay.
+    physicsWorld.step();
+    for (const enemy of [first, second, flyer]) {
+      const settled = enemy.body!.translation();
+      enemy.x = settled.x;
+      enemy.y = settled.y;
+    }
+    const startingHp = new Map([first, second, flyer].map((enemy) => [enemy.id, enemy.hp]));
+
+    projectileManager.spawn({
+      x: 100,
+      y: 200,
+      damage: 1,
+      speed: 900,
+      range: 30,
+      towerType: "sniper",
+      towerLevel: 5,
+      variant: "B",
+      pierce: 3,
+      targetId: first.id,
+      groundOnly: true,
+      critChance: 0,
+    });
+    for (const dt of stepSeconds) projectileManager.update(dt);
+
+    const marks = [first, second, flyer]
+      .filter((enemy) => enemy.hp < (startingHp.get(enemy.id) ?? enemy.hp))
+      .map((enemy) => `${enemy.type}@${enemy.x}`);
+    enemyManager.clear();
+    physicsWorld.dispose();
+    return marks;
+  }
+
+  it("hits the same held-still enemies, including pierce, and skips the flyer", () => {
+    const fineSteps = Array.from({ length: 8 }, () => fixedDeltaSeconds);
+    const fine = damagedMarks(fineSteps);
+    const coarse = damagedMarks([8 * fixedDeltaSeconds]);
+    expect(coarse).toEqual(fine);
+    expect(fine.filter((mark) => mark.startsWith("minion@"))).toHaveLength(2);
+    expect(fine.some((mark) => mark.startsWith("flyer@"))).toBe(false);
   });
 });

@@ -28,6 +28,16 @@ const levelSevenShortDamage =
 const levelSevenLongDamage =
   baseDefenseContent.longRange[baseDefenseContent.longRange.length - 1]!.damage * levelSevenMultiplier;
 
+it("does not clamp sentry fire rate at the tower cap", () => {
+  const { defense } = insetDefense();
+  defense.level = 7;
+  defense.buildingFireRateMult = 2;
+  const shortGun = defense.shortGun();
+  const tierRate = baseDefenseContent.shortRange[baseDefenseContent.shortRange.length - 1]!.fireRate;
+  expect(shortGun?.fireRate).toBeCloseTo(tierRate * 2, 6);
+  expect(shortGun!.fireRate).toBeGreaterThan(getGameContent().towers.tuning.maxFireRate);
+});
+
 function insetDefense(): { defense: BaseDefense; runState: GameRunState } {
   const grid = new Grid(makeMapData({ width: 9, height: 9, base: { x: 4, y: 4 } }));
   const runState = { baseHealth: 0, maxBaseHealth: 0 } as GameRunState;

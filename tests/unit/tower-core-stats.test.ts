@@ -148,6 +148,14 @@ describe("computeTowerCoreStats", () => {
       );
       const level7 = computeTowerCoreStats(towerBase.basic, "basic", 7, "A");
       expect(level7.damage).toBeCloseTo(baseDamage * levelDmgMult ** 6 * 0.6, 10);
+      const levelRateMult = getGameContent().towers.tuning.levelRateMult;
+      expect(level7.fireRate).toBeCloseTo(towerBase.basic.fireRate * levelRateMult ** 6 * 2, 10);
+      expect(level7.fireRate).toBeLessThan(getGameContent().towers.tuning.maxFireRate);
+    });
+
+    it("clamps a core rate above maxFireRate", () => {
+      const uncapped = computeTowerCoreStats(towerBase.basic, "basic", 30, "A");
+      expect(uncapped.fireRate).toBe(getGameContent().towers.tuning.maxFireRate);
     });
 
     it("grows max health by the health multiplier independently of damage", () => {

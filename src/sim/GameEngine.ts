@@ -108,7 +108,7 @@ import {
   rollSpecialistType,
 } from "@/sim/runBonuses.js";
 import type { BaseDefenseSnapshot } from "@/sim/SimulationSnapshot.js";
-import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
+import { stepSecondsForTimeScale } from "@/sim/stepBudget.js";
 import { BaseDefense, baseSelectionId } from "@/sim/towers/BaseDefense.js";
 import { maxLevelForBase } from "@/sim/towers/SkillTree.js";
 import type { Tower } from "@/sim/towers/Tower.js";
@@ -696,10 +696,10 @@ export class GameEngine {
     this.projectileManager?.prePhysics(dt);
     phaseEnd(this.perfSink, "projectileAimMs", prePhysicsStartedAt);
     phaseEnd(this.perfSink, "projectilesMs", prePhysicsStartedAt);
-    // fixedDeltaSeconds is passed explicitly: PhysicsWorld.step asserts it, so a
-    // variable-dt caller fails loudly instead of silently desyncing the fixed-step sim.
+    // dt is 1/60 at 1×–4× and 2/60 at 8×. Shots are not Rapier
+    // bodies; postPhysics integrates them. This step is enemies, towers, and the corridor.
     const physicsStartedAt = phaseStart(this.perfSink);
-    this.physicsWorld!.step(fixedDeltaSeconds);
+    this.physicsWorld!.step(dt);
     phaseEnd(this.perfSink, "physicsMs", physicsStartedAt);
     // PhysicsWorld.step already projected contact flags onto enemies; drain the
     // projectile hit queue for postPhysics resolution.
@@ -711,11 +711,10 @@ export class GameEngine {
     phaseEnd(this.perfSink, "projectilesMs", postPhysicsStartedAt);
     this.clampBallisticEnemiesToNavMesh();
 
-    // Known one-tick gap (documented, behavior-identical by design): towers fire
-    // after projectiles resolved, so a shot born this tick has no body until next
-    // tick's prePhysics — it is drawn bodiless for exactly one tick. The tick is NOT
-    // reordered: moving tower fire earlier showed no perf win and would shift every
-    // combat roll by a tick.
+    // Known one-tick gap: towers fire after projectiles resolve, so a shot born
+    // this tick is not integrated until the next tick's postPhysics. The tick is
+    // NOT reordered: moving tower fire earlier showed no perf win and would shift
+    // every combat roll by a tick.
     const towersStartedAt = phaseStart(this.perfSink);
     this.towerManager.update(dt, this.enemyManager, this.cacheShotTargets(), (cacheId, damage) =>
       this.damageCache(cacheId, damage),
@@ -1393,6 +1392,7 @@ export class GameEngine {
           break;
         }
         this.runState.timeScale = scale;
+        this.syncEnemyCcdToTimeScale();
         break;
       }
       case "skipWave":
@@ -1599,12 +1599,22 @@ export class GameEngine {
 
   cycleSpeed(): number {
     if (this.progressivePlacementHold) return this.runState.timeScale;
-    return cycleTimeScale(this.runState, 1);
+    const next = cycleTimeScale(this.runState, 1);
+    this.syncEnemyCcdToTimeScale();
+    return next;
   }
 
   cycleSpeedReverse(): number {
     if (this.progressivePlacementHold) return this.runState.timeScale;
-    return cycleTimeScale(this.runState, -1);
+    const next = cycleTimeScale(this.runState, -1);
+    this.syncEnemyCcdToTimeScale();
+    return next;
+  }
+
+  // Enemy CCD is armed from per-step travel. A scale change has to restamp bodies
+  // that were created at the previous step length, or a fast body tunnels at 8×.
+  private syncEnemyCcdToTimeScale(): void {
+    this.physicsWorld?.setStepSeconds(stepSecondsForTimeScale(this.runState.timeScale));
   }
 
   stop(): void {
@@ -1955,7 +1965,10 @@ export class GameEngine {
     // A boss is unreadable above bossSpeedLimit. The worker owns timeScale, so
     // the HUD label follows on the next snapshot; a multi-boss wave re-checks per
     // boss and is a no-op once already at the limit.
-    if (this.runState.timeScale > bossSpeedLimit) this.runState.timeScale = bossSpeedLimit;
+    if (this.runState.timeScale > bossSpeedLimit) {
+      this.runState.timeScale = bossSpeedLimit;
+      this.syncEnemyCcdToTimeScale();
+    }
     configureBossAbility(enemy, enemy.bossAbility, this.grid.tileSize);
     if (enemy.bossAbility !== "healAura") return;
     enemy.mendSuppresses = (source, ally) => nearerMendBlocksIn(this.mendSources, source, ally);

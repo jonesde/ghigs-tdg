@@ -102,9 +102,9 @@ let perfDroppedWindow = 0;
 
 const targetFrameMs = 1000 / 60; // 16.67ms
 // Ceiling on one tick's raw wall-clock delta. A stalled tab or a long main-thread
-// block would otherwise dump all of it into the accumulator at once; stepBudget's
-// fixedDeltaSeconds/maxStepsPerUpdate pair caps how much of it is simulated and
-// counts the rest as droppedSimSeconds.
+// block would otherwise dump all of it into the accumulator at once. 0.1 s of
+// wall time is 6 steps at 1× and 24 steps at 8× (2/60 each); anything past the step
+// budget's sim-seconds cap is counted as droppedSimSeconds.
 const maxAccumulatedSeconds = 0.1;
 const persistFlushFallbackMs = 5000;
 
@@ -276,9 +276,8 @@ function tick(): void {
   lastSkippedCount = receipt.skipped;
 
   // Fixed-timestep accumulator. timeScale comes from runState, which input
-  // commands may have updated. Step budget scales with timeScale so 8×/16× do
-  // not permanently discard sim time under steady load; hard-capped to avoid
-  // spiral-of-death freezes.
+  // commands may have updated. 8× runs steps of 2/60; 1×–4× stay on 1/60. A
+  // kept-up wakeup at 8× is 4 of those steps. The sim-seconds cap still bounds a hitch.
   // Error-path accounting locals: how many of this tick's budgeted steps actually
   // ran. Declared outside try so the catch can count the skipped ones.
   let stepBudget: StepBudget | null = null;
@@ -303,15 +302,14 @@ function tick(): void {
       engine.runState.state === GameState.PAUSED || engine.runState.commanderHold ? 0 : engine.runState.timeScale;
     const scaledDt = rawDt * timeScale;
     engine.lastScaledDt = scaledDt;
-    // Step budget scales with timeScale so 8×/16× do not permanently discard sim
-    // time under steady load; hard-capped to avoid spiral-of-death freezes. The
-    // capped-away remainder is counted (not silently dropped) in droppedSimSeconds.
+    // Step length scales with timeScale. The capped-away remainder is counted
+    // (not silently dropped) in droppedSimSeconds.
     stepBudget = computeStepBudget(accumulator, scaledDt, timeScale);
     accumulator = stepBudget.accumulator;
     engine.droppedSimSeconds += stepBudget.droppedSeconds;
     stepsStartedAt = spanStart(tracing);
     for (let stepIndex = 0; stepIndex < stepBudget.steps; stepIndex++) {
-      engine.update(fixedDeltaSeconds);
+      engine.update(stepBudget.stepSeconds);
       stepsExecuted++;
     }
     spanEnd(tracing, "worker.steps", stepsStartedAt, {
@@ -442,7 +440,8 @@ function tick(): void {
     );
     if (engine) {
       const unsimulatedSteps = stepBudget ? stepBudget.steps - stepsExecuted : 0;
-      engine.droppedSimSeconds += unsimulatedSteps * fixedDeltaSeconds + accumulator;
+      const stepSeconds = stepBudget?.stepSeconds ?? fixedDeltaSeconds;
+      engine.droppedSimSeconds += unsimulatedSteps * stepSeconds + accumulator;
     }
     accumulator = 0;
   } finally {

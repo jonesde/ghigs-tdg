@@ -88,11 +88,19 @@ describe("EnemyManager proximity delegate", () => {
     manager.setPhysicsWorld(pw);
   });
 
-  it("getEnemiesInRange delegates to physics world and excludes removed", () => {
-    const e = manager.spawn("minion", 1, 0, 1)!;
+  it("getEnemiesInRange reads enemy.x/y and excludes removed", () => {
+    const enemy = manager.spawn("minion", 1, 0, 1)!;
     pw.step();
-    expect(manager.getEnemiesInRange(e.x, e.y, 50)).toContain(e);
-    e.removed = true;
-    expect(manager.getEnemiesInRange(e.x, e.y, 50)).not.toContain(e);
+    const placedX = enemy.x;
+    const placedY = enemy.y;
+    expect(manager.getEnemiesInRange(placedX, placedY, 50)).toContain(enemy);
+    // The rigid body stays at the spawn point. The range walk must follow the
+    // gameplay position postStep publishes, not the collider.
+    enemy.x = placedX + 1000;
+    enemy.y = placedY + 1000;
+    expect(manager.getEnemiesInRange(placedX, placedY, 50)).not.toContain(enemy);
+    expect(manager.getEnemiesInRange(enemy.x, enemy.y, 50)).toContain(enemy);
+    enemy.removed = true;
+    expect(manager.getEnemiesInRange(enemy.x, enemy.y, 50)).not.toContain(enemy);
   });
 });

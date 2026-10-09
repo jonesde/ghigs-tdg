@@ -61,6 +61,7 @@ export const TowerTuningSchema = z.object({
   levelDmgMult: z.number(),
   levelHealthMult: z.number(),
   levelRateMult: z.number(),
+  maxFireRate: z.number(),
   levelRangeMult: z.number(),
   levelSplashMult: z.number(),
   upgradeCostBase: z.number(),

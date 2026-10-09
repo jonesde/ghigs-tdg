@@ -574,6 +574,9 @@ export class Tower {
 
     damage *= this.runDamageMult * this.siteDamageMult;
     fireRate *= this.runFireRateMult * this.siteFireRateMult;
+    // Ceiling after addon, milestone, run, and site multipliers. This is the rate
+    // the cooldown and the tower panel both read.
+    fireRate = Math.min(fireRate, getGameContent().towers.tuning.maxFireRate);
     range *= this.runRangeMult * this.siteRangeMult;
     healthMult *= this.runHealthMult;
     slowAmt *= this.runSlowMult;
@@ -842,7 +845,12 @@ export class Tower {
     onCacheHit: (cacheId: number, damage: number) => void = () => {},
   ) {
     this._gameSeconds += dt;
-    if (this.cooldown > 0) this.cooldown -= dt;
+    // Pay this step against the cooldown, and keep at most one step of lateness.
+    // An idle tower stays one step overdue instead of banking a magazine of shots.
+    if (dt > 0) {
+      this.cooldown -= dt;
+      if (this.cooldown < -dt) this.cooldown = -dt;
+    }
 
     // Ghost state: advance the restore timer first, then auto-restore when it elapses.
     if (this.isGhost) {
@@ -964,10 +972,10 @@ export class Tower {
       }
       if (targetEnemy) {
         const aimTarget = { x: this.x + ddx * rangePx, y: this.y + ddy * rangePx, id: 0 };
-        this.fire({ kind: "enemy", ...aimTarget }, enemyManager, projectileManager, sound);
+        fireWhileReady(this, { kind: "enemy", ...aimTarget }, enemyManager, projectileManager, sound);
       } else {
         const cache = nearestCache(this.x, this.y, rangeSquared, caches, { x: ddx, y: ddy });
-        if (cache) this.fire(cacheShotTarget(cache, onCacheHit), enemyManager, projectileManager, sound);
+        if (cache) fireWhileReady(this, cacheShotTarget(cache, onCacheHit), enemyManager, projectileManager, sound);
       }
       return;
     }
@@ -988,7 +996,8 @@ export class Tower {
     if (!target) {
       // Visitor scan into a per-tower scratch array (allocated once) so the
       // standard targeting path does not allocate a fresh in-range array per tick.
-      // Visitor order matches the array query order (both use one shape query).
+      // Visitor order is enemies-list order, the same order getEnemiesInRange returns.
+      // An exact distance tie in selectTarget therefore follows that list.
       if (!this.inRangeScratch) this.inRangeScratch = [];
       const inRangeScratch = this.inRangeScratch;
       inRangeScratch.length = 0;
@@ -1003,11 +1012,11 @@ export class Tower {
       phaseCount(activePerfSink(), "towerTargetScans");
     }
     if (target) {
-      this.fire({ kind: "enemy", ...target }, enemyManager, projectileManager, sound);
+      fireWhileReady(this, { kind: "enemy", ...target }, enemyManager, projectileManager, sound);
       return;
     }
     const cache = nearestCache(this.x, this.y, rangeSquared, caches);
-    if (cache) this.fire(cacheShotTarget(cache, onCacheHit), enemyManager, projectileManager, sound);
+    if (cache) fireWhileReady(this, cacheShotTarget(cache, onCacheHit), enemyManager, projectileManager, sound);
   }
 
   fire(
@@ -1019,6 +1028,7 @@ export class Tower {
     this.angle = Math.atan2(target.y - this.y, target.x - this.x);
     if (this.cooldown > 0) return;
     const stats = this.stats;
+    if (!(stats.fireRate > 0)) return;
     let fireDamage = stats.damage;
 
     // Charge shot: every 5th shot deals 3x damage
@@ -1032,7 +1042,9 @@ export class Tower {
     const tileSize = this.grid?.tileSize || 36;
     const barrelOffset = tileSize * 0.45;
     this.fireAnimTime = this._gameSeconds;
-    this.cooldown = 1 / stats.fireRate;
+    // Add, rather than assign, so the fraction of this step past the interval is
+    // kept. Assigning it would drop almost a full 8× step and fire near half rate.
+    this.cooldown += 1 / stats.fireRate;
     if (sound) sound.playSound(`shoot_${this.type as TowerId}`);
 
     // A siege shot carries no on-hit effects: it lands on the cache tile, and the
@@ -1165,4 +1177,25 @@ type FireTarget =
 
 function cacheShotTarget(cache: CacheShotTarget, onCacheHit: (cacheId: number, damage: number) => void): FireTarget {
   return { kind: "cache", x: cache.x, y: cache.y, id: cache.id, onCacheHit };
+}
+
+// A coarse step can cover more than one interval (or arrive with a full interval
+// already overdue). Two shots is the ceiling, so a stall cannot dump a magazine.
+// fire() adds the interval onto the remainder; a shot that does not advance the
+// cooldown breaks the loop instead of spinning.
+function fireWhileReady(
+  tower: Tower,
+  target: FireTarget,
+  enemyManager: EnemyManagerRef,
+  projectileManager: ProjectileManagerRef,
+  sound: SoundPlayer,
+): void {
+  const maxShotsPerStep = 2;
+  let shotsThisStep = 0;
+  while (tower.cooldown <= 0 && shotsThisStep < maxShotsPerStep) {
+    const cooldownBeforeShot = tower.cooldown;
+    tower.fire(target, enemyManager, projectileManager, sound);
+    if (tower.cooldown === cooldownBeforeShot) break;
+    shotsThisStep++;
+  }
 }
