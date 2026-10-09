@@ -15,6 +15,8 @@ import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import type { WaveManager } from "@/sim/waves/WaveManager.js";
 import { createTestPersistState, createTestThemeBundle, MockHostBindings } from "../../helpers/mock-stores.js";
 
+const victoryWave = getGameContent().economy.victoryWave;
+
 describe("progressive placement hold", () => {
   let engine: GameEngine;
 
@@ -76,9 +78,9 @@ describe("progressive placement hold", () => {
     engine.persistState.generalAddons.progressiveThirdChoice = 0;
     engine.debug("setWave", 3);
     expect(engine.progressiveOffer).toHaveLength(3);
-    engine.debug("setWave", 100);
+    engine.debug("setWave", victoryWave);
     expect(engine.progressivePlacementHold).toBe(false);
-    expect(engine.waveManager?.currentWave).toBe(100);
+    expect(engine.waveManager?.currentWave).toBe(victoryWave);
   });
 
   it("thins the block cadence to every 4 waves after 30 and every 5 after 50", () => {

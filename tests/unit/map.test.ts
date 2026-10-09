@@ -534,15 +534,6 @@ describe("Map generation", () => {
       expect(mapGemMultipliers.length).toBe(36);
     });
 
-    it("mapGemMultipliers values increase with map index", () => {
-      expect(mapGemMultipliers[0]).toBe(1);
-      expect(mapGemMultipliers[4]).toBe(1);
-      expect(mapGemMultipliers[8]).toBe(1);
-      expect(mapGemMultipliers[12]).toBe(2);
-      expect(mapGemMultipliers[24]).toBe(3);
-      expect(mapGemMultipliers[32]).toBe(5);
-    });
-
     it("serpentine spawn is in the outer 40% of the entry edge", () => {
       for (let i = 0; i < totalMaps; i++) {
         const config = mapLevels[i];

@@ -15,7 +15,8 @@ const gameStore = useGameStore();
 const themeStore = useMapThemeStore();
 const persistStore = usePersistStore();
 
-const waveStops = [1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+const victoryWave = getGameContent().economy.victoryWave;
+const waveStops = [1, 10, 20, 30, 40, 50, 60, 70, 80, 90, victoryWave];
 
 function nearestStopIndex(wave: number): number {
   let bestIndex = 0;

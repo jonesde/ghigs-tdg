@@ -20,6 +20,7 @@ const terrainDamageBonusMaxMult = getGameContent().towers.tuning.terrainDamageBo
 const upgradeCostBase = getGameContent().towers.tuning.upgradeCostBase;
 const milestoneBonusPct = getGameContent().economy.milestoneBonusPct;
 const milestoneThresholdPerLevelSquared = getGameContent().economy.milestoneThresholdPerLevelSquared;
+const cancelBuildWindowMs = getGameContent().towers.tuning.cancelBuildWindowMs;
 
 interface SaveFixture {
   gems: number;
@@ -744,7 +745,7 @@ describe("Tower", () => {
     it("returns remaining ms within window", () => {
       const tower = new Tower("basic", 0, 0, makeSave(), makeMockGrid());
       expect(tower.cancelRemainingMs()).toBeGreaterThan(0);
-      expect(tower.cancelRemainingMs()).toBeLessThanOrEqual(60000);
+      expect(tower.cancelRemainingMs()).toBeLessThanOrEqual(cancelBuildWindowMs);
     });
   });
 

@@ -15,6 +15,8 @@ const themeStore = useMapThemeStore();
 
 const towerIdList = Object.values(TowerIds);
 
+const maxLevel = getGameContent().skillTree.levelCosts.length;
+
 const towerLevel = ref(1);
 
 function formatStat(value: number, digits = 1): string {
@@ -103,7 +105,7 @@ function isIdle(row: TowerHelpRow): boolean {
         class="help-slider"
         type="range"
         min="1"
-        max="7"
+        :max="maxLevel"
         step="1"
         v-model.number="towerLevel"
       />

@@ -373,19 +373,19 @@ function showRefundAllConfirm() {
         <!-- Levels -->
         <div class="skill-section">Levels</div>
         <div
-          v-for="i in [2, 3]"
-          :key="i"
+          v-for="node in skillTree[id].levels"
+          :key="node.index"
           class="skill-node"
           :class="{
-            unlocked: isUnlocked(persistStore.$state, id, 'level', i),
-            unavailable: !isAvailable(persistStore.$state, id, 'level', i, skillTree[id].levels.find(l => l.index === i)?.cost),
+            unlocked: isUnlocked(persistStore.$state, id, node.tier, node.index),
+            unavailable: !isAvailable(persistStore.$state, id, node.tier, node.index, node.cost),
           }"
-          @click="handleTowerNodeClick(id, 'level', i, $event.currentTarget)"
+          @click="handleTowerNodeClick(id, node.tier, node.index, $event.currentTarget)"
         >
           <div class="node-header">
-            <span>Level {{ i + 1 }}</span>
+            <span>{{ node.label }}</span>
             <span class="node-cost">
-              {{ isUnlocked(persistStore.$state, id, 'level', i) ? '✓' : skillTree[id].levels.find(l => l.index === i)?.cost + ' 💎' }}
+              {{ isUnlocked(persistStore.$state, id, node.tier, node.index) ? '✓' : node.cost + ' 💎' }}
             </span>
           </div>
         </div>

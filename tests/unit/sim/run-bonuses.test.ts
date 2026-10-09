@@ -26,13 +26,15 @@ import {
   waveManagerOf,
 } from "../../helpers/simFixtures";
 
+const mapSeed = getGameContent().maps.levels[0]!.seed;
+
 describe("bonus offers", () => {
   it("draws three distinct cards from the map seed and the package id", () => {
-    const first = rollBonusOfferFor(10112, 4);
-    const second = rollBonusOfferFor(10112, 4);
+    const first = rollBonusOfferFor(mapSeed, 4);
+    const second = rollBonusOfferFor(mapSeed, 4);
     expect(second).toEqual(first);
     expect(new Set(first).size).toBe(3);
-    expect(rollBonusOfferFor(10112, 5)).not.toEqual(first);
+    expect(rollBonusOfferFor(mapSeed, 5)).not.toEqual(first);
   });
 
   it("stacks persistent cards by multiplication and scales base health with the ratio", () => {
@@ -56,7 +58,7 @@ describe("bonus offers", () => {
   it("draws at most one typed card per offer, into the first slot", () => {
     let typedOffers = 0;
     for (let packageId = 1; packageId <= 300; packageId++) {
-      const offer = rollBonusOfferFor(10112, packageId);
+      const offer = rollBonusOfferFor(mapSeed, packageId);
       const typed = offer.filter((bonusId) => isTypedBonusId(bonusId));
       expect(new Set(offer).size).toBe(3);
       expect(typed.length).toBeLessThanOrEqual(1);
@@ -66,7 +68,7 @@ describe("bonus offers", () => {
     }
     expect(typedOffers).toBeGreaterThan(100);
     expect(typedOffers).toBeLessThan(280);
-    expect(rollBonusOfferFor(10112, 7)).toEqual(rollBonusOfferFor(10112, 7));
+    expect(rollBonusOfferFor(mapSeed, 7)).toEqual(rollBonusOfferFor(mapSeed, 7));
   });
 
   it("applies a typed card to towers of its specialist type only", () => {
@@ -151,17 +153,17 @@ describe("bonus offers", () => {
 
   it("weights the specialist draw by live tower counts and falls back to a uniform roll", () => {
     for (let packageId = 1; packageId <= 40; packageId++) {
-      expect(rollSpecialistType(10112, packageId, { basic: 3 })).toBe("basic");
+      expect(rollSpecialistType(mapSeed, packageId, { basic: 3 })).toBe("basic");
     }
     const draws = new Set<string>();
     for (let packageId = 1; packageId <= 120; packageId++) {
-      draws.add(rollSpecialistType(10112, packageId, { basic: 3, sniper: 1 }));
+      draws.add(rollSpecialistType(mapSeed, packageId, { basic: 3, sniper: 1 }));
     }
     expect(draws.size).toBe(2);
     expect(draws).toEqual(new Set(["basic", "sniper"]));
     const fallback = new Set<string>();
     for (let packageId = 1; packageId <= 60; packageId++) {
-      fallback.add(rollSpecialistType(10112, packageId, {}));
+      fallback.add(rollSpecialistType(mapSeed, packageId, {}));
     }
     expect(fallback.size).toBeGreaterThan(1);
     expect([...fallback].every((towerId) => towerId !== "sturdyWall")).toBe(true);
@@ -169,13 +171,13 @@ describe("bonus offers", () => {
 
   it("swaps Heavy Frost out of a cache offer when the run cannot apply a slow", () => {
     const offer: BonusOffer = ["heavyFrost", "sharpened", "smallPurse"];
-    const curated = curateBonusOffer(offer, { canApplySlow: false }, 10112, 4);
+    const curated = curateBonusOffer(offer, { canApplySlow: false }, mapSeed, 4);
     expect(curated).not.toContain("heavyFrost");
     expect(curated).toHaveLength(3);
     expect(new Set(curated).size).toBe(3);
-    expect(curateBonusOffer(offer, { canApplySlow: false }, 10112, 4)).toEqual(curated);
-    expect(curateBonusOffer(offer, { canApplySlow: true }, 10112, 4)).toEqual(offer);
-    expect(curateBonusOffer(["sharpened", "smallPurse", "bounty"], { canApplySlow: false }, 10112, 4)).toEqual([
+    expect(curateBonusOffer(offer, { canApplySlow: false }, mapSeed, 4)).toEqual(curated);
+    expect(curateBonusOffer(offer, { canApplySlow: true }, mapSeed, 4)).toEqual(offer);
+    expect(curateBonusOffer(["sharpened", "smallPurse", "bounty"], { canApplySlow: false }, mapSeed, 4)).toEqual([
       "sharpened",
       "smallPurse",
       "bounty",
@@ -185,9 +187,9 @@ describe("bonus offers", () => {
   it("never swaps in a typed card, so the curated offer keeps the one-typed-card rule", () => {
     let swapped = 0;
     for (let packageId = 1; packageId <= 240; packageId++) {
-      const rolled = rollBonusOfferFor(10112, packageId);
+      const rolled = rollBonusOfferFor(mapSeed, packageId);
       if (!rolled.includes("heavyFrost")) continue;
-      const curated = curateBonusOffer(rolled, { canApplySlow: false }, 10112, packageId);
+      const curated = curateBonusOffer(rolled, { canApplySlow: false }, mapSeed, packageId);
       swapped += 1;
       expect(curated).not.toContain("heavyFrost");
       expect(new Set(curated).size).toBe(3);

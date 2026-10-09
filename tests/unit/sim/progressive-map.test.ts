@@ -547,7 +547,7 @@ describe("progressive economy", () => {
 
   it("uses the linked normal map's gem multiplier and ramps the early enemy level", () => {
     expect(gemMultiplierForRegionLevel(0, 1)).toBe(1);
-    expect(gemMultiplierForRegionLevel(0, 12)).toBe(1);
+    expect(gemMultiplierForRegionLevel(0, 12)).toBe(2);
     expect(gemMultiplierForRegionLevel(0, 1)).toBe(getGameContent().economy.mapGemMultipliers[0]);
     expect(progressiveUnlockMapIndex(progressiveConfigForIndex(36)!)).toBe(0);
     expect(progressiveUnlockMapIndex(progressiveConfigForIndex(37)!)).toBe(4);

@@ -769,7 +769,7 @@ describe("GameEngine", () => {
 
       expect(engine.runState.state).toBe(GameState.VICTORY);
       expect(engine.runState.endScreenData?.victory).toBe(true);
-      expect(engine.runState.endScreenData?.wave).toBe(100);
+      expect(engine.runState.endScreenData?.wave).toBe(victoryWave);
     });
 
     it("triggerEnd sets game over state", () => {
