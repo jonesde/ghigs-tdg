@@ -4,6 +4,7 @@ import { Grid } from "@/sim/grid/Grid.js";
 import { ForceFieldSystem } from "@/sim/physics/ForceFieldSystem.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
 import { initPhysics } from "@/sim/physics/rapierContext.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import { makeBastionMap } from "../../../helpers/mock-grid.js";
 
 beforeAll(async () => {
@@ -31,7 +32,7 @@ describe("ForceFieldSystem", () => {
     enemy.y = 100;
     enemy.body!.setLinvel({ x: 0, y: 0 }, true);
 
-    fields.apply(1 / 60, [enemy]);
+    fields.apply(fixedDeltaSeconds, [enemy]);
     physics.step();
 
     const velocity = enemy.body!.linvel();
@@ -58,7 +59,7 @@ describe("ForceFieldSystem", () => {
     const fields = new ForceFieldSystem();
     fields.addField({ id: "push", origin: { x: 100, y: 100 }, radius: 80, mode: "radial", strength: 8000 });
 
-    fields.apply(1 / 60, [runner, tank]);
+    fields.apply(fixedDeltaSeconds, [runner, tank]);
     physics.step();
 
     const runnerSpeed = Math.hypot(runner.body!.linvel().x, runner.body!.linvel().y);

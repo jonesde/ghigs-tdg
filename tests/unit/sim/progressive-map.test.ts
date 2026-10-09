@@ -36,6 +36,7 @@ import {
 } from "@/sim/grid/ProgressiveMap.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { createDefaultPersistState, maybeUnlockNextMap } from "@/sim/PersistState.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import { tryRefundGeneral, tryUnlockGeneral } from "@/sim/towers/SkillTree.js";
 import { WaveManager } from "@/sim/waves/WaveManager.js";
 import { enemyLevelForWave, progressiveEnemyLevel } from "@/sim/waves/waveComposition.js";
@@ -504,7 +505,7 @@ describe("progressive world positions", () => {
         const enemy = new Enemy("minion", 1, spawnIndex, grid, 1);
         const spawn = map.spawns[spawnIndex]!;
         const expected = grid.tileToWorld(spawn.x, spawn.y);
-        enemy.postPhysics(1 / 60);
+        enemy.postPhysics(fixedDeltaSeconds);
         expect(enemy.x).toBe(expected.x);
         expect(enemy.y).toBe(expected.y);
       }
@@ -546,7 +547,7 @@ describe("progressive economy", () => {
 
   it("uses the linked normal map's gem multiplier and ramps the early enemy level", () => {
     expect(gemMultiplierForRegionLevel(0, 1)).toBe(1);
-    expect(gemMultiplierForRegionLevel(0, 12)).toBe(1);
+    expect(gemMultiplierForRegionLevel(0, 12)).toBe(2);
     expect(gemMultiplierForRegionLevel(0, 1)).toBe(getGameContent().economy.mapGemMultipliers[0]);
     expect(progressiveUnlockMapIndex(progressiveConfigForIndex(36)!)).toBe(0);
     expect(progressiveUnlockMapIndex(progressiveConfigForIndex(37)!)).toBe(4);

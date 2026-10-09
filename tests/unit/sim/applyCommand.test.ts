@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { applyCommand } from "@/sim/applyCommand.js";
 import { GameEngine } from "@/sim/GameEngine.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import {
   createTestMapThemeStore,
   createTestPersistState,
@@ -9,8 +10,6 @@ import {
   MockHostBindings,
 } from "../../helpers/mock-stores.js";
 import { orderedPath } from "../../helpers/navmesh-test-utils.js";
-
-const FIXED_DT = 1 / 60;
 
 describe("applyCommand llm:* commands (Phase 1 seam)", () => {
   let engine: GameEngine;
@@ -25,7 +24,7 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
     engine.loadMap(0);
     engine.waveManager?.startNextWave();
     // Tick long enough for at least one enemy to spawn.
-    for (let tick = 0; tick < 30; tick++) engine.update(FIXED_DT);
+    for (let tick = 0; tick < 30; tick++) engine.update(fixedDeltaSeconds);
   });
 
   function firstEnemyId(): number {
@@ -112,7 +111,7 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
     const startDistance = distanceToBase(enemy);
     // 400 ticks: map 0's route detours south before heading for the base, so the
     // enemy must cover the detour plus part of the east leg to net closer.
-    for (let tick = 0; tick < 400; tick++) engine.update(FIXED_DT);
+    for (let tick = 0; tick < 400; tick++) engine.update(fixedDeltaSeconds);
     expect(distanceToBase(enemy)).toBeLessThan(startDistance);
   });
 
@@ -246,7 +245,7 @@ describe("applyCommand llm:* commands (Phase 1 seam)", () => {
     const startDistance = distanceToBase(enemy);
     // 400 ticks: map 0's route detours south before heading for the base, so the
     // enemy must cover the detour plus part of the east leg to net closer.
-    for (let tick = 0; tick < 400; tick++) engine.update(FIXED_DT);
+    for (let tick = 0; tick < 400; tick++) engine.update(fixedDeltaSeconds);
     expect(distanceToBase(enemy)).toBeLessThan(startDistance);
   });
 

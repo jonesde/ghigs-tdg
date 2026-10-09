@@ -165,7 +165,7 @@ describe("Enemy ON branches (body set) driven manually", () => {
     enemy.applyStun(1.0);
     drive(enemy, 30);
     // Stun credit caps at getGameContent().enemies.stunCapPerSecond per window, so 1.0s credits the
-    // cap; 30 frames * (1/60)s = 0.5s elapsed, so cap minus 0.5s remains.
+    // cap; 30 frames * (fixedDeltaSeconds) = 0.5s elapsed, so cap minus 0.5s remains.
     expect(enemy.stunTimer).toBeCloseTo(getGameContent().enemies.stunCapPerSecond - 30 * fixedDeltaSeconds, 6);
     expect(enemy.stunTimer).toBeGreaterThan(0.1);
   });

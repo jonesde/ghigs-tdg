@@ -6,10 +6,9 @@ import { getMap } from "@/sim/grid/Map.js";
 import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import { makeParticleSystem } from "../../helpers/mock-managers.js";
 import { stepPhysics } from "../../helpers/physicsTestDriver.js";
-
-const FIXED_DT = 1 / 60;
 
 let navBuilder: NavMeshBuilder | null = null;
 
@@ -94,7 +93,7 @@ describe("Enemy perimeter surround routing", () => {
 
     let minDistance = Infinity;
     for (let step = 0; step < 6000 && !enemy!.attackingBase; step++) {
-      stepPhysics(enemyManager, physicsWorld, FIXED_DT, null, null, crowdManager);
+      stepPhysics(enemyManager, physicsWorld, fixedDeltaSeconds, null, null, crowdManager);
       minDistance = Math.min(minDistance, distanceToBaseSquare(enemy!.x, enemy!.y, baseCenter.x, baseCenter.y, half));
     }
 
@@ -117,7 +116,7 @@ describe("Enemy perimeter surround routing", () => {
     expect(second).toBeTruthy();
 
     for (let step = 0; step < 12000; step++) {
-      stepPhysics(enemyManager, physicsWorld, FIXED_DT, null, null, crowdManager);
+      stepPhysics(enemyManager, physicsWorld, fixedDeltaSeconds, null, null, crowdManager);
       if (first!.attackingBase && second!.attackingBase) break;
     }
 
@@ -144,11 +143,11 @@ describe("Enemy perimeter surround routing", () => {
       expect(enemy).toBeTruthy();
       enemies.push(enemy!);
       for (let step = 0; step < 600; step++)
-        stepPhysics(enemyManager, physicsWorld, FIXED_DT, null, null, crowdManager);
+        stepPhysics(enemyManager, physicsWorld, fixedDeltaSeconds, null, null, crowdManager);
     }
 
     for (let step = 0; step < 12000; step++) {
-      stepPhysics(enemyManager, physicsWorld, FIXED_DT, null, null, crowdManager);
+      stepPhysics(enemyManager, physicsWorld, fixedDeltaSeconds, null, null, crowdManager);
       if (enemies.every((e) => e.attackingBase || e.removed)) break;
     }
 
@@ -212,7 +211,7 @@ describe("Enemy perimeter surround routing", () => {
       enemies.push(enemy!);
     }
     for (let step = 0; step < 12000; step++) {
-      stepPhysics(enemyManager, physicsWorld, FIXED_DT, null, null, crowdManager);
+      stepPhysics(enemyManager, physicsWorld, fixedDeltaSeconds, null, null, crowdManager);
       if (enemies.every((e) => e.attackingBase || e.removed)) break;
     }
 
@@ -259,7 +258,7 @@ describe("Enemy perimeter surround routing", () => {
       enemies.push(enemy!);
     }
     for (let step = 0; step < 12000; step++) {
-      stepPhysics(enemyManager, physicsWorld, FIXED_DT, null, null, crowdManager);
+      stepPhysics(enemyManager, physicsWorld, fixedDeltaSeconds, null, null, crowdManager);
       if (enemies.every((e) => e.attackingBase || e.removed)) break;
     }
 
@@ -284,7 +283,8 @@ describe("Enemy perimeter surround routing", () => {
     const front = fronts[0]!;
     const healthBeforeKill = baseTarget.health;
     front.removed = true;
-    for (let step = 0; step < 480; step++) stepPhysics(enemyManager, physicsWorld, FIXED_DT, null, null, crowdManager);
+    for (let step = 0; step < 480; step++)
+      stepPhysics(enemyManager, physicsWorld, fixedDeltaSeconds, null, null, crowdManager);
 
     const afterAdjacent = survivors.filter((e) => !e.removed && isAdjacent(e));
     expect(afterAdjacent.length).toBeGreaterThan(0);
@@ -301,7 +301,7 @@ describe("Enemy perimeter surround routing", () => {
     // Drive the enemy to the base so it is attacking the base (contact-line state).
     let steps = 0;
     while (!enemy!.attackingBase && steps < 6000) {
-      stepPhysics(enemyManager, physicsWorld, FIXED_DT, null, null, crowdManager);
+      stepPhysics(enemyManager, physicsWorld, fixedDeltaSeconds, null, null, crowdManager);
       steps++;
     }
     expect(enemy!.attackingBase).toBe(true);
@@ -319,7 +319,8 @@ describe("Enemy perimeter surround routing", () => {
     // Step several frames. The stun early-return skips movement and attack, but the
     // base collider still ejects the penetrating body so the enemy is pushed back
     // outside the square.
-    for (let step = 0; step < 30; step++) stepPhysics(enemyManager, physicsWorld, FIXED_DT, null, null, crowdManager);
+    for (let step = 0; step < 30; step++)
+      stepPhysics(enemyManager, physicsWorld, fixedDeltaSeconds, null, null, crowdManager);
 
     const distance = distanceToBaseSquare(enemy!.x, enemy!.y, baseCenter.x, baseCenter.y, half);
     // Under Rapier a body whose center sits inside the base box is not reliably

@@ -9,9 +9,8 @@ import { getMap } from "@/sim/grid/Map.js";
 import { CrowdManager } from "@/sim/navmesh/CrowdManager.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import { makeParticleSystem } from "../helpers/mock-managers.js";
-
-const FIXED_DT = 1 / 60;
 
 function dist(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -56,10 +55,10 @@ describe("Physics motion integration (flag OFF, direct construction)", () => {
 
     let reached = false;
     for (let i = 0; i < 12000 && !reached; i++) {
-      enemyManager.preStep(FIXED_DT);
-      crowdManager.update(FIXED_DT, enemyManager.enemies);
+      enemyManager.preStep(fixedDeltaSeconds);
+      crowdManager.update(fixedDeltaSeconds, enemyManager.enemies);
       physicsWorld.step();
-      enemyManager.postStep(FIXED_DT, onEnemyKill, onEnemyBeginAttackBase);
+      enemyManager.postStep(fixedDeltaSeconds, onEnemyKill, onEnemyBeginAttackBase);
       reached = enemy.attackingBase;
       if (enemy.removed) break;
     }
@@ -82,9 +81,9 @@ describe("Physics motion integration (flag OFF, direct construction)", () => {
     // spawn; the early frames are a transient so we assert the settled distance.
     let finalDistance = 0;
     for (let i = 0; i < 600; i++) {
-      enemyManager.preStep(FIXED_DT);
+      enemyManager.preStep(fixedDeltaSeconds);
       physicsWorld.step();
-      enemyManager.postStep(FIXED_DT, onEnemyKill, onEnemyBeginAttackBase);
+      enemyManager.postStep(fixedDeltaSeconds, onEnemyKill, onEnemyBeginAttackBase);
       if (a.removed || b.removed) break;
       finalDistance = dist(a, b);
     }

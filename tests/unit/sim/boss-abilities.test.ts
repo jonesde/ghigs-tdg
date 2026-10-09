@@ -1,5 +1,6 @@
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
+import { getGameContent } from "@/content/gameContent.js";
 import {
   BOMBARD_DAMAGE_FRACTION,
   BOMBARD_TELEGRAPH_SECONDS,
@@ -16,6 +17,8 @@ import {
 import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import { enemyLevelForWave, waveBossCount } from "@/sim/waves/waveComposition.js";
 import { buildBasic, firstTile, freshEngine, pinEnemy, waveManagerOf } from "../../helpers/simFixtures";
+
+const mapSeed = getGameContent().maps.levels[0]!.seed;
 
 describe("boss abilities", () => {
   it("does not consume the wave composition stream", () => {
@@ -34,11 +37,11 @@ describe("boss abilities", () => {
   });
 
   it("gives the first boss of a run no ability and draws the rest without replacement", () => {
-    const vanilla = rollBossAbilities(10112, 10, 4, true);
+    const vanilla = rollBossAbilities(mapSeed, 10, 4, true);
     expect(vanilla[0]).toBe("none");
     expect(new Set(vanilla.slice(1)).size).toBe(3);
     expect(vanilla.slice(1).includes("none")).toBe(false);
-    const drawn = rollBossAbilities(10112, 20, 4, false);
+    const drawn = rollBossAbilities(mapSeed, 20, 4, false);
     expect(new Set(drawn).size).toBe(4);
     expect(drawn.includes("none")).toBe(false);
     expect(bossAbilityLabel("healAura")).toBe("Mend");

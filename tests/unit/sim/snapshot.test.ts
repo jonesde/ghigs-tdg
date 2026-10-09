@@ -7,6 +7,7 @@ import { GameEngine } from "@/sim/GameEngine.js";
 import { WorkerParticleSpawner } from "@/sim/ParticleSystem.js";
 import { snapshotSchemaVersion } from "@/sim/SimulationSnapshot.js";
 import { buildSnapshot } from "@/sim/SnapshotSerializer.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import {
   createTestPersistState,
   createTestThemeBundle,
@@ -278,8 +279,8 @@ describe("SnapshotSerializer (Phase 5)", () => {
   it("stamps every lightning/stun effect with the sim clock and the stunned enemy id", () => {
     const engine = makeEngine();
     const enemy = engine.enemyManager.spawn("minion", 1, 0, 1);
-    engine.update(1 / 60);
-    engine.update(1 / 60);
+    engine.update(fixedDeltaSeconds);
+    engine.update(fixedDeltaSeconds);
     engine.projectileManager.fireLightning({
       originX: 100,
       originY: 200,

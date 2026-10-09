@@ -1,6 +1,7 @@
 /** @vitest-environment node */
 import { describe, expect, it } from "vitest";
 import { decideSnapshotPost, type SnapshotGateInput } from "@/sim/snapshotGate.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 
 function gate(overrides: Partial<SnapshotGateInput>): SnapshotGateInput {
   return {
@@ -16,7 +17,9 @@ function gate(overrides: Partial<SnapshotGateInput>): SnapshotGateInput {
 
 describe("decideSnapshotPost", () => {
   it("forces the playing tick that arms a placement hold through the ack gate", () => {
-    const decision = decideSnapshotPost(gate({ awaitingAck: true, lastScaledDt: 1 / 60, placementHoldActive: true }));
+    const decision = decideSnapshotPost(
+      gate({ awaitingAck: true, lastScaledDt: fixedDeltaSeconds, placementHoldActive: true }),
+    );
     expect(decision.post).toBe(true);
     expect(decision.pausedMutation).toBe(false);
     expect(decision.awaitingAck).toBe(true);
@@ -72,7 +75,7 @@ describe("decideSnapshotPost", () => {
 
   it("clears the hold latch on a snapshot posted after the hold ends", () => {
     const decision = decideSnapshotPost(
-      gate({ lastScaledDt: 1 / 60, stateMutatedThisTick: true, placementHoldPosted: true }),
+      gate({ lastScaledDt: fixedDeltaSeconds, stateMutatedThisTick: true, placementHoldPosted: true }),
     );
     expect(decision.post).toBe(true);
     expect(decision.pausedMutation).toBe(false);
@@ -80,7 +83,7 @@ describe("decideSnapshotPost", () => {
   });
 
   it("drops a running tick that is waiting for an ack and has no hold to announce", () => {
-    const decision = decideSnapshotPost(gate({ awaitingAck: true, lastScaledDt: 1 / 60 }));
+    const decision = decideSnapshotPost(gate({ awaitingAck: true, lastScaledDt: fixedDeltaSeconds }));
     expect(decision.post).toBe(false);
     expect(decision.placementHoldPosted).toBe(false);
     expect(decision.awaitingAck).toBe(true);

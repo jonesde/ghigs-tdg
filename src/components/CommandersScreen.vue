@@ -12,8 +12,10 @@ import {
   type LlmCommanderConfig,
   MAX_DECISION_INTERVAL_MS,
   MAX_REQUEST_TIMEOUT_MS,
+  MAX_TEMPERATURE,
   MIN_DECISION_INTERVAL_MS,
   MIN_REQUEST_TIMEOUT_MS,
+  MIN_TEMPERATURE,
   normalizeDecisionIntervalMs,
   normalizeTemperature,
 } from "@/commanders/llm/types.js";
@@ -296,15 +298,15 @@ function goBack() {
           <input class="form-input" v-model="formContextLimit" type="number" />
 
           <label class="form-label">Request timeout (seconds)</label>
-          <input class="form-input" v-model.number="formRequestTimeoutSeconds" type="number" min="1" max="180" />
+          <input class="form-input" v-model.number="formRequestTimeoutSeconds" type="number" :min="MIN_REQUEST_TIMEOUT_MS / 1000" :max="MAX_REQUEST_TIMEOUT_MS / 1000" />
 
           <label class="form-label">Temperature (reasoning off)</label>
           <input
             class="form-input commander-temperature-off"
             v-model.number="formTemperatureReasoningOff"
             type="number"
-            min="0"
-            max="2"
+            :min="MIN_TEMPERATURE"
+            :max="MAX_TEMPERATURE"
             step="0.1"
           />
 
@@ -313,8 +315,8 @@ function goBack() {
             class="form-input commander-temperature-on"
             v-model.number="formTemperatureReasoningOn"
             type="number"
-            min="0"
-            max="2"
+            :min="MIN_TEMPERATURE"
+            :max="MAX_TEMPERATURE"
             step="0.1"
           />
 

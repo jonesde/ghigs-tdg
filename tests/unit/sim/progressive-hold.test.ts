@@ -11,8 +11,11 @@ import {
   templateCanExtendOpening,
 } from "@/sim/grid/ProgressiveMap.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import type { WaveManager } from "@/sim/waves/WaveManager.js";
 import { createTestPersistState, createTestThemeBundle, MockHostBindings } from "../../helpers/mock-stores.js";
+
+const victoryWave = getGameContent().economy.victoryWave;
 
 describe("progressive placement hold", () => {
   let engine: GameEngine;
@@ -45,7 +48,7 @@ describe("progressive placement hold", () => {
     reachWave(3);
     const manager = waveManager();
     manager._waveGameTime = getGameContent().economy.preEmptiveWaveTimer;
-    engine.update(1 / 60);
+    engine.update(fixedDeltaSeconds);
     expect(manager.currentWave).toBe(3);
     expect(engine.progressivePlacementHold).toBe(true);
     expect(engine.progressiveResumeMode).toBe("expire-advance");
@@ -59,7 +62,7 @@ describe("progressive placement hold", () => {
     if (!engine.enemyManager) throw new Error("enemy manager missing");
     manager.queue.length = 0;
     engine.enemyManager.clear();
-    engine.update(1 / 60);
+    engine.update(fixedDeltaSeconds);
     expect(manager.currentWave).toBe(3);
     expect(engine.progressivePlacementHold).toBe(true);
     expect(engine.progressiveResumeMode).toBe("countdown");
@@ -75,9 +78,9 @@ describe("progressive placement hold", () => {
     engine.persistState.generalAddons.progressiveThirdChoice = 0;
     engine.debug("setWave", 3);
     expect(engine.progressiveOffer).toHaveLength(3);
-    engine.debug("setWave", 100);
+    engine.debug("setWave", victoryWave);
     expect(engine.progressivePlacementHold).toBe(false);
-    expect(engine.waveManager?.currentWave).toBe(100);
+    expect(engine.waveManager?.currentWave).toBe(victoryWave);
   });
 
   it("thins the block cadence to every 4 waves after 30 and every 5 after 50", () => {
@@ -120,7 +123,7 @@ describe("progressive placement hold", () => {
     reachWave(3);
     const manager = waveManager();
     manager._waveGameTime = getGameContent().economy.preEmptiveWaveTimer;
-    engine.update(1 / 60);
+    engine.update(fixedDeltaSeconds);
     expect(engine.progressivePlacementHold).toBe(true);
     expect(engine.progressiveResumeMode).toBe("expire-advance");
     const site = currentOfferSite();

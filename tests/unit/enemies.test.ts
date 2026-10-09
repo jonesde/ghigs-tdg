@@ -16,6 +16,7 @@ import { NavDistanceField } from "@/sim/navmesh/NavDistanceField.js";
 import { NavMeshBuilder } from "@/sim/navmesh/NavMeshBuilder.js";
 import { NoopParticleSpawner } from "@/sim/ParticleSystem.js";
 import { PhysicsWorld } from "@/sim/physics/PhysicsWorld.js";
+import { fixedDeltaSeconds } from "@/sim/stepBudget.js";
 import { useMapThemeStore } from "@/stores/mapTheme.js";
 import { makeBastionMap, makeOneWideCornerMap } from "../helpers/mock-grid";
 import { mockDefaultTheme } from "../helpers/mock-stores.js";
@@ -319,7 +320,7 @@ describe("Enemy", () => {
       };
       enemy.attackingBase = true;
       enemy.attackTimer = 0;
-      enemy.postPhysics(1 / 60);
+      enemy.postPhysics(fixedDeltaSeconds);
       expect(hits).toHaveLength(1);
       expect(hits[0]).toBeCloseTo(enemy.attackDamage * 0.85, 6);
     });
@@ -722,7 +723,6 @@ describe("Enemy", () => {
   });
 
   describe("sealed return lane", () => {
-    const fixedDt = 1 / 60;
     const sealedRows = ["S######.", "......#.", "WWWWWW#.", "#.......", "##B.....", "........"];
 
     function makeSealedGrid() {
@@ -762,14 +762,14 @@ describe("Enemy", () => {
         const manager = enemyManager as unknown as Parameters<Enemy["computeIntent"]>[1];
         expect(field.getDistanceToBase(3, 0)).toBe(-1);
         expect(field.getThroughDistanceToBase(3, 0)).toBeGreaterThanOrEqual(0);
-        enemy.computeIntent(fixedDt, manager);
+        enemy.computeIntent(fixedDeltaSeconds, manager);
 
         const startX = enemy.x;
         for (let step = 0; step < 180; step++) {
-          enemy.computeIntent(fixedDt, manager);
-          crowd.update(fixedDt, [enemy]);
+          enemy.computeIntent(fixedDeltaSeconds, manager);
+          crowd.update(fixedDeltaSeconds, [enemy]);
           physicsWorld.step();
-          enemy.postPhysics(fixedDt);
+          enemy.postPhysics(fixedDeltaSeconds);
         }
         expect(enemy.x).toBeGreaterThan(startX + grid.tileSize);
       } finally {
@@ -790,7 +790,7 @@ describe("Enemy", () => {
         const enemy = new Enemy("minion", 1, 0, grid, 1);
         physicsWorld.addEnemy(enemy);
         crowd.addAgent(enemy);
-        enemy.computeIntent(fixedDt, null);
+        enemy.computeIntent(fixedDeltaSeconds, null);
         const baseWorld = grid.tileToWorld(grid.getBase().x, grid.getBase().y);
         expect(enemy.lastMoveTargetWorld.x).toBeCloseTo(baseWorld.x, 4);
         expect(enemy.lastMoveTargetWorld.y).toBeCloseTo(baseWorld.y, 4);
@@ -803,8 +803,6 @@ describe("Enemy", () => {
   });
 
   describe("walk-only pin recovery", () => {
-    const fixedDt = 1 / 60;
-
     function fakeContactTower(grid: Grid) {
       const world = grid.tileToWorld(3, 3);
       return {
@@ -837,8 +835,8 @@ describe("Enemy", () => {
       const physicsWorld = new PhysicsWorld(grid);
       try {
         const { enemy, manager } = makePinnedWalker(grid, physicsWorld);
-        const steps = Math.ceil(getGameContent().enemies.stuckRecoverySeconds / fixedDt);
-        for (let step = 0; step < steps; step++) enemy.computeIntent(fixedDt, manager);
+        const steps = Math.ceil(getGameContent().enemies.stuckRecoverySeconds / fixedDeltaSeconds);
+        for (let step = 0; step < steps; step++) enemy.computeIntent(fixedDeltaSeconds, manager);
         expect(enemy.ballisticTimer).toBeGreaterThan(0);
         expect(enemy.routingMode).toBe("default");
         expect(enemy.siegeTower).toBeNull();
@@ -852,9 +850,9 @@ describe("Enemy", () => {
       const physicsWorld = new PhysicsWorld(grid);
       try {
         const { enemy, manager } = makePinnedWalker(grid, physicsWorld);
-        const steps = Math.ceil(getGameContent().enemies.stuckRecoverySeconds / fixedDt);
+        const steps = Math.ceil(getGameContent().enemies.stuckRecoverySeconds / fixedDeltaSeconds);
         for (let step = 0; step < steps; step++) {
-          enemy.computeIntent(fixedDt, manager);
+          enemy.computeIntent(fixedDeltaSeconds, manager);
           enemy.x += grid.tileSize * 0.1;
           enemy.y += grid.tileSize * 0.1;
         }
@@ -874,8 +872,8 @@ describe("Enemy", () => {
         // cap: no nudge may fire while the park is stun-held.
         const { enemy, manager } = makePinnedWalker(grid, physicsWorld, 10);
         expect(enemy.stunTimer).toBeCloseTo(stunCapPerSecond, 8);
-        const steps = Math.ceil(0.6 / fixedDt);
-        for (let step = 0; step < steps; step++) enemy.computeIntent(fixedDt, manager);
+        const steps = Math.ceil(0.6 / fixedDeltaSeconds);
+        for (let step = 0; step < steps; step++) enemy.computeIntent(fixedDeltaSeconds, manager);
         expect(enemy.stunTimer).toBeGreaterThan(0);
         expect(enemy.ballisticTimer).toBe(0);
         expect(enemy.motionLock).toBe("park");
@@ -886,8 +884,6 @@ describe("Enemy", () => {
   });
 
   describe("lightning stun at a corner", () => {
-    const fixedDt = 1 / 60;
-
     function assertCrowdTargetHeld(enemy: Enemy): void {
       expect(enemy.agent.state()).toBe(Detour.DT_CROWDAGENT_STATE_WALKING);
       const targetState = enemy.agent.raw.get_targetState();
@@ -922,12 +918,12 @@ describe("Enemy", () => {
         seat(rear, spawnWorld.x + 1, spawnWorld.y);
 
         const step = () => {
-          front.computeIntent(fixedDt, null);
-          rear.computeIntent(fixedDt, null);
-          crowd.update(fixedDt, [front, rear]);
+          front.computeIntent(fixedDeltaSeconds, null);
+          rear.computeIntent(fixedDeltaSeconds, null);
+          crowd.update(fixedDeltaSeconds, [front, rear]);
           physicsWorld.step();
-          front.postPhysics(fixedDt);
-          rear.postPhysics(fixedDt);
+          front.postPhysics(fixedDeltaSeconds);
+          rear.postPhysics(fixedDeltaSeconds);
         };
 
         const approach = grid.tileToWorld(5, 4);
@@ -942,7 +938,7 @@ describe("Enemy", () => {
         rear.applyStun(0.4);
         const stunX = rear.x;
         const stunY = rear.y;
-        const stunnedSteps = Math.floor(0.35 / fixedDt);
+        const stunnedSteps = Math.floor(0.35 / fixedDeltaSeconds);
         for (let stepIndex = 0; stepIndex < stunnedSteps; stepIndex++) step();
 
         expect(Math.hypot(rear.x - stunX, rear.y - stunY)).toBeLessThan(1);
@@ -951,7 +947,7 @@ describe("Enemy", () => {
         const resyncThreshold = Math.max(rear.radius * 0.25, grid.tileSize * 0.15);
         expect(Math.hypot(rear.x - agentPosition.x, rear.y - agentPosition.y)).toBeLessThan(resyncThreshold);
 
-        const resumeSteps = Math.ceil(0.5 / fixedDt) + Math.round(2 / fixedDt);
+        const resumeSteps = Math.ceil(0.5 / fixedDeltaSeconds) + Math.round(2 / fixedDeltaSeconds);
         for (let stepIndex = 0; stepIndex < resumeSteps; stepIndex++) step();
         expect(rear.agent.state()).toBe(Detour.DT_CROWDAGENT_STATE_WALKING);
         expect(rear.y).toBeGreaterThan(stunY + grid.tileSize * 0.5);
@@ -973,17 +969,17 @@ describe("Enemy", () => {
         physicsWorld.addEnemy(enemy);
         crowd.addAgent(enemy);
         for (let stepIndex = 0; stepIndex < 5; stepIndex++) {
-          enemy.computeIntent(fixedDt, null);
-          crowd.update(fixedDt, [enemy]);
+          enemy.computeIntent(fixedDeltaSeconds, null);
+          crowd.update(fixedDeltaSeconds, [enemy]);
           physicsWorld.step();
-          enemy.postPhysics(fixedDt);
+          enemy.postPhysics(fixedDeltaSeconds);
         }
         assertCrowdTargetHeld(enemy);
 
         const tile = enemy.currentTile();
         const northOfTile = grid.worldOriginY + tile.y * grid.tileSize - 10;
         enemy.body!.setTranslation({ x: enemy.x, y: northOfTile }, true);
-        enemy.postPhysics(fixedDt);
+        enemy.postPhysics(fixedDeltaSeconds);
 
         assertCrowdTargetHeld(enemy);
       } finally {
