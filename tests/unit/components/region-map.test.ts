@@ -1,4 +1,4 @@
-import { mount } from "@vue/test-utils";
+import { mount, type DOMWrapper } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 import RegionMap from "@/components/RegionMap.vue";
 import type { RegionMapNodeView } from "@/components/RegionMapNodeView.js";
@@ -142,26 +142,43 @@ describe("RegionMap", () => {
   });
 
   it("shows only the medals the best wave earned", () => {
+    const medalSlotGlyphs = (marker: DOMWrapper<Element>) =>
+      marker.findAll(".map-node-medals tspan").map((slot) => slot.text());
     expect(nodeWithBestWave("3", 14).find(".map-node-medals").exists()).toBe(false);
-    expect(nodeWithBestWave("3", 15).find(".map-node-medals").text()).toBe("🥉");
-    expect(nodeWithBestWave("3", 30).find(".map-node-medals").text()).toBe("🥉 🥈");
-    expect(nodeWithBestWave("3", 50).find(".map-node-medals").text()).toBe("🥉 🥈 🥇");
+    expect(medalSlotGlyphs(nodeWithBestWave("3", 15))).toEqual(["🥉"]);
+    expect(medalSlotGlyphs(nodeWithBestWave("3", 30))).toEqual(["🥉", "🥈"]);
+    expect(medalSlotGlyphs(nodeWithBestWave("3", 50))).toEqual(["🥉", "🥈", "🥇"]);
   });
 
-  it("rings the level circle and crowns the medal row on a cleared map", () => {
+  it("paints the single level circle gold and crowns the medal row on a cleared map", () => {
     const marker = nodeWithBestWave("3", 100);
     expect(marker.classes()).toContain("cleared");
-    expect(marker.find(".map-node-medals").text()).toBe("🥉 🥈 🥇 👑");
-    const rings = marker.findAll(".map-node-clear-ring");
-    expect(rings.length).toBe(2);
-    expect(rings.map((ring) => ring.attributes("r"))).toEqual(["41", "46.5"]);
+    expect(marker.findAll(".map-node-clear-ring").length).toBe(0);
+    expect(marker.findAll("circle").length).toBe(1);
+    expect(marker.findAll(".map-node-medals tspan").map((slot) => slot.text())).toEqual(["🥉", "🥈", "🥇", "👑"]);
   });
 
-  it("renders the clear rings outside the level circle so they do not clip it", () => {
-    const marker = nodeWithBestWave("3", 100);
-    const circleRadius = Number(marker.find(".map-node-circle").attributes("r"));
-    for (const ring of marker.findAll(".map-node-clear-ring")) {
-      expect(Number(ring.attributes("r"))).toBeGreaterThan(circleRadius);
-    }
+  it("curves the medal row around the circle top for 3- and 4-glyph rows", () => {
+    const medalSlotPositions = (marker: DOMWrapper<Element>) =>
+      marker.findAll(".map-node-medals tspan").map((slot) => ({
+        x: Number(slot.attributes("x")),
+        y: Number(slot.attributes("y")),
+      }));
+    expect(medalSlotPositions(nodeWithBestWave("3", 50))).toEqual([
+      { x: -24, y: -38 },
+      { x: 0, y: -46 },
+      { x: 24, y: -38 },
+    ]);
+    expect(medalSlotPositions(nodeWithBestWave("3", 100))).toEqual([
+      { x: -36, y: -38 },
+      { x: -12, y: -46 },
+      { x: 12, y: -46 },
+      { x: 36, y: -38 },
+    ]);
+    expect(medalSlotPositions(nodeWithBestWave("3", 30))).toEqual([
+      { x: -12, y: -46 },
+      { x: 12, y: -46 },
+    ]);
   });
+
 });

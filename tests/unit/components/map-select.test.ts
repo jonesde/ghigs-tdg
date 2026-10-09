@@ -162,10 +162,10 @@ describe("MapSelect", () => {
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     const marker = markerByLabel(wrapper, "1")!;
     expect(marker.find(".map-node-wave").text()).toBe("☠ 34");
-    expect(marker.find(".map-node-medals").text()).toBe("🥉 🥈");
+    expect(marker.findAll(".map-node-medals tspan").map((slot) => slot.text())).toEqual(["🥉", "🥈"]);
   });
 
-  it("rings and crowns a marker from the first-clear record even when best wave is one short", () => {
+  it("crowns the medal row on a marker from the first-clear record even when best wave is one short", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     const progress = persistStore.ensureThemeProgress("default");
@@ -174,20 +174,20 @@ describe("MapSelect", () => {
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     const marker = markerByLabel(wrapper, "1")!;
     expect(marker.classes()).toContain("cleared");
-    expect(marker.find(".map-node-medals").text()).toBe("🥉 🥈 🥇 👑");
-    expect(marker.findAll(".map-node-clear-ring").length).toBe(2);
+    expect(marker.findAll(".map-node-medals tspan").map((slot) => slot.text())).toEqual(["🥉", "🥈", "🥇", "👑"]);
+    expect(marker.findAll("circle").length).toBe(1);
     expect(marker.find("title").text()).toContain("👑 Cleared");
   });
 
-  it("rings and crowns a marker for a map cleared at the victory wave", () => {
+  it("crowns the medal row on a marker for a map cleared at the victory wave", () => {
     // biome-ignore lint/correctness/noUnusedVariables: unused stores from mount helper
     const { pinia, gameStore, persistStore, uiStore, router } = mountMapSelect();
     persistStore.ensureThemeProgress("default").bestWaves.best_0 = 100;
     const wrapper = mount(MapSelect, { global: { plugins: [router, pinia] } });
     const marker = markerByLabel(wrapper, "1")!;
     expect(marker.classes()).toContain("cleared");
-    expect(marker.find(".map-node-medals").text()).toBe("🥉 🥈 🥇 👑");
-    expect(marker.findAll(".map-node-clear-ring").length).toBe(2);
+    expect(marker.findAll(".map-node-medals tspan").map((slot) => slot.text())).toEqual(["🥉", "🥈", "🥇", "👑"]);
+    expect(marker.findAll("circle").length).toBe(1);
     expect(marker.find("title").text()).toContain("👑 Cleared");
   });
 

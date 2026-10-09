@@ -30,6 +30,7 @@ import "@/components/detailPanel.css";
   --color-text: #ece4d6;
   --color-text-dim: #b0a18c;
   --color-gold: #ffd84d;
+  --color-gold-bright: color-mix(in srgb, var(--color-gold) 70%, white);
   --color-gem: #9be7ff;
   --color-success: #5ec46a;
   --color-success-soft: color-mix(in srgb, var(--color-success) 12%, transparent);

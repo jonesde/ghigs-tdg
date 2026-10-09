@@ -18,11 +18,30 @@ function nodeRefKey(ref: { kind: "level" | "progressive"; level: number }): stri
   return `${ref.kind}:${ref.level}`;
 }
 
-// Medal row above the outline: earned milestones only, ascending, with the crown
-// appended on a cleared map (wave 100 already implies the gold milestone).
-function medalRowForNode(node: RegionMapNodeView): string {
+interface MedalSlot {
+  glyph: string;
+  x: number;
+  y: number;
+}
+
+// The row is one 24px slot per glyph centered on the circle; for 3- and
+// 4-glyph rows the two outermost slots drop down so the glyphs curve around
+// the top of the circle instead of sitting flat above it.
+const medalSlotSpacing = 24;
+const medalSlotRowY = -46;
+const medalSlotSideDrop = 8;
+
+function medalSlotsForNode(node: RegionMapNodeView): MedalSlot[] {
   const glyphs = medalGlyphsForBestWave(node.bestWave);
-  return node.cleared ? [...glyphs, clearedCrownGlyph()].join(" ") : glyphs.join(" ");
+  const row = node.cleared ? [...glyphs, clearedCrownGlyph()] : [...glyphs];
+  return row.map((glyph, slotIndex) => {
+    const isSideSlot = row.length >= 3 && (slotIndex === 0 || slotIndex === row.length - 1);
+    return {
+      glyph,
+      x: (slotIndex - (row.length - 1) / 2) * medalSlotSpacing,
+      y: medalSlotRowY + (isSideSlot ? medalSlotSideDrop : 0),
+    };
+  });
 }
 
 interface ResolvedConnection {
@@ -107,15 +126,18 @@ function startNode(node: RegionMapNodeView) {
         @keydown.enter.prevent="selectNode(node)"
         @keydown.space.prevent="selectNode(node)"
       >
-        <circle v-if="node.cleared" class="map-node-clear-ring" r="41" stroke-width="3" />
-        <circle v-if="node.cleared" class="map-node-clear-ring beads" r="46.5" stroke-width="2" />
         <circle class="map-node-circle" r="34" />
         <text class="map-node-label" y="-9" text-anchor="middle" dominant-baseline="central">{{ node.label }}</text>
         <text class="map-node-wave" y="17" text-anchor="middle" dominant-baseline="central">
           {{ node.bestWave > 0 ? `☠ ${node.bestWave}` : "☠ —" }}
         </text>
-        <text v-if="medalRowForNode(node)" class="map-node-medals" y="-46" text-anchor="middle">
-          {{ medalRowForNode(node) }}
+        <text v-if="medalSlotsForNode(node).length" class="map-node-medals" text-anchor="middle">
+          <tspan
+            v-for="(medalSlot, slotIndex) in medalSlotsForNode(node)"
+            :key="slotIndex"
+            :x="medalSlot.x"
+            :y="medalSlot.y"
+          >{{ medalSlot.glyph }}</tspan>
         </text>
         <title>{{ node.tooltip }}</title>
       </g>
@@ -210,18 +232,8 @@ function startNode(node: RegionMapNodeView) {
   pointer-events: none;
 }
 
-.map-node-clear-ring {
-  fill: none;
-  stroke: var(--color-gold);
-}
-
-.map-node-clear-ring.beads {
-  stroke-dasharray: 2 7;
-  stroke-linecap: round;
-}
-
 .map-node.cleared .map-node-circle {
-  stroke: var(--color-gold);
+  stroke: var(--color-gold-bright);
 }
 
 .map-play-button {

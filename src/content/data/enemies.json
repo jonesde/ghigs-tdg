@@ -76,7 +76,7 @@
   },
   "levelHpMult": { "intercept": 1, "slopePerLevel": 0.8 },
   "waveHpMult": 0.7,
-  "lateWaveHpGrowth": 1.4,
+  "lateWaveHpGrowth": 1.7,
   "lateWaveStartWave": 30,
   "lateWaveDamageGrowth": 0,
   "levelDamageMult": { "intercept": 1, "slopePerLevel": 0.6 },
